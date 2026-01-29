@@ -1,0 +1,18 @@
+{
+  "id": "training_straight",
+  "name": "Training Straight",
+  "author": "WebStrafe Team",
+  "source": "https://github.com/OuiSURF/Surf_Maps",
+  "license": "Original placeholder training geometry",
+  "attribution": "Original geometry shipped with WebStrafe for legal-safe placeholder testing.",
+  "spawns": [
+    {
+      "position": [
+        0,
+        4,
+        14
+      ],
+      "yawDeg": 0
+    }
+  ]
+}

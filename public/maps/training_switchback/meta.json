@@ -1,0 +1,18 @@
+{
+  "id": "training_switchback",
+  "name": "Training Switchback",
+  "author": "WebStrafe Team",
+  "source": "https://github.com/OuiSURF/Surf_Maps",
+  "license": "Original placeholder training geometry",
+  "attribution": "Original geometry shipped with WebStrafe for legal-safe placeholder testing.",
+  "spawns": [
+    {
+      "position": [
+        0,
+        6,
+        20
+      ],
+      "yawDeg": 180
+    }
+  ]
+}

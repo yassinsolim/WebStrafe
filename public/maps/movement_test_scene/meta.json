@@ -1,0 +1,18 @@
+{
+  "id": "movement_test_scene",
+  "name": "Movement Test Scene",
+  "author": "WebStrafe Team",
+  "source": "https://github.com/OuiSURF/Surf_Maps",
+  "license": "Original placeholder training geometry",
+  "attribution": "Original geometry shipped with WebStrafe for movement acceptance diagnostics.",
+  "spawns": [
+    {
+      "position": [
+        0,
+        4,
+        16
+      ],
+      "yawDeg": 0
+    }
+  ]
+}

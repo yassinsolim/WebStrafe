@@ -1,0 +1,44 @@
+{
+  "maps": [
+    {
+      "id": "custom",
+      "name": "surf_skyworld_x",
+      "author": "EVAI",
+      "source": "surf_skyworld_x by EVAI",
+      "license": "Creative Commons Attribution",
+      "scenePath": "/maps/custom/scene.glb",
+      "collisionPath": "/maps/custom/collision.glb",
+      "metaPath": "/maps/custom/meta.json"
+    },
+    {
+      "id": "movement_test_scene",
+      "name": "Movement Test Scene",
+      "author": "WebStrafe Team",
+      "source": "https://github.com/OuiSURF/Surf_Maps",
+      "license": "Original placeholder training geometry",
+      "scenePath": "/maps/movement_test_scene/scene.glb",
+      "collisionPath": "/maps/movement_test_scene/collision.glb",
+      "metaPath": "/maps/movement_test_scene/meta.json"
+    },
+    {
+      "id": "training_straight",
+      "name": "Training Straight",
+      "author": "WebStrafe Team",
+      "source": "https://github.com/OuiSURF/Surf_Maps",
+      "license": "Original placeholder training geometry",
+      "scenePath": "/maps/training_straight/scene.glb",
+      "collisionPath": "/maps/training_straight/collision.glb",
+      "metaPath": "/maps/training_straight/meta.json"
+    },
+    {
+      "id": "training_switchback",
+      "name": "Training Switchback",
+      "author": "WebStrafe Team",
+      "source": "https://github.com/OuiSURF/Surf_Maps",
+      "license": "Original placeholder training geometry",
+      "scenePath": "/maps/training_switchback/scene.glb",
+      "collisionPath": "/maps/training_switchback/collision.glb",
+      "metaPath": "/maps/training_switchback/meta.json"
+    }
+  ]
+}
