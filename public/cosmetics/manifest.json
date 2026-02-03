@@ -1,0 +1,187 @@
+{
+  "gloves": [
+    {
+      "id": "utility_gloves",
+      "name": "Utility Gloves",
+      "author": "WebStrafe Team",
+      "license": "CC0",
+      "source": "Original model",
+      "modelPath": "/cosmetics/models/gloves_placeholder.glb",
+      "variants": [
+        {
+          "id": "teal_mesh",
+          "name": "Teal Mesh",
+          "rarity": "common",
+          "thumbnail": "/cosmetics/textures/base_teal.png",
+          "textures": {
+            "baseColor": "/cosmetics/textures/base_teal.png",
+            "normal": "/cosmetics/textures/normal_flat.png",
+            "roughnessMetal": "/cosmetics/textures/rough_metal.png",
+            "ao": "/cosmetics/textures/ao_full.png"
+          },
+          "wear": 0.12,
+          "patternSeed": 14,
+          "patternScale": 1.2,
+          "hueShift": 0
+        },
+        {
+          "id": "sand_weave",
+          "name": "Sand Weave",
+          "rarity": "rare",
+          "thumbnail": "/cosmetics/textures/base_sand.png",
+          "textures": {
+            "baseColor": "/cosmetics/textures/base_sand.png",
+            "normal": "/cosmetics/textures/normal_flat.png",
+            "roughnessMetal": "/cosmetics/textures/rough_metal.png",
+            "ao": "/cosmetics/textures/ao_full.png"
+          },
+          "wear": 0.2,
+          "patternSeed": 87,
+          "patternScale": 1,
+          "hueShift": 0.08
+        }
+      ]
+    }
+  ],
+  "knives": [
+    {
+      "id": "real_knife_viewmodel",
+      "name": "Imported Knife Viewmodel",
+      "author": "DJMaesen",
+      "license": "Creative Commons Attribution",
+      "source": "knife animated by DJMaesen",
+      "modelPath": "/viewmodels/knife/knife.glb",
+      "animationClips": [
+        "allanims"
+      ],
+      "defaultAttackClip": "allanims",
+      "includesHands": true,
+      "animationBehavior": {
+        "attackRangeSelection": "random",
+        "sourceClip": "allanims",
+        "equipRange": {
+          "startSec": 4.2,
+          "endSec": 4.5
+        },
+        "idleLoopRange": {
+          "startSec": 0,
+          "endSec": 1.35
+        },
+        "mouse1Ranges": [
+          {
+            "startSec": 1.35,
+            "endSec": 2.01
+          },
+          {
+            "startSec": 2.03,
+            "endSec": 2.67
+          }
+        ],
+        "mouse2Ranges": [
+          {
+            "startSec": 2.67,
+            "endSec": 3.34
+          },
+          {
+            "startSec": 3.35,
+            "endSec": 4
+          }
+        ]
+      },
+      "variants": [
+        {
+          "id": "default",
+          "name": "Default"
+        }
+      ]
+    },
+    {
+      "id": "knife_animated_viewmodel",
+      "name": "Knife Animated",
+      "author": "DJMaesen",
+      "license": "Creative Commons Attribution",
+      "source": "knife animated by DJMaesen",
+      "modelPath": "/viewmodels/knife/knife_animated.glb",
+      "animationClips": [
+        "anims"
+      ],
+      "defaultAttackClip": "anims",
+      "includesHands": true,
+      "animationBehavior": {
+        "sourceClip": "anims",
+        "idleLoopRange": {
+          "startSec": 0,
+          "endSec": 1
+        },
+        "mouse1Ranges": [
+          {
+            "startSec": 1.4,
+            "endSec": 1.95
+          },
+          {
+            "startSec": 1.95,
+            "endSec": 2.5
+          }
+        ],
+        "mouse2Ranges": [
+          {
+            "startSec": 2.5,
+            "endSec": 3.325
+          },
+          {
+            "startSec": 3.325,
+            "endSec": 4.15
+          }
+        ]
+      },
+      "variants": [
+        {
+          "id": "default",
+          "name": "Default"
+        }
+      ]
+    },
+    {
+      "id": "trainer_knife",
+      "name": "Trainer Knife",
+      "author": "WebStrafe Team",
+      "license": "CC0",
+      "source": "Original model",
+      "modelPath": "/cosmetics/models/knife_placeholder.glb",
+      "variants": [
+        {
+          "id": "steel_blue",
+          "name": "Steel Blue",
+          "rarity": "common",
+          "thumbnail": "/cosmetics/textures/base_steel.png",
+          "textures": {
+            "baseColor": "/cosmetics/textures/base_steel.png",
+            "normal": "/cosmetics/textures/normal_flat.png",
+            "roughnessMetal": "/cosmetics/textures/rough_metal.png",
+            "ao": "/cosmetics/textures/ao_full.png"
+          },
+          "wear": 0.1,
+          "patternSeed": 21,
+          "patternScale": 1.1,
+          "hueShift": -0.08
+        },
+        {
+          "id": "ember_fade",
+          "name": "Ember Fade",
+          "rarity": "legendary",
+          "thumbnail": "/cosmetics/textures/base_ember.png",
+          "textures": {
+            "baseColor": "/cosmetics/textures/base_ember.png",
+            "normal": "/cosmetics/textures/normal_flat.png",
+            "roughnessMetal": "/cosmetics/textures/rough_metal.png",
+            "ao": "/cosmetics/textures/ao_full.png"
+          },
+          "wear": 0.18,
+          "patternSeed": 222,
+          "patternScale": 1.6,
+          "hueShift": 0.17
+        }
+      ]
+    }
+  ]
+}
