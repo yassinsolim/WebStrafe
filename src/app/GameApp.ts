@@ -24,7 +24,7 @@ import { MovementController } from '../movement/MovementController';
 import { runMovementAcceptanceDiagnostics } from '../movement/MovementAcceptanceDiagnostics';
 import { logMovementAcceptance } from '../movement/MovementTestScene';
 import type { MovementDebugState } from '../movement/types';
-import { KnifeAudio } from '../audio/KnifeAudio';
+import { KnifeAudio, type KnifeSoundProfile } from '../audio/KnifeAudio';
 import { CosmeticsManager } from '../cosmetics/CosmeticsManager';
 import { ViewmodelRenderer } from '../cosmetics/ViewmodelRenderer';
 import type { LoadoutSelection } from '../cosmetics/types';
@@ -89,6 +89,7 @@ export class GameApp {
   private readonly runSubmitOverlay: HTMLDivElement;
   private readonly runSubmitInput: HTMLInputElement;
   private readonly runSubmitStatus: HTMLDivElement;
+  private activeKnifeSoundProfile: KnifeSoundProfile = 'knifeGloves1';
 
   private readonly debugGrid = new GridHelper(420, 210, 0x9ec3df, 0x4d6378);
   private readonly debugAxes = new AxesHelper(8);
@@ -204,6 +205,8 @@ export class GameApp {
 
     this.loadout = this.cosmeticsManager.getDefaultLoadout();
     await this.cosmeticsManager.applyLoadout(this.loadout);
+    this.activeKnifeSoundProfile = this.getKnifeSoundProfileFromLoadout(this.loadout);
+    this.knifeAudio.setProfile(this.activeKnifeSoundProfile);
     this.syncViewmodelMotionStyle();
 
     this.menu = new MainMenu(this.container, this.settings, {
@@ -244,7 +247,11 @@ export class GameApp {
       }
       this.remotePlayers.triggerAttack(playerId, kind);
       if (playerId !== this.multiplayer.getLocalId()) {
-        this.knifeAudio.play(kind, 0.48);
+        const remoteModel = this.remotePlayers.getPlayerModel(playerId);
+        const remoteProfile = remoteModel
+          ? this.getKnifeSoundProfileFromModel(remoteModel)
+          : this.activeKnifeSoundProfile;
+        this.knifeAudio.play(kind, 0.48, remoteProfile);
       }
     };
     this.multiplayer.connect();
@@ -603,6 +610,14 @@ export class GameApp {
     return loadout.knifeId === 'real_knife_viewmodel' ? 'terrorist' : 'counterterrorist';
   }
 
+  private getKnifeSoundProfileFromLoadout(loadout: LoadoutSelection): KnifeSoundProfile {
+    return this.getPlayerModelFromLoadout(loadout) === 'terrorist' ? 'knifeGloves1' : 'knifeGloves2';
+  }
+
+  private getKnifeSoundProfileFromModel(model: PlayerModel): KnifeSoundProfile {
+    return model === 'terrorist' ? 'knifeGloves1' : 'knifeGloves2';
+  }
+
   private sendMultiplayerStateIfReady(): void {
     if (this.multiplayerSendAccumulator < 1 / 20) {
       return;
@@ -797,6 +812,8 @@ export class GameApp {
 
   private async applyLoadout(selection: LoadoutSelection): Promise<void> {
     await this.cosmeticsManager.applyLoadout(selection);
+    this.activeKnifeSoundProfile = this.getKnifeSoundProfileFromLoadout(selection);
+    this.knifeAudio.setProfile(this.activeKnifeSoundProfile);
     this.syncViewmodelMotionStyle();
   }
 

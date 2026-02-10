@@ -1,57 +1,86 @@
 export type KnifeSwingSoundKind = 'primary' | 'secondary';
+export type KnifeSoundProfile = 'knifeGloves1' | 'knifeGloves2';
+
+interface AudioLaneConfig {
+  primary: string[];
+  secondary: string[];
+  baseVolume: number;
+}
+
+const SOUND_CONFIG: Record<KnifeSoundProfile, AudioLaneConfig> = {
+  knifeGloves1: {
+    primary: ['/audio/knife1_primary_1.ogg', '/audio/knife1_primary_2.ogg'],
+    secondary: ['/audio/knife1_secondary_1.ogg', '/audio/knife1_secondary_2.ogg'],
+    baseVolume: 0.5,
+  },
+  knifeGloves2: {
+    primary: ['/audio/knife2_primary_1.ogg', '/audio/knife2_primary_2.ogg'],
+    secondary: ['/audio/knife2_secondary_1.ogg', '/audio/knife2_secondary_2.ogg'],
+    baseVolume: 0.48,
+  },
+};
+
+interface ProfilePool {
+  primary: HTMLAudioElement[];
+  secondary: HTMLAudioElement[];
+  primaryIndex: number;
+  secondaryIndex: number;
+}
 
 export class KnifeAudio {
-  private readonly primaryBaseVolume = 0.46;
-  private readonly secondaryBaseVolume = 0.46;
-  private readonly primaryPool: HTMLAudioElement[];
-  private readonly secondaryPool: HTMLAudioElement[];
-  private primaryIndex = 0;
-  private secondaryIndex = 0;
+  private readonly pools: Record<KnifeSoundProfile, ProfilePool>;
+  private currentProfile: KnifeSoundProfile = 'knifeGloves1';
 
   constructor() {
-    this.primaryPool = this.createPool('/audio/knife_swing_1.ogg', 4, this.primaryBaseVolume);
-    this.secondaryPool = this.createPool('/audio/knife_swing_2.ogg', 4, this.secondaryBaseVolume);
+    this.pools = {
+      knifeGloves1: this.createProfilePool('knifeGloves1'),
+      knifeGloves2: this.createProfilePool('knifeGloves2'),
+    };
   }
 
-  public play(kind: KnifeSwingSoundKind, volumeScale = 1): void {
-    if (kind === 'primary') {
-      this.playFromPool(this.primaryPool, 'primary', volumeScale);
-      return;
-    }
-    this.playFromPool(this.secondaryPool, 'secondary', volumeScale);
+  public setProfile(profile: KnifeSoundProfile): void {
+    this.currentProfile = profile;
   }
 
-  private createPool(path: string, size: number, volume: number): HTMLAudioElement[] {
-    const pool: HTMLAudioElement[] = [];
-    for (let i = 0; i < size; i += 1) {
-      const audio = new Audio(path);
-      audio.preload = 'auto';
-      audio.volume = volume;
-      pool.push(audio);
-    }
-    return pool;
-  }
+  public play(kind: KnifeSwingSoundKind, volumeScale = 1, profileOverride?: KnifeSoundProfile): void {
+    const profile = profileOverride ?? this.currentProfile;
+    const pool = this.pools[profile];
+    const lane = kind === 'primary' ? 'primary' : 'secondary';
 
-  private playFromPool(
-    pool: HTMLAudioElement[],
-    lane: 'primary' | 'secondary',
-    volumeScale: number,
-  ): void {
-    const index = lane === 'primary' ? this.primaryIndex : this.secondaryIndex;
-    const audio = pool[index % pool.length];
+    const index = lane === 'primary' ? pool.primaryIndex : pool.secondaryIndex;
+    const collection = lane === 'primary' ? pool.primary : pool.secondary;
+    const audio = collection[index % collection.length];
+
     if (lane === 'primary') {
-      this.primaryIndex = (index + 1) % pool.length;
+      pool.primaryIndex = (index + 1) % collection.length;
     } else {
-      this.secondaryIndex = (index + 1) % pool.length;
+      pool.secondaryIndex = (index + 1) % collection.length;
     }
 
-    const baseVolume = lane === 'primary' ? this.primaryBaseVolume : this.secondaryBaseVolume;
+    const baseVolume = SOUND_CONFIG[profile].baseVolume;
     const clampedVolume = Math.max(0, Math.min(1, baseVolume * Math.max(0, volumeScale)));
     audio.volume = clampedVolume;
     audio.currentTime = 0;
-    audio.playbackRate = 0.95 + Math.random() * 0.13;
+    audio.playbackRate = 0.95 + Math.random() * 0.12;
     void audio.play().catch(() => {
-      // Ignore autoplay/user-gesture restrictions; next input usually succeeds.
+      // Ignore autoplay/user-gesture restrictions; next user input usually succeeds.
     });
+  }
+
+  private createProfilePool(profile: KnifeSoundProfile): ProfilePool {
+    const config = SOUND_CONFIG[profile];
+    return {
+      primary: config.primary.map((path) => this.createAudio(path, config.baseVolume)),
+      secondary: config.secondary.map((path) => this.createAudio(path, config.baseVolume)),
+      primaryIndex: 0,
+      secondaryIndex: 0,
+    };
+  }
+
+  private createAudio(path: string, volume: number): HTMLAudioElement {
+    const audio = new Audio(path);
+    audio.preload = 'auto';
+    audio.volume = volume;
+    return audio;
   }
 }

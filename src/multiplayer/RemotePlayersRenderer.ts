@@ -22,12 +22,25 @@ interface ArmRig {
   leftUpper: Bone | null;
   leftLower: Bone | null;
   leftHand: Bone | null;
+  rightClavicle: Bone | null;
+  leftClavicle: Bone | null;
+  spineMid: Bone | null;
+  spineUpper: Bone | null;
+  neck: Bone | null;
+  head: Bone | null;
+
   rightUpperBase: Quaternion;
   rightLowerBase: Quaternion;
   rightHandBase: Quaternion;
   leftUpperBase: Quaternion | null;
   leftLowerBase: Quaternion | null;
   leftHandBase: Quaternion | null;
+  rightClavicleBase: Quaternion | null;
+  leftClavicleBase: Quaternion | null;
+  spineMidBase: Quaternion | null;
+  spineUpperBase: Quaternion | null;
+  neckBase: Quaternion | null;
+  headBase: Quaternion | null;
 }
 
 interface RemotePlayerActor {
@@ -51,8 +64,6 @@ const MODEL_PATHS: Record<PlayerModel, string> = {
 
 const MODEL_YAW_OFFSET = Math.PI;
 const SWING_DURATION_SEC = 0.28;
-const RIGHT_HAND_BASE_LOCAL = new Vector3(0.2, 1.28, 0.34);
-const LEFT_HAND_BASE_LOCAL = new Vector3(-0.17, 1.24, 0.23);
 
 const gltfLoader = new GLTFLoader();
 
@@ -65,12 +76,6 @@ export class RemotePlayersRenderer {
 
   private readonly tempOffsetQuat = new Quaternion();
   private readonly tempEuler = new Euler(0, 0, 0, 'XYZ');
-  private readonly tempVecA = new Vector3();
-  private readonly tempVecB = new Vector3();
-  private readonly tempVecC = new Vector3();
-  private readonly tempQuatA = new Quaternion();
-  private readonly tempQuatB = new Quaternion();
-  private readonly tempQuatC = new Quaternion();
 
   constructor() {
     this.root.name = 'RemotePlayersRoot';
@@ -153,6 +158,10 @@ export class RemotePlayersRenderer {
     actor.swingTimer = SWING_DURATION_SEC;
   }
 
+  public getPlayerModel(playerId: string): PlayerModel | null {
+    return this.actors.get(playerId)?.model ?? null;
+  }
+
   private createActor(
     id: string,
     model: PlayerModel,
@@ -217,9 +226,81 @@ export class RemotePlayersRenderer {
       return;
     }
 
+    this.resetRigToBase(rig);
+
+    const idleWave = Math.sin(nowSec * 1.6 + actor.idlePhase) * 0.03;
+    const idleBreath = Math.sin(nowSec * 1.05 + actor.idlePhase * 0.5) * 0.02;
+
+    const swingAlpha = actor.swingTimer > 0 ? 1 - actor.swingTimer / SWING_DURATION_SEC : 0;
+    const swingCurve = swingAlpha > 0 ? Math.sin(Math.PI * MathUtils.clamp(swingAlpha, 0, 1)) : 0;
+    const swingDir = actor.swingKind === 'secondary' ? -1 : 1;
+
+    // Shoulders + torso engaged so the model doesn't read as rigid/T-pose.
+    this.applyOptionalBoneOffset(rig.spineMid, rig.spineMidBase, 0.06 + idleBreath * 0.25, 0, 0);
+    this.applyOptionalBoneOffset(rig.spineUpper, rig.spineUpperBase, 0.1 + idleBreath * 0.35, idleWave * 0.08, 0);
+    this.applyOptionalBoneOffset(rig.neck, rig.neckBase, 0.02, idleWave * 0.16, 0);
+    this.applyOptionalBoneOffset(rig.head, rig.headBase, 0.08 + idleBreath * 0.4, idleWave * 0.2, 0);
+    this.applyOptionalBoneOffset(rig.rightClavicle, rig.rightClavicleBase, 0.1, 0.16, 0.08);
+    this.applyOptionalBoneOffset(rig.leftClavicle, rig.leftClavicleBase, 0.08, -0.12, -0.06);
+
+    // Right knife arm.
+    this.applyBoneOffset(
+      rig.rightUpper,
+      rig.rightUpperBase,
+      -1.02 - 0.3 * swingCurve,
+      0.18 + 0.22 * swingCurve * swingDir,
+      0.2 + 0.14 * swingCurve,
+    );
+    this.applyBoneOffset(
+      rig.rightLower,
+      rig.rightLowerBase,
+      -0.92 - 0.55 * swingCurve,
+      0.08 + 0.12 * swingCurve * swingDir,
+      0.24,
+    );
+    this.applyBoneOffset(
+      rig.rightHand,
+      rig.rightHandBase,
+      0.36 + 0.16 * swingCurve,
+      -0.22 - 0.18 * swingCurve,
+      0.56 + 0.65 * swingCurve * swingDir,
+    );
+
+    // Left support arm: deliberately offset outwards to avoid crossing body.
+    if (rig.leftUpper && rig.leftUpperBase) {
+      this.applyBoneOffset(
+        rig.leftUpper,
+        rig.leftUpperBase,
+        -0.84 + idleBreath * 0.25,
+        -0.36 - idleWave * 0.18,
+        -0.26,
+      );
+    }
+    if (rig.leftLower && rig.leftLowerBase) {
+      this.applyBoneOffset(
+        rig.leftLower,
+        rig.leftLowerBase,
+        -0.72 + idleBreath * 0.2,
+        -0.08,
+        -0.2,
+      );
+    }
+    if (rig.leftHand && rig.leftHandBase) {
+      this.applyBoneOffset(
+        rig.leftHand,
+        rig.leftHandBase,
+        0.18,
+        0.14,
+        -0.34,
+      );
+    }
+  }
+
+  private resetRigToBase(rig: ArmRig): void {
     rig.rightUpper.quaternion.copy(rig.rightUpperBase);
     rig.rightLower.quaternion.copy(rig.rightLowerBase);
     rig.rightHand.quaternion.copy(rig.rightHandBase);
+
     if (rig.leftUpper && rig.leftUpperBase) {
       rig.leftUpper.quaternion.copy(rig.leftUpperBase);
     }
@@ -229,82 +310,43 @@ export class RemotePlayersRenderer {
     if (rig.leftHand && rig.leftHandBase) {
       rig.leftHand.quaternion.copy(rig.leftHandBase);
     }
-
-    const idleWave = Math.sin(nowSec * 2.2 + actor.idlePhase) * 0.03;
-    const idleBreath = Math.sin(nowSec * 1.4 + actor.idlePhase * 0.7) * 0.025;
-
-    const swingAlpha = actor.swingTimer > 0 ? 1 - actor.swingTimer / SWING_DURATION_SEC : 0;
-    const swingCurve = swingAlpha > 0 ? Math.sin(Math.PI * MathUtils.clamp(swingAlpha, 0, 1)) : 0;
-    const swingDir = actor.swingKind === 'secondary' ? -1 : 1;
-
-    this.tempVecA
-      .copy(RIGHT_HAND_BASE_LOCAL)
-      .add(new Vector3(idleWave * 0.4, idleBreath * 0.6, idleBreath * 0.8))
-      .add(new Vector3(0.24 * swingCurve * swingDir, 0.11 * swingCurve, 0.22 * swingCurve));
-
-    this.tempVecB
-      .copy(LEFT_HAND_BASE_LOCAL)
-      .add(new Vector3(-idleWave * 0.3, idleBreath * 0.45, idleBreath * 0.4));
-
-    const rightTargetWorld = actor.group.localToWorld(this.tempVecA.clone());
-    const leftTargetWorld = actor.group.localToWorld(this.tempVecB.clone());
-
-    this.solveArmCcd(rig.rightUpper, rig.rightLower, rig.rightHand, rightTargetWorld);
-    if (rig.leftUpper && rig.leftLower && rig.leftHand) {
-      this.solveArmCcd(rig.leftUpper, rig.leftLower, rig.leftHand, leftTargetWorld);
+    if (rig.rightClavicle && rig.rightClavicleBase) {
+      rig.rightClavicle.quaternion.copy(rig.rightClavicleBase);
     }
-
-    this.applyHandGripOffset(
-      rig.rightHand,
-      rig.rightHandBase,
-      0.45 + 0.36 * swingCurve * swingDir,
-      -0.18 - 0.2 * swingCurve,
-      0.26 + 0.72 * swingCurve,
-    );
-    if (rig.leftHand && rig.leftHandBase) {
-      this.applyHandGripOffset(rig.leftHand, rig.leftHandBase, 0.28, 0.08, -0.32);
+    if (rig.leftClavicle && rig.leftClavicleBase) {
+      rig.leftClavicle.quaternion.copy(rig.leftClavicleBase);
+    }
+    if (rig.spineMid && rig.spineMidBase) {
+      rig.spineMid.quaternion.copy(rig.spineMidBase);
+    }
+    if (rig.spineUpper && rig.spineUpperBase) {
+      rig.spineUpper.quaternion.copy(rig.spineUpperBase);
+    }
+    if (rig.neck && rig.neckBase) {
+      rig.neck.quaternion.copy(rig.neckBase);
+    }
+    if (rig.head && rig.headBase) {
+      rig.head.quaternion.copy(rig.headBase);
     }
   }
 
-  private solveArmCcd(upper: Bone, lower: Bone, hand: Bone, targetWorld: Vector3): void {
-    const chain = [lower, upper];
-
-    for (let iter = 0; iter < 6; iter += 1) {
-      for (const bone of chain) {
-        bone.updateWorldMatrix(true, false);
-        hand.updateWorldMatrix(true, false);
-
-        bone.getWorldPosition(this.tempVecA);
-        hand.getWorldPosition(this.tempVecB);
-
-        const toEffector = this.tempVecB.sub(this.tempVecA);
-        const toTarget = this.tempVecC.copy(targetWorld).sub(this.tempVecA);
-        if (toEffector.lengthSq() < 1e-9 || toTarget.lengthSq() < 1e-9) {
-          continue;
-        }
-
-        toEffector.normalize();
-        toTarget.normalize();
-        this.tempQuatA.setFromUnitVectors(toEffector, toTarget);
-
-        bone.getWorldQuaternion(this.tempQuatB);
-        if (bone.parent) {
-          bone.parent.getWorldQuaternion(this.tempQuatC);
-        } else {
-          this.tempQuatC.identity();
-        }
-
-        const newWorld = this.tempQuatA.multiply(this.tempQuatB).normalize();
-        const parentInv = this.tempQuatC.invert();
-        bone.quaternion.copy(parentInv.multiply(newWorld)).normalize();
-      }
-    }
-  }
-
-  private applyHandGripOffset(bone: Bone, base: Quaternion, x: number, y: number, z: number): void {
+  private applyBoneOffset(bone: Bone, base: Quaternion, x: number, y: number, z: number): void {
     this.tempEuler.set(x, y, z, 'XYZ');
     this.tempOffsetQuat.setFromEuler(this.tempEuler);
     bone.quaternion.copy(base).multiply(this.tempOffsetQuat).normalize();
+  }
+
+  private applyOptionalBoneOffset(
+    bone: Bone | null,
+    base: Quaternion | null,
+    x: number,
+    y: number,
+    z: number,
+  ): void {
+    if (!bone || !base) {
+      return;
+    }
+    this.applyBoneOffset(bone, base, x, y, z);
   }
 
   private async loadTemplate(model: PlayerModel): Promise<[PlayerModel, Object3D]> {
@@ -379,6 +421,12 @@ function buildArmRig(root: Object3D): ArmRig | null {
   const leftUpper = pickBone('arm_upper_l');
   const leftLower = pickBone('arm_lower_l');
   const leftHand = pickBone('weapon_hand_l') ?? pickBone('hand_l');
+  const rightClavicle = pickBone('clavicle_r');
+  const leftClavicle = pickBone('clavicle_l');
+  const spineMid = pickBone('spine_2') ?? pickBone('spine_1');
+  const spineUpper = pickBone('spine_3') ?? pickBone('spine_2');
+  const neck = pickBone('neck_0') ?? pickBone('neck');
+  const head = pickBone('head_0') ?? pickBone('head');
 
   return {
     rightUpper,
@@ -387,12 +435,25 @@ function buildArmRig(root: Object3D): ArmRig | null {
     leftUpper,
     leftLower,
     leftHand,
+    rightClavicle,
+    leftClavicle,
+    spineMid,
+    spineUpper,
+    neck,
+    head,
+
     rightUpperBase: rightUpper.quaternion.clone(),
     rightLowerBase: rightLower.quaternion.clone(),
     rightHandBase: rightHand.quaternion.clone(),
     leftUpperBase: leftUpper?.quaternion.clone() ?? null,
     leftLowerBase: leftLower?.quaternion.clone() ?? null,
     leftHandBase: leftHand?.quaternion.clone() ?? null,
+    rightClavicleBase: rightClavicle?.quaternion.clone() ?? null,
+    leftClavicleBase: leftClavicle?.quaternion.clone() ?? null,
+    spineMidBase: spineMid?.quaternion.clone() ?? null,
+    spineUpperBase: spineUpper?.quaternion.clone() ?? null,
+    neckBase: neck?.quaternion.clone() ?? null,
+    headBase: head?.quaternion.clone() ?? null,
   };
 }
 

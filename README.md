@@ -78,7 +78,8 @@ npm run build
 - Knife animations by DJMaesen (Creative Commons Attribution)
 - `CTM_SAS | CS2 Agent Model` by Alex (Creative Commons Attribution)
 - `PHOENIX | CS2 Agent Model` by Alex (Creative Commons Attribution)
-- Knife swing sound effects by Joseph SARDIN from BigSoundBank (`Poinconner tringle en cuir 2` and `Sifflet de cinglage 7`)
+- Knife swing sound effects by Joseph SARDIN from BigSoundBank (`Sword through the air 2`, `Sword that cuts 3`, plus two additional swipe variants)
+- Valve/CS2 proprietary audio is not bundled in this repo; drop-in replacement files can be placed in `public/audio/`.
 
 ## Deployment Notes
 
