@@ -236,6 +236,12 @@ export class GameApp {
       }
       this.remotePlayers.applySnapshot(snapshot.players, this.multiplayer.getLocalId());
     };
+    this.multiplayer.onAttack = ({ mapId, playerId, kind }) => {
+      if (mapId !== this.selectedMapId) {
+        return;
+      }
+      this.remotePlayers.triggerAttack(playerId, kind);
+    };
     this.multiplayer.connect();
     this.syncMultiplayerIdentity();
     void this.refreshLeaderboard(this.selectedMapId);
@@ -311,10 +317,12 @@ export class GameApp {
         }
         if (attackQueued) {
           this.cosmeticsManager.triggerAttackPrimary();
+          this.multiplayer.sendAttack('primary');
           attackQueued = false;
         }
         if (attackAltQueued) {
           this.cosmeticsManager.triggerAttackSecondary();
+          this.multiplayer.sendAttack('secondary');
           attackAltQueued = false;
         }
 

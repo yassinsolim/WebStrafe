@@ -1,4 +1,4 @@
-import type { MultiplayerSnapshot, PlayerModel } from './types';
+import type { AttackKind, MultiplayerSnapshot, PlayerModel } from './types';
 
 interface DesiredJoin {
   mapId: string;
@@ -25,6 +25,7 @@ export class MultiplayerClient {
   private activeMapId = '';
 
   public onSnapshot: ((snapshot: MultiplayerSnapshot) => void) | null = null;
+  public onAttack: ((event: { mapId: string; playerId: string; kind: AttackKind }) => void) | null = null;
   public onConnectedChange: ((connected: boolean) => void) | null = null;
 
   constructor(url = buildDefaultWsUrl()) {
@@ -87,6 +88,20 @@ export class MultiplayerClient {
       velocity: state.velocity,
       yaw: state.yaw,
       pitch: state.pitch,
+    });
+  }
+
+  public sendAttack(kind: AttackKind): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    if (!this.localId || !this.desiredJoin) {
+      return;
+    }
+
+    this.send({
+      type: 'attack',
+      kind,
     });
   }
 
@@ -168,6 +183,20 @@ export class MultiplayerClient {
             mapId: payload.mapId,
             players,
             serverTimeMs: typeof payload.serverTimeMs === 'number' ? payload.serverTimeMs : Date.now(),
+          });
+          break;
+        }
+        case 'attack': {
+          if (typeof payload.mapId !== 'string' || typeof payload.playerId !== 'string') {
+            return;
+          }
+          if (payload.kind !== 'primary' && payload.kind !== 'secondary') {
+            return;
+          }
+          this.onAttack?.({
+            mapId: payload.mapId,
+            playerId: payload.playerId,
+            kind: payload.kind,
           });
           break;
         }

@@ -1,4 +1,5 @@
 export type PlayerModel = 'terrorist' | 'counterterrorist';
+export type AttackKind = 'primary' | 'secondary';
 
 export interface LeaderboardEntry {
   id: string;

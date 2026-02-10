@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
 
 type PlayerModel = 'terrorist' | 'counterterrorist';
+type AttackKind = 'primary' | 'secondary';
 
 interface LeaderboardEntry {
   id: string;
@@ -33,6 +34,8 @@ interface ClientState {
   lastMessageAt: number;
   stateMessageCount: number;
   stateWindowStart: number;
+  attackMessageCount: number;
+  attackWindowStart: number;
 }
 
 interface JsonObject {
@@ -134,6 +137,8 @@ wss.on('connection', (ws, req) => {
     lastMessageAt: Date.now(),
     stateMessageCount: 0,
     stateWindowStart: Date.now(),
+    attackMessageCount: 0,
+    attackWindowStart: Date.now(),
   };
 
   clients.set(ws, client);
@@ -223,6 +228,30 @@ wss.on('connection', (ws, req) => {
         client.velocity = velocity;
         client.yaw = yaw;
         client.pitch = pitch;
+        break;
+      }
+      case 'attack': {
+        if (!client.joined) {
+          return;
+        }
+
+        const kind = parseAttackKind(payload.kind);
+        if (!kind) {
+          return;
+        }
+
+        const now = Date.now();
+        if (now - client.attackWindowStart >= 1000) {
+          client.attackWindowStart = now;
+          client.attackMessageCount = 0;
+        }
+        client.attackMessageCount += 1;
+        if (client.attackMessageCount > 24) {
+          ws.close(4009, 'attack_rate_limit');
+          return;
+        }
+
+        broadcastAttack(client.mapId, client.id, kind);
         break;
       }
       case 'ping': {
@@ -554,6 +583,13 @@ function parseModel(value: unknown): PlayerModel | null {
   return null;
 }
 
+function parseAttackKind(value: unknown): AttackKind | null {
+  if (value === 'primary' || value === 'secondary') {
+    return value;
+  }
+  return null;
+}
+
 function parseInteger(value: unknown, min: number, max: number): number | null {
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(parsed)) {
@@ -616,6 +652,23 @@ function isOriginAllowed(origin: string | undefined): boolean {
     return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
   } catch {
     return false;
+  }
+}
+
+function broadcastAttack(mapId: string, playerId: string, kind: AttackKind): void {
+  const payload = {
+    type: 'attack',
+    mapId,
+    playerId,
+    kind,
+    serverTimeMs: Date.now(),
+  } as const;
+
+  for (const client of clients.values()) {
+    if (!client.joined || client.mapId !== mapId) {
+      continue;
+    }
+    sendWs(client.ws, payload);
   }
 }
 
