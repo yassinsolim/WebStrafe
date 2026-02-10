@@ -78,6 +78,7 @@ npm run build
 - Knife animations by DJMaesen (Creative Commons Attribution)
 - `CTM_SAS | CS2 Agent Model` by Alex (Creative Commons Attribution)
 - `PHOENIX | CS2 Agent Model` by Alex (Creative Commons Attribution)
+- Knife swing sound effects by Joseph SARDIN from BigSoundBank (`Poinconner tringle en cuir 2` and `Sifflet de cinglage 7`)
 
 ## Deployment Notes
 

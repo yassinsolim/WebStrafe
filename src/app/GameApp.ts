@@ -24,6 +24,7 @@ import { MovementController } from '../movement/MovementController';
 import { runMovementAcceptanceDiagnostics } from '../movement/MovementAcceptanceDiagnostics';
 import { logMovementAcceptance } from '../movement/MovementTestScene';
 import type { MovementDebugState } from '../movement/types';
+import { KnifeAudio } from '../audio/KnifeAudio';
 import { CosmeticsManager } from '../cosmetics/CosmeticsManager';
 import { ViewmodelRenderer } from '../cosmetics/ViewmodelRenderer';
 import type { LoadoutSelection } from '../cosmetics/types';
@@ -69,6 +70,7 @@ export class GameApp {
   private readonly leaderboard = new LeaderboardService();
   private readonly multiplayer = new MultiplayerClient();
   private readonly remotePlayers = new RemotePlayersRenderer();
+  private readonly knifeAudio = new KnifeAudio();
 
   private readonly cosmeticsGroup = new Group();
   private readonly cosmeticsManager: CosmeticsManager;
@@ -241,6 +243,9 @@ export class GameApp {
         return;
       }
       this.remotePlayers.triggerAttack(playerId, kind);
+      if (playerId !== this.multiplayer.getLocalId()) {
+        this.knifeAudio.play(kind, 0.48);
+      }
     };
     this.multiplayer.connect();
     this.syncMultiplayerIdentity();
@@ -318,11 +323,13 @@ export class GameApp {
         if (attackQueued) {
           this.cosmeticsManager.triggerAttackPrimary();
           this.multiplayer.sendAttack('primary');
+          this.knifeAudio.play('primary');
           attackQueued = false;
         }
         if (attackAltQueued) {
           this.cosmeticsManager.triggerAttackSecondary();
           this.multiplayer.sendAttack('secondary');
+          this.knifeAudio.play('secondary');
           attackAltQueued = false;
         }
 

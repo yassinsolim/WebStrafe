@@ -41,6 +41,7 @@ interface RemotePlayerActor {
   rig: ArmRig | null;
   swingTimer: number;
   swingKind: AttackKind;
+  idlePhase: number;
 }
 
 const MODEL_PATHS: Record<PlayerModel, string> = {
@@ -50,6 +51,8 @@ const MODEL_PATHS: Record<PlayerModel, string> = {
 
 const MODEL_YAW_OFFSET = Math.PI;
 const SWING_DURATION_SEC = 0.28;
+const RIGHT_HAND_BASE_LOCAL = new Vector3(0.2, 1.28, 0.34);
+const LEFT_HAND_BASE_LOCAL = new Vector3(-0.17, 1.24, 0.23);
 
 const gltfLoader = new GLTFLoader();
 
@@ -59,8 +62,15 @@ export class RemotePlayersRenderer {
   private readonly templateRoots = new Map<PlayerModel, Object3D>();
   private readonly actors = new Map<string, RemotePlayerActor>();
   private loaded = false;
-  private readonly tempEuler = new Euler(0, 0, 0, 'XYZ');
+
   private readonly tempOffsetQuat = new Quaternion();
+  private readonly tempEuler = new Euler(0, 0, 0, 'XYZ');
+  private readonly tempVecA = new Vector3();
+  private readonly tempVecB = new Vector3();
+  private readonly tempVecC = new Vector3();
+  private readonly tempQuatA = new Quaternion();
+  private readonly tempQuatB = new Quaternion();
+  private readonly tempQuatC = new Quaternion();
 
   constructor() {
     this.root.name = 'RemotePlayersRoot';
@@ -81,6 +91,7 @@ export class RemotePlayersRenderer {
 
   public update(dt: number): void {
     const smoothing = 1 - Math.exp(-dt * 14);
+    const nowSec = performance.now() * 0.001;
 
     for (const actor of this.actors.values()) {
       actor.displayPosition.lerp(actor.targetPosition, smoothing);
@@ -92,7 +103,7 @@ export class RemotePlayersRenderer {
       if (actor.swingTimer > 0) {
         actor.swingTimer = Math.max(0, actor.swingTimer - dt);
       }
-      this.applyRigPose(actor);
+      this.applyRigPose(actor, nowSec);
     }
   }
 
@@ -169,9 +180,10 @@ export class RemotePlayersRenderer {
       rig,
       swingTimer: 0,
       swingKind: 'primary',
+      idlePhase: hashToPhase(id),
     };
 
-    this.applyRigPose(actor);
+    this.applyRigPose(actor, performance.now() * 0.001);
     return actor;
   }
 
@@ -199,53 +211,100 @@ export class RemotePlayersRenderer {
     };
   }
 
-  private applyRigPose(actor: RemotePlayerActor): void {
+  private applyRigPose(actor: RemotePlayerActor, nowSec: number): void {
     const rig = actor.rig;
     if (!rig) {
       return;
     }
 
+    rig.rightUpper.quaternion.copy(rig.rightUpperBase);
+    rig.rightLower.quaternion.copy(rig.rightLowerBase);
+    rig.rightHand.quaternion.copy(rig.rightHandBase);
+    if (rig.leftUpper && rig.leftUpperBase) {
+      rig.leftUpper.quaternion.copy(rig.leftUpperBase);
+    }
+    if (rig.leftLower && rig.leftLowerBase) {
+      rig.leftLower.quaternion.copy(rig.leftLowerBase);
+    }
+    if (rig.leftHand && rig.leftHandBase) {
+      rig.leftHand.quaternion.copy(rig.leftHandBase);
+    }
+
+    const idleWave = Math.sin(nowSec * 2.2 + actor.idlePhase) * 0.03;
+    const idleBreath = Math.sin(nowSec * 1.4 + actor.idlePhase * 0.7) * 0.025;
+
     const swingAlpha = actor.swingTimer > 0 ? 1 - actor.swingTimer / SWING_DURATION_SEC : 0;
     const swingCurve = swingAlpha > 0 ? Math.sin(Math.PI * MathUtils.clamp(swingAlpha, 0, 1)) : 0;
     const swingDir = actor.swingKind === 'secondary' ? -1 : 1;
 
-    this.applyBoneOffset(
-      rig.rightUpper,
-      rig.rightUpperBase,
-      -1.12 - 0.52 * swingCurve,
-      -0.2 + 0.54 * swingCurve * swingDir,
-      -0.16 + 0.38 * swingCurve * swingDir,
-    );
-    this.applyBoneOffset(
-      rig.rightLower,
-      rig.rightLowerBase,
-      -0.92 - 0.6 * swingCurve,
-      0.08 + 0.18 * swingCurve * swingDir,
-      0.3 + 0.12 * swingCurve,
-    );
-    this.applyBoneOffset(
+    this.tempVecA
+      .copy(RIGHT_HAND_BASE_LOCAL)
+      .add(new Vector3(idleWave * 0.4, idleBreath * 0.6, idleBreath * 0.8))
+      .add(new Vector3(0.24 * swingCurve * swingDir, 0.11 * swingCurve, 0.22 * swingCurve));
+
+    this.tempVecB
+      .copy(LEFT_HAND_BASE_LOCAL)
+      .add(new Vector3(-idleWave * 0.3, idleBreath * 0.45, idleBreath * 0.4));
+
+    const rightTargetWorld = actor.group.localToWorld(this.tempVecA.clone());
+    const leftTargetWorld = actor.group.localToWorld(this.tempVecB.clone());
+
+    this.solveArmCcd(rig.rightUpper, rig.rightLower, rig.rightHand, rightTargetWorld);
+    if (rig.leftUpper && rig.leftLower && rig.leftHand) {
+      this.solveArmCcd(rig.leftUpper, rig.leftLower, rig.leftHand, leftTargetWorld);
+    }
+
+    this.applyHandGripOffset(
       rig.rightHand,
       rig.rightHandBase,
-      0.2 - 0.2 * swingCurve,
-      -0.05 - 0.35 * swingCurve,
-      0.26 + 0.82 * swingCurve * swingDir,
+      0.45 + 0.36 * swingCurve * swingDir,
+      -0.18 - 0.2 * swingCurve,
+      0.26 + 0.72 * swingCurve,
     );
-
-    if (rig.leftUpper && rig.leftUpperBase) {
-      this.applyBoneOffset(rig.leftUpper, rig.leftUpperBase, -0.9, 0.22, 0.24);
-    }
-    if (rig.leftLower && rig.leftLowerBase) {
-      this.applyBoneOffset(rig.leftLower, rig.leftLowerBase, -0.8, -0.08, -0.22);
-    }
     if (rig.leftHand && rig.leftHandBase) {
-      this.applyBoneOffset(rig.leftHand, rig.leftHandBase, 0.12, 0.04, -0.08);
+      this.applyHandGripOffset(rig.leftHand, rig.leftHandBase, 0.28, 0.08, -0.32);
     }
   }
 
-  private applyBoneOffset(bone: Bone, base: Quaternion, x: number, y: number, z: number): void {
+  private solveArmCcd(upper: Bone, lower: Bone, hand: Bone, targetWorld: Vector3): void {
+    const chain = [lower, upper];
+
+    for (let iter = 0; iter < 6; iter += 1) {
+      for (const bone of chain) {
+        bone.updateWorldMatrix(true, false);
+        hand.updateWorldMatrix(true, false);
+
+        bone.getWorldPosition(this.tempVecA);
+        hand.getWorldPosition(this.tempVecB);
+
+        const toEffector = this.tempVecB.sub(this.tempVecA);
+        const toTarget = this.tempVecC.copy(targetWorld).sub(this.tempVecA);
+        if (toEffector.lengthSq() < 1e-9 || toTarget.lengthSq() < 1e-9) {
+          continue;
+        }
+
+        toEffector.normalize();
+        toTarget.normalize();
+        this.tempQuatA.setFromUnitVectors(toEffector, toTarget);
+
+        bone.getWorldQuaternion(this.tempQuatB);
+        if (bone.parent) {
+          bone.parent.getWorldQuaternion(this.tempQuatC);
+        } else {
+          this.tempQuatC.identity();
+        }
+
+        const newWorld = this.tempQuatA.multiply(this.tempQuatB).normalize();
+        const parentInv = this.tempQuatC.invert();
+        bone.quaternion.copy(parentInv.multiply(newWorld)).normalize();
+      }
+    }
+  }
+
+  private applyHandGripOffset(bone: Bone, base: Quaternion, x: number, y: number, z: number): void {
     this.tempEuler.set(x, y, z, 'XYZ');
     this.tempOffsetQuat.setFromEuler(this.tempEuler);
-    bone.quaternion.copy(base).multiply(this.tempOffsetQuat);
+    bone.quaternion.copy(base).multiply(this.tempOffsetQuat).normalize();
   }
 
   private async loadTemplate(model: PlayerModel): Promise<[PlayerModel, Object3D]> {
@@ -292,24 +351,34 @@ function buildArmRig(root: Object3D): ArmRig | null {
     }
   });
 
-  const findBone = (...tokens: string[]): Bone | null => {
-    const loweredTokens = tokens.map((token) => token.toLowerCase());
+  const pickBone = (token: string, options?: { allowTwist?: boolean; allowEnd?: boolean }): Bone | null => {
+    const allowTwist = options?.allowTwist ?? false;
+    const allowEnd = options?.allowEnd ?? false;
     return bones.find((bone) => {
       const name = bone.name.toLowerCase();
-      return loweredTokens.some((token) => name.includes(token));
+      if (!name.includes(token)) {
+        return false;
+      }
+      if (!allowTwist && name.includes('twist')) {
+        return false;
+      }
+      if (!allowEnd && name.includes('_end')) {
+        return false;
+      }
+      return true;
     }) ?? null;
   };
 
-  const rightUpper = findBone('arm_upper_r', 'upperarm_r', 'rightarm', 'arm.r');
-  const rightLower = findBone('arm_lower_r', 'lowerarm_r', 'forearm_r');
-  const rightHand = findBone('weapon_hand_r', 'hand_r', 'righthand');
+  const rightUpper = pickBone('arm_upper_r');
+  const rightLower = pickBone('arm_lower_r');
+  const rightHand = pickBone('weapon_hand_r') ?? pickBone('hand_r');
   if (!rightUpper || !rightLower || !rightHand) {
     return null;
   }
 
-  const leftUpper = findBone('arm_upper_l', 'upperarm_l', 'leftarm', 'arm.l');
-  const leftLower = findBone('arm_lower_l', 'lowerarm_l', 'forearm_l');
-  const leftHand = findBone('weapon_hand_l', 'hand_l', 'lefthand');
+  const leftUpper = pickBone('arm_upper_l');
+  const leftLower = pickBone('arm_lower_l');
+  const leftHand = pickBone('weapon_hand_l') ?? pickBone('hand_l');
 
   return {
     rightUpper,
@@ -367,6 +436,15 @@ function normalizeTemplateToPlayerHeight(root: Object3D): void {
 
   const adjustedBounds = new Box3().setFromObject(root);
   root.position.y -= adjustedBounds.min.y;
+}
+
+function hashToPhase(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967295 * Math.PI * 2;
 }
 
 function lerpAngle(current: number, target: number, alpha: number): number {
