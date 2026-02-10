@@ -9,6 +9,7 @@ import {
   MeshStandardMaterial,
   Object3D,
   Quaternion,
+  SRGBColorSpace,
   Vector3,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -61,6 +62,7 @@ const MODEL_PATHS: Record<PlayerModel, string> = {
   terrorist: '/playermodels/terrorist.glb',
   counterterrorist: '/playermodels/counterterrorist.glb',
 };
+const REMOTE_KNIFE_MODEL_PATH = '/viewmodels/knife/knife.glb';
 
 const MODEL_YAW_OFFSET = Math.PI;
 const SWING_DURATION_SEC = 0.28;
@@ -71,6 +73,7 @@ export class RemotePlayersRenderer {
   public readonly root = new Group();
 
   private readonly templateRoots = new Map<PlayerModel, Object3D>();
+  private knifeTemplate: Object3D | null = null;
   private readonly actors = new Map<string, RemotePlayerActor>();
   private loaded = false;
 
@@ -82,14 +85,18 @@ export class RemotePlayersRenderer {
   }
 
   public async load(): Promise<void> {
-    const models = await Promise.all([
+    const [models, knifeTemplate] = await Promise.all([
+      Promise.all([
       this.loadTemplate('terrorist'),
       this.loadTemplate('counterterrorist'),
+      ]),
+      this.loadKnifeTemplate(),
     ]);
 
     for (const [model, root] of models) {
       this.templateRoots.set(model, root);
     }
+    this.knifeTemplate = knifeTemplate;
 
     this.loaded = true;
   }
@@ -211,7 +218,7 @@ export class RemotePlayersRenderer {
     const clone = cloneSkeleton(template);
     const rig = buildArmRig(clone);
     if (rig) {
-      attachKnifeProxy(rig.rightHand);
+      attachKnifeModel(rig.rightHand, this.knifeTemplate);
     }
 
     return {
@@ -236,34 +243,34 @@ export class RemotePlayersRenderer {
     const swingDir = actor.swingKind === 'secondary' ? -1 : 1;
 
     // Shoulders + torso engaged so the model doesn't read as rigid/T-pose.
-    this.applyOptionalBoneOffset(rig.spineMid, rig.spineMidBase, 0.06 + idleBreath * 0.25, 0, 0);
-    this.applyOptionalBoneOffset(rig.spineUpper, rig.spineUpperBase, 0.1 + idleBreath * 0.35, idleWave * 0.08, 0);
-    this.applyOptionalBoneOffset(rig.neck, rig.neckBase, 0.02, idleWave * 0.16, 0);
-    this.applyOptionalBoneOffset(rig.head, rig.headBase, 0.08 + idleBreath * 0.4, idleWave * 0.2, 0);
-    this.applyOptionalBoneOffset(rig.rightClavicle, rig.rightClavicleBase, 0.1, 0.16, 0.08);
-    this.applyOptionalBoneOffset(rig.leftClavicle, rig.leftClavicleBase, 0.08, -0.12, -0.06);
+    this.applyOptionalBoneOffset(rig.spineMid, rig.spineMidBase, 0.04 + idleBreath * 0.2, 0, 0);
+    this.applyOptionalBoneOffset(rig.spineUpper, rig.spineUpperBase, 0.08 + idleBreath * 0.28, idleWave * 0.05, 0);
+    this.applyOptionalBoneOffset(rig.neck, rig.neckBase, 0.02, idleWave * 0.09, 0);
+    this.applyOptionalBoneOffset(rig.head, rig.headBase, 0.05 + idleBreath * 0.2, idleWave * 0.12, 0);
+    this.applyOptionalBoneOffset(rig.rightClavicle, rig.rightClavicleBase, 0.06, 0.08, 0.04);
+    this.applyOptionalBoneOffset(rig.leftClavicle, rig.leftClavicleBase, 0.05, -0.06, -0.04);
 
     // Right knife arm.
     this.applyBoneOffset(
       rig.rightUpper,
       rig.rightUpperBase,
-      -1.02 - 0.3 * swingCurve,
-      0.18 + 0.22 * swingCurve * swingDir,
-      0.2 + 0.14 * swingCurve,
+      -0.74 - 0.24 * swingCurve,
+      0.04 + 0.18 * swingCurve * swingDir,
+      0.34 + 0.1 * swingCurve,
     );
     this.applyBoneOffset(
       rig.rightLower,
       rig.rightLowerBase,
-      -0.92 - 0.55 * swingCurve,
-      0.08 + 0.12 * swingCurve * swingDir,
-      0.24,
+      -1.18 - 0.38 * swingCurve,
+      0.02 + 0.08 * swingCurve * swingDir,
+      0.1,
     );
     this.applyBoneOffset(
       rig.rightHand,
       rig.rightHandBase,
-      0.36 + 0.16 * swingCurve,
-      -0.22 - 0.18 * swingCurve,
-      0.56 + 0.65 * swingCurve * swingDir,
+      0.28 + 0.14 * swingCurve,
+      -0.14 - 0.1 * swingCurve,
+      0.25 + 0.42 * swingCurve * swingDir,
     );
 
     // Left support arm: deliberately offset outwards to avoid crossing body.
@@ -271,27 +278,27 @@ export class RemotePlayersRenderer {
       this.applyBoneOffset(
         rig.leftUpper,
         rig.leftUpperBase,
-        -0.84 + idleBreath * 0.25,
-        -0.36 - idleWave * 0.18,
-        -0.26,
+        -0.52 + idleBreath * 0.18,
+        -0.18 - idleWave * 0.08,
+        -0.18,
       );
     }
     if (rig.leftLower && rig.leftLowerBase) {
       this.applyBoneOffset(
         rig.leftLower,
         rig.leftLowerBase,
-        -0.72 + idleBreath * 0.2,
-        -0.08,
-        -0.2,
+        -0.9 + idleBreath * 0.16,
+        -0.04,
+        -0.12,
       );
     }
     if (rig.leftHand && rig.leftHandBase) {
       this.applyBoneOffset(
         rig.leftHand,
         rig.leftHandBase,
-        0.18,
-        0.14,
-        -0.34,
+        0.1,
+        0.1,
+        -0.2,
       );
     }
   }
@@ -373,6 +380,53 @@ export class RemotePlayersRenderer {
     });
 
     return [model, root];
+  }
+
+  private async loadKnifeTemplate(): Promise<Object3D | null> {
+    try {
+      const gltf = await gltfLoader.loadAsync(REMOTE_KNIFE_MODEL_PATH);
+      let knifeMesh: Mesh | null = null;
+      gltf.scene.traverse((child) => {
+        if (knifeMesh || !(child instanceof Mesh)) {
+          return;
+        }
+        const name = child.name.toLowerCase();
+        if (!name.includes('knife') || name.includes('arm') || name.includes('hand')) {
+          return;
+        }
+        knifeMesh = child;
+      });
+
+      if (!knifeMesh) {
+        return null;
+      }
+
+      const knife = (knifeMesh as Object3D).clone(true);
+      knife.name = 'RemoteKnifeTemplate';
+      normalizeKnifeTemplate(knife);
+      knife.traverse((child: Object3D) => {
+        if (!(child instanceof Mesh)) {
+          return;
+        }
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        for (const material of materials) {
+          const withMap = material as MeshStandardMaterial;
+          if (withMap.map) {
+            withMap.map.colorSpace = SRGBColorSpace;
+          }
+          material.depthWrite = true;
+          material.depthTest = true;
+          material.needsUpdate = true;
+        }
+        child.castShadow = false;
+        child.receiveShadow = false;
+        child.frustumCulled = false;
+      });
+
+      return knife;
+    } catch {
+      return null;
+    }
   }
 
   private makeFallbackPlaceholder(model: PlayerModel): Object3D {
@@ -457,30 +511,19 @@ function buildArmRig(root: Object3D): ArmRig | null {
   };
 }
 
-function attachKnifeProxy(handBone: Bone): void {
-  if (handBone.getObjectByName('RemoteKnifeProxy')) {
+function attachKnifeModel(handBone: Bone, knifeTemplate: Object3D | null): void {
+  if (handBone.getObjectByName('RemoteKnifeModel')) {
+    return;
+  }
+  if (!knifeTemplate) {
     return;
   }
 
-  const knifeRoot = new Group();
-  knifeRoot.name = 'RemoteKnifeProxy';
-
-  const handle = new Mesh(
-    new BoxGeometry(0.022, 0.1, 0.022),
-    new MeshStandardMaterial({ color: 0x171717, roughness: 0.8, metalness: 0.2 }),
-  );
-  const blade = new Mesh(
-    new BoxGeometry(0.012, 0.19, 0.03),
-    new MeshStandardMaterial({ color: 0xc8ccd2, roughness: 0.25, metalness: 0.8 }),
-  );
-
-  handle.position.set(0, -0.04, 0);
-  blade.position.set(0, 0.08, 0.002);
-  knifeRoot.position.set(0.035, -0.02, -0.03);
-  knifeRoot.rotation.set(1.65, 0.24, 0.1);
-
-  knifeRoot.add(handle, blade);
-  handBone.add(knifeRoot);
+  const knife = knifeTemplate.clone(true);
+  knife.name = 'RemoteKnifeModel';
+  knife.position.set(0.03, -0.02, -0.03);
+  knife.rotation.set(1.55, 0.22, 0.06);
+  handBone.add(knife);
 }
 
 function normalizeTemplateToPlayerHeight(root: Object3D): void {
@@ -497,6 +540,20 @@ function normalizeTemplateToPlayerHeight(root: Object3D): void {
 
   const adjustedBounds = new Box3().setFromObject(root);
   root.position.y -= adjustedBounds.min.y;
+}
+
+function normalizeKnifeTemplate(root: Object3D): void {
+  const bounds = new Box3().setFromObject(root);
+  if (bounds.isEmpty()) {
+    return;
+  }
+
+  const size = bounds.getSize(new Vector3());
+  const diagonal = Math.max(1e-5, size.length());
+  const targetDiagonal = 0.58;
+  const scale = targetDiagonal / diagonal;
+  root.scale.setScalar(scale);
+  root.updateWorldMatrix(true, true);
 }
 
 function hashToPhase(value: string): number {

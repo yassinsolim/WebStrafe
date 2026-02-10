@@ -54,6 +54,13 @@ type MapSource =
 
 type DebugCameraMode = 'firstPerson' | 'thirdPerson' | 'freecam';
 
+interface GoalPad {
+  center: Vector3;
+  radius: number;
+  y: number;
+  tolerance: number;
+}
+
 const FIXED_TICK_DT = 1 / 128;
 
 export class GameApp {
@@ -123,6 +130,7 @@ export class GameApp {
   private runStartTimeMs = 0;
   private finishedRunTimeMs: number | null = null;
   private finishTargetY = -Infinity;
+  private goalPad: GoalPad | null = null;
   private runComplete = false;
   private localPlayerName = loadPlayerName();
   private multiplayerSendAccumulator = 0;
@@ -515,14 +523,21 @@ export class GameApp {
     if (collisionBounds.isEmpty()) {
       this.voidResetY = -1000;
       this.finishTargetY = -1000;
+      this.goalPad = null;
     } else {
       const height = Math.max(1, collisionBounds.max.y - collisionBounds.min.y);
       const margin = Math.max(12, Math.min(120, height * 0.2));
       this.voidResetY = collisionBounds.min.y - margin;
-      const goalFromMeta = typeof map.meta.goalY === 'number' && Number.isFinite(map.meta.goalY)
-        ? map.meta.goalY
-        : null;
-      this.finishTargetY = goalFromMeta ?? (collisionBounds.min.y + Math.max(0.6, this.movement.capsule.radius * 1.8));
+
+      this.goalPad = this.resolveGoalPad(map, collisionBounds);
+      if (this.goalPad) {
+        this.finishTargetY = this.goalPad.y;
+      } else {
+        const goalFromMeta = typeof map.meta.goalY === 'number' && Number.isFinite(map.meta.goalY)
+          ? map.meta.goalY
+          : null;
+        this.finishTargetY = goalFromMeta ?? Number.NEGATIVE_INFINITY;
+      }
     }
     this.updateRunInfoWithLeaderboard([]);
   }
@@ -585,14 +600,199 @@ export class GameApp {
   }
 
   private updateRunInfoWithLeaderboard(entries: LeaderboardEntry[]): void {
-    const goalText = Number.isFinite(this.finishTargetY) ? this.finishTargetY.toFixed(2) : '--';
+    const goalText = this.goalPad
+      ? `Pad (${this.goalPad.center.x.toFixed(1)}, ${this.goalPad.center.z.toFixed(1)}) r=${this.goalPad.radius.toFixed(1)}`
+      : (Number.isFinite(this.finishTargetY) ? `Y <= ${this.finishTargetY.toFixed(2)}` : '--');
     if (entries.length === 0) {
-      this.runInfoLabel.textContent = `Goal Y: ${goalText} | Best: --`;
+      this.runInfoLabel.textContent = `Goal: ${goalText} | Best: --`;
       return;
     }
     const best = entries[0];
     const bestText = `${best.name} ${formatRunTime(best.timeMs)}`;
-    this.runInfoLabel.textContent = `Goal Y: ${goalText} | Best: ${bestText}`;
+    this.runInfoLabel.textContent = `Goal: ${goalText} | Best: ${bestText}`;
+  }
+
+  private resolveGoalPad(map: LoadedMap, collisionBounds: Box3): GoalPad | null {
+    const fromMeta = map.meta.goalPad;
+    if (fromMeta) {
+      const [x, y, z] = fromMeta.center;
+      if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) && Number.isFinite(fromMeta.radius)) {
+        return {
+          center: new Vector3(x, y, z),
+          radius: Math.max(0.25, fromMeta.radius),
+          y,
+          tolerance: Math.max(0.2, fromMeta.tolerance ?? 0.6),
+        };
+      }
+    }
+
+    const inferred = this.detectGoalPadFromCollisionRoot(map.collisionRoot, collisionBounds);
+    if (inferred) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[GoalPad] inferred center=(${inferred.center.x.toFixed(3)}, ${inferred.center.y.toFixed(3)}, ${inferred.center.z.toFixed(3)}) radius=${inferred.radius.toFixed(3)} tolerance=${inferred.tolerance.toFixed(3)}`,
+      );
+    } else {
+      // eslint-disable-next-line no-console
+      console.warn('[GoalPad] No circular bottom pad detected. Set meta.goalPad to enforce exact run finish area.');
+    }
+    return inferred;
+  }
+
+  private detectGoalPadFromCollisionRoot(root: Object3D, collisionBounds: Box3): GoalPad | null {
+    const minY = collisionBounds.min.y;
+    const upDotThreshold = 0.94;
+    const yBand = Math.max(0.9, this.movement.capsule.radius * 3.2);
+
+    const a = new Vector3();
+    const b = new Vector3();
+    const c = new Vector3();
+    const ab = new Vector3();
+    const ac = new Vector3();
+    const normal = new Vector3();
+    const centroid = new Vector3();
+
+    let weightedArea = 0;
+    let weightedX = 0;
+    let weightedY = 0;
+    let weightedZ = 0;
+
+    root.updateWorldMatrix(true, true);
+    root.traverse((child) => {
+      if (!(child instanceof Mesh)) {
+        return;
+      }
+
+      const geometry = child.geometry as BufferGeometry;
+      const positions = geometry.getAttribute('position');
+      if (!positions) {
+        return;
+      }
+
+      const index = geometry.index;
+      const triCount = index ? Math.floor(index.count / 3) : Math.floor(positions.count / 3);
+      for (let tri = 0; tri < triCount; tri += 1) {
+        const i0 = index ? index.getX(tri * 3) : tri * 3;
+        const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+        const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+
+        a.fromBufferAttribute(positions, i0).applyMatrix4(child.matrixWorld);
+        b.fromBufferAttribute(positions, i1).applyMatrix4(child.matrixWorld);
+        c.fromBufferAttribute(positions, i2).applyMatrix4(child.matrixWorld);
+
+        ab.copy(b).sub(a);
+        ac.copy(c).sub(a);
+        normal.copy(ab).cross(ac);
+        const doubleArea = normal.length();
+        if (doubleArea <= 1e-7) {
+          continue;
+        }
+        normal.multiplyScalar(1 / doubleArea);
+        if (normal.y < upDotThreshold) {
+          continue;
+        }
+
+        centroid.copy(a).add(b).add(c).multiplyScalar(1 / 3);
+        if (centroid.y > minY + yBand) {
+          continue;
+        }
+
+        const area = doubleArea * 0.5;
+        weightedArea += area;
+        weightedX += centroid.x * area;
+        weightedY += centroid.y * area;
+        weightedZ += centroid.z * area;
+      }
+    });
+
+    if (weightedArea <= 1e-4) {
+      return null;
+    }
+
+    const centerX = weightedX / weightedArea;
+    const centerY = weightedY / weightedArea;
+    const centerZ = weightedZ / weightedArea;
+
+    const distances: number[] = [];
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
+
+    root.traverse((child) => {
+      if (!(child instanceof Mesh)) {
+        return;
+      }
+
+      const geometry = child.geometry as BufferGeometry;
+      const positions = geometry.getAttribute('position');
+      if (!positions) {
+        return;
+      }
+
+      const index = geometry.index;
+      const triCount = index ? Math.floor(index.count / 3) : Math.floor(positions.count / 3);
+      for (let tri = 0; tri < triCount; tri += 1) {
+        const i0 = index ? index.getX(tri * 3) : tri * 3;
+        const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
+        const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
+
+        a.fromBufferAttribute(positions, i0).applyMatrix4(child.matrixWorld);
+        b.fromBufferAttribute(positions, i1).applyMatrix4(child.matrixWorld);
+        c.fromBufferAttribute(positions, i2).applyMatrix4(child.matrixWorld);
+
+        ab.copy(b).sub(a);
+        ac.copy(c).sub(a);
+        normal.copy(ab).cross(ac);
+        const doubleArea = normal.length();
+        if (doubleArea <= 1e-7) {
+          continue;
+        }
+        normal.multiplyScalar(1 / doubleArea);
+        if (normal.y < upDotThreshold) {
+          continue;
+        }
+
+        centroid.copy(a).add(b).add(c).multiplyScalar(1 / 3);
+        if (centroid.y > minY + yBand) {
+          continue;
+        }
+
+        const radiusA = Math.hypot(a.x - centerX, a.z - centerZ);
+        const radiusB = Math.hypot(b.x - centerX, b.z - centerZ);
+        const radiusC = Math.hypot(c.x - centerX, c.z - centerZ);
+        distances.push(radiusA, radiusB, radiusC);
+
+        minX = Math.min(minX, a.x, b.x, c.x);
+        maxX = Math.max(maxX, a.x, b.x, c.x);
+        minZ = Math.min(minZ, a.z, b.z, c.z);
+        maxZ = Math.max(maxZ, a.z, b.z, c.z);
+      }
+    });
+
+    if (distances.length < 12) {
+      return null;
+    }
+
+    distances.sort((lhs, rhs) => lhs - rhs);
+    const p90 = distances[Math.floor((distances.length - 1) * 0.9)];
+    const areaRadius = Math.sqrt(weightedArea / Math.PI);
+    const radius = Math.max(0.6, Math.min(220, Math.max(p90 * 0.92, areaRadius * 0.92)));
+
+    const width = Math.max(1e-3, maxX - minX);
+    const depth = Math.max(1e-3, maxZ - minZ);
+    const aspect = Math.max(width, depth) / Math.min(width, depth);
+    const fill = weightedArea / (Math.PI * radius * radius);
+    if (aspect > 2.35 || fill < 0.24) {
+      return null;
+    }
+
+    return {
+      center: new Vector3(centerX, centerY, centerZ),
+      radius,
+      y: centerY,
+      tolerance: Math.max(0.45, this.movement.capsule.radius * 1.35),
+    };
   }
 
   private syncMultiplayerIdentity(): void {
@@ -655,13 +855,33 @@ export class GameApp {
   }
 
   private tryCompleteRun(): void {
-    if (!this.playing || this.runComplete || !this.loadedMap || !Number.isFinite(this.finishTargetY)) {
+    if (!this.playing || this.runComplete || !this.loadedMap) {
       return;
     }
 
-    const feetY = this.movement.getFeetPosition().y;
-    if (feetY > this.finishTargetY + 0.08) {
-      return;
+    const feet = this.movement.getFeetPosition();
+    const debug = this.movement.getDebugState();
+
+    if (this.goalPad) {
+      if (!debug.grounded) {
+        return;
+      }
+      const dy = Math.abs(feet.y - this.goalPad.y);
+      if (dy > this.goalPad.tolerance) {
+        return;
+      }
+      const dx = feet.x - this.goalPad.center.x;
+      const dz = feet.z - this.goalPad.center.z;
+      if (dx * dx + dz * dz > this.goalPad.radius * this.goalPad.radius) {
+        return;
+      }
+    } else {
+      if (!Number.isFinite(this.finishTargetY)) {
+        return;
+      }
+      if (feet.y > this.finishTargetY + 0.08) {
+        return;
+      }
     }
 
     this.runComplete = true;
