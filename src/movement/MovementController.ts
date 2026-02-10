@@ -226,6 +226,13 @@ export class MovementController {
         this.surfContactGraceTicks -= 1;
       }
     }
+    if (
+      slideResult.lastCollisionNormal !== null
+      && Math.abs(slideResult.lastCollisionNormal.y) < 0.25
+      && horizontalLength(this.velocity) > SURF_EDGE_OVERRIDE_MIN_SPEED
+    ) {
+      this.surfContactGraceTicks = Math.max(this.surfContactGraceTicks, 2);
+    }
 
     const preserveRampLaunch =
       !jumped
@@ -413,35 +420,41 @@ export class MovementController {
         }
       }
 
-      const ignoreEdgeWallFromSurfGrace =
+      const surfGraceEdgeCollision =
         collisionSurfNormal === null
         && this.surfContactGraceTicks > 0
-        && Math.abs(hitNormal.y) < 0.2
-        && this.velocity.dot(hitNormal) < -0.05
-        && trace.fraction < 0.65;
-      if (ignoreEdgeWallFromSurfGrace) {
-        if (this.velocity.lengthSq() > 1e-8) {
-          this.position.addScaledVector(this.velocity, Math.min(remainingTime, dt) * 0.22);
-        }
-
-        const fraction = MathUtils.clamp(trace.fraction, 0, 1);
-        if (fraction <= 1e-5) {
-          remainingTime *= 0.5;
-        } else {
-          remainingTime *= Math.max(0.1, 1 - fraction);
-        }
-        continue;
+        && Math.abs(hitNormal.y) < 0.28
+        && this.velocity.dot(hitNormal) < -0.02
+        && horizontalLength(this.velocity) > SURF_EDGE_OVERRIDE_MIN_SPEED;
+      const ignoreRampCapFromSurfGrace =
+        surfGraceEdgeCollision
+        && Math.abs(hitNormal.dot(this.surfContactNormal)) < 0.45
+        && this.velocity.y <= 0.5
+        && trace.fraction > 0.45;
+      if (ignoreRampCapFromSurfGrace) {
+        const passthrough = Math.max(this.capsule.radius * 1.5, horizontalLength(this.velocity) * dt * 0.75);
+        this.position.copy(end).addScaledVector(this.velocity.clone().normalize(), passthrough);
+        remainingTime = 0;
+        break;
       }
-      const surfThisCollision = surfingTick || collisionSurfNormal !== null;
+      const surfThisCollision = surfingTick || collisionSurfNormal !== null || surfGraceEdgeCollision;
 
       if (surfThisCollision) {
         const normal = (
           surfNormal
           ?? collisionSurfNormal
+          ?? (surfGraceEdgeCollision ? this.surfContactNormal : null)
           ?? hitNormal
         ).clone().normalize();
         this.velocity.copy(clipVelocity(this.velocity, normal, this.cvars.overbounce));
         this.removeIntoRamp(normal);
+        if (surfGraceEdgeCollision) {
+          this.velocity.copy(clipVelocity(this.velocity, hitNormal, this.cvars.overbounce));
+          const intoWall = this.velocity.dot(hitNormal);
+          if (intoWall < 0) {
+            this.velocity.addScaledVector(hitNormal, -intoWall);
+          }
+        }
 
         const fraction = MathUtils.clamp(trace.fraction, 0, 1);
         if (fraction <= 1e-5) {

@@ -247,30 +247,30 @@ export class RemotePlayersRenderer {
     this.applyOptionalBoneOffset(rig.spineUpper, rig.spineUpperBase, 0.1 + idleBreath * 0.28, idleWave * 0.04, 0);
     this.applyOptionalBoneOffset(rig.neck, rig.neckBase, 0.03, idleWave * 0.08, 0);
     this.applyOptionalBoneOffset(rig.head, rig.headBase, 0.05 + idleBreath * 0.18, idleWave * 0.1, 0);
-    this.applyOptionalBoneOffset(rig.rightClavicle, rig.rightClavicleBase, 0.12, -0.1, 0.1);
-    this.applyOptionalBoneOffset(rig.leftClavicle, rig.leftClavicleBase, 0.07, -0.02, -0.05);
+    this.applyOptionalBoneOffset(rig.rightClavicle, rig.rightClavicleBase, 0.16, -0.2, 0.14);
+    this.applyOptionalBoneOffset(rig.leftClavicle, rig.leftClavicleBase, 0.05, 0.02, -0.03);
 
     // Right knife arm.
     this.applyBoneOffset(
       rig.rightUpper,
       rig.rightUpperBase,
       -1.02 - 0.28 * swingCurve,
-      -0.2 + 0.16 * swingCurve * swingDir,
-      0.2 + 0.08 * swingCurve,
+      -0.34 + 0.14 * swingCurve * swingDir,
+      0.12 + 0.08 * swingCurve,
     );
     this.applyBoneOffset(
       rig.rightLower,
       rig.rightLowerBase,
       -1.42 - 0.4 * swingCurve,
-      -0.08 + 0.06 * swingCurve * swingDir,
-      0.02,
+      -0.18 + 0.05 * swingCurve * swingDir,
+      -0.04,
     );
     this.applyBoneOffset(
       rig.rightHand,
       rig.rightHandBase,
       0.1 + 0.1 * swingCurve,
-      -0.42 - 0.14 * swingCurve,
-      -0.08 + 0.35 * swingCurve * swingDir,
+      -0.62 - 0.12 * swingCurve,
+      -0.24 + 0.32 * swingCurve * swingDir,
     );
 
     // Left support arm: deliberately offset outwards to avoid crossing body.
@@ -278,27 +278,27 @@ export class RemotePlayersRenderer {
       this.applyBoneOffset(
         rig.leftUpper,
         rig.leftUpperBase,
-        -0.62 + idleBreath * 0.14,
-        -0.05 - idleWave * 0.05,
-        -0.12,
+        -0.56 + idleBreath * 0.12,
+        0.04 - idleWave * 0.05,
+        -0.06,
       );
     }
     if (rig.leftLower && rig.leftLowerBase) {
       this.applyBoneOffset(
         rig.leftLower,
         rig.leftLowerBase,
-        -1.02 + idleBreath * 0.1,
+        -0.94 + idleBreath * 0.08,
         -0.02,
-        -0.08,
+        -0.03,
       );
     }
     if (rig.leftHand && rig.leftHandBase) {
       this.applyBoneOffset(
         rig.leftHand,
         rig.leftHandBase,
+        0.02,
         0.04,
-        0.06,
-        -0.16,
+        -0.12,
       );
     }
   }
@@ -521,8 +521,8 @@ function attachKnifeModel(handBone: Bone, knifeTemplate: Object3D | null): void 
 
   const knife = knifeTemplate.clone(true);
   knife.name = 'RemoteKnifeModel';
-  knife.position.set(0.02, -0.015, -0.028);
-  knife.rotation.set(1.42, -0.14, -0.24);
+  knife.position.set(0.014, -0.012, -0.024);
+  knife.rotation.set(1.32, -0.48, -0.64);
   handBone.add(knife);
 }
 
