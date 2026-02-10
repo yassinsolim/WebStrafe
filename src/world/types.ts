@@ -12,6 +12,7 @@ export interface MapMeta {
   source: string;
   license: string;
   attribution?: string;
+  goalY?: number;
   spawns?: MapSpawn[];
   sceneScale?: number;
   notes?: string;

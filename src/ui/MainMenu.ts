@@ -5,6 +5,7 @@ import type { GameSettings } from './SettingsStore';
 interface MainMenuCallbacks {
   onPlay: (mapId: string) => void;
   onReloadMap: () => void;
+  onMapSelected: (mapId: string) => void;
   onSettingsChanged: (settings: GameSettings) => void;
   onLoadoutChanged: (selection: LoadoutSelection) => void;
 }
@@ -21,6 +22,8 @@ export class MainMenu {
   private readonly reloadButton: HTMLButtonElement;
   private readonly mapSelect: HTMLSelectElement;
   private readonly mapInfo: HTMLDivElement;
+  private readonly leaderboardInfo: HTMLDivElement;
+  private readonly leaderboardList: HTMLOListElement;
 
   private readonly mouseSensitivityInput: HTMLInputElement;
   private readonly worldFovInput: HTMLInputElement;
@@ -73,12 +76,23 @@ export class MainMenu {
     this.mapSelect.addEventListener('change', () => {
       this.selectedMapId = this.mapSelect.value;
       this.refreshMapInfo();
+      this.callbacks.onMapSelected(this.selectedMapId);
     });
     mapGroup.appendChild(this.mapSelect);
 
     this.mapInfo = document.createElement('div');
     this.mapInfo.className = 'menu-map-info';
     mapGroup.appendChild(this.mapInfo);
+
+    const leaderboardGroup = this.makeGroup(panel, 'Leaderboard');
+    this.leaderboardInfo = document.createElement('div');
+    this.leaderboardInfo.className = 'menu-map-info';
+    this.leaderboardInfo.textContent = 'Top runs for selected map';
+    leaderboardGroup.appendChild(this.leaderboardInfo);
+
+    this.leaderboardList = document.createElement('ol');
+    this.leaderboardList.className = 'menu-leaderboard';
+    leaderboardGroup.appendChild(this.leaderboardList);
 
     const settingsGroup = this.makeGroup(panel, 'Settings');
     this.mouseSensitivityInput = this.makeRangeControl(
@@ -120,6 +134,18 @@ export class MainMenu {
     loadoutCredit.textContent =
       'Credit the Creator: knife animated by DJMaesen is licensed under Creative Commons Attribution. He made both.';
     loadoutGroup.appendChild(loadoutCredit);
+
+    const playerModelCredit = document.createElement('p');
+    playerModelCredit.className = 'menu-credit';
+    playerModelCredit.textContent =
+      '"CTM_SAS | CS2 Agent Model" (https://skfb.ly/oRO6P) by Alex is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).';
+    loadoutGroup.appendChild(playerModelCredit);
+
+    const playerModelCreditTwo = document.createElement('p');
+    playerModelCreditTwo.className = 'menu-credit';
+    playerModelCreditTwo.textContent =
+      '"PHOENIX | CS2 Agent Model" (https://skfb.ly/oQyER) by Alex is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).';
+    loadoutGroup.appendChild(playerModelCreditTwo);
 
     const footer = document.createElement('p');
     footer.className = 'menu-help';
@@ -178,6 +204,27 @@ export class MainMenu {
     this.viewmodelScaleInput.value = settings.viewmodelScale.toString();
     this.autoBhopToggle.checked = settings.autoBhop;
     this.showHudToggle.checked = settings.showHud;
+  }
+
+  public setLeaderboard(entries: Array<{ name: string; timeMs: number; model: string }>, mapName: string): void {
+    this.leaderboardInfo.textContent = `Top runs for ${mapName}`;
+    this.leaderboardList.innerHTML = '';
+
+    if (entries.length === 0) {
+      const empty = document.createElement('li');
+      empty.textContent = 'No runs submitted yet';
+      this.leaderboardList.appendChild(empty);
+      return;
+    }
+
+    const top = entries.slice(0, 10);
+    top.forEach((entry, index) => {
+      const line = document.createElement('li');
+      const seconds = entry.timeMs / 1000;
+      const modelTag = entry.model === 'terrorist' ? 'T' : 'CT';
+      line.textContent = `${index + 1}. ${entry.name} - ${seconds.toFixed(3)}s (${modelTag})`;
+      this.leaderboardList.appendChild(line);
+    });
   }
 
   private refreshMapInfo(): void {

@@ -30,6 +30,10 @@ import type { LoadoutSelection } from '../cosmetics/types';
 import { HUD } from '../ui/HUD';
 import { MainMenu } from '../ui/MainMenu';
 import { defaultSettings, loadSettings, saveSettings, type GameSettings } from '../ui/SettingsStore';
+import { LeaderboardService, sanitizeLeaderboardName } from '../network/LeaderboardService';
+import { MultiplayerClient } from '../network/MultiplayerClient';
+import type { LeaderboardEntry, PlayerModel } from '../network/types';
+import { RemotePlayersRenderer } from '../multiplayer/RemotePlayersRenderer';
 import { CollisionWorld } from '../world/CollisionWorld';
 import { deleteCustomMap, listCustomMaps } from '../world/CustomMapStore';
 import { MapLoader, type MapLoadReporter } from '../world/MapLoader';
@@ -62,6 +66,9 @@ export class GameApp {
   private readonly collisionWorld = new CollisionWorld();
   private readonly mapLoader = new MapLoader();
   private readonly hud: HUD;
+  private readonly leaderboard = new LeaderboardService();
+  private readonly multiplayer = new MultiplayerClient();
+  private readonly remotePlayers = new RemotePlayersRenderer();
 
   private readonly cosmeticsGroup = new Group();
   private readonly cosmeticsManager: CosmeticsManager;
@@ -75,6 +82,11 @@ export class GameApp {
   private readonly loadingDetail: HTMLPreElement;
   private loadProgressSpinnerIndex = 0;
   private currentLoadToken = 0;
+  private readonly timerLabel: HTMLDivElement;
+  private readonly runInfoLabel: HTMLDivElement;
+  private readonly runSubmitOverlay: HTMLDivElement;
+  private readonly runSubmitInput: HTMLInputElement;
+  private readonly runSubmitStatus: HTMLDivElement;
 
   private readonly debugGrid = new GridHelper(420, 210, 0x9ec3df, 0x4d6378);
   private readonly debugAxes = new AxesHelper(8);
@@ -105,6 +117,12 @@ export class GameApp {
   private didPlayInitialEquip = false;
   private voidResetY = -Infinity;
   private lastVoidResetAtMs = 0;
+  private runStartTimeMs = 0;
+  private finishedRunTimeMs: number | null = null;
+  private finishTargetY = -Infinity;
+  private runComplete = false;
+  private localPlayerName = loadPlayerName();
+  private multiplayerSendAccumulator = 0;
 
   private readonly tmpForward = new Vector3();
   private readonly tmpDesiredCameraPos = new Vector3();
@@ -139,9 +157,17 @@ export class GameApp {
     this.loadingTitle = loadingOverlay.title;
     this.loadingProgress = loadingOverlay.progress;
     this.loadingDetail = loadingOverlay.detail;
+    const runHud = this.createRunHud();
+    this.timerLabel = runHud.timer;
+    this.runInfoLabel = runHud.info;
+    const submitOverlay = this.createRunSubmitOverlay();
+    this.runSubmitOverlay = submitOverlay.root;
+    this.runSubmitInput = submitOverlay.input;
+    this.runSubmitStatus = submitOverlay.status;
 
     this.setupWorldLighting();
     this.setupWorldDebugHelpers();
+    this.worldScene.add(this.remotePlayers.root);
     window.addEventListener('resize', this.onResize);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
   }
@@ -160,6 +186,12 @@ export class GameApp {
       listCustomMaps(),
       this.cosmeticsManager.loadManifest(),
     ]);
+    try {
+      await this.remotePlayers.load();
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('[Multiplayer] Failed to load remote player models:', error);
+    }
     this.rebuildMapSources(builtinMaps, customRecords);
     this.selectedMapId =
       builtinMaps.find((map) => map.id === 'custom')?.id
@@ -179,16 +211,34 @@ export class GameApp {
       onReloadMap: () => {
         void this.reloadSelectedMap();
       },
+      onMapSelected: (mapId) => {
+        this.selectedMapId = mapId;
+        this.remotePlayers.applySnapshot([], null);
+        void this.refreshLeaderboard(mapId);
+        this.syncMultiplayerIdentity();
+      },
       onSettingsChanged: (next) => this.applySettings(next),
       onLoadoutChanged: (next) => {
         this.loadout = next;
         void this.applyLoadout(next);
+        this.syncMultiplayerIdentity();
       },
     });
     this.menu.setMaps(this.getMapEntries(), this.selectedMapId);
     this.menu.setCosmetics(cosmeticsManifest, this.loadout);
+    this.menu.setLeaderboard([], this.getMapNameById(this.selectedMapId));
     this.menu.setVisible(true);
     this.setCrosshairVisible(false);
+
+    this.multiplayer.onSnapshot = (snapshot) => {
+      if (snapshot.mapId !== this.selectedMapId) {
+        return;
+      }
+      this.remotePlayers.applySnapshot(snapshot.players, this.multiplayer.getLocalId());
+    };
+    this.multiplayer.connect();
+    this.syncMultiplayerIdentity();
+    void this.refreshLeaderboard(this.selectedMapId);
 
     const acceptanceLog = runMovementAcceptanceDiagnostics();
     logMovementAcceptance(acceptanceLog);
@@ -200,6 +250,7 @@ export class GameApp {
 
   public dispose(): void {
     this.running = false;
+    this.multiplayer.disconnect();
     window.removeEventListener('resize', this.onResize);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     this.input.dispose();
@@ -246,7 +297,7 @@ export class GameApp {
       this.accumulator -= FIXED_TICK_DT;
       if (this.playing) {
         if (resetQueued && this.loadedMap) {
-          this.resetToSpawn('Reset to spawn');
+          this.resetToSpawn('Reset to spawn', true);
           resetQueued = false;
           inspectQueued = false;
           attackQueued = false;
@@ -269,10 +320,13 @@ export class GameApp {
 
         const moveInput = this.input.sampleMoveInput();
         this.movement.tick(FIXED_TICK_DT, moveInput, this.collisionWorld);
+        this.multiplayerSendAccumulator += FIXED_TICK_DT;
+        this.sendMultiplayerStateIfReady();
+        this.tryCompleteRun();
         if (this.loadedMap && this.movement.getFeetPosition().y < this.voidResetY) {
           const now = performance.now();
           const showMessage = now - this.lastVoidResetAtMs > 900;
-          this.resetToSpawn(showMessage ? 'Out of world reset' : null);
+          this.resetToSpawn(showMessage ? 'Out of world reset' : null, true);
           this.lastVoidResetAtMs = now;
           inspectQueued = false;
           attackQueued = false;
@@ -286,8 +340,10 @@ export class GameApp {
 
     this.updateCameras(frameDt, look);
     this.cosmeticsManager.update(frameDt);
+    this.remotePlayers.update(frameDt);
     const debug = this.movement.getDebugState();
     this.hud.update(debug);
+    this.updateTimerHud();
     this.updateSurfNormalLine(debug);
     this.updateStatusVisibility(time);
 
@@ -386,8 +442,11 @@ export class GameApp {
       this.freecamInitialized = false;
       this.hideLoadingOverlay();
       this.menu.setVisible(false);
+      this.hideRunSubmitOverlay();
       this.input.requestPointerLock();
       this.playing = true;
+      this.startRunTimer();
+      this.syncMultiplayerIdentity();
       if (!this.didPlayInitialEquip) {
         this.cosmeticsManager.triggerEquip();
         this.didPlayInitialEquip = true;
@@ -433,11 +492,17 @@ export class GameApp {
     const collisionBounds = new Box3().setFromObject(map.collisionRoot);
     if (collisionBounds.isEmpty()) {
       this.voidResetY = -1000;
+      this.finishTargetY = -1000;
     } else {
       const height = Math.max(1, collisionBounds.max.y - collisionBounds.min.y);
       const margin = Math.max(12, Math.min(120, height * 0.2));
       this.voidResetY = collisionBounds.min.y - margin;
+      const goalFromMeta = typeof map.meta.goalY === 'number' && Number.isFinite(map.meta.goalY)
+        ? map.meta.goalY
+        : null;
+      this.finishTargetY = goalFromMeta ?? (collisionBounds.min.y + Math.max(0.6, this.movement.capsule.radius * 1.8));
     }
+    this.updateRunInfoWithLeaderboard([]);
   }
 
   private rebuildMapSources(builtinEntries: MapManifestEntry[], customRecords: CustomMapRecord[]): void {
@@ -477,6 +542,157 @@ export class GameApp {
       return;
     }
     await this.startPlaySession(this.selectedMapId);
+  }
+
+  private getMapNameById(mapId: string): string {
+    return this.mapSources.get(mapId)?.entry.name ?? mapId;
+  }
+
+  private async refreshLeaderboard(mapId: string): Promise<void> {
+    const mapName = this.getMapNameById(mapId);
+    try {
+      const entries = await this.leaderboard.fetchLeaderboard(mapId);
+      this.menu?.setLeaderboard(entries, mapName);
+      this.updateRunInfoWithLeaderboard(entries);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('[Leaderboard] Failed to refresh:', error);
+      this.menu?.setLeaderboard([], mapName);
+      this.updateRunInfoWithLeaderboard([]);
+    }
+  }
+
+  private updateRunInfoWithLeaderboard(entries: LeaderboardEntry[]): void {
+    const goalText = Number.isFinite(this.finishTargetY) ? this.finishTargetY.toFixed(2) : '--';
+    if (entries.length === 0) {
+      this.runInfoLabel.textContent = `Goal Y: ${goalText} | Best: --`;
+      return;
+    }
+    const best = entries[0];
+    const bestText = `${best.name} ${formatRunTime(best.timeMs)}`;
+    this.runInfoLabel.textContent = `Goal Y: ${goalText} | Best: ${bestText}`;
+  }
+
+  private syncMultiplayerIdentity(): void {
+    if (!this.loadout || !this.selectedMapId) {
+      return;
+    }
+    this.multiplayer.join(
+      this.selectedMapId,
+      this.localPlayerName,
+      this.getPlayerModelFromLoadout(this.loadout),
+    );
+  }
+
+  private getPlayerModelFromLoadout(loadout: LoadoutSelection): PlayerModel {
+    return loadout.knifeId === 'real_knife_viewmodel' ? 'terrorist' : 'counterterrorist';
+  }
+
+  private sendMultiplayerStateIfReady(): void {
+    if (this.multiplayerSendAccumulator < 1 / 20) {
+      return;
+    }
+    this.multiplayerSendAccumulator = 0;
+    if (!this.playing || !this.loadedMap) {
+      return;
+    }
+
+    const position = this.movement.getFeetPosition();
+    const velocity = this.movement.getVelocity();
+    this.multiplayer.sendState({
+      position: [position.x, position.y, position.z],
+      velocity: [velocity.x, velocity.y, velocity.z],
+      yaw: this.movement.getYawRad(),
+      pitch: this.movement.getPitchRad(),
+    });
+  }
+
+  private startRunTimer(): void {
+    this.runStartTimeMs = performance.now();
+    this.finishedRunTimeMs = null;
+    this.runComplete = false;
+    this.updateTimerHud();
+  }
+
+  private updateTimerHud(): void {
+    if (this.runStartTimeMs <= 0) {
+      this.timerLabel.textContent = 'Run: --';
+      return;
+    }
+
+    const elapsedMs = this.finishedRunTimeMs ?? Math.max(0, performance.now() - this.runStartTimeMs);
+    this.timerLabel.textContent = `Run: ${formatRunTime(elapsedMs)}`;
+  }
+
+  private tryCompleteRun(): void {
+    if (!this.playing || this.runComplete || !this.loadedMap || !Number.isFinite(this.finishTargetY)) {
+      return;
+    }
+
+    const feetY = this.movement.getFeetPosition().y;
+    if (feetY > this.finishTargetY + 0.08) {
+      return;
+    }
+
+    this.runComplete = true;
+    this.finishedRunTimeMs = Math.max(0, performance.now() - this.runStartTimeMs);
+    this.playing = false;
+    this.showStatus(`Run complete: ${formatRunTime(this.finishedRunTimeMs)}`);
+    this.openRunSubmitOverlay();
+    if (document.pointerLockElement === this.renderer.domElement) {
+      void document.exitPointerLock();
+    }
+  }
+
+  private openRunSubmitOverlay(): void {
+    this.runSubmitOverlay.style.display = 'grid';
+    this.runSubmitInput.value = this.localPlayerName;
+    this.runSubmitStatus.textContent = this.finishedRunTimeMs !== null
+      ? `Finished in ${formatRunTime(this.finishedRunTimeMs)}`
+      : '';
+    this.runSubmitInput.focus();
+    this.runSubmitInput.select();
+  }
+
+  private hideRunSubmitOverlay(): void {
+    this.runSubmitOverlay.style.display = 'none';
+    this.runSubmitStatus.textContent = '';
+  }
+
+  private async submitRunResult(): Promise<void> {
+    if (!this.loadedMap || this.finishedRunTimeMs === null || !this.loadout) {
+      return;
+    }
+
+    const cleanedName = sanitizeLeaderboardName(this.runSubmitInput.value);
+    if (cleanedName.length < 2) {
+      this.runSubmitStatus.textContent = 'Name must be at least 2 characters.';
+      return;
+    }
+
+    this.localPlayerName = cleanedName;
+    savePlayerName(cleanedName);
+    this.syncMultiplayerIdentity();
+
+    this.runSubmitStatus.textContent = 'Submitting...';
+    try {
+      const model = this.getPlayerModelFromLoadout(this.loadout);
+      const entries = await this.leaderboard.submitRun(
+        this.loadedMap.entry.id,
+        cleanedName,
+        this.finishedRunTimeMs,
+        model,
+      );
+      this.menu?.setLeaderboard(entries, this.getMapNameById(this.loadedMap.entry.id));
+      this.updateRunInfoWithLeaderboard(entries);
+      this.runSubmitStatus.textContent = 'Run submitted.';
+      window.setTimeout(() => {
+        this.hideRunSubmitOverlay();
+      }, 650);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.runSubmitStatus.textContent = message;
+    }
   }
 
   private resolveSpawnInLoadedWorld(map: LoadedMap): { position: Vector3; yawDeg: number } {
@@ -671,11 +887,16 @@ export class GameApp {
     this.crosshair.style.display = visible ? 'block' : 'none';
   }
 
-  private resetToSpawn(message: string | null): void {
+  private resetToSpawn(message: string | null, restartTimer = false): void {
     if (!this.loadedMap) {
       return;
     }
     this.movement.reset(this.loadedMap.spawnPosition, this.loadedMap.spawnYawDeg);
+    this.runComplete = false;
+    this.finishedRunTimeMs = null;
+    if (restartTimer) {
+      this.startRunTimer();
+    }
     if (message) {
       this.showStatus(message);
     }
@@ -800,6 +1021,89 @@ export class GameApp {
     return { root, title, progress, detail };
   }
 
+  private createRunHud(): { timer: HTMLDivElement; info: HTMLDivElement } {
+    const timer = document.createElement('div');
+    timer.className = 'run-timer';
+    timer.textContent = 'Run: --';
+
+    const info = document.createElement('div');
+    info.className = 'run-info';
+    info.textContent = 'Goal Y: -- | Best: --';
+
+    this.container.append(timer, info);
+    return { timer, info };
+  }
+
+  private createRunSubmitOverlay(): {
+    root: HTMLDivElement;
+    input: HTMLInputElement;
+    status: HTMLDivElement;
+  } {
+    const root = document.createElement('div');
+    root.className = 'run-submit-overlay';
+    root.style.display = 'none';
+
+    const panel = document.createElement('div');
+    panel.className = 'run-submit-panel';
+
+    const title = document.createElement('div');
+    title.className = 'run-submit-title';
+    title.textContent = 'Run Complete';
+
+    const subtitle = document.createElement('div');
+    subtitle.className = 'run-submit-subtitle';
+    subtitle.textContent = 'Enter a name to submit your run to the leaderboard.';
+
+    const input = document.createElement('input');
+    input.className = 'run-submit-input';
+    input.type = 'text';
+    input.maxLength = 24;
+    input.value = this.localPlayerName;
+    input.placeholder = 'Player name';
+
+    const actions = document.createElement('div');
+    actions.className = 'run-submit-actions';
+
+    const submitButton = document.createElement('button');
+    submitButton.className = 'run-submit-button';
+    submitButton.type = 'button';
+    submitButton.textContent = 'Submit';
+    submitButton.addEventListener('click', () => {
+      void this.submitRunResult();
+    });
+
+    const skipButton = document.createElement('button');
+    skipButton.className = 'run-submit-button run-submit-button-secondary';
+    skipButton.type = 'button';
+    skipButton.textContent = 'Skip';
+    skipButton.addEventListener('click', () => {
+      this.hideRunSubmitOverlay();
+    });
+
+    actions.append(submitButton, skipButton);
+
+    const status = document.createElement('div');
+    status.className = 'run-submit-status';
+    status.textContent = '';
+
+    panel.append(title, subtitle, input, actions, status);
+    root.appendChild(panel);
+    this.container.appendChild(root);
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        void this.submitRunResult();
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        this.hideRunSubmitOverlay();
+      }
+    });
+
+    return { root, input, status };
+  }
+
   private readonly onResize = (): void => {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.worldCamera.aspect = window.innerWidth / Math.max(window.innerHeight, 1);
@@ -824,4 +1128,34 @@ export class GameApp {
 export async function clearAllCustomMaps(): Promise<void> {
   const maps = await listCustomMaps();
   await Promise.all(maps.map((map) => deleteCustomMap(map.id)));
+}
+
+const PLAYER_NAME_STORAGE_KEY = 'webstrafe-player-name-v1';
+
+function loadPlayerName(): string {
+  try {
+    const value = localStorage.getItem(PLAYER_NAME_STORAGE_KEY);
+    if (!value) {
+      return `Player_${Math.floor(Math.random() * 900 + 100)}`;
+    }
+    const cleaned = sanitizeLeaderboardName(value);
+    return cleaned.length >= 2 ? cleaned : `Player_${Math.floor(Math.random() * 900 + 100)}`;
+  } catch {
+    return `Player_${Math.floor(Math.random() * 900 + 100)}`;
+  }
+}
+
+function savePlayerName(name: string): void {
+  localStorage.setItem(PLAYER_NAME_STORAGE_KEY, name);
+}
+
+function formatRunTime(totalMs: number): string {
+  const clamped = Math.max(0, totalMs);
+  const ms = Math.floor(clamped % 1000);
+  const totalSeconds = Math.floor(clamped / 1000);
+  const seconds = totalSeconds % 60;
+  const minutes = Math.floor(totalSeconds / 60);
+  const minutePrefix = minutes > 0 ? `${minutes}:` : '';
+  const secondText = minutes > 0 ? seconds.toString().padStart(2, '0') : seconds.toString();
+  return `${minutePrefix}${secondText}.${ms.toString().padStart(3, '0')}`;
 }
