@@ -11,6 +11,9 @@ The focus is movement feel: bunnyhop timing, air-strafe speed gain, and surf ram
 - Map manifest system with BVH collision against static triangle meshes
 - First-person viewmodel pipeline (separate render scene/camera)
 - Knife/glove loadout presets with animation ranges
+- Run timer + finish detection to lowest platform
+- Online leaderboard submission by player name
+- Multiplayer presence with remote player models (T/CT by loadout preset)
 - Debug HUD for movement, slope, collision and surf state
 
 ## Run Locally
@@ -27,7 +30,9 @@ npm install
 npm run dev
 ```
 
-Open the local Vite URL printed in the terminal.
+`npm run dev` starts both:
+- Vite client (`http://localhost:5173`)
+- Multiplayer/leaderboard server (`http://localhost:8787`)
 
 ### Test + Build
 
@@ -42,6 +47,7 @@ npm run build
 - `Mouse`: look
 - `Space`: jump
 - `R`: reset to spawn
+- Run timer resets on `R`
 - `F`: inspect
 - `LMB` / `RMB`: knife attacks
 - `Esc`: unlock pointer / return to menu
@@ -53,6 +59,9 @@ npm run build
 - `src/world/` - map loading, spawn resolution, BVH collision
 - `src/ui/` - menu + HUD
 - `src/cosmetics/` - viewmodel rendering + cosmetic animation/material systems
+- `src/network/` - leaderboard API + multiplayer socket client
+- `src/multiplayer/` - remote player model rendering
+- `server/` - secure leaderboard + websocket multiplayer backend
 - `tools/` - offline conversion/generation scripts
 
 ## Map & Asset Notes
@@ -67,6 +76,10 @@ npm run build
 
 - `surf_skyworld_x` by EVAI (Creative Commons Attribution)
 - Knife animations by DJMaesen (Creative Commons Attribution)
+- `CTM_SAS | CS2 Agent Model` by Alex (Creative Commons Attribution)
+- `PHOENIX | CS2 Agent Model` by Alex (Creative Commons Attribution)
+- Knife swing sound effects by Joseph SARDIN from BigSoundBank (`Sword through the air 2`, `Sword that cuts 3`, plus two additional swipe variants)
+- Valve/CS2 proprietary audio is not bundled in this repo; drop-in replacement files can be placed in `public/audio/`.
 
 ## Deployment Notes
 

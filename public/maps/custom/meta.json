@@ -5,6 +5,15 @@
   "source": "surf_skyworld_x by EVAI",
   "license": "Creative Commons Attribution",
   "sceneScale": 174.6831684033085,
+  "goalPad": {
+    "center": [
+      -183.6835,
+      -93.0785,
+      35.296
+    ],
+    "radius": 28.82,
+    "tolerance": 1.1
+  },
   "attribution": "Credit the creator: surf_skyworld_x by EVAI is licensed under Creative Commons Attribution.",
   "notes": "Spawn will auto-resolve from map bounds unless explicit spawns are set here."
 }

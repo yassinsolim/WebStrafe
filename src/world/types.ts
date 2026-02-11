@@ -12,6 +12,12 @@ export interface MapMeta {
   source: string;
   license: string;
   attribution?: string;
+  goalY?: number;
+  goalPad?: {
+    center: [number, number, number];
+    radius: number;
+    tolerance?: number;
+  };
   spawns?: MapSpawn[];
   sceneScale?: number;
   notes?: string;

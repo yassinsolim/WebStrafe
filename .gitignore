@@ -12,9 +12,12 @@ dist
 dist-ssr
 *.local
 .cache
-map_custom.glb
-knife_viewmodel.glb
-knife_animated.glb
+data/leaderboard.json
+/map_custom.glb
+/knife_viewmodel.glb
+/knife_animated.glb
+/terrorist.glb
+/counterterrorist.glb
 
 # Editor directories and files
 .vscode/*

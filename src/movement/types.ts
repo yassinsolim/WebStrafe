@@ -23,8 +23,12 @@ export interface GroundProbe {
 
 export interface MovementDebugState {
   speed: number;
+  feetPosition: Vector3;
+  cameraPosition: Vector3;
+  velocity: Vector3;
   grounded: boolean;
   surfing: boolean;
+  surfGraceTicks: number;
   slopeAngleDeg: number;
   wishSpeed: number;
   wishDir: Vector3;
@@ -53,5 +57,6 @@ export interface SourceCvars {
   surf_min_angle_deg: number;
   surf_max_angle_deg: number;
   surf_friction: number;
+  sv_surf_edge_slip: number;
   overbounce: number;
 }

@@ -8,7 +8,8 @@ import type { SourceCvars } from './types';
 export const defaultCvars: SourceCvars = {
   sv_gravity: 19.0,
   sv_accelerate: 13.0,
-  sv_airaccelerate: 120.0,
+  // Lowered from 120 so air-strafe/surf speed gain takes much more effort.
+  sv_airaccelerate: 24.0,
   sv_friction: 5.2,
   sv_stopspeed: 2.4,
   sv_maxspeed: 9.5,
@@ -19,6 +20,9 @@ export const defaultCvars: SourceCvars = {
   surf_max_angle_deg: 82,
   // Keep surf friction near-zero so ramps carry speed and do not feel sticky.
   surf_friction: 0.0,
+  // 0..1: amount of speed preserved when sliding across steep surf edges.
+  // Higher means "slipperier" ramp lips with less speed loss.
+  sv_surf_edge_slip: 0.92,
   overbounce: 1.001,
 };
 

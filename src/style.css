@@ -219,6 +219,18 @@ canvas {
   line-height: 1.35;
 }
 
+.menu-leaderboard {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--ink-0);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.menu-leaderboard li {
+  margin-bottom: 3px;
+}
+
 .menu-field {
   display: grid;
   grid-template-columns: 210px 1fr;
@@ -308,4 +320,110 @@ input[type='checkbox'] {
 
 .loading-overlay-error .loading-progress {
   color: #ff8b7c;
+}
+
+.run-timer {
+  position: fixed;
+  top: 18px;
+  right: 20px;
+  z-index: 22;
+  padding: 7px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(163, 206, 232, 0.38);
+  background: rgba(12, 25, 36, 0.72);
+  color: #f3f8ff;
+  font-family: 'Space Mono', monospace;
+  font-size: 13px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.run-info {
+  position: fixed;
+  top: 54px;
+  right: 20px;
+  z-index: 22;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(163, 206, 232, 0.28);
+  background: rgba(12, 25, 36, 0.66);
+  color: #d8ebf9;
+  font-family: 'Space Mono', monospace;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.run-submit-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(7, 15, 24, 0.74);
+  backdrop-filter: blur(6px);
+}
+
+.run-submit-panel {
+  width: min(420px, 92vw);
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(151, 200, 224, 0.4);
+  background: rgba(11, 24, 35, 0.94);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.35);
+}
+
+.run-submit-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.run-submit-subtitle {
+  margin-top: 4px;
+  margin-bottom: 10px;
+  color: var(--ink-1);
+  font-size: 0.9rem;
+}
+
+.run-submit-input {
+  width: 100%;
+  min-height: 36px;
+  border-radius: 8px;
+  border: 1px solid rgba(138, 186, 208, 0.35);
+  background: rgba(16, 30, 41, 0.9);
+  color: var(--ink-0);
+  padding: 6px 10px;
+  font-size: 1rem;
+  margin-bottom: 12px;
+}
+
+.run-submit-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.run-submit-button {
+  appearance: none;
+  border: 1px solid rgba(89, 224, 195, 0.8);
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(89, 224, 195, 0.18), rgba(89, 224, 195, 0.06));
+  color: var(--ink-0);
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.run-submit-button-secondary {
+  border-color: rgba(138, 186, 208, 0.45);
+  background: rgba(138, 186, 208, 0.08);
+}
+
+.run-submit-status {
+  margin-top: 10px;
+  color: var(--ink-1);
+  font-size: 0.88rem;
+  min-height: 18px;
 }

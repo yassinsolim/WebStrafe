@@ -20,9 +20,10 @@ const GROUND_SNAP_DIST = 0.08;
 const MAX_BUMPS = 4;
 const MAX_PLANES = 4;
 const PLANE_SIMILARITY_EPS = 0.99;
-const SURF_CONTACT_GRACE_TICKS = 14;
+const SURF_CONTACT_GRACE_TICKS = 20;
 const SURF_EDGE_GROUND_OVERRIDE_MIN_ANGLE_DEG = 1;
 const SURF_EDGE_OVERRIDE_MIN_SPEED = 1.2;
+const SURF_EDGE_LAUNCH_MIN_SPEED = 5;
 
 export class MovementController {
   public readonly capsule: CapsuleShape = {
@@ -42,8 +43,12 @@ export class MovementController {
 
   private readonly debugState: MovementDebugState = {
     speed: 0,
+    feetPosition: new Vector3(),
+    cameraPosition: new Vector3(),
+    velocity: new Vector3(),
     grounded: false,
     surfing: false,
+    surfGraceTicks: 0,
     slopeAngleDeg: 0,
     wishSpeed: 0,
     wishDir: new Vector3(),
@@ -93,7 +98,9 @@ export class MovementController {
     let groundProbe = world.queryGround(this.position, this.capsule, GROUND_PROBE_DIST);
     let mode = this.pickMode(groundProbe);
     let activeSurfNormal = this.getSurfNormalFromProbe(groundProbe);
-    if (!activeSurfNormal && this.surfContactGraceTicks > 0) {
+    const walkableAngle = this.getWalkableAngleDeg();
+    const hasWalkableProbe = groundProbe !== null && groundProbe.slopeAngleDeg <= walkableAngle;
+    if (!activeSurfNormal && this.surfContactGraceTicks > 0 && !hasWalkableProbe) {
       activeSurfNormal = this.surfContactNormal.clone();
       mode = 'surf';
     }
@@ -106,6 +113,16 @@ export class MovementController {
     ) {
       mode = 'surf';
       activeSurfNormal = activeSurfNormal ?? this.surfContactNormal.clone();
+    }
+    const preserveLaunchFromSurf =
+      mode === 'ground'
+      && this.surfContactGraceTicks > 0
+      && groundProbe !== null
+      && groundProbe.slopeAngleDeg <= walkableAngle + 1
+      && horizontalLength(this.velocity) > Math.max(SURF_EDGE_LAUNCH_MIN_SPEED, this.cvars.sv_maxspeed * 0.9)
+      && this.velocity.y <= 0.9;
+    if (preserveLaunchFromSurf) {
+      mode = 'air';
     }
     let frictionApplied = false;
     let contactPoint = groundProbe?.position.clone() ?? null;
@@ -205,11 +222,32 @@ export class MovementController {
       collisionDropWarn = collisionSpeedBefore > 0.2 && collisionSpeedAfter < collisionSpeedBefore * dropWarnRatio;
       this.surfContactGraceTicks = Math.max(0, this.surfContactGraceTicks - 1);
     } else if (this.surfContactGraceTicks > 0) {
-      this.surfContactGraceTicks -= 1;
+      const maintainGraceOnEdgeWall =
+        slideResult.lastCollisionNormal !== null
+        && Math.abs(slideResult.lastCollisionNormal.y) < 0.25
+        && horizontalLength(this.velocity) > SURF_EDGE_OVERRIDE_MIN_SPEED;
+      if (!maintainGraceOnEdgeWall) {
+        this.surfContactGraceTicks -= 1;
+      }
+    }
+    if (
+      slideResult.lastCollisionNormal !== null
+      && Math.abs(slideResult.lastCollisionNormal.y) < 0.25
+      && horizontalLength(this.velocity) > SURF_EDGE_OVERRIDE_MIN_SPEED
+    ) {
+      this.surfContactGraceTicks = Math.max(this.surfContactGraceTicks, 2);
     }
 
+    const preserveRampLaunch =
+      !jumped
+      && this.surfContactGraceTicks > 0
+      && groundProbe !== null
+      && groundProbe.slopeAngleDeg <= walkableAngle + 1
+      && horizontalLength(this.velocity) > Math.max(SURF_EDGE_LAUNCH_MIN_SPEED, this.cvars.sv_maxspeed * 0.9)
+      && this.velocity.y <= 0.9;
+
     const walkable = this.isWalkable(groundProbe);
-    if (!jumped && walkable && groundProbe && groundProbe.distance <= GROUND_SNAP_DIST) {
+    if (!preserveRampLaunch && !jumped && walkable && groundProbe && groundProbe.distance <= GROUND_SNAP_DIST) {
       this.position.copy(groundProbe.position);
       if (this.velocity.y < 0) {
         this.velocity.y = 0;
@@ -217,7 +255,10 @@ export class MovementController {
     }
 
     mode = this.pickMode(groundProbe);
-    if (mode === 'air' && this.surfContactGraceTicks > 0) {
+    if (preserveRampLaunch && mode === 'ground') {
+      mode = 'air';
+    }
+    if (mode === 'air' && this.surfContactGraceTicks > 0 && !preserveRampLaunch) {
       mode = 'surf';
     }
     const lastNormal = slideResult.lastCollisionNormal ?? groundProbe?.normal ?? UP;
@@ -275,6 +316,9 @@ export class MovementController {
   public getDebugState(): MovementDebugState {
     return {
       ...this.debugState,
+      feetPosition: this.debugState.feetPosition.clone(),
+      cameraPosition: this.debugState.cameraPosition.clone(),
+      velocity: this.debugState.velocity.clone(),
       wishDir: this.debugState.wishDir.clone(),
       surfaceNormal: this.debugState.surfaceNormal.clone(),
       contactPoint: this.debugState.contactPoint?.clone() ?? null,
@@ -372,6 +416,9 @@ export class MovementController {
       }
 
       const hitNormal = trace.normal.clone().normalize();
+      if (hitNormal.dot(this.velocity) > 0) {
+        hitNormal.negate();
+      }
       lastCollisionNormal = hitNormal.clone();
       const collisionSurfNormal = this.getSurfNormalFromNormal(hitNormal);
       if (collisionSurfNormal) {
@@ -380,36 +427,63 @@ export class MovementController {
         }
       }
 
-      const ignoreEdgeWallFromSurfGrace =
+      const surfGraceEdgeCollision =
         collisionSurfNormal === null
         && this.surfContactGraceTicks > 0
-        && Math.abs(hitNormal.y) < 0.2
-        && this.velocity.y <= 0
-        && this.velocity.dot(hitNormal) < -0.05
-        && trace.fraction < 0.25;
-      if (ignoreEdgeWallFromSurfGrace) {
-        if (this.velocity.lengthSq() > 1e-8) {
-          this.position.addScaledVector(this.velocity, Math.min(remainingTime, dt) * 0.22);
-        }
-
-        const fraction = MathUtils.clamp(trace.fraction, 0, 1);
-        if (fraction <= 1e-5) {
-          remainingTime *= 0.5;
-        } else {
-          remainingTime *= Math.max(0.1, 1 - fraction);
-        }
-        continue;
-      }
-      const surfThisCollision = surfingTick || collisionSurfNormal !== null;
+        && Math.abs(hitNormal.y) < 0.28
+        && this.velocity.dot(hitNormal) < -0.02
+        && horizontalLength(this.velocity) > SURF_EDGE_OVERRIDE_MIN_SPEED;
+      const surfThisCollision = surfingTick || collisionSurfNormal !== null || surfGraceEdgeCollision;
 
       if (surfThisCollision) {
+        const preCollisionVelocity = this.velocity.clone();
         const normal = (
           surfNormal
           ?? collisionSurfNormal
+          ?? (surfGraceEdgeCollision ? this.surfContactNormal : null)
           ?? hitNormal
         ).clone().normalize();
         this.velocity.copy(clipVelocity(this.velocity, normal, this.cvars.overbounce));
         this.removeIntoRamp(normal);
+        if (surfGraceEdgeCollision) {
+          this.velocity.copy(clipVelocity(this.velocity, hitNormal, this.cvars.overbounce));
+          const intoWall = this.velocity.dot(hitNormal);
+          if (intoWall < 0) {
+            this.velocity.addScaledVector(hitNormal, -intoWall);
+          }
+
+          // Keep edge contacts slippery: preserve most tangential speed on the edge crease
+          // so touching ramp lips doesn't feel like glue.
+          const edgeSlip = MathUtils.clamp(this.cvars.sv_surf_edge_slip, 0, 1);
+          const preSpeed = preCollisionVelocity.length();
+          const minKeptSpeed = preSpeed * edgeSlip;
+          if (minKeptSpeed > 1e-4) {
+            const edgeDir = new Vector3().crossVectors(hitNormal, normal);
+            if (edgeDir.lengthSq() > 1e-8) {
+              edgeDir.normalize();
+              if (preCollisionVelocity.dot(edgeDir) < 0) {
+                edgeDir.negate();
+              }
+            }
+
+            const currentSpeed = this.velocity.length();
+            if (currentSpeed < minKeptSpeed) {
+              if (this.velocity.lengthSq() > 1e-8) {
+                this.velocity.setLength(minKeptSpeed);
+              } else if (edgeDir.lengthSq() > 1e-8) {
+                this.velocity.copy(edgeDir.multiplyScalar(minKeptSpeed));
+              } else {
+                this.velocity.copy(preCollisionVelocity);
+                if (this.velocity.lengthSq() > 1e-8) {
+                  this.velocity.setLength(minKeptSpeed);
+                }
+              }
+            }
+          }
+
+          // Small depenetration bias away from the lip keeps controller from re-hitting the exact edge.
+          this.position.addScaledVector(hitNormal, this.capsule.radius * 0.06);
+        }
 
         const fraction = MathUtils.clamp(trace.fraction, 0, 1);
         if (fraction <= 1e-5) {
@@ -536,8 +610,12 @@ export class MovementController {
     }
 
     this.debugState.speed = horizontalLength(this.velocity);
+    this.debugState.feetPosition.copy(this.position);
+    this.debugState.cameraPosition.copy(this.position).addScaledVector(UP, this.eyeHeight);
+    this.debugState.velocity.copy(this.velocity);
     this.debugState.grounded = mode === 'ground';
     this.debugState.surfing = mode === 'surf';
+    this.debugState.surfGraceTicks = this.surfContactGraceTicks;
     this.debugState.slopeAngleDeg = slope;
     this.debugState.wishSpeed = wishSpeed;
     this.debugState.wishDir.copy(wishDir);
@@ -611,7 +689,15 @@ export class MovementController {
 
   private recoverSurfEdgeSpeed(previousVelocity: Vector3, surfNormal: Vector3, speedBeforeCollision: number): void {
     const currentSpeed = this.velocity.length();
-    if (speedBeforeCollision <= 1e-4 || currentSpeed >= speedBeforeCollision * 0.6) {
+    const previousHorizontal = horizontalLength(previousVelocity);
+    const currentHorizontal = horizontalLength(this.velocity);
+    const previousPlanar = this.speedOnPlane(previousVelocity, surfNormal);
+    const currentPlanar = this.speedOnPlane(this.velocity, surfNormal);
+
+    const totalDrop = speedBeforeCollision > 1e-4 && currentSpeed < speedBeforeCollision * 0.6;
+    const horizontalDrop = previousHorizontal > 0.5 && currentHorizontal < previousHorizontal * 0.6;
+    const planarDrop = previousPlanar > 0.5 && currentPlanar < previousPlanar * 0.65;
+    if (!totalDrop && !horizontalDrop && !planarDrop) {
       return;
     }
 
@@ -621,17 +707,34 @@ export class MovementController {
       rescuedVelocity.addScaledVector(surfNormal, -into);
     }
 
-    const rescuedSpeed = rescuedVelocity.length();
-    if (rescuedSpeed <= currentSpeed + 0.05) {
+    const rescuedPlanar = this.speedOnPlane(rescuedVelocity, surfNormal);
+    if (rescuedPlanar <= 1e-4) {
       return;
     }
 
-    const cappedSpeed = Math.min(rescuedSpeed, speedBeforeCollision * 0.97);
-    if (cappedSpeed <= 1e-4) {
+    const keepRatio = MathUtils.clamp(this.cvars.sv_surf_edge_slip, 0, 1);
+    const targetPlanarSpeed = Math.max(currentPlanar, previousPlanar * keepRatio);
+    if (targetPlanarSpeed > rescuedPlanar) {
+      const scale = targetPlanarSpeed / rescuedPlanar;
+      rescuedVelocity.multiplyScalar(scale);
+    }
+
+    const rescuedSpeed = rescuedVelocity.length();
+    if (rescuedSpeed <= currentSpeed + 0.03) {
       return;
     }
-    rescuedVelocity.setLength(cappedSpeed);
+
+    const maxAllowedSpeed = Math.max(currentSpeed, speedBeforeCollision * 0.99);
+    if (rescuedSpeed > maxAllowedSpeed && maxAllowedSpeed > 1e-4) {
+      rescuedVelocity.setLength(maxAllowedSpeed);
+    }
+
     this.velocity.copy(rescuedVelocity);
+  }
+
+  private speedOnPlane(velocity: Vector3, normal: Vector3): number {
+    const into = velocity.dot(normal);
+    return velocity.clone().addScaledVector(normal, -into).length();
   }
 
   private upwardNormal(normal: Vector3): Vector3 {
