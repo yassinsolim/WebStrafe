@@ -432,7 +432,11 @@ export class MovementController {
         && this.velocity.y <= 0.5
         && trace.fraction > 0.45;
       if (ignoreRampCapFromSurfGrace) {
-        const passthrough = Math.max(this.capsule.radius * 1.5, horizontalLength(this.velocity) * dt * 0.75);
+        const edgeClipAssist = Math.max(0.1, this.cvars.sv_surf_edge_clip_passthrough);
+        const passthrough = Math.max(
+          this.capsule.radius * (1 + edgeClipAssist),
+          horizontalLength(this.velocity) * dt * edgeClipAssist,
+        );
         this.position.copy(end).addScaledVector(this.velocity.clone().normalize(), passthrough);
         remainingTime = 0;
         break;
