@@ -43,8 +43,12 @@ export class MovementController {
 
   private readonly debugState: MovementDebugState = {
     speed: 0,
+    feetPosition: new Vector3(),
+    cameraPosition: new Vector3(),
+    velocity: new Vector3(),
     grounded: false,
     surfing: false,
+    surfGraceTicks: 0,
     slopeAngleDeg: 0,
     wishSpeed: 0,
     wishDir: new Vector3(),
@@ -312,6 +316,9 @@ export class MovementController {
   public getDebugState(): MovementDebugState {
     return {
       ...this.debugState,
+      feetPosition: this.debugState.feetPosition.clone(),
+      cameraPosition: this.debugState.cameraPosition.clone(),
+      velocity: this.debugState.velocity.clone(),
       wishDir: this.debugState.wishDir.clone(),
       surfaceNormal: this.debugState.surfaceNormal.clone(),
       contactPoint: this.debugState.contactPoint?.clone() ?? null,
@@ -603,8 +610,12 @@ export class MovementController {
     }
 
     this.debugState.speed = horizontalLength(this.velocity);
+    this.debugState.feetPosition.copy(this.position);
+    this.debugState.cameraPosition.copy(this.position).addScaledVector(UP, this.eyeHeight);
+    this.debugState.velocity.copy(this.velocity);
     this.debugState.grounded = mode === 'ground';
     this.debugState.surfing = mode === 'surf';
+    this.debugState.surfGraceTicks = this.surfContactGraceTicks;
     this.debugState.slopeAngleDeg = slope;
     this.debugState.wishSpeed = wishSpeed;
     this.debugState.wishDir.copy(wishDir);
