@@ -689,7 +689,15 @@ export class MovementController {
 
   private recoverSurfEdgeSpeed(previousVelocity: Vector3, surfNormal: Vector3, speedBeforeCollision: number): void {
     const currentSpeed = this.velocity.length();
-    if (speedBeforeCollision <= 1e-4 || currentSpeed >= speedBeforeCollision * 0.6) {
+    const previousHorizontal = horizontalLength(previousVelocity);
+    const currentHorizontal = horizontalLength(this.velocity);
+    const previousPlanar = this.speedOnPlane(previousVelocity, surfNormal);
+    const currentPlanar = this.speedOnPlane(this.velocity, surfNormal);
+
+    const totalDrop = speedBeforeCollision > 1e-4 && currentSpeed < speedBeforeCollision * 0.6;
+    const horizontalDrop = previousHorizontal > 0.5 && currentHorizontal < previousHorizontal * 0.6;
+    const planarDrop = previousPlanar > 0.5 && currentPlanar < previousPlanar * 0.65;
+    if (!totalDrop && !horizontalDrop && !planarDrop) {
       return;
     }
 
@@ -699,17 +707,34 @@ export class MovementController {
       rescuedVelocity.addScaledVector(surfNormal, -into);
     }
 
-    const rescuedSpeed = rescuedVelocity.length();
-    if (rescuedSpeed <= currentSpeed + 0.05) {
+    const rescuedPlanar = this.speedOnPlane(rescuedVelocity, surfNormal);
+    if (rescuedPlanar <= 1e-4) {
       return;
     }
 
-    const cappedSpeed = Math.min(rescuedSpeed, speedBeforeCollision * 0.97);
-    if (cappedSpeed <= 1e-4) {
+    const keepRatio = MathUtils.clamp(this.cvars.sv_surf_edge_slip, 0, 1);
+    const targetPlanarSpeed = Math.max(currentPlanar, previousPlanar * keepRatio);
+    if (targetPlanarSpeed > rescuedPlanar) {
+      const scale = targetPlanarSpeed / rescuedPlanar;
+      rescuedVelocity.multiplyScalar(scale);
+    }
+
+    const rescuedSpeed = rescuedVelocity.length();
+    if (rescuedSpeed <= currentSpeed + 0.03) {
       return;
     }
-    rescuedVelocity.setLength(cappedSpeed);
+
+    const maxAllowedSpeed = Math.max(currentSpeed, speedBeforeCollision * 0.99);
+    if (rescuedSpeed > maxAllowedSpeed && maxAllowedSpeed > 1e-4) {
+      rescuedVelocity.setLength(maxAllowedSpeed);
+    }
+
     this.velocity.copy(rescuedVelocity);
+  }
+
+  private speedOnPlane(velocity: Vector3, normal: Vector3): number {
+    const into = velocity.dot(normal);
+    return velocity.clone().addScaledVector(normal, -into).length();
   }
 
   private upwardNormal(normal: Vector3): Vector3 {

@@ -259,6 +259,7 @@ export class CollisionWorld implements CollisionAdapter {
     let collided = false;
     let maxDepth = 0;
     const bestNormal = new Vector3(0, 1, 0);
+    const accumulatedPush = new Vector3();
     const radius = capsule.radius;
     const workingSegment = this.tempSegment;
 
@@ -302,9 +303,11 @@ export class CollisionWorld implements CollisionAdapter {
             this.tempTriNormal.negate();
           }
 
+          accumulatedPush.addScaledVector(this.tempPush, depth);
+
           if (depth > maxDepth) {
             maxDepth = depth;
-            bestNormal.copy(this.tempTriNormal);
+            bestNormal.copy(this.tempPush);
           }
 
           if (resolve) {
@@ -323,9 +326,12 @@ export class CollisionWorld implements CollisionAdapter {
     }
 
     const resolvedFeet = workingSegment.start.clone().addScaledVector(UP, -capsule.radius);
+    const resolvedNormal = accumulatedPush.lengthSq() > 1e-10
+      ? accumulatedPush.normalize()
+      : bestNormal;
     return {
       collided,
-      normal: bestNormal,
+      normal: resolvedNormal.clone(),
       depth: maxDepth,
       position: resolvedFeet,
     };
