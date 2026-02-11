@@ -183,6 +183,7 @@ export class GameApp {
     this.worldScene.add(this.remotePlayers.root);
     window.addEventListener('resize', this.onResize);
     window.addEventListener('keydown', this.onGlobalKeyDown);
+    document.addEventListener('pointerlockerror', this.onPointerLockError);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
   }
 
@@ -282,6 +283,7 @@ export class GameApp {
     this.multiplayer.disconnect();
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('keydown', this.onGlobalKeyDown);
+    document.removeEventListener('pointerlockerror', this.onPointerLockError);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     this.input.dispose();
     this.renderer.dispose();
@@ -1414,6 +1416,16 @@ export class GameApp {
     this.playing = this.loadedMap !== null && !this.runComplete;
     this.menu?.setVisible(false);
     this.setCrosshairVisible(this.playing && this.debugCameraMode === 'firstPerson');
+  };
+
+  private readonly onPointerLockError = (): void => {
+    if (!this.loadedMap || this.input.isPointerLocked()) {
+      return;
+    }
+    this.playing = false;
+    this.menu?.setVisible(true);
+    this.setCrosshairVisible(false);
+    this.showStatus('Cursor lock was blocked. Press Esc again or click Play.');
   };
 
   private readonly onGlobalKeyDown = (event: KeyboardEvent): void => {

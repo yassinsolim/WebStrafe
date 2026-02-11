@@ -90,9 +90,23 @@ export class InputManager {
         return;
       }
 
-      window.setTimeout(() => {
-        finish(document.pointerLockElement === this.domElement);
-      }, 450);
+      const startedAt = performance.now();
+      const pollForLock = (): void => {
+        if (settled) {
+          return;
+        }
+        if (document.pointerLockElement === this.domElement) {
+          this.pointerLocked = true;
+          finish(true);
+          return;
+        }
+        if (performance.now() - startedAt >= 180) {
+          finish(false);
+          return;
+        }
+        window.requestAnimationFrame(pollForLock);
+      };
+      window.requestAnimationFrame(pollForLock);
     });
   }
 
