@@ -135,6 +135,7 @@ export class GameApp {
   private runComplete = false;
   private localPlayerName = loadPlayerName();
   private multiplayerSendAccumulator = 0;
+  private resumeToggleInFlight = false;
 
   private readonly tmpForward = new Vector3();
   private readonly tmpDesiredCameraPos = new Vector3();
@@ -181,6 +182,7 @@ export class GameApp {
     this.setupWorldDebugHelpers();
     this.worldScene.add(this.remotePlayers.root);
     window.addEventListener('resize', this.onResize);
+    window.addEventListener('keydown', this.onGlobalKeyDown);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
   }
 
@@ -279,6 +281,7 @@ export class GameApp {
     this.running = false;
     this.multiplayer.disconnect();
     window.removeEventListener('resize', this.onResize);
+    window.removeEventListener('keydown', this.onGlobalKeyDown);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     this.input.dispose();
     this.renderer.dispose();
@@ -393,28 +396,7 @@ export class GameApp {
       return;
     }
     this.selectedMapId = mapId;
-    if (
-      this.loadedMap
-      && this.loadedMap.entry.id === mapId
-      && !this.runComplete
-      && this.finishedRunTimeMs === null
-      && !this.input.isPointerLocked()
-    ) {
-      this.hideLoadingOverlay();
-      this.hideRunSubmitOverlay();
-      const lockAcquired = await this.input.requestPointerLock();
-      if (!lockAcquired) {
-        this.playing = false;
-        this.menu.setVisible(true);
-        this.setCrosshairVisible(false);
-        this.showStatus('Could not lock cursor. Click Play to resume.');
-        return;
-      }
-      this.resumeRunTimer();
-      this.menu.setVisible(false);
-      this.playing = true;
-      this.setCrosshairVisible(this.debugCameraMode === 'firstPerson');
-      this.showStatus('Resumed');
+    if (await this.tryResumeLoadedMap(mapId, 'Could not lock cursor. Press Esc or click Play to resume.')) {
       return;
     }
 
@@ -1433,6 +1415,74 @@ export class GameApp {
     this.menu?.setVisible(false);
     this.setCrosshairVisible(this.playing && this.debugCameraMode === 'firstPerson');
   };
+
+  private readonly onGlobalKeyDown = (event: KeyboardEvent): void => {
+    if (event.code !== 'Escape') {
+      return;
+    }
+    if (this.input.isPointerLocked()) {
+      return;
+    }
+    if (!this.loadedMap || this.runComplete || this.finishedRunTimeMs !== null) {
+      return;
+    }
+    if (this.loadingOverlay.style.display !== 'none') {
+      return;
+    }
+    if (this.runSubmitOverlay.style.display !== 'none') {
+      return;
+    }
+    if (this.resumeToggleInFlight) {
+      return;
+    }
+
+    event.preventDefault();
+    this.resumeToggleInFlight = true;
+    const mapId = this.loadedMap.entry.id;
+    void this.tryResumeLoadedMap(
+      mapId,
+      'Could not lock cursor. Press Esc again or click Play to resume.',
+      false,
+    ).finally(() => {
+      this.resumeToggleInFlight = false;
+    });
+  };
+
+  private async tryResumeLoadedMap(
+    mapId: string,
+    lockFailureMessage: string,
+    showResumedStatus = true,
+  ): Promise<boolean> {
+    if (
+      !this.loadedMap
+      || this.loadedMap.entry.id !== mapId
+      || this.runComplete
+      || this.finishedRunTimeMs !== null
+      || this.input.isPointerLocked()
+    ) {
+      return false;
+    }
+
+    this.hideLoadingOverlay();
+    this.hideRunSubmitOverlay();
+    const lockAcquired = await this.input.requestPointerLock();
+    if (!lockAcquired) {
+      this.playing = false;
+      this.menu?.setVisible(true);
+      this.setCrosshairVisible(false);
+      this.showStatus(lockFailureMessage);
+      return true;
+    }
+
+    this.resumeRunTimer();
+    this.menu?.setVisible(false);
+    this.playing = true;
+    this.setCrosshairVisible(this.debugCameraMode === 'firstPerson');
+    if (showResumedStatus) {
+      this.showStatus('Resumed');
+    }
+    return true;
+  }
 
   private pauseRunTimer(): void {
     if (this.runPauseStartedAtMs !== null || this.runStartTimeMs <= 0 || this.finishedRunTimeMs !== null) {

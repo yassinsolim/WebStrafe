@@ -333,7 +333,7 @@ export class MainMenu {
     return [
       {
         id: 'preset_1',
-        label: 'Knife + Gloves 1',
+        label: 'CS Terrorist',
         selection: {
           gloveId: glove.id,
           gloveVariantId: gloveVariantA.id,
@@ -343,7 +343,7 @@ export class MainMenu {
       },
       {
         id: 'preset_2',
-        label: 'Knife + Gloves 2',
+        label: 'CS Counter Terrorist',
         selection: {
           gloveId: glove.id,
           gloveVariantId: gloveVariantB.id,
