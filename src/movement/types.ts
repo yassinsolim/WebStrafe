@@ -53,6 +53,6 @@ export interface SourceCvars {
   surf_min_angle_deg: number;
   surf_max_angle_deg: number;
   surf_friction: number;
-  sv_surf_edge_clip_passthrough: number;
+  sv_surf_edge_slip: number;
   overbounce: number;
 }

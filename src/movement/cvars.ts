@@ -20,8 +20,9 @@ export const defaultCvars: SourceCvars = {
   surf_max_angle_deg: 82,
   // Keep surf friction near-zero so ramps carry speed and do not feel sticky.
   surf_friction: 0.0,
-  // Edge clipping assist amount. Increase slightly if you still snag on ramp lips.
-  sv_surf_edge_clip_passthrough: 0.75,
+  // 0..1: amount of speed preserved when sliding across steep surf edges.
+  // Higher means "slipperier" ramp lips with less speed loss.
+  sv_surf_edge_slip: 0.92,
   overbounce: 1.001,
 };
 

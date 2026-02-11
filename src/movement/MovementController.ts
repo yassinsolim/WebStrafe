@@ -426,24 +426,10 @@ export class MovementController {
         && Math.abs(hitNormal.y) < 0.28
         && this.velocity.dot(hitNormal) < -0.02
         && horizontalLength(this.velocity) > SURF_EDGE_OVERRIDE_MIN_SPEED;
-      const ignoreRampCapFromSurfGrace =
-        surfGraceEdgeCollision
-        && Math.abs(hitNormal.dot(this.surfContactNormal)) < 0.45
-        && this.velocity.y <= 0.5
-        && trace.fraction > 0.45;
-      if (ignoreRampCapFromSurfGrace) {
-        const edgeClipAssist = Math.max(0.1, this.cvars.sv_surf_edge_clip_passthrough);
-        const passthrough = Math.max(
-          this.capsule.radius * (1 + edgeClipAssist),
-          horizontalLength(this.velocity) * dt * edgeClipAssist,
-        );
-        this.position.copy(end).addScaledVector(this.velocity.clone().normalize(), passthrough);
-        remainingTime = 0;
-        break;
-      }
       const surfThisCollision = surfingTick || collisionSurfNormal !== null || surfGraceEdgeCollision;
 
       if (surfThisCollision) {
+        const preCollisionVelocity = this.velocity.clone();
         const normal = (
           surfNormal
           ?? collisionSurfNormal
@@ -458,6 +444,38 @@ export class MovementController {
           if (intoWall < 0) {
             this.velocity.addScaledVector(hitNormal, -intoWall);
           }
+
+          // Keep edge contacts slippery: preserve most tangential speed on the edge crease
+          // so touching ramp lips doesn't feel like glue.
+          const edgeSlip = MathUtils.clamp(this.cvars.sv_surf_edge_slip, 0, 1);
+          const preSpeed = preCollisionVelocity.length();
+          const minKeptSpeed = preSpeed * edgeSlip;
+          if (minKeptSpeed > 1e-4) {
+            const edgeDir = new Vector3().crossVectors(hitNormal, normal);
+            if (edgeDir.lengthSq() > 1e-8) {
+              edgeDir.normalize();
+              if (preCollisionVelocity.dot(edgeDir) < 0) {
+                edgeDir.negate();
+              }
+            }
+
+            const currentSpeed = this.velocity.length();
+            if (currentSpeed < minKeptSpeed) {
+              if (this.velocity.lengthSq() > 1e-8) {
+                this.velocity.setLength(minKeptSpeed);
+              } else if (edgeDir.lengthSq() > 1e-8) {
+                this.velocity.copy(edgeDir.multiplyScalar(minKeptSpeed));
+              } else {
+                this.velocity.copy(preCollisionVelocity);
+                if (this.velocity.lengthSq() > 1e-8) {
+                  this.velocity.setLength(minKeptSpeed);
+                }
+              }
+            }
+          }
+
+          // Small depenetration bias away from the lip keeps controller from re-hitting the exact edge.
+          this.position.addScaledVector(hitNormal, this.capsule.radius * 0.06);
         }
 
         const fraction = MathUtils.clamp(trace.fraction, 0, 1);

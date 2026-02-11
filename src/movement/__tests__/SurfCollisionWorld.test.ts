@@ -93,4 +93,50 @@ describe('Surf regression against triangle collision world', () => {
     expect(severeDropTicks).toBe(0);
     expect(minSpeed).toBeGreaterThan(2);
   });
+
+  it('keeps sliding past the first ramp lip without sticking to the edge wall', () => {
+    const { root } = createMovementTestScene();
+    const world = new CollisionWorld();
+    world.setCollisionFromRoot(root);
+
+    const player = new MovementController();
+    player.reset(new Vector3(13, 9.2, 0), -80);
+    player.setVelocity(new Vector3(7.5, -2.2, 0));
+
+    let severeStops = 0;
+    let minMovement = Number.POSITIVE_INFINITY;
+    let edgeContactTicks = 0;
+
+    for (let i = 0; i < 180; i += 1) {
+      const beforePos = player.getFeetPosition();
+      player.applyLookDelta(-2, 0, 1);
+      player.tick(
+        dt,
+        {
+          forwardMove: 0,
+          sideMove: -1,
+          jumpHeld: false,
+          jumpPressed: false,
+        },
+        world,
+      );
+
+      const debug = player.getDebugState();
+      const afterPos = player.getFeetPosition();
+      const moved = afterPos.distanceTo(beforePos);
+      minMovement = Math.min(minMovement, moved);
+
+      const hitWallLike = Math.abs(debug.lastCollisionNormal.y) < 0.25;
+      if (hitWallLike) {
+        edgeContactTicks += 1;
+      }
+      if (hitWallLike && debug.collisionSpeedBefore > 2 && debug.collisionSpeedAfter < debug.collisionSpeedBefore * 0.35) {
+        severeStops += 1;
+      }
+    }
+
+    expect(edgeContactTicks).toBeGreaterThan(3);
+    expect(severeStops).toBe(0);
+    expect(minMovement).toBeGreaterThan(0.01);
+  });
 });
