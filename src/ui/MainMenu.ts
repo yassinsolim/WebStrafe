@@ -67,7 +67,7 @@ export class MainMenu {
 
     this.reloadButton = document.createElement('button');
     this.reloadButton.className = 'menu-play menu-reload';
-    this.reloadButton.textContent = 'Reload Map (Dev)';
+    this.reloadButton.textContent = 'Restart Run';
     this.reloadButton.addEventListener('click', () => this.callbacks.onReloadMap());
     panel.appendChild(this.reloadButton);
 

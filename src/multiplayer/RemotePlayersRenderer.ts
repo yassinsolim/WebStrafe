@@ -17,11 +17,6 @@ import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.j
 import type { AttackKind, MultiplayerSnapshotPlayer, PlayerModel } from '../network/types';
 
 interface ArmRig {
-  pelvis: Bone | null;
-  rightUpperLeg: Bone | null;
-  rightLowerLeg: Bone | null;
-  leftUpperLeg: Bone | null;
-  leftLowerLeg: Bone | null;
   rightUpper: Bone;
   rightLower: Bone;
   rightHand: Bone;
@@ -35,11 +30,6 @@ interface ArmRig {
   neck: Bone | null;
   head: Bone | null;
 
-  pelvisBase: Quaternion | null;
-  rightUpperLegBase: Quaternion | null;
-  rightLowerLegBase: Quaternion | null;
-  leftUpperLegBase: Quaternion | null;
-  leftLowerLegBase: Quaternion | null;
   rightUpperBase: Quaternion;
   rightLowerBase: Quaternion;
   rightHandBase: Quaternion;
@@ -245,97 +235,75 @@ export class RemotePlayersRenderer {
 
     this.resetRigToBase(rig);
 
-    const idleWave = Math.sin(nowSec * 1.45 + actor.idlePhase) * 0.024;
-    const idleBreath = Math.sin(nowSec * 0.92 + actor.idlePhase * 0.5) * 0.018;
+    const idleWave = Math.sin(nowSec * 1.55 + actor.idlePhase) * 0.02;
+    const idleBreath = Math.sin(nowSec * 1.0 + actor.idlePhase * 0.5) * 0.016;
 
     const swingAlpha = actor.swingTimer > 0 ? 1 - actor.swingTimer / SWING_DURATION_SEC : 0;
     const swingCurve = swingAlpha > 0 ? Math.sin(Math.PI * MathUtils.clamp(swingAlpha, 0, 1)) : 0;
     const swingDir = actor.swingKind === 'secondary' ? -1 : 1;
 
-    // Body posture: slight crouch + forward combat lean.
-    this.applyOptionalBoneOffset(rig.pelvis, rig.pelvisBase, -0.06, 0, 0);
-    this.applyOptionalBoneOffset(rig.rightUpperLeg, rig.rightUpperLegBase, 0.17, -0.02, 0.02);
-    this.applyOptionalBoneOffset(rig.leftUpperLeg, rig.leftUpperLegBase, 0.17, 0.02, -0.02);
-    this.applyOptionalBoneOffset(rig.rightLowerLeg, rig.rightLowerLegBase, -0.26, 0, 0);
-    this.applyOptionalBoneOffset(rig.leftLowerLeg, rig.leftLowerLegBase, -0.26, 0, 0);
+    // Keep a compact combat silhouette without forcing leg/pelvis warping.
+    this.applyOptionalBoneOffset(rig.spineMid, rig.spineMidBase, 0.055 + idleBreath * 0.14, 0, 0);
+    this.applyOptionalBoneOffset(rig.spineUpper, rig.spineUpperBase, 0.1 + idleBreath * 0.2, idleWave * 0.04, 0);
+    this.applyOptionalBoneOffset(rig.neck, rig.neckBase, -0.025, idleWave * 0.06, 0);
+    this.applyOptionalBoneOffset(rig.head, rig.headBase, -0.04 + idleBreath * 0.1, idleWave * 0.08, 0);
+    this.applyOptionalBoneOffset(rig.rightClavicle, rig.rightClavicleBase, 0.16, -0.24, 0.16);
+    this.applyOptionalBoneOffset(rig.leftClavicle, rig.leftClavicleBase, 0.14, 0.2, -0.08);
 
-    this.applyOptionalBoneOffset(rig.spineMid, rig.spineMidBase, 0.11 + idleBreath * 0.2, 0, 0);
-    this.applyOptionalBoneOffset(rig.spineUpper, rig.spineUpperBase, 0.19 + idleBreath * 0.25, idleWave * 0.06, 0);
-    this.applyOptionalBoneOffset(rig.neck, rig.neckBase, -0.05, idleWave * 0.05, 0);
-    this.applyOptionalBoneOffset(rig.head, rig.headBase, -0.1 + idleBreath * 0.12, idleWave * 0.08, 0);
-    this.applyOptionalBoneOffset(rig.rightClavicle, rig.rightClavicleBase, 0.34, -0.34, 0.28);
-    this.applyOptionalBoneOffset(rig.leftClavicle, rig.leftClavicleBase, 0.28, 0.34, -0.26);
-
-    // Right knife arm: raised and bent in front (combat stance).
+    // Right knife arm: forward and bent.
     this.applyBoneOffset(
       rig.rightUpper,
       rig.rightUpperBase,
-      -1.5 - 0.34 * swingCurve,
-      -0.58 + 0.32 * swingCurve * swingDir,
-      0.48 + 0.06 * swingCurve,
+      -1.22 - 0.3 * swingCurve,
+      -0.46 + 0.2 * swingCurve * swingDir,
+      0.2 + 0.08 * swingCurve,
     );
     this.applyBoneOffset(
       rig.rightLower,
       rig.rightLowerBase,
-      -1.1 - 0.45 * swingCurve,
-      0.62 + 0.26 * swingCurve * swingDir,
-      -0.16,
+      -1.22 - 0.36 * swingCurve,
+      0.2 + 0.16 * swingCurve * swingDir,
+      -0.06,
     );
     this.applyBoneOffset(
       rig.rightHand,
       rig.rightHandBase,
-      -0.1 + 0.17 * swingCurve,
-      -1.34 - 0.2 * swingCurve,
-      0.06 + 0.36 * swingCurve * swingDir,
+      0.02 + 0.12 * swingCurve,
+      -0.94 - 0.16 * swingCurve,
+      -0.1 + 0.24 * swingCurve * swingDir,
     );
 
-    // Left support arm: guard hand in front-left without crossing.
+    // Left support arm: guarded, not flared behind body.
     if (rig.leftUpper && rig.leftUpperBase) {
       this.applyBoneOffset(
         rig.leftUpper,
         rig.leftUpperBase,
-        -1.18 + idleBreath * 0.12,
-        0.62 - idleWave * 0.08,
-        -0.28,
+        -0.86 + idleBreath * 0.1,
+        0.2 - idleWave * 0.06,
+        -0.14,
       );
     }
     if (rig.leftLower && rig.leftLowerBase) {
       this.applyBoneOffset(
         rig.leftLower,
         rig.leftLowerBase,
-        -0.96 + idleBreath * 0.06,
-        -0.72,
-        0.22,
+        -1.1 + idleBreath * 0.08,
+        -0.2,
+        0.04,
       );
     }
     if (rig.leftHand && rig.leftHandBase) {
       this.applyBoneOffset(
         rig.leftHand,
         rig.leftHandBase,
-        0.12,
-        0.3,
-        -0.36,
+        0.04,
+        0.1,
+        -0.14,
       );
     }
   }
 
   private resetRigToBase(rig: ArmRig): void {
-    if (rig.pelvis && rig.pelvisBase) {
-      rig.pelvis.quaternion.copy(rig.pelvisBase);
-    }
-    if (rig.rightUpperLeg && rig.rightUpperLegBase) {
-      rig.rightUpperLeg.quaternion.copy(rig.rightUpperLegBase);
-    }
-    if (rig.rightLowerLeg && rig.rightLowerLegBase) {
-      rig.rightLowerLeg.quaternion.copy(rig.rightLowerLegBase);
-    }
-    if (rig.leftUpperLeg && rig.leftUpperLegBase) {
-      rig.leftUpperLeg.quaternion.copy(rig.leftUpperLegBase);
-    }
-    if (rig.leftLowerLeg && rig.leftLowerLegBase) {
-      rig.leftLowerLeg.quaternion.copy(rig.leftLowerLegBase);
-    }
-
     rig.rightUpper.quaternion.copy(rig.rightUpperBase);
     rig.rightLower.quaternion.copy(rig.rightLowerBase);
     rig.rightHand.quaternion.copy(rig.rightHandBase);
@@ -504,11 +472,6 @@ function buildArmRig(root: Object3D): ArmRig | null {
     return null;
   }
 
-  const pelvis = pickBone('pelvis') ?? pickBone('hip');
-  const rightUpperLeg = pickBone('leg_upper_r') ?? pickBone('thigh_r');
-  const rightLowerLeg = pickBone('leg_lower_r') ?? pickBone('calf_r');
-  const leftUpperLeg = pickBone('leg_upper_l') ?? pickBone('thigh_l');
-  const leftLowerLeg = pickBone('leg_lower_l') ?? pickBone('calf_l');
   const leftUpper = pickBone('arm_upper_l');
   const leftLower = pickBone('arm_lower_l');
   const leftHand = pickBone('weapon_hand_l') ?? pickBone('hand_l');
@@ -520,11 +483,6 @@ function buildArmRig(root: Object3D): ArmRig | null {
   const head = pickBone('head_0') ?? pickBone('head');
 
   return {
-    pelvis,
-    rightUpperLeg,
-    rightLowerLeg,
-    leftUpperLeg,
-    leftLowerLeg,
     rightUpper,
     rightLower,
     rightHand,
@@ -538,11 +496,6 @@ function buildArmRig(root: Object3D): ArmRig | null {
     neck,
     head,
 
-    pelvisBase: pelvis?.quaternion.clone() ?? null,
-    rightUpperLegBase: rightUpperLeg?.quaternion.clone() ?? null,
-    rightLowerLegBase: rightLowerLeg?.quaternion.clone() ?? null,
-    leftUpperLegBase: leftUpperLeg?.quaternion.clone() ?? null,
-    leftLowerLegBase: leftLowerLeg?.quaternion.clone() ?? null,
     rightUpperBase: rightUpper.quaternion.clone(),
     rightLowerBase: rightLower.quaternion.clone(),
     rightHandBase: rightHand.quaternion.clone(),
@@ -568,8 +521,8 @@ function attachKnifeModel(handBone: Bone, knifeTemplate: Object3D | null): void 
 
   const knife = knifeTemplate.clone(true);
   knife.name = 'RemoteKnifeModel';
-  knife.position.set(0.01, -0.008, -0.012);
-  knife.rotation.set(0.82, -1.08, -0.24);
+  knife.position.set(0.013, -0.01, -0.02);
+  knife.rotation.set(1.08, -0.72, -0.38);
   handBone.add(knife);
 }
 

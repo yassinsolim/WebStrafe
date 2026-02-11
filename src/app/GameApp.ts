@@ -128,6 +128,7 @@ export class GameApp {
   private voidResetY = -Infinity;
   private lastVoidResetAtMs = 0;
   private runStartTimeMs = 0;
+  private runPauseStartedAtMs: number | null = null;
   private finishedRunTimeMs: number | null = null;
   private finishTargetY = -Infinity;
   private goalPad: GoalPad | null = null;
@@ -392,6 +393,23 @@ export class GameApp {
       return;
     }
     this.selectedMapId = mapId;
+    if (
+      this.loadedMap
+      && this.loadedMap.entry.id === mapId
+      && !this.runComplete
+      && this.finishedRunTimeMs === null
+      && !this.input.isPointerLocked()
+    ) {
+      this.hideLoadingOverlay();
+      this.hideRunSubmitOverlay();
+      this.menu.setVisible(false);
+      this.resumeRunTimer();
+      this.input.requestPointerLock();
+      this.playing = true;
+      this.setCrosshairVisible(this.debugCameraMode === 'firstPerson');
+      this.showStatus('Resumed');
+      return;
+    }
 
     const source = this.mapSources.get(mapId);
     if (!source) {
@@ -576,6 +594,15 @@ export class GameApp {
 
   private async reloadSelectedMap(): Promise<void> {
     if (!this.selectedMapId) {
+      return;
+    }
+    if (this.loadedMap && this.loadedMap.entry.id === this.selectedMapId) {
+      this.resetToSpawn('Run restarted', true);
+      this.hideRunSubmitOverlay();
+      this.menu?.setVisible(false);
+      this.input.requestPointerLock();
+      this.playing = true;
+      this.setCrosshairVisible(this.debugCameraMode === 'firstPerson');
       return;
     }
     await this.startPlaySession(this.selectedMapId);
@@ -839,6 +866,7 @@ export class GameApp {
 
   private startRunTimer(): void {
     this.runStartTimeMs = performance.now();
+    this.runPauseStartedAtMs = null;
     this.finishedRunTimeMs = null;
     this.runComplete = false;
     this.updateTimerHud();
@@ -850,7 +878,7 @@ export class GameApp {
       return;
     }
 
-    const elapsedMs = this.finishedRunTimeMs ?? Math.max(0, performance.now() - this.runStartTimeMs);
+    const elapsedMs = this.getCurrentRunTimeMs();
     this.timerLabel.textContent = `Run: ${formatRunTime(elapsedMs)}`;
   }
 
@@ -885,7 +913,8 @@ export class GameApp {
     }
 
     this.runComplete = true;
-    this.finishedRunTimeMs = Math.max(0, performance.now() - this.runStartTimeMs);
+    this.finishedRunTimeMs = this.getCurrentRunTimeMs();
+    this.runPauseStartedAtMs = null;
     this.playing = false;
     this.showStatus(`Run complete: ${formatRunTime(this.finishedRunTimeMs)}`);
     this.openRunSubmitOverlay();
@@ -1366,15 +1395,47 @@ export class GameApp {
   private readonly onPointerLockChange = (): void => {
     const locked = this.input.isPointerLocked();
     if (!locked) {
+      if (this.playing && !this.runComplete && this.finishedRunTimeMs === null) {
+        this.pauseRunTimer();
+      }
       this.playing = false;
       this.menu?.setVisible(true);
       this.setCrosshairVisible(false);
       return;
     }
-    this.playing = this.loadedMap !== null;
+    if (this.loadedMap !== null && !this.runComplete && this.finishedRunTimeMs === null) {
+      this.resumeRunTimer();
+    }
+    this.playing = this.loadedMap !== null && !this.runComplete;
     this.menu?.setVisible(false);
     this.setCrosshairVisible(this.playing && this.debugCameraMode === 'firstPerson');
   };
+
+  private pauseRunTimer(): void {
+    if (this.runPauseStartedAtMs !== null || this.runStartTimeMs <= 0 || this.finishedRunTimeMs !== null) {
+      return;
+    }
+    this.runPauseStartedAtMs = performance.now();
+    this.updateTimerHud();
+  }
+
+  private resumeRunTimer(): void {
+    if (this.runPauseStartedAtMs === null || this.runStartTimeMs <= 0 || this.finishedRunTimeMs !== null) {
+      return;
+    }
+    const pausedDuration = Math.max(0, performance.now() - this.runPauseStartedAtMs);
+    this.runPauseStartedAtMs = null;
+    this.runStartTimeMs += pausedDuration;
+    this.updateTimerHud();
+  }
+
+  private getCurrentRunTimeMs(): number {
+    if (this.finishedRunTimeMs !== null) {
+      return this.finishedRunTimeMs;
+    }
+    const nowMs = this.runPauseStartedAtMs ?? performance.now();
+    return Math.max(0, nowMs - this.runStartTimeMs);
+  }
 }
 
 export async function clearAllCustomMaps(): Promise<void> {
