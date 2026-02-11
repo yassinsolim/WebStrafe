@@ -402,9 +402,16 @@ export class GameApp {
     ) {
       this.hideLoadingOverlay();
       this.hideRunSubmitOverlay();
-      this.menu.setVisible(false);
+      const lockAcquired = await this.input.requestPointerLock();
+      if (!lockAcquired) {
+        this.playing = false;
+        this.menu.setVisible(true);
+        this.setCrosshairVisible(false);
+        this.showStatus('Could not lock cursor. Click Play to resume.');
+        return;
+      }
       this.resumeRunTimer();
-      this.input.requestPointerLock();
+      this.menu.setVisible(false);
       this.playing = true;
       this.setCrosshairVisible(this.debugCameraMode === 'firstPerson');
       this.showStatus('Resumed');
@@ -489,11 +496,19 @@ export class GameApp {
       this.debugCameraMode = 'firstPerson';
       this.freecamInitialized = false;
       this.hideLoadingOverlay();
-      this.menu.setVisible(false);
       this.hideRunSubmitOverlay();
-      this.input.requestPointerLock();
-      this.playing = true;
       this.startRunTimer();
+      const lockAcquired = await this.input.requestPointerLock();
+      if (!lockAcquired) {
+        this.pauseRunTimer();
+        this.playing = false;
+        this.menu.setVisible(true);
+        this.setCrosshairVisible(false);
+        this.showStatus('Map loaded. Click Play to lock cursor.');
+        return;
+      }
+      this.menu.setVisible(false);
+      this.playing = true;
       this.syncMultiplayerIdentity();
       if (!this.didPlayInitialEquip) {
         this.cosmeticsManager.triggerEquip();
@@ -599,8 +614,16 @@ export class GameApp {
     if (this.loadedMap && this.loadedMap.entry.id === this.selectedMapId) {
       this.resetToSpawn('Run restarted', true);
       this.hideRunSubmitOverlay();
+      const lockAcquired = await this.input.requestPointerLock();
+      if (!lockAcquired) {
+        this.pauseRunTimer();
+        this.playing = false;
+        this.menu?.setVisible(true);
+        this.setCrosshairVisible(false);
+        this.showStatus('Could not lock cursor. Click Play to resume.');
+        return;
+      }
       this.menu?.setVisible(false);
-      this.input.requestPointerLock();
       this.playing = true;
       this.setCrosshairVisible(this.debugCameraMode === 'firstPerson');
       return;

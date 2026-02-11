@@ -235,42 +235,42 @@ export class RemotePlayersRenderer {
 
     this.resetRigToBase(rig);
 
-    const idleWave = Math.sin(nowSec * 1.55 + actor.idlePhase) * 0.02;
-    const idleBreath = Math.sin(nowSec * 1.0 + actor.idlePhase * 0.5) * 0.016;
+    const idleWave = Math.sin(nowSec * 1.6 + actor.idlePhase) * 0.018;
+    const idleBreath = Math.sin(nowSec * 1.08 + actor.idlePhase * 0.5) * 0.014;
 
     const swingAlpha = actor.swingTimer > 0 ? 1 - actor.swingTimer / SWING_DURATION_SEC : 0;
     const swingCurve = swingAlpha > 0 ? Math.sin(Math.PI * MathUtils.clamp(swingAlpha, 0, 1)) : 0;
     const swingDir = actor.swingKind === 'secondary' ? -1 : 1;
 
     // Keep a compact combat silhouette without forcing leg/pelvis warping.
-    this.applyOptionalBoneOffset(rig.spineMid, rig.spineMidBase, 0.055 + idleBreath * 0.14, 0, 0);
-    this.applyOptionalBoneOffset(rig.spineUpper, rig.spineUpperBase, 0.1 + idleBreath * 0.2, idleWave * 0.04, 0);
-    this.applyOptionalBoneOffset(rig.neck, rig.neckBase, -0.025, idleWave * 0.06, 0);
-    this.applyOptionalBoneOffset(rig.head, rig.headBase, -0.04 + idleBreath * 0.1, idleWave * 0.08, 0);
-    this.applyOptionalBoneOffset(rig.rightClavicle, rig.rightClavicleBase, 0.16, -0.24, 0.16);
-    this.applyOptionalBoneOffset(rig.leftClavicle, rig.leftClavicleBase, 0.14, 0.2, -0.08);
+    this.applyOptionalBoneOffset(rig.spineMid, rig.spineMidBase, 0.05 + idleBreath * 0.14, 0, 0);
+    this.applyOptionalBoneOffset(rig.spineUpper, rig.spineUpperBase, 0.09 + idleBreath * 0.18, idleWave * 0.035, 0);
+    this.applyOptionalBoneOffset(rig.neck, rig.neckBase, -0.015, idleWave * 0.045, 0);
+    this.applyOptionalBoneOffset(rig.head, rig.headBase, -0.03 + idleBreath * 0.08, idleWave * 0.06, 0);
+    this.applyOptionalBoneOffset(rig.rightClavicle, rig.rightClavicleBase, 0.14, -0.18, 0.1);
+    this.applyOptionalBoneOffset(rig.leftClavicle, rig.leftClavicleBase, 0.12, 0.16, -0.04);
 
     // Right knife arm: forward and bent.
     this.applyBoneOffset(
       rig.rightUpper,
       rig.rightUpperBase,
-      -1.22 - 0.3 * swingCurve,
-      -0.46 + 0.2 * swingCurve * swingDir,
-      0.2 + 0.08 * swingCurve,
+      -0.98 - 0.26 * swingCurve,
+      -0.32 + 0.2 * swingCurve * swingDir,
+      0.1 + 0.08 * swingCurve,
     );
     this.applyBoneOffset(
       rig.rightLower,
       rig.rightLowerBase,
-      -1.22 - 0.36 * swingCurve,
-      0.2 + 0.16 * swingCurve * swingDir,
-      -0.06,
+      -1.1 - 0.32 * swingCurve,
+      0.14 + 0.14 * swingCurve * swingDir,
+      -0.03,
     );
     this.applyBoneOffset(
       rig.rightHand,
       rig.rightHandBase,
-      0.02 + 0.12 * swingCurve,
-      -0.94 - 0.16 * swingCurve,
-      -0.1 + 0.24 * swingCurve * swingDir,
+      0.02 + 0.1 * swingCurve,
+      -0.8 - 0.14 * swingCurve,
+      -0.06 + 0.22 * swingCurve * swingDir,
     );
 
     // Left support arm: guarded, not flared behind body.
@@ -278,27 +278,27 @@ export class RemotePlayersRenderer {
       this.applyBoneOffset(
         rig.leftUpper,
         rig.leftUpperBase,
-        -0.86 + idleBreath * 0.1,
-        0.2 - idleWave * 0.06,
-        -0.14,
+        -0.74 + idleBreath * 0.08,
+        0.14 - idleWave * 0.045,
+        -0.08,
       );
     }
     if (rig.leftLower && rig.leftLowerBase) {
       this.applyBoneOffset(
         rig.leftLower,
         rig.leftLowerBase,
-        -1.1 + idleBreath * 0.08,
-        -0.2,
-        0.04,
+        -0.92 + idleBreath * 0.06,
+        -0.12,
+        0.02,
       );
     }
     if (rig.leftHand && rig.leftHandBase) {
       this.applyBoneOffset(
         rig.leftHand,
         rig.leftHandBase,
-        0.04,
-        0.1,
-        -0.14,
+        0.02,
+        0.08,
+        -0.1,
       );
     }
   }
@@ -522,7 +522,7 @@ function attachKnifeModel(handBone: Bone, knifeTemplate: Object3D | null): void 
   const knife = knifeTemplate.clone(true);
   knife.name = 'RemoteKnifeModel';
   knife.position.set(0.013, -0.01, -0.02);
-  knife.rotation.set(1.08, -0.72, -0.38);
+  knife.rotation.set(1.18, -0.58, -0.5);
   handBone.add(knife);
 }
 

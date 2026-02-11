@@ -45,8 +45,55 @@ export class InputManager {
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
   }
 
-  public requestPointerLock(): void {
-    void this.domElement.requestPointerLock();
+  public async requestPointerLock(): Promise<boolean> {
+    if (document.pointerLockElement === this.domElement) {
+      this.pointerLocked = true;
+      return true;
+    }
+
+    return await new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (locked: boolean): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        document.removeEventListener('pointerlockchange', onChange);
+        document.removeEventListener('pointerlockerror', onError);
+        resolve(locked);
+      };
+
+      const onChange = (): void => {
+        const locked = document.pointerLockElement === this.domElement;
+        this.pointerLocked = locked;
+        if (locked) {
+          finish(true);
+        }
+      };
+
+      const onError = (): void => {
+        this.pointerLocked = document.pointerLockElement === this.domElement;
+        finish(false);
+      };
+
+      document.addEventListener('pointerlockchange', onChange);
+      document.addEventListener('pointerlockerror', onError);
+      try {
+        const request = this.domElement.requestPointerLock() as unknown as Promise<void> | void;
+        if (request && typeof (request as Promise<void>).then === 'function') {
+          (request as Promise<void>).catch(() => {
+            finish(false);
+          });
+        }
+      } catch {
+        finish(false);
+        return;
+      }
+
+      window.setTimeout(() => {
+        finish(document.pointerLockElement === this.domElement);
+      }, 450);
+    });
   }
 
   public isPointerLocked(): boolean {
