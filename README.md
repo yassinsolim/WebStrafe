@@ -20,25 +20,31 @@ The focus is movement feel: bunnyhop timing, air-strafe speed gain, and surf ram
 
 ### Prerequisites
 
-- Node.js 20+
-- npm
+- [Node.js](https://nodejs.org/) 20+
+- npm 10+ (bundled with Node.js)
 
-### Dev
+### Install
 
 ```bash
 npm install
+```
+
+### Dev Server
+
+```bash
 npm run dev
 ```
 
-`npm run dev` starts both:
-- Vite client (`http://localhost:5173`)
-- Multiplayer/leaderboard server (`http://localhost:8787`)
+`npm run dev` starts two processes concurrently:
 
-### Test + Build
+- **Vite client** — `http://localhost:5173` (frontend with HMR)
+- **Backend server** — `http://localhost:8787` (multiplayer + leaderboard API)
+
+### Test & Build
 
 ```bash
-npm run test
-npm run build
+npm run test   # run test suite via Vitest
+npm run build  # type-check + Vite production build → dist/
 ```
 
 ## Controls
@@ -78,7 +84,8 @@ npm run build
 - Knife animations by DJMaesen (Creative Commons Attribution)
 - `CTM_SAS | CS2 Agent Model` by Alex (Creative Commons Attribution)
 - `PHOENIX | CS2 Agent Model` by Alex (Creative Commons Attribution)
-- Knife swing sound effects by Joseph SARDIN from BigSoundBank (`Sword through the air 2`, `Sword that cuts 3`, plus two additional swipe variants)
+- Knife swing sound effects by Joseph SARDIN from BigSoundBank
+  (`Sword through the air 2`, `Sword that cuts 3`, plus two additional swipe variants)
 - Valve/CS2 proprietary audio is not bundled in this repo; drop-in replacement files can be placed in `public/audio/`.
 
 ## Deployment Notes
