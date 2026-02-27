@@ -524,6 +524,27 @@ function addSecurityHeaders(res: ServerResponse): void {
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  // Restrict sources: game uses Three.js (inline scripts/styles via Vite), WebGL, and audio.
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "media-src 'self' blob:",
+      "connect-src 'self' ws: wss:",
+      "worker-src blob:",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'none'",
+      "frame-ancestors 'none'",
+    ].join('; '),
+  );
+  // HSTS: only send over HTTPS connections (not during local dev on plain HTTP).
+  if (!DEV_MODE) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
 }
 
 function checkRateLimit(key: string, maxCount: number, windowMs: number): boolean {
@@ -631,9 +652,14 @@ function isObject(value: unknown): value is JsonObject {
 }
 
 function getClientIp(req: IncomingMessage): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.length > 0) {
-    return forwarded.split(',')[0].trim();
+  // In production, X-Forwarded-For should only be trusted when the server is behind a
+  // known reverse proxy. Without an IP allowlist, any client can spoof this header and
+  // bypass rate limiting. Only trust it when TRUST_PROXY=1 env var is set.
+  if (process.env.TRUST_PROXY === '1') {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.length > 0) {
+      return forwarded.split(',')[0].trim();
+    }
   }
   return req.socket.remoteAddress ?? 'unknown';
 }
