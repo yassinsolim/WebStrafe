@@ -65,6 +65,15 @@ const allowedOriginSet = new Set(
 );
 
 let leaderboardStore: LeaderboardStore = {};
+
+// Session tokens: issued by /api/session/start, consumed on leaderboard submission
+interface SessionRecord {
+  mapId: string;
+  startedAt: number;
+  used: boolean;
+}
+const activeSessions = new Map<string, SessionRecord>();
+const SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 let persistQueue = Promise.resolve();
 
 const requestRate = new Map<string, { count: number; resetAt: number }>();
@@ -348,6 +357,40 @@ async function handleApiRequest(
     return;
   }
 
+  if (req.method === 'POST' && url.pathname === '/api/session/start') {
+    if (!isJsonContentType(req.headers['content-type'])) {
+      respondJson(res, 415, { error: 'Content-Type must be application/json' });
+      return;
+    }
+    let payload: unknown;
+    try {
+      payload = await readJsonBody(req, MAX_HTTP_BODY_BYTES);
+    } catch {
+      respondJson(res, 400, { error: 'Invalid JSON payload' });
+      return;
+    }
+    if (!isObject(payload)) {
+      respondJson(res, 400, { error: 'Invalid payload' });
+      return;
+    }
+    const mapId = parseMapId(payload.mapId);
+    if (!mapId) {
+      respondJson(res, 400, { error: 'Invalid mapId' });
+      return;
+    }
+    // Prune expired sessions
+    const now = Date.now();
+    for (const [token, session] of activeSessions.entries()) {
+      if (now - session.startedAt > SESSION_TTL_MS) {
+        activeSessions.delete(token);
+      }
+    }
+    const sessionToken = crypto.randomUUID();
+    activeSessions.set(sessionToken, { mapId, startedAt: now, used: false });
+    respondJson(res, 200, { sessionToken });
+    return;
+  }
+
   if (req.method === 'POST' && url.pathname === '/api/leaderboard') {
     if (!checkRateLimit(`lb:${ip}`, 20, 60_000)) {
       respondJson(res, 429, {
@@ -391,6 +434,27 @@ async function handleApiRequest(
       });
       return;
     }
+
+    const sessionToken = typeof payload.sessionToken === 'string' ? payload.sessionToken.trim() : null;
+    if (!sessionToken) {
+      respondJson(res, 400, { error: 'sessionToken is required' });
+      return;
+    }
+    const sessionRecord = activeSessions.get(sessionToken);
+    if (!sessionRecord) {
+      respondJson(res, 403, { error: 'Invalid or expired session token' });
+      return;
+    }
+    if (sessionRecord.used) {
+      respondJson(res, 403, { error: 'Session token already used' });
+      return;
+    }
+    if (sessionRecord.mapId !== mapId) {
+      respondJson(res, 403, { error: 'Session token mapId mismatch' });
+      return;
+    }
+    // Mark session as used before committing the entry
+    sessionRecord.used = true;
 
     const entry: LeaderboardEntry = {
       id: crypto.randomUUID(),
