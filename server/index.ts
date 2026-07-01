@@ -4,8 +4,10 @@ import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
+import { Vector3 } from 'three';
 import { CombatArena } from '../src/combat/CombatArena';
 import type { WeaponId } from '../src/combat/weapons';
+import { BotManager, type BotTarget } from './BotManager';
 
 type PlayerModel = 'terrorist' | 'counterterrorist';
 type AttackKind = 'primary' | 'secondary';
@@ -55,6 +57,9 @@ const MAX_HTTP_BODY_BYTES = 4 * 1024;
 const MAX_STATE_MESSAGES_PER_SECOND = 70;
 const MAX_WEBSOCKET_MESSAGE_BYTES = 2 * 1024;
 const SNAPSHOT_RATE_HZ = 20;
+const BOT_TICK_HZ = 60;
+const ENABLE_BOTS = process.env.ENABLE_BOTS === 'true';
+const BOTS_PER_MAP = clampInt(process.env.BOTS_PER_MAP, 2, 0, 8);
 const PLAYER_STALE_TIMEOUT_MS = 12000;
 const MAP_ID_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
 const PLAYER_NAME_REGEX = /^[A-Za-z0-9 _\-.]{2,24}$/;
@@ -81,6 +86,15 @@ let persistQueue = Promise.resolve();
 const requestRate = new Map<string, { count: number; resetAt: number }>();
 const clients = new Map<WebSocket, ClientState>();
 const arena = new CombatArena();
+const botManager = new BotManager(arena, BOTS_PER_MAP);
+
+function clampInt(raw: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseInt(raw ?? '', 10);
+  if (Number.isNaN(parsed)) {
+    return fallback;
+  }
+  return Math.max(min, Math.min(max, parsed));
+}
 
 const VALID_WEAPON_IDS: readonly WeaponId[] = ['awp', 'deagle', 'knife'];
 
@@ -352,16 +366,25 @@ wss.on('connection', (ws, req) => {
 setInterval(() => {
   const now = Date.now();
 
-  const respawns = arena.tickRespawns(now);
+  const respawns = arena.tickRespawns(
+    now,
+    ENABLE_BOTS ? (id) => botManager.spawnFor(id) : undefined,
+  );
   for (const ev of respawns) {
-    const owner = [...clients.values()].find((c) => c.id === ev.playerId);
-    if (owner) {
-      broadcastToMap(owner.mapId, {
+    let mapId: string | null = null;
+    if (ENABLE_BOTS && botManager.isBot(ev.playerId)) {
+      botManager.onRespawn(ev.playerId, ev.position);
+      mapId = botManager.mapOf(ev.playerId);
+    } else {
+      mapId = [...clients.values()].find((c) => c.id === ev.playerId)?.mapId ?? null;
+    }
+    if (mapId) {
+      broadcastToMap(mapId, {
         type: 'respawn',
         playerId: ev.playerId,
         position: ev.position,
       });
-      broadcastToMap(owner.mapId, {
+      broadcastToMap(mapId, {
         type: 'health',
         playerId: ev.playerId,
         health: arena.getHealth(ev.playerId) ?? 100,
@@ -409,6 +432,14 @@ setInterval(() => {
     groupedByMap.set(client.mapId, list);
   }
 
+  if (ENABLE_BOTS) {
+    for (const [mapId, list] of groupedByMap) {
+      for (const row of botManager.snapshotRows(mapId)) {
+        list.push(row);
+      }
+    }
+  }
+
   for (const client of clients.values()) {
     if (!client.joined || client.ws.readyState !== WebSocket.OPEN) {
       continue;
@@ -422,6 +453,36 @@ setInterval(() => {
     });
   }
 }, Math.round(1000 / SNAPSHOT_RATE_HZ));
+
+if (ENABLE_BOTS) {
+  const botDt = 1 / BOT_TICK_HZ;
+  let sincePrune = 0;
+  setInterval(() => {
+    const mapsWithHumans = new Set<string>();
+    const targetsByMap = new Map<string, BotTarget[]>();
+    for (const client of clients.values()) {
+      if (!client.joined || client.ws.readyState !== WebSocket.OPEN) {
+        continue;
+      }
+      mapsWithHumans.add(client.mapId);
+      botManager.requestMap(client.mapId);
+      const list = targetsByMap.get(client.mapId) ?? [];
+      list.push({
+        feet: new Vector3(client.position[0], client.position[1], client.position[2]),
+        alive: arena.isAlive(client.id),
+      });
+      targetsByMap.set(client.mapId, list);
+    }
+
+    botManager.tick(botDt, targetsByMap);
+
+    sincePrune += botDt;
+    if (sincePrune >= 2) {
+      sincePrune = 0;
+      botManager.pruneEmptyMaps(mapsWithHumans);
+    }
+  }, Math.round(1000 / BOT_TICK_HZ));
+}
 
 async function handleApiRequest(
   req: IncomingMessage,

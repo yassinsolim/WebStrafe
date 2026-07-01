@@ -192,7 +192,7 @@ export class CombatArena {
    * Respawns any dead players whose timer has elapsed. Returns respawn events
    * (position = the spawn provided by `spawnFor`, or the player's last feet).
    */
-  tickRespawns(nowMs: number, spawnFor?: (id: string) => [number, number, number]): RespawnEvent[] {
+  tickRespawns(nowMs: number, spawnFor?: (id: string) => [number, number, number] | undefined): RespawnEvent[] {
     const events: RespawnEvent[] = [];
     for (const p of this.players.values()) {
       if (isRespawnDue(p.combat, nowMs)) {
