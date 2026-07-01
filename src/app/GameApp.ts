@@ -35,6 +35,12 @@ import { LeaderboardService, sanitizeLeaderboardName } from '../network/Leaderbo
 import { MultiplayerClient } from '../network/MultiplayerClient';
 import type { LeaderboardEntry, PlayerModel } from '../network/types';
 import { RemotePlayersRenderer } from '../multiplayer/RemotePlayersRenderer';
+import { CombatHud } from '../ui/CombatHud';
+import { CombatEffects } from '../combat/CombatEffects';
+import { KillFeed } from '../combat/KillFeed';
+import { WeaponController } from '../combat/WeaponController';
+import { isCombatEnabled } from '../combat/combatConfig';
+import { type WeaponId } from '../combat/weapons';
 import { CollisionWorld } from '../world/CollisionWorld';
 import { deleteCustomMap, listCustomMaps } from '../world/CustomMapStore';
 import { MapLoader, type MapLoadReporter } from '../world/MapLoader';
@@ -78,6 +84,14 @@ export class GameApp {
   private readonly multiplayer = new MultiplayerClient();
   private readonly remotePlayers = new RemotePlayersRenderer();
   private readonly knifeAudio = new KnifeAudio();
+
+  private readonly combatEnabled = isCombatEnabled();
+  private combatHud: CombatHud | null = null;
+  private combatEffects: CombatEffects | null = null;
+  private readonly killFeed = new KillFeed();
+  private readonly weapon = new WeaponController('knife');
+  private localAlive = true;
+  private readonly remotePlayerNames = new Map<string, string>();
 
   private readonly cosmeticsGroup = new Group();
   private readonly cosmeticsManager: CosmeticsManager;
@@ -252,6 +266,11 @@ export class GameApp {
         return;
       }
       this.remotePlayers.applySnapshot(snapshot.players, this.multiplayer.getLocalId());
+      if (this.combatEnabled) {
+        for (const p of snapshot.players) {
+          this.remotePlayerNames.set(p.id, p.name);
+        }
+      }
     };
     this.multiplayer.onAttack = ({ mapId, playerId, kind }) => {
       if (mapId !== this.selectedMapId) {
@@ -267,6 +286,7 @@ export class GameApp {
       }
     };
     this.multiplayer.connect();
+    this.setupCombat();
     this.syncMultiplayerIdentity();
     void this.refreshLeaderboard(this.selectedMapId);
 
@@ -345,6 +365,9 @@ export class GameApp {
           this.cosmeticsManager.triggerAttackPrimary();
           this.multiplayer.sendAttack('primary');
           this.knifeAudio.play('primary');
+          if (this.combatEnabled) {
+            this.fireCombatWeapon(performance.now());
+          }
           attackQueued = false;
         }
         if (attackAltQueued) {
@@ -377,6 +400,9 @@ export class GameApp {
     this.updateCameras(frameDt, look);
     this.cosmeticsManager.update(frameDt);
     this.remotePlayers.update(frameDt);
+    if (this.combatEnabled) {
+      this.updateCombat(time);
+    }
     const debug = this.movement.getDebugState();
     this.hud.update(debug);
     this.updateTimerHud();
@@ -838,6 +864,95 @@ export class GameApp {
       this.localPlayerName,
       this.getPlayerModelFromLoadout(this.loadout),
     );
+  }
+
+  private setupCombat(): void {
+    if (!this.combatEnabled) {
+      return;
+    }
+    this.combatHud = new CombatHud(document.body);
+    this.combatEffects = new CombatEffects(this.worldScene);
+    this.combatHud.setWeapon(this.weapon.getActive(), this.weapon.getAmmo());
+
+    this.multiplayer.onHealth = ({ playerId, health, alive }) => {
+      if (playerId === this.multiplayer.getLocalId()) {
+        this.localAlive = alive;
+        this.combatHud?.setHealth(health, alive);
+      }
+    };
+    this.multiplayer.onRespawn = ({ playerId }) => {
+      if (playerId === this.multiplayer.getLocalId()) {
+        this.localAlive = true;
+        this.combatHud?.setHealth(100, true);
+      }
+    };
+    this.multiplayer.onHit = ({ shooterId, hitbox }) => {
+      if (shooterId === this.multiplayer.getLocalId()) {
+        this.combatHud?.flashHitmarker(hitbox === 'head');
+      }
+    };
+    this.multiplayer.onDeath = ({ killerId, victimId, weaponId }) => {
+      const nameOf = (id: string) =>
+        id === this.multiplayer.getLocalId() ? this.localPlayerName : this.remotePlayerNames.get(id) ?? 'Player';
+      this.killFeed.add(
+        {
+          killer: nameOf(killerId),
+          victim: nameOf(victimId),
+          weaponId,
+          headshot: false,
+        },
+        performance.now(),
+      );
+    };
+  }
+
+  private fireCombatWeapon(nowMs: number): void {
+    if (!this.combatEnabled || !this.localAlive) {
+      return;
+    }
+    const result = this.weapon.tryFire(nowMs);
+    this.combatHud?.setWeapon(this.weapon.getActive(), this.weapon.getAmmo());
+    if (!result.fired) {
+      return;
+    }
+    const origin = this.movement.getCameraPosition();
+    const forward = new Vector3(0, 0, -1).applyEuler(this.worldCamera.rotation);
+    const to = origin.clone().addScaledVector(forward, Math.min(result.weapon.range, 4000));
+    this.combatEffects?.spawnShot(origin.clone(), to, nowMs);
+    this.multiplayer.sendFire(
+      [origin.x, origin.y, origin.z],
+      [forward.x, forward.y, forward.z],
+    );
+  }
+
+  private equipCombatWeapon(id: WeaponId): void {
+    if (!this.combatEnabled) {
+      return;
+    }
+    this.weapon.equip(id);
+    this.multiplayer.sendEquip(id);
+    this.combatHud?.setWeapon(id, this.weapon.getAmmo());
+  }
+
+  private updateCombat(nowMs: number): void {
+    this.weapon.update(nowMs);
+    this.combatEffects?.update(nowMs);
+    this.killFeed.prune(nowMs);
+    this.combatHud?.renderKillFeed(this.killFeed, nowMs);
+    this.combatHud?.setVisible(this.playing);
+    // Weapon switch: 1 = knife, 2 = deagle, 3 = awp; R = reload.
+    if (this.playing) {
+      if (this.input.isKeyDown('Digit1') && this.weapon.getActive() !== 'knife') {
+        this.equipCombatWeapon('knife');
+      } else if (this.input.isKeyDown('Digit2') && this.weapon.getActive() !== 'deagle') {
+        this.equipCombatWeapon('deagle');
+      } else if (this.input.isKeyDown('Digit3') && this.weapon.getActive() !== 'awp') {
+        this.equipCombatWeapon('awp');
+      }
+      if (this.input.isKeyDown('KeyR') && this.weapon.reload(nowMs)) {
+        this.multiplayer.sendReload();
+      }
+    }
   }
 
   private getPlayerModelFromLoadout(loadout: LoadoutSelection): PlayerModel {
