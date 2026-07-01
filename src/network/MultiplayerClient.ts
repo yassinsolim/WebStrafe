@@ -26,6 +26,12 @@ export class MultiplayerClient {
 
   public onSnapshot: ((snapshot: MultiplayerSnapshot) => void) | null = null;
   public onAttack: ((event: { mapId: string; playerId: string; kind: AttackKind }) => void) | null = null;
+  public onHit:
+    | ((event: { shooterId: string; targetId: string; weaponId: string; damage: number; hitbox: string }) => void)
+    | null = null;
+  public onDeath: ((event: { victimId: string; killerId: string; weaponId: string }) => void) | null = null;
+  public onHealth: ((event: { playerId: string; health: number; alive: boolean }) => void) | null = null;
+  public onRespawn: ((event: { playerId: string; position: [number, number, number] }) => void) | null = null;
   public onConnectedChange: ((connected: boolean) => void) | null = null;
 
   constructor(url = buildDefaultWsUrl()) {
@@ -103,6 +109,30 @@ export class MultiplayerClient {
       type: 'attack',
       kind,
     });
+  }
+
+  public sendFire(origin: [number, number, number], dir: [number, number, number]): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    if (!this.localId || !this.desiredJoin) {
+      return;
+    }
+    this.send({ type: 'fire', origin, dir });
+  }
+
+  public sendReload(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.localId) {
+      return;
+    }
+    this.send({ type: 'reload' });
+  }
+
+  public sendEquip(weaponId: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN || !this.localId) {
+      return;
+    }
+    this.send({ type: 'equip', weaponId });
   }
 
   private openSocket(): void {
@@ -198,6 +228,58 @@ export class MultiplayerClient {
             playerId: payload.playerId,
             kind: payload.kind,
           });
+          break;
+        }
+        case 'hit': {
+          if (
+            typeof payload.shooterId === 'string' &&
+            typeof payload.targetId === 'string' &&
+            typeof payload.weaponId === 'string' &&
+            typeof payload.damage === 'number' &&
+            typeof payload.hitbox === 'string'
+          ) {
+            this.onHit?.({
+              shooterId: payload.shooterId,
+              targetId: payload.targetId,
+              weaponId: payload.weaponId,
+              damage: payload.damage,
+              hitbox: payload.hitbox,
+            });
+          }
+          break;
+        }
+        case 'death': {
+          if (
+            typeof payload.victimId === 'string' &&
+            typeof payload.killerId === 'string' &&
+            typeof payload.weaponId === 'string'
+          ) {
+            this.onDeath?.({
+              victimId: payload.victimId,
+              killerId: payload.killerId,
+              weaponId: payload.weaponId,
+            });
+          }
+          break;
+        }
+        case 'health': {
+          if (
+            typeof payload.playerId === 'string' &&
+            typeof payload.health === 'number' &&
+            typeof payload.alive === 'boolean'
+          ) {
+            this.onHealth?.({
+              playerId: payload.playerId,
+              health: payload.health,
+              alive: payload.alive,
+            });
+          }
+          break;
+        }
+        case 'respawn': {
+          if (typeof payload.playerId === 'string' && isVec3(payload.position)) {
+            this.onRespawn?.({ playerId: payload.playerId, position: payload.position });
+          }
           break;
         }
         case 'error': {
