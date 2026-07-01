@@ -49,10 +49,13 @@ interface JsonObject {
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
-const DATA_DIR = path.join(ROOT_DIR, 'data');
+const DATA_DIR = process.env.WEBSTRAFE_DATA_DIR
+  ? path.resolve(process.env.WEBSTRAFE_DATA_DIR)
+  : path.join(ROOT_DIR, 'data');
 const LEADERBOARD_FILE = path.join(DATA_DIR, 'leaderboard.json');
 
 const PORT = Number.parseInt(process.env.PORT ?? '8787', 10);
+const HOST = process.env.HOST ?? '0.0.0.0';
 const DEV_MODE = process.env.NODE_ENV !== 'production';
 const MAX_HTTP_BODY_BYTES = 4 * 1024;
 const MAX_STATE_MESSAGES_PER_SECOND = 70;
@@ -1025,9 +1028,9 @@ function queueLeaderboardPersist(): void {
 async function bootstrap(): Promise<void> {
   await loadLeaderboardStore();
 
-  server.listen(PORT, () => {
+  server.listen(PORT, HOST, () => {
     // eslint-disable-next-line no-console
-    console.log(`[WebStrafe server] listening on http://localhost:${PORT}`);
+    console.log(`[WebStrafe server] listening on http://${HOST}:${PORT}`);
     // eslint-disable-next-line no-console
     console.log(`[WebStrafe server] mode=${DEV_MODE ? 'dev' : 'production'}`);
   });
