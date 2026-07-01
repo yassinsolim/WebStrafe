@@ -506,7 +506,7 @@ async function handleApiRequest(
   }
 
   if (req.method === 'GET' && url.pathname === '/api/leaderboard') {
-    const mapId = parseMapId(url.searchParams.get('mapId')) ?? 'custom';
+    const mapId = parseMapId(url.searchParams.get('mapId')) ?? 'surf_skyworld_x';
     const entries = (leaderboardStore[mapId] ?? []).slice(0, 20);
     respondJson(res, 200, {
       mapId,

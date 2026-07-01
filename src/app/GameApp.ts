@@ -228,7 +228,7 @@ export class GameApp {
     }
     this.rebuildMapSources(builtinMaps, customRecords);
     this.selectedMapId =
-      builtinMaps.find((map) => map.id === 'custom')?.id
+      builtinMaps.find((map) => map.id === 'surf_skyworld_x')?.id
       ?? builtinMaps.find((map) => map.id === 'movement_test_scene')?.id
       ?? builtinMaps[0]?.id
       ?? Array.from(this.mapSources.keys())[0]

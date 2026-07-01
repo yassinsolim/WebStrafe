@@ -1,14 +1,14 @@
 {
   "maps": [
     {
-      "id": "custom",
+      "id": "surf_skyworld_x",
       "name": "surf_skyworld_x",
       "author": "EVAI",
       "source": "surf_skyworld_x by EVAI",
       "license": "Creative Commons Attribution",
-      "scenePath": "/maps/custom/scene.glb",
-      "collisionPath": "/maps/custom/collision.glb",
-      "metaPath": "/maps/custom/meta.json"
+      "scenePath": "/maps/surf_skyworld_x/scene.glb",
+      "collisionPath": "/maps/surf_skyworld_x/collision.glb",
+      "metaPath": "/maps/surf_skyworld_x/meta.json"
     },
     {
       "id": "movement_test_scene",
