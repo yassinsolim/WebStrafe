@@ -30,6 +30,10 @@ export interface ArmRig {
   spineUpper: Bone | null;
   neck: Bone | null;
   head: Bone | null;
+  /** Right-hand finger joints (index/middle/ring/pinky, joints 0-2) for the menu fist grip. */
+  rightFingers: Bone[];
+  /** Right-hand thumb joints (0-2) for the menu fist grip. */
+  rightThumb: Bone[];
 
   rightUpperBase: Quaternion;
   rightLowerBase: Quaternion;
@@ -43,6 +47,8 @@ export interface ArmRig {
   spineUpperBase: Quaternion | null;
   neckBase: Quaternion | null;
   headBase: Quaternion | null;
+  rightFingerBases: Quaternion[];
+  rightThumbBases: Quaternion[];
 }
 
 const KNIFE_MODEL_PATH = '/viewmodels/knife/knife.glb';
@@ -94,6 +100,23 @@ export function buildArmRig(root: Object3D): ArmRig | null {
   const neck = pickBone('neck_0') ?? pickBone('neck');
   const head = pickBone('head_0') ?? pickBone('head');
 
+  // Right-hand finger joints for the menu-only fist grip: index/middle/ring/pinky
+  // joints 0-2 (curled uniformly) plus the thumb joints 0-2 (curled separately).
+  // Excludes the metacarpal (meta) and terminal (_end) bones.
+  const rightFingers: Bone[] = [];
+  const rightThumb: Bone[] = [];
+  for (const bone of bones) {
+    const name = bone.name.toLowerCase();
+    if (name.includes('_end') || name.includes('meta')) {
+      continue;
+    }
+    if (/finger_(index|middle|ring|pinky)_[012]_r_/.test(name)) {
+      rightFingers.push(bone);
+    } else if (/finger_thumb_[012]_r_/.test(name)) {
+      rightThumb.push(bone);
+    }
+  }
+
   return {
     rightUpper,
     rightLower,
@@ -107,6 +130,8 @@ export function buildArmRig(root: Object3D): ArmRig | null {
     spineUpper,
     neck,
     head,
+    rightFingers,
+    rightThumb,
 
     rightUpperBase: rightUpper.quaternion.clone(),
     rightLowerBase: rightLower.quaternion.clone(),
@@ -120,6 +145,8 @@ export function buildArmRig(root: Object3D): ArmRig | null {
     spineUpperBase: spineUpper?.quaternion.clone() ?? null,
     neckBase: neck?.quaternion.clone() ?? null,
     headBase: head?.quaternion.clone() ?? null,
+    rightFingerBases: rightFingers.map((bone) => bone.quaternion.clone()),
+    rightThumbBases: rightThumb.map((bone) => bone.quaternion.clone()),
   };
 }
 
@@ -138,13 +165,13 @@ function applyOptional(bone: Bone | null, base: Quaternion | null, x: number, y:
 
 /**
  * Poses the arms into a static combat knife stance for the menu hero, matching
- * the classic CS terrorist knife-ready idle: the knife arm extends forward so the
- * knife is held out in front of the body a little above the waist, with the blade
- * pointing forward and slightly outward (a "ready to knife fight" grip), while the
- * off-hand rests relaxed and slightly forward at belt height on its own side.
- * Reads well through the full side-to-side yaw sway. Deterministic and menu-only —
- * the in-game renderer keeps its own animated stance in
- * RemotePlayersRenderer.applyRigPose.
+ * the classic CS terrorist knife-ready idle: the knife arm is held out in front
+ * of the body a little above the waist with the fingers curled into a clenched
+ * fist gripping the handle, and the blade angled inward across the body (toward
+ * the centreline) rather than splayed outward, while the off-hand rests relaxed
+ * and slightly forward at belt height on its own side. Reads well through the
+ * full side-to-side yaw sway. Deterministic and menu-only — the in-game renderer
+ * keeps its own animated stance in RemotePlayersRenderer.applyRigPose.
  */
 export function applyKnifeIdlePose(rig: ArmRig): void {
   applyOptional(rig.spineMid, rig.spineMidBase, 0.05, 0, 0.02);
@@ -156,10 +183,20 @@ export function applyKnifeIdlePose(rig: ArmRig): void {
 
   // Right knife arm: extended forward with the elbow tucked so the knife sits out
   // in front a little above the waist; the wrist is rolled so the blade points
-  // forward and slightly outward (knife-fighter ready grip).
+  // forward and inward, angled across the body toward the centreline.
   applyBoneOffset(rig.rightUpper, rig.rightUpperBase, -0.04, 0.138, 0.564);
   applyBoneOffset(rig.rightLower, rig.rightLowerBase, -0.065, -0.025, 0.791);
-  applyBoneOffset(rig.rightHand, rig.rightHandBase, 1.357, 0.494, -1.219);
+  applyBoneOffset(rig.rightHand, rig.rightHandBase, -0.446, 0.69, 0.924);
+
+  // Right hand: curl the fingers and thumb into a clenched fist gripping the knife
+  // handle. The knife rides the sibling weapon-hand bone, so this only closes the
+  // fingers around it and never moves the blade.
+  for (let i = 0; i < rig.rightFingers.length; i++) {
+    applyBoneOffset(rig.rightFingers[i], rig.rightFingerBases[i], 0, 0, 0.8);
+  }
+  for (let i = 0; i < rig.rightThumb.length; i++) {
+    applyBoneOffset(rig.rightThumb[i], rig.rightThumbBases[i], 0, 0, 0.6);
+  }
 
   // Left support hand: relaxed and slightly forward at belt height on its own
   // side (a loose guard that reads naturally through the yaw sway).
