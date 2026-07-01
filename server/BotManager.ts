@@ -22,6 +22,13 @@ export interface BotSnapshotRow {
   alive: boolean;
 }
 
+export interface BotFireEvent {
+  id: string;
+  mapId: string;
+  origin: [number, number, number];
+  dir: [number, number, number];
+}
+
 const BOT_NAMES = [
   'Ada', 'Byte', 'Cypher', 'Delta', 'Echo', 'Flux', 'Ghost', 'Hex',
   'Iris', 'Jolt', 'Kilo', 'Lynx', 'Mako', 'Nova', 'Onyx', 'Pyro',
@@ -132,6 +139,56 @@ export class BotManager {
     return id.startsWith('bot:');
   }
 
+  /**
+   * Bots that want to fire this tick AND have a clear line of sight to their
+   * target (server-side occlusion via the map collision — bots can't wall-hack).
+   * The caller runs each event through the authoritative arena.
+   */
+  collectFireEvents(): BotFireEvent[] {
+    const events: BotFireEvent[] = [];
+    const losCapsule = { radius: 0.1, height: 0.1 };
+    for (const [mapId, bots] of this.botsByMap) {
+      const world = this.worlds.get(mapId);
+      if (!world) {
+        continue;
+      }
+      for (const bot of bots) {
+        if (!this.arena.isAlive(bot.id) || !bot.controller.wantsToFire()) {
+          continue;
+        }
+        const aim = bot.controller.getAimTarget();
+        if (!aim) {
+          continue;
+        }
+        const eye = bot.controller.getCameraPosition();
+        // A wall between the bot's eye and its target blocks the shot.
+        const trace = world.world.traceCapsule(eye, aim, losCapsule);
+        if (trace.hit && trace.fraction < 0.95) {
+          continue;
+        }
+        const fwd = bot.controller.getForwardVector();
+        events.push({
+          id: bot.id,
+          mapId,
+          origin: [eye.x, eye.y, eye.z],
+          dir: [fwd.x, fwd.y, fwd.z],
+        });
+      }
+    }
+    return events;
+  }
+
+  /** Reloads any living bot that has run dry. */
+  maintainAmmo(nowMs: number): void {
+    for (const bots of this.botsByMap.values()) {
+      for (const bot of bots) {
+        if (this.arena.isAlive(bot.id) && (this.arena.getAmmo(bot.id) ?? 1) <= 0) {
+          this.arena.reload(bot.id, nowMs);
+        }
+      }
+    }
+  }
+
   /** Map a bot belongs to, or null. */
   mapOf(id: string): string | null {
     for (const [mapId, bots] of this.botsByMap) {
@@ -174,7 +231,7 @@ export class BotManager {
       // Fan bots out slightly so they don't stack on the exact spawn point.
       spawn.x += (i - this.botsPerMap / 2) * 2;
       const controller = new BotController(spawn, world.spawn.yawDeg);
-      this.arena.addPlayer(id, mapId, 'knife');
+      this.arena.addPlayer(id, mapId, 'deagle');
       this.arena.setPosition(id, toTuple(spawn), mapId);
       bots.push({ id, mapId, name, model, controller });
     }

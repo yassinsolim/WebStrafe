@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
 import { Vector3 } from 'three';
 import { CombatArena } from '../src/combat/CombatArena';
+import type { FireOutcome } from '../src/combat/CombatArena';
 import type { WeaponId } from '../src/combat/weapons';
 import { BotManager, type BotTarget } from './BotManager';
 
@@ -310,19 +311,7 @@ wss.on('connection', (ws, req) => {
           return;
         }
         const outcome = arena.handleFire(client.id, origin, dir, now);
-        if (outcome.hit) {
-          broadcastToMap(client.mapId, { type: 'hit', ...outcome.hit });
-          const victim = outcome.hit.targetId;
-          broadcastToMap(client.mapId, {
-            type: 'health',
-            playerId: victim,
-            health: arena.getHealth(victim) ?? 0,
-            alive: arena.isAlive(victim),
-          });
-        }
-        if (outcome.death) {
-          broadcastToMap(client.mapId, { type: 'death', ...outcome.death });
-        }
+        broadcastFireOutcome(client.mapId, outcome);
         break;
       }
       case 'reload': {
@@ -475,6 +464,15 @@ if (ENABLE_BOTS) {
     }
 
     botManager.tick(botDt, targetsByMap);
+
+    // Bots fire through the authoritative arena, with the same broadcasts as
+    // human fire. LOS is already checked server-side in collectFireEvents.
+    const now = Date.now();
+    for (const ev of botManager.collectFireEvents()) {
+      const outcome = arena.handleFire(ev.id, ev.origin, ev.dir, now);
+      broadcastFireOutcome(ev.mapId, outcome);
+    }
+    botManager.maintainAmmo(now);
 
     sincePrune += botDt;
     if (sincePrune >= 2) {
@@ -902,6 +900,22 @@ function broadcastToMap(mapId: string, payload: Record<string, unknown>): void {
       continue;
     }
     sendWs(client.ws, payload);
+  }
+}
+
+function broadcastFireOutcome(mapId: string, outcome: FireOutcome): void {
+  if (outcome.hit) {
+    broadcastToMap(mapId, { type: 'hit', ...outcome.hit });
+    const victim = outcome.hit.targetId;
+    broadcastToMap(mapId, {
+      type: 'health',
+      playerId: victim,
+      health: arena.getHealth(victim) ?? 0,
+      alive: arena.isAlive(victim),
+    });
+  }
+  if (outcome.death) {
+    broadcastToMap(mapId, { type: 'death', ...outcome.death });
   }
 }
 
