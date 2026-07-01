@@ -59,6 +59,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   private hostLastTickMs = 0;
   private botRows: HostBotRow[] = [];
   private botRowsAt = 0;
+  private presenceSynced = false;
 
   constructor(
     private readonly client: SupabaseClient,
@@ -110,6 +111,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.botRows = [];
     this.remotes.clear();
     this.activeMapId = mapId;
+    this.presenceSynced = false;
 
     const channel = this.client.channel(`${this.config.lobbyChannelPrefix}_${mapId}`, {
       config: { presence: { key: this.localId }, broadcast: { self: false } },
@@ -117,6 +119,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.channel = channel;
 
     channel.on('presence', { event: 'sync' }, () => {
+      this.presenceSynced = true;
       this.syncPresence();
       this.updateHostRole();
     });
@@ -194,10 +197,27 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     return { id: this.localId, name: this.localName, model: this.localModel };
   }
 
-  /** Elects the host (lowest present id) and starts/stops the host simulation. */
-  private updateHostRole(): void {
+  /** The currently elected host id (lowest present id), or null before presence syncs. */
+  private electedHostId(): string | null {
+    if (!this.presenceSynced) {
+      return null;
+    }
     const ids = [this.localId, ...this.remotes.keys()].sort();
-    const shouldHost = ids.length > 0 && ids[0] === this.localId && this.roomContext !== null;
+    return ids[0] ?? null;
+  }
+
+  /**
+   * Elects the host (lowest present id) and starts/stops the host simulation.
+   * Gated on presence being synced so a client can't self-host with an empty
+   * roster (before subscribe) and briefly double up with the real host.
+   *
+   * Note: combat state (HP, deaths) lives only in the host's arena, so a host
+   * handoff resets HP to full — acceptable for a casual game; handoffs happen
+   * only when the host disconnects.
+   */
+  private updateHostRole(): void {
+    const shouldHost =
+      this.electedHostId() === this.localId && this.roomContext !== null;
 
     if (shouldHost && !this.hostSim && this.roomContext) {
       const emitter: HostEmitter = {
@@ -249,7 +269,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.hostSim.syncHumans(humans);
     this.botRows = this.hostSim.tick(dtMs);
     this.botRowsAt = now;
-    this.broadcast('botstate', { rows: this.botRows });
+    this.broadcast('botstate', { host: this.localId, rows: this.botRows });
   }
 
   private broadcast(event: string, payload: unknown): void {
@@ -260,9 +280,14 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (this.hostSim) {
       return; // the host is the source of truth; ignore echoes
     }
-    const rows = (payload as { rows?: HostBotRow[] }).rows;
-    if (Array.isArray(rows)) {
-      this.botRows = rows;
+    const p = payload as { host?: string; rows?: HostBotRow[] };
+    // Only trust the currently-elected host — rejects a stale/second host's
+    // broadcast during a handoff race so bots don't jitter between two sims.
+    if (!p.host || p.host !== this.electedHostId()) {
+      return;
+    }
+    if (Array.isArray(p.rows)) {
+      this.botRows = p.rows;
       this.botRowsAt = Date.now();
     }
   }
