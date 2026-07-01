@@ -1,4 +1,5 @@
 import type { AttackKind, MultiplayerSnapshot, PlayerModel } from './types';
+import { resolveWsUrl } from './endpoints';
 
 interface DesiredJoin {
   mapId: string;
@@ -394,8 +395,7 @@ export class MultiplayerClient {
 }
 
 function buildDefaultWsUrl(): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/ws`;
+  return resolveWsUrl(import.meta.env, window.location);
 }
 
 function isVec3(value: unknown): value is [number, number, number] {

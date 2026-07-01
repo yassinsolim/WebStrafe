@@ -1,9 +1,12 @@
 import type { LeaderboardEntry, PlayerModel } from './types';
+import { resolveApiBase } from './endpoints';
 
 export class LeaderboardService {
+  private readonly apiBase = resolveApiBase(import.meta.env);
+
   public async fetchLeaderboard(mapId: string): Promise<LeaderboardEntry[]> {
     const normalized = encodeURIComponent(mapId);
-    const response = await fetch(`/api/leaderboard?mapId=${normalized}`, {
+    const response = await fetch(`${this.apiBase}/api/leaderboard?mapId=${normalized}`, {
       method: 'GET',
       headers: {
         Accept: 'application/json',
@@ -24,7 +27,7 @@ export class LeaderboardService {
     timeMs: number,
     model: PlayerModel,
   ): Promise<LeaderboardEntry[]> {
-    const response = await fetch('/api/leaderboard', {
+    const response = await fetch(`${this.apiBase}/api/leaderboard`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
