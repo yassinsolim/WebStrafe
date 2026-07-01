@@ -8,9 +8,11 @@ import type {
   MultiplayerTransport,
   OutgoingState,
   RespawnEvent,
+  RoomContext,
   ShotEvent,
 } from './MultiplayerTransport';
 import type { SupabaseConfig } from './supabaseConfig';
+import { HostSimulation, type HostBotRow, type HostEmitter } from './HostSimulation';
 
 const SESSION_KEY = 'webstrafe:session-id:v1';
 const STATE_BROADCAST_HZ = 20;
@@ -51,6 +53,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   private stateTimer: ReturnType<typeof setInterval> | null = null;
   private snapshotTimer: ReturnType<typeof setInterval> | null = null;
 
+  private roomContext: RoomContext | null = null;
+  private hostSim: HostSimulation | null = null;
+  private hostTimer: ReturnType<typeof setInterval> | null = null;
+  private hostLastTickMs = 0;
+  private botRows: HostBotRow[] = [];
+  private botRowsAt = 0;
+
   constructor(
     private readonly client: SupabaseClient,
     private readonly config: SupabaseConfig,
@@ -64,11 +73,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
 
   disconnect(): void {
     this.stopTimers();
+    this.stopHost();
     if (this.channel) {
       void this.client.removeChannel(this.channel);
       this.channel = null;
     }
     this.remotes.clear();
+    this.botRows = [];
     this.onConnectedChange?.(false);
   }
 
@@ -95,6 +106,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       void this.client.removeChannel(this.channel);
       this.channel = null;
     }
+    this.stopHost();
+    this.botRows = [];
     this.remotes.clear();
     this.activeMapId = mapId;
 
@@ -103,9 +116,21 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     });
     this.channel = channel;
 
-    channel.on('presence', { event: 'sync' }, () => this.syncPresence());
+    channel.on('presence', { event: 'sync' }, () => {
+      this.syncPresence();
+      this.updateHostRole();
+    });
     channel.on('broadcast', { event: 'state' }, ({ payload }) => this.onRemoteState(payload));
     channel.on('broadcast', { event: 'attack' }, ({ payload }) => this.onRemoteAttack(payload));
+    channel.on('broadcast', { event: 'botstate' }, ({ payload }) => this.onBotState(payload));
+    channel.on('broadcast', { event: 'fire' }, ({ payload }) => this.onRemoteFire(payload));
+    channel.on('broadcast', { event: 'equip' }, ({ payload }) => this.onRemoteEquip(payload));
+    channel.on('broadcast', { event: 'reload' }, ({ payload }) => this.onRemoteReload(payload));
+    channel.on('broadcast', { event: 'hit' }, ({ payload }) => this.onHit?.(payload as HitEvent));
+    channel.on('broadcast', { event: 'death' }, ({ payload }) => this.onDeath?.(payload as DeathEvent));
+    channel.on('broadcast', { event: 'health' }, ({ payload }) => this.onHealth?.(payload as HealthEvent));
+    channel.on('broadcast', { event: 'respawn' }, ({ payload }) => this.onRespawn?.(payload as RespawnEvent));
+    channel.on('broadcast', { event: 'shot' }, ({ payload }) => this.onShot?.(payload as ShotEvent));
 
     channel.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
@@ -130,8 +155,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     });
   }
 
-  // Combat sends are relayed for the host-authoritative layer (PR: host bots).
+  // Combat is resolved by the elected host. If we ARE the host, apply directly;
+  // otherwise broadcast for the host to resolve.
   sendFire(origin: [number, number, number], dir: [number, number, number]): void {
+    if (this.hostSim) {
+      this.hostSim.applyFire(this.localId, origin, dir);
+      return;
+    }
     void this.channel?.send({
       type: 'broadcast',
       event: 'fire',
@@ -140,15 +170,122 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   }
 
   sendReload(): void {
+    if (this.hostSim) {
+      this.hostSim.applyReload(this.localId);
+      return;
+    }
     void this.channel?.send({ type: 'broadcast', event: 'reload', payload: { id: this.localId } });
   }
 
   sendEquip(weaponId: string): void {
+    if (this.hostSim) {
+      this.hostSim.applyEquip(this.localId, weaponId);
+      return;
+    }
     void this.channel?.send({ type: 'broadcast', event: 'equip', payload: { id: this.localId, weaponId } });
+  }
+
+  setRoomContext(context: RoomContext | null): void {
+    this.roomContext = context;
+    this.updateHostRole();
   }
 
   private presencePayload(): Record<string, unknown> {
     return { id: this.localId, name: this.localName, model: this.localModel };
+  }
+
+  /** Elects the host (lowest present id) and starts/stops the host simulation. */
+  private updateHostRole(): void {
+    const ids = [this.localId, ...this.remotes.keys()].sort();
+    const shouldHost = ids.length > 0 && ids[0] === this.localId && this.roomContext !== null;
+
+    if (shouldHost && !this.hostSim && this.roomContext) {
+      const emitter: HostEmitter = {
+        hit: (e) => { this.onHit?.(e); this.broadcast('hit', e); },
+        death: (e) => { this.onDeath?.(e); this.broadcast('death', e); },
+        health: (e) => { this.onHealth?.(e); this.broadcast('health', e); },
+        respawn: (e) => { this.onRespawn?.(e); this.broadcast('respawn', e); },
+        shot: (e) => { this.onShot?.(e); this.broadcast('shot', e); },
+      };
+      this.hostSim = new HostSimulation(
+        this.roomContext.collisionWorld,
+        this.roomContext.spawn,
+        this.roomContext.botCount,
+        emitter,
+      );
+      this.hostLastTickMs = Date.now();
+      this.hostTimer = setInterval(() => this.tickHost(), Math.round(1000 / 60));
+    } else if (!shouldHost && this.hostSim) {
+      this.stopHost();
+    }
+  }
+
+  private stopHost(): void {
+    if (this.hostTimer) {
+      clearInterval(this.hostTimer);
+      this.hostTimer = null;
+    }
+    this.hostSim?.dispose();
+    this.hostSim = null;
+  }
+
+  private tickHost(): void {
+    if (!this.hostSim) {
+      return;
+    }
+    const now = Date.now();
+    const dtMs = Math.min(100, now - this.hostLastTickMs);
+    this.hostLastTickMs = now;
+
+    const humans = [];
+    if (this.localState) {
+      humans.push({ id: this.localId, name: this.localName, model: this.localModel, position: this.localState.position });
+    }
+    for (const [id, record] of this.remotes) {
+      if (record.state) {
+        humans.push({ id, name: record.name, model: record.model, position: record.state.position });
+      }
+    }
+    this.hostSim.syncHumans(humans);
+    this.botRows = this.hostSim.tick(dtMs);
+    this.botRowsAt = now;
+    this.broadcast('botstate', { rows: this.botRows });
+  }
+
+  private broadcast(event: string, payload: unknown): void {
+    void this.channel?.send({ type: 'broadcast', event, payload });
+  }
+
+  private onBotState(payload: unknown): void {
+    if (this.hostSim) {
+      return; // the host is the source of truth; ignore echoes
+    }
+    const rows = (payload as { rows?: HostBotRow[] }).rows;
+    if (Array.isArray(rows)) {
+      this.botRows = rows;
+      this.botRowsAt = Date.now();
+    }
+  }
+
+  private onRemoteFire(payload: unknown): void {
+    const p = payload as { id?: string; origin?: [number, number, number]; dir?: [number, number, number] };
+    if (this.hostSim && p.id && p.origin && p.dir) {
+      this.hostSim.applyFire(p.id, p.origin, p.dir);
+    }
+  }
+
+  private onRemoteEquip(payload: unknown): void {
+    const p = payload as { id?: string; weaponId?: string };
+    if (this.hostSim && p.id && p.weaponId) {
+      this.hostSim.applyEquip(p.id, p.weaponId);
+    }
+  }
+
+  private onRemoteReload(payload: unknown): void {
+    const p = payload as { id?: string };
+    if (this.hostSim && p.id) {
+      this.hostSim.applyReload(p.id);
+    }
   }
 
   private syncPresence(): void {
@@ -256,6 +393,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         yaw: record.state.yaw,
         pitch: record.state.pitch,
       });
+    }
+
+    // Bots (from the host sim, local or received) appear as extra players.
+    if (now - this.botRowsAt <= PLAYER_STALE_MS) {
+      for (const bot of this.botRows) {
+        players.push(bot);
+      }
     }
 
     this.onSnapshot({ mapId: this.activeMapId, players, serverTimeMs: now });
