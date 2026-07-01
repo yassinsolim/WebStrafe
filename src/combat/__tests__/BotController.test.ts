@@ -15,6 +15,7 @@ function state(partial: Partial<BotMovementState> = {}): BotMovementState {
   return {
     feet: new Vector3(0, 0, 0),
     yawRad: 0,
+    pitchRad: 0,
     horizontalSpeed: 5,
     grounded: true,
     ...partial,
@@ -63,6 +64,39 @@ describe('decideBotInput', () => {
     const right = decideBotInput(state(), { targetFeet: new Vector3(5, 0, -50) }, DEFAULT_BOT_PARAMS, dt);
     const left = decideBotInput(state(), { targetFeet: new Vector3(-5, 0, -50) }, DEFAULT_BOT_PARAMS, dt);
     expect(Math.sign(right.yawDelta)).toBe(-Math.sign(left.yawDelta));
+  });
+
+  it('does not fire until aimed at the target', () => {
+    // Target 90 degrees to the side: not aimed, must not fire.
+    const unaimed = decideBotInput(state(), { targetFeet: new Vector3(50, 0, 0) }, DEFAULT_BOT_PARAMS, dt);
+    expect(unaimed.fire).toBe(false);
+  });
+
+  it('fires when aimed at an in-range target', () => {
+    // Bot at origin facing -Z (yaw 0). Target straight ahead, close, at eye height.
+    const aimed = decideBotInput(
+      state({ pitchRad: 0 }),
+      { targetFeet: new Vector3(0, -0.4, -30) }, // feet+1.2 ≈ eye(1.6): near-zero pitch
+      DEFAULT_BOT_PARAMS,
+      dt,
+    );
+    expect(aimed.fire).toBe(true);
+  });
+
+  it('does not fire beyond engage range', () => {
+    const far = decideBotInput(
+      state(),
+      { targetFeet: new Vector3(0, -0.4, -(DEFAULT_BOT_PARAMS.engageRange + 500)) },
+      DEFAULT_BOT_PARAMS,
+      dt,
+    );
+    expect(far.fire).toBe(false);
+  });
+
+  it('pitches up toward a target that is above the bot', () => {
+    // Target well above -> desired pitch > 0 -> positive pitchDelta.
+    const d = decideBotInput(state(), { targetFeet: new Vector3(0, 100, -30) }, DEFAULT_BOT_PARAMS, dt);
+    expect(d.pitchDelta).toBeGreaterThan(0);
   });
 });
 

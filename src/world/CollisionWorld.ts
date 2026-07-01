@@ -7,10 +7,11 @@ import {
   Mesh,
   MeshBasicMaterial,
   Object3D,
+  Raycaster,
   Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { MeshBVH } from 'three-mesh-bvh';
+import { acceleratedRaycast, MeshBVH } from 'three-mesh-bvh';
 import type { CapsuleShape, GroundProbe } from '../movement/types';
 
 export interface TraceResult {
@@ -50,6 +51,7 @@ export class CollisionWorld implements CollisionAdapter {
   private readonly tempCapsulePoint = new Vector3();
   private readonly tempPush = new Vector3();
   private readonly tempPosition = new Vector3();
+  private readonly losRaycaster = new Raycaster();
 
   public clear(): void {
     this.collisionGeometry?.dispose();
@@ -99,6 +101,30 @@ export class CollisionWorld implements CollisionAdapter {
       }),
     );
     this.collisionMesh.name = 'CollisionMesh';
+    // Use the BVH for exact, fast raycasts (line-of-sight queries).
+    this.collisionMesh.raycast = acceleratedRaycast;
+  }
+
+  /**
+   * Exact line-of-sight test: returns true if the segment from `from` to `to`
+   * is blocked by collision geometry. Uses the BVH raycaster (not the capsule
+   * sweep), so it never tunnels through thin walls regardless of segment length.
+   */
+  public segmentIntersectsGeometry(from: Vector3, to: Vector3): boolean {
+    if (!this.collisionMesh) {
+      return false;
+    }
+    const delta = this.tempPush.copy(to).sub(from);
+    const distance = delta.length();
+    if (distance < 1e-6) {
+      return false;
+    }
+    delta.multiplyScalar(1 / distance);
+    this.losRaycaster.set(from, delta);
+    this.losRaycaster.near = 0;
+    this.losRaycaster.far = distance;
+    this.losRaycaster.firstHitOnly = true;
+    return this.losRaycaster.intersectObject(this.collisionMesh, false).length > 0;
   }
 
   public resolveCapsulePosition(feetPosition: Vector3, capsule: CapsuleShape): OverlapResult {
