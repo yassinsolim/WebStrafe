@@ -345,6 +345,7 @@ export class GameApp {
     this.renderer.dispose();
     this.combatEffects?.dispose();
     this.combatHud?.dispose();
+    this.menu?.dispose();
   }
 
   private readonly loop = (time: number): void => {
