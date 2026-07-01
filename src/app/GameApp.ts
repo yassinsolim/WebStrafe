@@ -25,6 +25,7 @@ import { runMovementAcceptanceDiagnostics } from '../movement/MovementAcceptance
 import { logMovementAcceptance } from '../movement/MovementTestScene';
 import type { MovementDebugState } from '../movement/types';
 import { KnifeAudio, type KnifeSoundProfile } from '../audio/KnifeAudio';
+import { AttackSoundThrottle } from '../audio/AttackSoundThrottle';
 import { CosmeticsManager } from '../cosmetics/CosmeticsManager';
 import { ViewmodelRenderer } from '../cosmetics/ViewmodelRenderer';
 import type { LoadoutSelection } from '../cosmetics/types';
@@ -84,6 +85,8 @@ export class GameApp {
   private readonly multiplayer = new MultiplayerClient();
   private readonly remotePlayers = new RemotePlayersRenderer();
   private readonly knifeAudio = new KnifeAudio();
+  private readonly remoteAttackSound = new AttackSoundThrottle();
+  private readonly knownRemoteIds = new Set<string>();
 
   private readonly combatEnabled = isCombatEnabled();
   private combatHud: CombatHud | null = null;
@@ -266,16 +269,28 @@ export class GameApp {
         return;
       }
       this.remotePlayers.applySnapshot(snapshot.players, this.multiplayer.getLocalId());
-      if (this.combatEnabled) {
-        const present = new Set<string>();
-        for (const p of snapshot.players) {
+      const present = new Set<string>();
+      for (const p of snapshot.players) {
+        present.add(p.id);
+        if (this.combatEnabled) {
           this.remotePlayerNames.set(p.id, p.name);
-          present.add(p.id);
         }
-        for (const id of this.remotePlayerNames.keys()) {
-          if (!present.has(id)) {
-            this.remotePlayerNames.delete(id);
-          }
+      }
+      // Prune per-player state for anyone who left, so these maps stay bounded.
+      for (const id of this.remotePlayerNames.keys()) {
+        if (!present.has(id)) {
+          this.remotePlayerNames.delete(id);
+        }
+      }
+      for (const id of this.knownRemoteIds) {
+        if (!present.has(id)) {
+          this.remoteAttackSound.forget(id);
+          this.knownRemoteIds.delete(id);
+        }
+      }
+      for (const id of present) {
+        if (id !== this.multiplayer.getLocalId()) {
+          this.knownRemoteIds.add(id);
         }
       }
     };
@@ -285,6 +300,10 @@ export class GameApp {
       }
       this.remotePlayers.triggerAttack(playerId, kind);
       if (playerId !== this.multiplayer.getLocalId()) {
+        // Throttle per player so a spammy peer/bot can't machine-gun the SFX.
+        if (!this.remoteAttackSound.shouldPlay(playerId, performance.now())) {
+          return;
+        }
         const remoteModel = this.remotePlayers.getPlayerModel(playerId);
         const remoteProfile = remoteModel
           ? this.getKnifeSoundProfileFromModel(remoteModel)
