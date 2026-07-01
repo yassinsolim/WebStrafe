@@ -216,7 +216,11 @@ export function attachKnifeModel(handBone: Bone, knifeTemplate: Object3D | null)
 
   const knife = knifeTemplate.clone(true);
   knife.name = 'RemoteKnifeModel';
-  knife.position.set(0.013, -0.01, -0.02);
+  // The knife mesh origin sits near the guard, so the grip+butt hang below the
+  // bone anchor. Offset the clone so a mid-handle point seats in the palm/finger
+  // centroid (where the closed fist actually wraps), giving a real grip instead
+  // of a handle floating under the fist.
+  knife.position.set(0.039, -0.0034, 0.0602);
   knife.rotation.set(1.18, -0.58, -0.5);
   handBone.add(knife);
 }
