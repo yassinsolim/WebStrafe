@@ -1,0 +1,36 @@
+# Fly.io config for the WebStrafe multiplayer backend (WebSocket + API + bots).
+# Set `app` and `primary_region` before first deploy (or `fly launch` fills them).
+# A persistent WS server must NOT auto-stop, or sockets drop when idle.
+
+app = "webstrafe-server"          # <-- change to your Fly app name
+primary_region = "iad"            # <-- pick a region near you (fly platform regions)
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  HOST = "0.0.0.0"
+  ENABLE_BOTS = "true"
+  BOTS_PER_MAP = "2"
+  WEBSTRAFE_DATA_DIR = "/data"
+  # Lock WS/API to the deployed frontend origin(s), comma-separated:
+  WEBSTRAFE_ALLOWED_ORIGINS = "https://strafe.yassin.app"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Keep the machine alive so long-lived WebSockets are not dropped.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+# Durable leaderboard storage. Create with:
+#   fly volumes create webstrafe_data --size 1 --region <region>
+[[mounts]]
+  source = "webstrafe_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
