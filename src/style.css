@@ -427,3 +427,88 @@ input[type='checkbox'] {
   font-size: 0.88rem;
   min-height: 18px;
 }
+
+/* ── Combat HUD ─────────────────────────────────────────────── */
+.combat-hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+  font-family: 'DM Mono', 'Consolas', monospace;
+  color: #fff;
+}
+.combat-health {
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  width: 220px;
+  height: 26px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.combat-health-fill {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  background: linear-gradient(90deg, #37d67a, #2bb673);
+  transition: width 120ms ease-out;
+}
+.combat-health-fill.low {
+  background: linear-gradient(90deg, #e5484d, #b3271b);
+}
+.combat-health-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.combat-ammo {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+.combat-hitmarker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.4rem;
+  color: #fff;
+  transition: opacity 90ms ease-out;
+}
+.combat-hitmarker.headshot {
+  color: #ff5a5a;
+}
+.combat-killfeed {
+  position: absolute;
+  right: 24px;
+  top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+.combat-killfeed-line {
+  background: rgba(0, 0, 0, 0.45);
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 0.85rem;
+}
+.combat-death {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #e5484d;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+}
