@@ -1,5 +1,6 @@
 import type { AttackKind, MultiplayerSnapshot, PlayerModel } from './types';
 import { resolveWsUrl } from './endpoints';
+import type { MultiplayerTransport, OutgoingState } from './MultiplayerTransport';
 
 interface DesiredJoin {
   mapId: string;
@@ -7,14 +8,7 @@ interface DesiredJoin {
   model: PlayerModel;
 }
 
-interface OutgoingState {
-  position: [number, number, number];
-  velocity: [number, number, number];
-  yaw: number;
-  pitch: number;
-}
-
-export class MultiplayerClient {
+export class MultiplayerClient implements MultiplayerTransport {
   private ws: WebSocket | null = null;
   private reconnectHandle: number | null = null;
   private heartbeatHandle: number | null = null;
