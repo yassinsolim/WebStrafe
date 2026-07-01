@@ -15,7 +15,9 @@ import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
  * Shared player-model rigging: locating the arm bones, attaching a knife to the
  * right hand, and posing the arms into the combat "knife hold" stance. Used both
  * by the in-game {@link RemotePlayersRenderer} (animated) and the main-menu
- * character preview (static), so both hold the knife identically.
+ * character preview (static). Both share the same attach + arm stance; the menu
+ * additionally closes the fingers and seats the knife a touch deeper in the palm
+ * (see {@link applyKnifeIdlePose}), which the in-game renderer never applies.
  */
 export interface ArmRig {
   rightUpper: Bone;
@@ -52,6 +54,15 @@ export interface ArmRig {
 }
 
 const KNIFE_MODEL_PATH = '/viewmodels/knife/knife.glb';
+
+/**
+ * Knife child-offset (relative to the right weapon-hand bone) for the static
+ * menu hero pose only. The menu closes the fingers into a fist, so the knife
+ * seats a little deeper in the palm / finger-curl pocket than the in-game
+ * default set in {@link attachKnifeModel}. Applied by {@link applyKnifeIdlePose}
+ * so the in-game third-person hold is never affected.
+ */
+const MENU_KNIFE_GRIP_POSITION = new Vector3(0.058, -0.0022, 0.0688);
 
 const offsetQuat = new Quaternion();
 const offsetEuler = new Euler(0, 0, 0, 'XYZ');
@@ -188,19 +199,29 @@ export function applyKnifeIdlePose(rig: ArmRig): void {
   applyBoneOffset(rig.rightLower, rig.rightLowerBase, -0.065, -0.025, 0.791);
   applyBoneOffset(rig.rightHand, rig.rightHandBase, -0.446, 0.69, 0.924);
 
-  // Right hand: curl the fingers and thumb into a cylinder grip that wraps the
-  // knife handle. The knuckles angle over the top of the handle while the mid
-  // and tip joints close around and under it, so the fingers visibly hug the
-  // wooden grip instead of clenching into a featureless ball sitting on top of
-  // it. The knife rides the sibling weapon-hand bone, so this only closes the
-  // fingers around it and never moves the blade.
-  const fingerCurl = [0.5, 0.9, 1.0]; // knuckle, middle, tip joints
+  // Right hand: curl the fingers and thumb into a tight cylinder grip that wraps
+  // the knife handle seated in the palm. The knuckles roll over the top of the
+  // handle while the mid and tip joints close hard around and under it, so the
+  // fingers visibly hug the wooden grip instead of clenching into a featureless
+  // ball beside it. This only closes the fingers around the knife (which rides
+  // the sibling weapon-hand bone) and never moves the blade.
+  const fingerCurl = [0.72, 0.98, 1.02]; // knuckle, middle, tip joints
   for (let i = 0; i < rig.rightFingers.length; i++) {
     applyBoneOffset(rig.rightFingers[i], rig.rightFingerBases[i], 0, 0, fingerCurl[i % 3]);
   }
-  const thumbCurl = [0.5, 0.62, 0.62]; // base, middle, tip joints
+  const thumbCurl = [0.5, 0.66, 0.66]; // base, middle, tip joints
   for (let i = 0; i < rig.rightThumb.length; i++) {
     applyBoneOffset(rig.rightThumb[i], rig.rightThumbBases[i], 0, 0, thumbCurl[Math.min(i, thumbCurl.length - 1)]);
+  }
+
+  // Seat the knife a little deeper in the palm for the static menu pose only.
+  // attachKnifeModel keeps the in-game offset (gameplay is viewed at a distance
+  // with an open hand and no finger curl); here the fingers close, so nudging the
+  // knife into the finger-curl pocket makes the fist wrap the handle without
+  // touching the in-game third-person hold.
+  const menuKnife = rig.rightHand.getObjectByName('RemoteKnifeModel');
+  if (menuKnife) {
+    menuKnife.position.copy(MENU_KNIFE_GRIP_POSITION);
   }
 
   // Left support hand: relaxed and slightly forward at belt height on its own
@@ -222,9 +243,10 @@ export function attachKnifeModel(handBone: Bone, knifeTemplate: Object3D | null)
   const knife = knifeTemplate.clone(true);
   knife.name = 'RemoteKnifeModel';
   // The knife mesh origin sits near the guard, so the grip+butt hang below the
-  // bone anchor. Offset the clone so a mid-handle point seats in the palm/finger
-  // centroid (where the closed fist actually wraps), giving a real grip instead
-  // of a handle floating under the fist.
+  // bone anchor. Offset the clone so a mid-handle point sits at the hand for the
+  // in-game third-person hold (viewed at a distance with an open hand). The
+  // static menu pose nudges it a little deeper into the palm in
+  // applyKnifeIdlePose once the fingers close.
   knife.position.set(0.039, -0.0034, 0.0602);
   knife.rotation.set(1.18, -0.58, -0.5);
   handBone.add(knife);
