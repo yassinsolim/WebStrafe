@@ -18,6 +18,8 @@ export interface MultiplayerSnapshotPlayer {
   velocity: [number, number, number];
   yaw: number;
   pitch: number;
+  health?: number;
+  alive?: boolean;
 }
 
 export interface MultiplayerSnapshot {

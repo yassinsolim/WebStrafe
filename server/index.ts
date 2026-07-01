@@ -4,6 +4,8 @@ import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
+import { CombatArena } from '../src/combat/CombatArena';
+import type { WeaponId } from '../src/combat/weapons';
 
 type PlayerModel = 'terrorist' | 'counterterrorist';
 type AttackKind = 'primary' | 'secondary';
@@ -78,6 +80,15 @@ let persistQueue = Promise.resolve();
 
 const requestRate = new Map<string, { count: number; resetAt: number }>();
 const clients = new Map<WebSocket, ClientState>();
+const arena = new CombatArena();
+
+const VALID_WEAPON_IDS: readonly WeaponId[] = ['awp', 'deagle', 'knife'];
+
+function parseWeaponId(value: unknown): WeaponId | null {
+  return typeof value === 'string' && (VALID_WEAPON_IDS as readonly string[]).includes(value)
+    ? (value as WeaponId)
+    : null;
+}
 
 const server = http.createServer(async (req, res) => {
   const requestUrl = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
@@ -207,6 +218,7 @@ wss.on('connection', (ws, req) => {
           id: client.id,
           mapId,
         });
+        arena.addPlayer(client.id, mapId, 'knife');
         break;
       }
       case 'state': {
@@ -237,6 +249,7 @@ wss.on('connection', (ws, req) => {
         client.velocity = velocity;
         client.yaw = yaw;
         client.pitch = pitch;
+        arena.setPosition(client.id, position, client.mapId);
         break;
       }
       case 'attack': {
@@ -263,6 +276,58 @@ wss.on('connection', (ws, req) => {
         broadcastAttack(client.mapId, client.id, kind);
         break;
       }
+      case 'fire': {
+        if (!client.joined) {
+          return;
+        }
+        const origin = parseVector3(payload.origin, 200000);
+        const dir = parseVector3(payload.dir, 2);
+        if (!origin || !dir) {
+          return;
+        }
+        const now = Date.now();
+        if (now - client.attackWindowStart >= 1000) {
+          client.attackWindowStart = now;
+          client.attackMessageCount = 0;
+        }
+        client.attackMessageCount += 1;
+        if (client.attackMessageCount > 24) {
+          ws.close(4009, 'attack_rate_limit');
+          return;
+        }
+        const outcome = arena.handleFire(client.id, origin, dir, now);
+        if (outcome.hit) {
+          broadcastToMap(client.mapId, { type: 'hit', ...outcome.hit });
+          const victim = outcome.hit.targetId;
+          broadcastToMap(client.mapId, {
+            type: 'health',
+            playerId: victim,
+            health: arena.getHealth(victim) ?? 0,
+            alive: arena.isAlive(victim),
+          });
+        }
+        if (outcome.death) {
+          broadcastToMap(client.mapId, { type: 'death', ...outcome.death });
+        }
+        break;
+      }
+      case 'reload': {
+        if (!client.joined) {
+          return;
+        }
+        arena.reload(client.id, Date.now());
+        break;
+      }
+      case 'equip': {
+        if (!client.joined) {
+          return;
+        }
+        const weaponId = parseWeaponId(payload.weaponId);
+        if (weaponId) {
+          arena.equip(client.id, weaponId);
+        }
+        break;
+      }
       case 'ping': {
         sendWs(ws, { type: 'pong', t: Date.now() });
         break;
@@ -274,16 +339,37 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     clearTimeout(joinTimeout);
+    arena.removePlayer(client.id);
     clients.delete(ws);
   });
 
   ws.on('error', () => {
+    arena.removePlayer(client.id);
     clients.delete(ws);
   });
 });
 
 setInterval(() => {
   const now = Date.now();
+
+  const respawns = arena.tickRespawns(now);
+  for (const ev of respawns) {
+    const owner = [...clients.values()].find((c) => c.id === ev.playerId);
+    if (owner) {
+      broadcastToMap(owner.mapId, {
+        type: 'respawn',
+        playerId: ev.playerId,
+        position: ev.position,
+      });
+      broadcastToMap(owner.mapId, {
+        type: 'health',
+        playerId: ev.playerId,
+        health: arena.getHealth(ev.playerId) ?? 100,
+        alive: true,
+      });
+    }
+  }
+
   const groupedByMap = new Map<string, Array<{
     id: string;
     name: string;
@@ -292,6 +378,8 @@ setInterval(() => {
     velocity: [number, number, number];
     yaw: number;
     pitch: number;
+    health: number;
+    alive: boolean;
   }>>();
 
   for (const client of clients.values()) {
@@ -315,6 +403,8 @@ setInterval(() => {
       velocity: client.velocity,
       yaw: client.yaw,
       pitch: client.pitch,
+      health: arena.getHealth(client.id) ?? 100,
+      alive: arena.isAlive(client.id),
     });
     groupedByMap.set(client.mapId, list);
   }
@@ -742,6 +832,15 @@ function isOriginAllowed(origin: string | undefined): boolean {
     return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
   } catch {
     return false;
+  }
+}
+
+function broadcastToMap(mapId: string, payload: Record<string, unknown>): void {
+  for (const client of clients.values()) {
+    if (!client.joined || client.mapId !== mapId) {
+      continue;
+    }
+    sendWs(client.ws, payload);
   }
 }
 
