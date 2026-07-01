@@ -1,10 +1,42 @@
 import type { LeaderboardEntry, PlayerModel } from './types';
 import { resolveApiBase } from './endpoints';
+import { loadSupabaseConfig } from './supabaseConfig';
+import type { SupabaseLeaderboard } from './SupabaseLeaderboard';
 
 export class LeaderboardService {
   private readonly apiBase = resolveApiBase(import.meta.env);
+  private supabasePromise: Promise<SupabaseLeaderboard | null> | undefined;
+
+  /** Lazily builds the Supabase-backed leaderboard, or null for the HTTP path. */
+  private getSupabase(): Promise<SupabaseLeaderboard | null> {
+    if (this.supabasePromise === undefined) {
+      this.supabasePromise = (async () => {
+        const config = await loadSupabaseConfig();
+        if (!config) {
+          return null;
+        }
+        try {
+          const [{ createClient }, { SupabaseLeaderboard }] = await Promise.all([
+            import('@supabase/supabase-js'),
+            import('./SupabaseLeaderboard'),
+          ]);
+          return new SupabaseLeaderboard(
+            createClient(config.supabaseUrl, config.supabaseKey),
+            config.leaderboardTable,
+          );
+        } catch {
+          return null;
+        }
+      })();
+    }
+    return this.supabasePromise;
+  }
 
   public async fetchLeaderboard(mapId: string): Promise<LeaderboardEntry[]> {
+    const supabase = await this.getSupabase();
+    if (supabase) {
+      return supabase.fetch(mapId);
+    }
     const normalized = encodeURIComponent(mapId);
     const response = await fetch(`${this.apiBase}/api/leaderboard?mapId=${normalized}`, {
       method: 'GET',
@@ -27,6 +59,10 @@ export class LeaderboardService {
     timeMs: number,
     model: PlayerModel,
   ): Promise<LeaderboardEntry[]> {
+    const supabase = await this.getSupabase();
+    if (supabase) {
+      return supabase.submit(mapId, name, timeMs, model);
+    }
     const response = await fetch(`${this.apiBase}/api/leaderboard`, {
       method: 'POST',
       headers: {
