@@ -951,6 +951,16 @@ export class GameApp {
         performance.now(),
       );
     };
+    this.multiplayer.onShot = ({ playerId, origin, dir, weaponId }) => {
+      // Draw tracers for OTHER players'/bots' gunfire so combat is visible.
+      if (playerId === this.multiplayer.getLocalId() || weaponId === 'knife') {
+        return;
+      }
+      const from = new Vector3(origin[0], origin[1], origin[2]);
+      const forward = new Vector3(dir[0], dir[1], dir[2]);
+      const to = from.clone().addScaledVector(forward, 4000);
+      this.combatEffects?.spawnShot(from, to, performance.now());
+    };
   }
 
   private fireCombatWeapon(nowMs: number): void {
@@ -965,7 +975,9 @@ export class GameApp {
     const origin = this.movement.getCameraPosition();
     const forward = new Vector3(0, 0, -1).applyEuler(this.worldCamera.rotation);
     const to = origin.clone().addScaledVector(forward, Math.min(result.weapon.range, 4000));
-    this.combatEffects?.spawnShot(origin.clone(), to, nowMs);
+    if (this.weapon.getActive() !== 'knife') {
+      this.combatEffects?.spawnShot(origin.clone(), to, nowMs);
+    }
     this.multiplayer.sendFire(
       [origin.x, origin.y, origin.z],
       [forward.x, forward.y, forward.z],

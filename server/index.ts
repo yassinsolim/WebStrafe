@@ -311,6 +311,9 @@ wss.on('connection', (ws, req) => {
           return;
         }
         const outcome = arena.handleFire(client.id, origin, dir, now);
+        if (outcome.fired) {
+          broadcastShot(client.mapId, client.id, origin, dir);
+        }
         broadcastFireOutcome(client.mapId, outcome);
         break;
       }
@@ -470,6 +473,9 @@ if (ENABLE_BOTS) {
     const now = Date.now();
     for (const ev of botManager.collectFireEvents()) {
       const outcome = arena.handleFire(ev.id, ev.origin, ev.dir, now);
+      if (outcome.fired) {
+        broadcastShot(ev.mapId, ev.id, ev.origin, ev.dir);
+      }
       broadcastFireOutcome(ev.mapId, outcome);
     }
     botManager.maintainAmmo(now);
@@ -917,6 +923,20 @@ function broadcastFireOutcome(mapId: string, outcome: FireOutcome): void {
   if (outcome.death) {
     broadcastToMap(mapId, { type: 'death', ...outcome.death });
   }
+}
+
+/** Broadcasts a visible gunshot (tracer/muzzle) for a fired gun. Knives are skipped. */
+function broadcastShot(
+  mapId: string,
+  playerId: string,
+  origin: [number, number, number],
+  dir: [number, number, number],
+): void {
+  const weaponId = arena.getActiveWeapon(playerId);
+  if (!weaponId || weaponId === 'knife') {
+    return;
+  }
+  broadcastToMap(mapId, { type: 'shot', playerId, origin, dir, weaponId });
 }
 
 function broadcastAttack(mapId: string, playerId: string, kind: AttackKind): void {
