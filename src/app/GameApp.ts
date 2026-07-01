@@ -257,10 +257,14 @@ export class GameApp {
         void this.applyLoadout(next);
         this.syncMultiplayerIdentity();
       },
+      onNameChanged: (name) => this.applyPlayerName(name),
     });
     this.menu.setMaps(this.getMapEntries(), this.selectedMapId);
     this.menu.setCosmetics(cosmeticsManifest, this.loadout);
     this.menu.setLeaderboard([], this.getMapNameById(this.selectedMapId));
+    this.menu.setPlayerName(this.localPlayerName);
+    // Persist the (possibly auto-generated) name so identity is stable across reloads.
+    savePlayerName(this.localPlayerName);
     this.menu.setVisible(true);
     this.setCrosshairVisible(false);
 
@@ -892,6 +896,21 @@ export class GameApp {
       this.localPlayerName,
       this.getPlayerModelFromLoadout(this.loadout),
     );
+  }
+
+  /**
+   * Central place to accept a user-entered username: sanitize, keep the last
+   * valid name if the new one is too short, persist it, sync it to multiplayer,
+   * and reflect the cleaned value back into every name field.
+   */
+  private applyPlayerName(raw: string): void {
+    const cleaned = sanitizeLeaderboardName(raw);
+    const next = cleaned.length >= 2 ? cleaned : this.localPlayerName;
+    this.localPlayerName = next;
+    savePlayerName(next);
+    this.menu?.setPlayerName(next);
+    this.runSubmitInput.value = next;
+    this.syncMultiplayerIdentity();
   }
 
   private setupCombat(): void {

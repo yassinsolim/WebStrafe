@@ -251,7 +251,8 @@ canvas {
 
 input[type='range'],
 select,
-input[type='file'] {
+input[type='file'],
+input[type='text'] {
   width: 100%;
   min-height: 34px;
   padding: 4px 10px;
@@ -259,6 +260,17 @@ input[type='file'] {
   border: 1px solid rgba(138, 186, 208, 0.35);
   background: rgba(16, 30, 41, 0.82);
   color: var(--ink-0);
+}
+
+.menu-name-input {
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+}
+
+.menu-name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(102, 204, 255, 0.25);
 }
 
 input[type='checkbox'] {
