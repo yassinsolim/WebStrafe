@@ -166,8 +166,8 @@ function applyOptional(bone: Bone | null, base: Quaternion | null, x: number, y:
 /**
  * Poses the arms into a static combat knife stance for the menu hero, matching
  * the classic CS terrorist knife-ready idle: the knife arm is held out in front
- * of the body a little above the waist with the fingers curled into a clenched
- * fist gripping the handle, and the blade angled inward across the body (toward
+ * of the body a little above the waist with the fingers wrapped around the
+ * handle in a cylinder grip, and the blade angled inward across the body (toward
  * the centreline) rather than splayed outward, while the off-hand rests relaxed
  * and slightly forward at belt height on its own side. Reads well through the
  * full side-to-side yaw sway. Deterministic and menu-only — the in-game renderer
@@ -188,14 +188,19 @@ export function applyKnifeIdlePose(rig: ArmRig): void {
   applyBoneOffset(rig.rightLower, rig.rightLowerBase, -0.065, -0.025, 0.791);
   applyBoneOffset(rig.rightHand, rig.rightHandBase, -0.446, 0.69, 0.924);
 
-  // Right hand: curl the fingers and thumb into a clenched fist gripping the knife
-  // handle. The knife rides the sibling weapon-hand bone, so this only closes the
+  // Right hand: curl the fingers and thumb into a cylinder grip that wraps the
+  // knife handle. The knuckles angle over the top of the handle while the mid
+  // and tip joints close around and under it, so the fingers visibly hug the
+  // wooden grip instead of clenching into a featureless ball sitting on top of
+  // it. The knife rides the sibling weapon-hand bone, so this only closes the
   // fingers around it and never moves the blade.
+  const fingerCurl = [0.5, 0.9, 1.0]; // knuckle, middle, tip joints
   for (let i = 0; i < rig.rightFingers.length; i++) {
-    applyBoneOffset(rig.rightFingers[i], rig.rightFingerBases[i], 0, 0, 0.8);
+    applyBoneOffset(rig.rightFingers[i], rig.rightFingerBases[i], 0, 0, fingerCurl[i % 3]);
   }
+  const thumbCurl = [0.5, 0.62, 0.62]; // base, middle, tip joints
   for (let i = 0; i < rig.rightThumb.length; i++) {
-    applyBoneOffset(rig.rightThumb[i], rig.rightThumbBases[i], 0, 0, 0.6);
+    applyBoneOffset(rig.rightThumb[i], rig.rightThumbBases[i], 0, 0, thumbCurl[Math.min(i, thumbCurl.length - 1)]);
   }
 
   // Left support hand: relaxed and slightly forward at belt height on its own
