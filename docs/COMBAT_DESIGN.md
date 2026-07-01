@@ -38,6 +38,7 @@ HitResolver (pure) --> candidate hit --> MultiplayerClient --> server
                                           - fire rate / cooldown  |
                                           - line of sight / range |
                                           - target alive          |
+                                          - claimed hitbox vs geom |
                                                                   v
                                              CombatState (authoritative)
                                              - apply damage, clamp health
@@ -64,6 +65,15 @@ This matches the game's scope and keeps latency low. A note is left in the code
 that upgrading to full server authority is the path if this ever becomes
 competitive.
 
+**Critical validation note — the `hitbox` field is the weakest link.** Because
+`hitbox` multiplies damage (head = 1.5x-2x), a naive server that trusts the
+client's claimed hitbox lets a cheater send `hitbox: 'head'` on every shot,
+turning the Deagle into a guaranteed one-shot (63 x 2 = 126 >= 100 HP). PR3 MUST
+therefore validate the claimed hitbox against the authoritative target geometry
+(target position + fixed head-offset capsule, see §4), and re-derive `distance`
+from `origin`+`dir`+`targetId` server-side rather than trusting client-sent
+values. Hitbox verification is added to the server validation list in §5.
+
 ## 4. Data model
 
 ### Weapon definitions (`src/combat/weapons.ts`)
@@ -84,8 +94,10 @@ interface WeaponDef {
 }
 ```
 
-Initial table: `AWP` (high damage, slow, effectively one-shot to body/head),
-`DEAGLE` (medium damage, faster), `KNIFE` (existing melee, short range).
+Initial table: `AWP` (high damage, slow, `range: Infinity` so it never hits a
+silent damage cliff on large maps — effectively one-shot to body/head), `DEAGLE`
+(medium damage, faster, finite range with falloff), `KNIFE` (existing melee,
+short range).
 
 ### Health / combat state (`src/combat/CombatState.ts`, server-side authoritative)
 
@@ -103,7 +115,8 @@ Constants: `MAX_HEALTH = 100`, `RESPAWN_DELAY_MS = 3000`, spawn health `= 100`.
 ### Hitboxes
 Start simple: two capsules per player — `body` (1.0x) and `head` (headshot
 multiplier). Derived from the existing player position + a fixed head offset.
-Refined later if needed.
+This same head-offset capsule is what the server uses to validate a claimed
+hitbox (see §3). Refined later if needed.
 
 ## 5. Netcode protocol (extends existing `server/index.ts`)
 
@@ -111,7 +124,7 @@ New **client -> server** messages:
 
 | type | payload | notes |
 |------|---------|-------|
-| `fire` | `{ weaponId, origin:[x,y,z], dir:[x,y,z], targetId?, hitbox?, seq }` | rate-limited like `attack`; server validates |
+| `fire` | `{ weaponId, origin:[x,y,z], dir:[x,y,z], targetId?, hitbox?, seq }` | rate-limited like `attack`; server validates rate, range, LoS, target-alive, **and claimed hitbox vs target geometry** |
 | `reload` | `{ weaponId }` | server tracks ammo/cooldown |
 | `equip` | `{ weaponId }` | switch active weapon |
 
@@ -136,7 +149,8 @@ validation helpers (`parseVector3`, `parseNumber`) and per-second rate windows.
    + `HitResolver` raycast vs player capsules using the existing `CollisionWorld`.
    Unit-tested against synthetic scenes.
 3. **PR3 — Combat netcode.** Extend server + `MultiplayerClient` with the messages
-   in §5; server-authoritative damage/death/respawn; kill feed data.
+   in §5; server-authoritative damage/death/respawn (including hitbox validation
+   per §3); kill feed data.
 4. **PR4 — Effects & HUD.** Muzzle flash, tracers, impact decals, hitmarkers,
    damage numbers, health bar, kill feed UI (Three.js sprites/particles + DOM HUD).
 
@@ -146,10 +160,12 @@ Each stage keeps solo play and the knife working; combat is behind a feature fla
 ## 7. Testing strategy
 
 - **Unit (vitest):** damage math, falloff, headshot, cooldown/ammo state machine,
-  respawn timing, hit validation (range/rate/dead-target rejection).
+  respawn timing, hit validation (range/rate/dead-target/hitbox rejection).
 - **Deterministic hit tests:** `HitResolver` against hand-built capsule positions.
-- **Manual E2E:** two browser tabs against `npm run dev`, verify fire -> hit ->
-  death -> respawn -> kill feed end-to-end before each merge.
+- **Multiplayer E2E:** `tools/mp-e2e-test.mjs` connects two real WS clients to a
+  running server and asserts join, state-sync, and attack broadcast. Extended per
+  stage to cover fire -> hit -> death -> respawn.
+- **Manual E2E:** two browser tabs (or `tools/mp-bot.mjs`) against `npm run dev`.
 - CI (typecheck + test + build) must be green on every PR.
 
 ## 8. Art / models plan (honest)
@@ -173,5 +189,6 @@ Until models land, `KNIFE` stays the visible weapon while all combat mechanics r
 
 - **Lag / hit registration feel.** Mitigated by client-detected hits; revisit with
   interpolation/lag comp only if it feels bad.
-- **Cheating.** Accepted for scope; server validation catches the obvious cases.
+- **Cheating.** Accepted for scope; server validation (incl. hitbox verification,
+  §3) catches the obvious cases.
 - **Scope creep.** The PR breakdown + feature flag keep each step shippable.
