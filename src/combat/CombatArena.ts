@@ -116,6 +116,10 @@ export class CombatArena {
     return p ? p.weapon.getAmmo() : null;
   }
 
+  getActiveWeapon(id: string): WeaponId | null {
+    return this.players.get(id)?.weapon.getActive() ?? null;
+  }
+
   /**
    * Processes a fire request from `shooterId` aiming along `dir` from `origin`.
    * Server-authoritative: consumes ammo/cooldown, re-derives the hit from

@@ -32,6 +32,14 @@ export class MultiplayerClient {
   public onDeath: ((event: { victimId: string; killerId: string; weaponId: string }) => void) | null = null;
   public onHealth: ((event: { playerId: string; health: number; alive: boolean }) => void) | null = null;
   public onRespawn: ((event: { playerId: string; position: [number, number, number] }) => void) | null = null;
+  public onShot:
+    | ((event: {
+        playerId: string;
+        origin: [number, number, number];
+        dir: [number, number, number];
+        weaponId: string;
+      }) => void)
+    | null = null;
   public onConnectedChange: ((connected: boolean) => void) | null = null;
 
   constructor(url = buildDefaultWsUrl()) {
@@ -279,6 +287,22 @@ export class MultiplayerClient {
         case 'respawn': {
           if (typeof payload.playerId === 'string' && isVec3(payload.position)) {
             this.onRespawn?.({ playerId: payload.playerId, position: payload.position });
+          }
+          break;
+        }
+        case 'shot': {
+          if (
+            typeof payload.playerId === 'string' &&
+            typeof payload.weaponId === 'string' &&
+            isVec3(payload.origin) &&
+            isVec3(payload.dir)
+          ) {
+            this.onShot?.({
+              playerId: payload.playerId,
+              origin: payload.origin,
+              dir: payload.dir,
+              weaponId: payload.weaponId,
+            });
           }
           break;
         }

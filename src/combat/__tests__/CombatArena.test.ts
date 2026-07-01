@@ -19,6 +19,14 @@ const eye: [number, number, number] = [0, 1.6, 0];
 const aimAtTarget: [number, number, number] = [0, 0, -1];
 
 describe('CombatArena.handleFire', () => {
+  it('reports the active weapon (and equips)', () => {
+    const a = twoPlayers();
+    expect(a.getActiveWeapon('shooter')).toBe('deagle');
+    a.equip('shooter', 'awp');
+    expect(a.getActiveWeapon('shooter')).toBe('awp');
+    expect(a.getActiveWeapon('nobody')).toBeNull();
+  });
+
   it('hits a target directly in the line of fire', () => {
     const a = twoPlayers();
     const out = a.handleFire('shooter', eye, aimAtTarget, 1000);
