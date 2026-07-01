@@ -267,8 +267,15 @@ export class GameApp {
       }
       this.remotePlayers.applySnapshot(snapshot.players, this.multiplayer.getLocalId());
       if (this.combatEnabled) {
+        const present = new Set<string>();
         for (const p of snapshot.players) {
           this.remotePlayerNames.set(p.id, p.name);
+          present.add(p.id);
+        }
+        for (const id of this.remotePlayerNames.keys()) {
+          if (!present.has(id)) {
+            this.remotePlayerNames.delete(id);
+          }
         }
       }
     };
@@ -307,6 +314,8 @@ export class GameApp {
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     this.input.dispose();
     this.renderer.dispose();
+    this.combatEffects?.dispose();
+    this.combatHud?.dispose();
   }
 
   private readonly loop = (time: number): void => {
@@ -938,20 +947,21 @@ export class GameApp {
     this.weapon.update(nowMs);
     this.combatEffects?.update(nowMs);
     this.killFeed.prune(nowMs);
-    this.combatHud?.renderKillFeed(this.killFeed, nowMs);
     this.combatHud?.setVisible(this.playing);
+    if (!this.playing) {
+      return;
+    }
+    this.combatHud?.renderKillFeed(this.killFeed, nowMs);
     // Weapon switch: 1 = knife, 2 = deagle, 3 = awp; R = reload.
-    if (this.playing) {
-      if (this.input.isKeyDown('Digit1') && this.weapon.getActive() !== 'knife') {
-        this.equipCombatWeapon('knife');
-      } else if (this.input.isKeyDown('Digit2') && this.weapon.getActive() !== 'deagle') {
-        this.equipCombatWeapon('deagle');
-      } else if (this.input.isKeyDown('Digit3') && this.weapon.getActive() !== 'awp') {
-        this.equipCombatWeapon('awp');
-      }
-      if (this.input.isKeyDown('KeyR') && this.weapon.reload(nowMs)) {
-        this.multiplayer.sendReload();
-      }
+    if (this.input.isKeyDown('Digit1') && this.weapon.getActive() !== 'knife') {
+      this.equipCombatWeapon('knife');
+    } else if (this.input.isKeyDown('Digit2') && this.weapon.getActive() !== 'deagle') {
+      this.equipCombatWeapon('deagle');
+    } else if (this.input.isKeyDown('Digit3') && this.weapon.getActive() !== 'awp') {
+      this.equipCombatWeapon('awp');
+    }
+    if (this.input.isKeyDown('KeyR') && this.weapon.reload(nowMs)) {
+      this.multiplayer.sendReload();
     }
   }
 

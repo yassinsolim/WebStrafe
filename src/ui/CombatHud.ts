@@ -15,6 +15,7 @@ export class CombatHud {
   private readonly killFeedEl: HTMLDivElement;
   private readonly deathBanner: HTMLDivElement;
   private hitmarkerTimer: number | null = null;
+  private lastKillFeedSig = '';
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
@@ -92,9 +93,16 @@ export class CombatHud {
     }, 120);
   }
 
-  /** Re-renders the kill feed from the pure model. */
+  /** Re-renders the kill feed from the pure model. Cheap no-op when unchanged. */
   renderKillFeed(feed: KillFeed, nowMs: number): void {
     const entries = feed.visible(nowMs);
+    // Entries are immutable once added; the visible set only changes when one is
+    // added or expires. Signature by creation time makes both cases cheap to detect.
+    const sig = entries.map((e) => e.createdAtMs).join(',');
+    if (sig === this.lastKillFeedSig) {
+      return;
+    }
+    this.lastKillFeedSig = sig;
     this.killFeedEl.replaceChildren();
     for (const e of entries) {
       const line = document.createElement('div');
