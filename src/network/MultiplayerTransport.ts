@@ -1,10 +1,19 @@
 import type { AttackKind, MultiplayerSnapshot, PlayerModel } from './types';
+import type { CollisionWorld } from '../world/CollisionWorld';
+import type { HostSpawn } from './HostSimulation';
 
 export interface OutgoingState {
   position: [number, number, number];
   velocity: [number, number, number];
   yaw: number;
   pitch: number;
+}
+
+/** Per-map context the elected host needs to run the bot/combat simulation. */
+export interface RoomContext {
+  collisionWorld: CollisionWorld;
+  spawn: HostSpawn;
+  botCount: number;
 }
 
 export interface AttackEvent {
@@ -71,4 +80,6 @@ export interface MultiplayerTransport {
   sendFire(origin: [number, number, number], dir: [number, number, number]): void;
   sendReload(): void;
   sendEquip(weaponId: string): void;
+  /** Provides (or clears) the host-simulation context for the active map. */
+  setRoomContext(context: RoomContext | null): void;
 }

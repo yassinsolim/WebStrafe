@@ -138,6 +138,11 @@ export class MultiplayerClient implements MultiplayerTransport {
     this.send({ type: 'equip', weaponId });
   }
 
+  // The WebSocket server runs its own authoritative sim; no client host role.
+  public setRoomContext(): void {
+    // no-op
+  }
+
   private openSocket(): void {
     const ws = new WebSocket(this.url);
     this.ws = ws;

@@ -600,6 +600,18 @@ export class GameApp {
     const spawn = this.resolveSpawnInLoadedWorld(map);
     this.movement.reset(spawn.position, spawn.yawDeg);
 
+    // In Supabase mode the elected host runs the bot/combat sim; give it this
+    // map's collision + spawn. (The WebSocket transport ignores this.)
+    this.multiplayer.setRoomContext(
+      this.combatEnabled
+        ? {
+            collisionWorld: this.collisionWorld,
+            spawn: { position: spawn.position.clone(), yawDeg: spawn.yawDeg },
+            botCount: 2,
+          }
+        : null,
+    );
+
     const collisionBounds = new Box3().setFromObject(map.collisionRoot);
     if (collisionBounds.isEmpty()) {
       this.voidResetY = -1000;
