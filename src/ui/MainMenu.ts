@@ -8,6 +8,7 @@ interface MainMenuCallbacks {
   onMapSelected: (mapId: string) => void;
   onSettingsChanged: (settings: GameSettings) => void;
   onLoadoutChanged: (selection: LoadoutSelection) => void;
+  onNameChanged: (name: string) => void;
 }
 
 interface LoadoutPreset {
@@ -20,6 +21,7 @@ export class MainMenu {
   private readonly root: HTMLDivElement;
   private readonly playButton: HTMLButtonElement;
   private readonly reloadButton: HTMLButtonElement;
+  private readonly nameInput: HTMLInputElement;
   private readonly mapSelect: HTMLSelectElement;
   private readonly mapInfo: HTMLDivElement;
   private readonly leaderboardInfo: HTMLDivElement;
@@ -56,6 +58,23 @@ export class MainMenu {
     subtitle.className = 'menu-subtitle';
     subtitle.textContent = 'Source-like surf + bhop + air-strafe sandbox';
     panel.appendChild(subtitle);
+
+    const nameGroup = this.makeGroup(panel, 'Username');
+    this.nameInput = document.createElement('input');
+    this.nameInput.type = 'text';
+    this.nameInput.className = 'menu-name-input';
+    this.nameInput.maxLength = 24;
+    this.nameInput.placeholder = 'Choose a username';
+    this.nameInput.autocomplete = 'off';
+    this.nameInput.spellcheck = false;
+    // Commit on blur/Enter so we don't fight the user mid-type.
+    this.nameInput.addEventListener('change', () => this.callbacks.onNameChanged(this.nameInput.value));
+    this.nameInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        this.nameInput.blur();
+      }
+    });
+    nameGroup.appendChild(this.makeLabeledField('Shown to other players', this.nameInput));
 
     this.playButton = document.createElement('button');
     this.playButton.className = 'menu-play';
@@ -157,6 +176,11 @@ export class MainMenu {
 
   public setVisible(visible: boolean): void {
     this.root.style.display = visible ? 'grid' : 'none';
+  }
+
+  /** Reflects the authoritative (already-sanitized) player name into the field. */
+  public setPlayerName(name: string): void {
+    this.nameInput.value = name;
   }
 
   public setMaps(entries: MapManifestEntry[], selectedMapId: string): void {
