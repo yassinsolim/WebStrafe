@@ -44,6 +44,7 @@ interface Bot {
 export class BotManager {
   private readonly worlds = new Map<string, HeadlessMap>();
   private readonly loading = new Set<string>();
+  private readonly failed = new Set<string>();
   private readonly botsByMap = new Map<string, Bot[]>();
   private nextBotSeq = 0;
 
@@ -54,7 +55,7 @@ export class BotManager {
 
   /** Ensures collision for a map is loading/loaded so bots can populate it. */
   requestMap(mapId: string): void {
-    if (this.worlds.has(mapId) || this.loading.has(mapId)) {
+    if (this.worlds.has(mapId) || this.loading.has(mapId) || this.failed.has(mapId)) {
       return;
     }
     this.loading.add(mapId);
@@ -62,6 +63,9 @@ export class BotManager {
       this.loading.delete(mapId);
       if (map) {
         this.worlds.set(mapId, map);
+      } else {
+        // Remember the failure so we don't re-enter the load every tick.
+        this.failed.add(mapId);
       }
     });
   }
@@ -81,7 +85,7 @@ export class BotManager {
 
   /**
    * Advances every bot one fixed step. `targetsByMap` provides candidate targets
-   * (humans and other bots) per map; each bot chases the nearest living one.
+   * (the living humans) per map; each bot chases the nearest one.
    */
   tick(dt: number, targetsByMap: Map<string, BotTarget[]>): void {
     for (const [mapId, world] of this.worlds) {
