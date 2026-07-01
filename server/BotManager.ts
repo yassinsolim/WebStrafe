@@ -146,7 +146,6 @@ export class BotManager {
    */
   collectFireEvents(): BotFireEvent[] {
     const events: BotFireEvent[] = [];
-    const losCapsule = { radius: 0.1, height: 0.1 };
     for (const [mapId, bots] of this.botsByMap) {
       const world = this.worlds.get(mapId);
       if (!world) {
@@ -161,9 +160,9 @@ export class BotManager {
           continue;
         }
         const eye = bot.controller.getCameraPosition();
-        // A wall between the bot's eye and its target blocks the shot.
-        const trace = world.world.traceCapsule(eye, aim, losCapsule);
-        if (trace.hit && trace.fraction < 0.95) {
+        // Exact BVH raycast: a wall between the bot's eye and its target blocks
+        // the shot (bots can't wall-hack).
+        if (world.world.segmentIntersectsGeometry(eye, aim)) {
           continue;
         }
         const fwd = bot.controller.getForwardVector();
