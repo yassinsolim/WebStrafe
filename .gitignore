@@ -29,3 +29,6 @@ data/leaderboard.json
 *.njsproj
 *.sln
 *.sw?
+
+# Supabase runtime config (holds project keys; never commit)
+public/config/webstrafe.config.json
