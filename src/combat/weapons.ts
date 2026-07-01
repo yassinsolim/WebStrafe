@@ -38,7 +38,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     slot: 'primary',
     damage: 115,
     headshotMultiplier: 1.5,
-    range: 8192,
+    range: Infinity,
     fireIntervalMs: 1500,
     magazine: 10,
     reloadMs: 3700,

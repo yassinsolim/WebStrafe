@@ -36,25 +36,48 @@ describe('computeDamage', () => {
     expect(computeDamage({ weapon: awp, hitbox: 'body', distance: 0 })).toBe(awp.damage);
   });
 
-  it('applies the headshot multiplier', () => {
-    expect(computeDamage({ weapon: deagle, hitbox: 'head', distance: 0 })).toBe(
-      Math.round(deagle.damage * deagle.headshotMultiplier),
+  it('applies the headshot multiplier (Deagle head = 126)', () => {
+    // Hard-coded expected value (63 * 2) pins behavior, so an incorrect
+    // multiplier order or stacking would fail this test.
+    expect(computeDamage({ weapon: deagle, hitbox: 'head', distance: 0 })).toBe(126);
+  });
+
+  it('applies the headshot multiplier (AWP head = 173)', () => {
+    // 115 * 1.5 = 172.5 -> rounds to 173.
+    expect(computeDamage({ weapon: awp, hitbox: 'head', distance: 0 })).toBe(173);
+  });
+
+  it('deals full damage at exactly the effective range (inclusive boundary)', () => {
+    // Deagle has a finite range; AWP is a sniper (Infinity).
+    expect(computeDamage({ weapon: deagle, hitbox: 'body', distance: deagle.range })).toBe(
+      Math.round(63 * deagle.falloff!.minMultiplier),
     );
   });
 
-  it('deals 0 beyond effective range', () => {
-    expect(computeDamage({ weapon: awp, hitbox: 'body', distance: awp.range + 1 })).toBe(0);
+  it('deals 0 just beyond effective range', () => {
+    expect(computeDamage({ weapon: deagle, hitbox: 'body', distance: deagle.range + 1 })).toBe(0);
+  });
+
+  it('AWP (infinite range) still deals full damage at extreme distance', () => {
+    expect(computeDamage({ weapon: awp, hitbox: 'body', distance: 1_000_000 })).toBe(awp.damage);
   });
 
   it('deals 0 for negative distance (invalid input)', () => {
     expect(computeDamage({ weapon: awp, hitbox: 'body', distance: -5 })).toBe(0);
   });
 
-  it('reduces damage over distance when falloff is present (Deagle)', () => {
+  it('reduces damage over distance when falloff is present (Deagle far body = 35)', () => {
     const near = computeDamage({ weapon: deagle, hitbox: 'body', distance: 0 });
     const far = computeDamage({ weapon: deagle, hitbox: 'body', distance: deagle.falloff!.end });
+    expect(near).toBe(63);
+    // 63 * 0.55 = 34.65 -> rounds to 35. Pins the falloff math to a literal value.
+    expect(far).toBe(35);
     expect(far).toBeLessThan(near);
-    expect(far).toBe(Math.round(deagle.damage * deagle.falloff!.minMultiplier));
+  });
+
+  it('does not stack headshot with falloff incorrectly (Deagle far head = 69)', () => {
+    // 63 * 2 (head) * 0.55 (falloff) = 69.3 -> 69. Guards multiplier ordering.
+    expect(computeDamage({ weapon: deagle, hitbox: 'head', distance: deagle.falloff!.end })).toBe(69);
   });
 
   it('AWP one-shots a full-health player on a body hit', () => {

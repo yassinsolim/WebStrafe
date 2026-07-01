@@ -90,7 +90,8 @@ describe('applyDamage', () => {
 
   it('does not kill when out of range (0 damage)', () => {
     const target = createPlayerCombat();
-    const res = applyDamage(target, awp, 'body', awp.range + 1, 0);
+    // Deagle has a finite range; a shot beyond it deals 0.
+    const res = applyDamage(target, deagle, 'body', deagle.range + 1, 0);
     expect(res.applied).toBe(0);
     expect(target.health).toBe(MAX_HEALTH);
     expect(target.alive).toBe(true);
