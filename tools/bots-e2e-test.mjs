@@ -12,7 +12,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function connect(name) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(URL);
-    const st = { id: null, snapshots: [], healthOf: {}, deaths: [] };
+    const st = { id: null, snapshots: [], healthOf: {}, deaths: [], shots: [] };
     const to = setTimeout(() => reject(new Error(`${name}: timeout`)), 8000);
     ws.on('open', () => ws.send(JSON.stringify({ type: 'join', mapId: MAP, name, model: 'terrorist' })));
     ws.on('message', (buf) => {
@@ -21,6 +21,7 @@ function connect(name) {
       if (m.type === 'snapshot') st.snapshots.push(m);
       if (m.type === 'health') st.healthOf[m.playerId] = { health: m.health, alive: m.alive };
       if (m.type === 'death') st.deaths.push(m);
+      if (m.type === 'shot') st.shots.push(m);
     });
     ws.on('error', reject);
   });
@@ -80,8 +81,13 @@ async function main() {
     const myHealth = human.st.healthOf[human.st.id];
     const tookDamage = (myHealth && myHealth.health < 100) || human.st.deaths.some((d) => d.victimId === human.st.id);
     results.push(['bot damaged the human (offense works)', tookDamage]);
+
+    // Bots broadcast visible gun shots (tracers) with a gun weapon id.
+    const botShots = human.st.shots.filter((s) => s.playerId.startsWith('bot:'));
+    results.push([`bots broadcast gun shots (${botShots.length})`, botShots.length > 0 && botShots.every((s) => s.weaponId !== 'knife')]);
   } else {
     results.push(['bot damaged the human (offense works)', false]);
+    results.push(['bots broadcast gun shots', false]);
   }
 
   let ok = true;
