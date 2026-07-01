@@ -1,83 +1,71 @@
 # Deploying WebStrafe to `strafe.yassin.app`
 
-WebStrafe is two pieces:
-
-1. **Static client** — the Vite build (`dist/`). Goes on **Vercel** at
-   `strafe.yassin.app`.
-2. **Multiplayer backend** — a persistent **Node WebSocket + API + bot-sim**
-   server (`server/index.ts`). Vercel can't host long-lived WebSockets, so this
-   runs on a persistent host (**Fly.io** shown here; Railway/Render/a homelab
-   box work the same way).
-
-The client discovers the backend at build time via `VITE_WS_URL` / `VITE_API_BASE`.
-With those unset, everything falls back to same-origin (single-host or local dev).
+**Primary path: Vercel (static) + Supabase (Realtime + leaderboard) — $0, no
+server.** This is the same serverless pattern the Nordschleife racer uses:
+Supabase Realtime carries multiplayer and the elected host runs the bots
+client-side, so there is nothing always-on to pay for.
 
 ```
-Browser ──HTTPS──▶ Vercel (static dist)         strafe.yassin.app
+Browser ──HTTPS──▶ Vercel (static dist)          strafe.yassin.app
    │
-   └──WSS / HTTPS─▶ Fly.io (WS + API + bots)     webstrafe-server.fly.dev
+   └──WSS─────────▶ Supabase Realtime + Postgres  <project>.supabase.co
 ```
 
-## 1. Backend → Fly.io
+## 1. Supabase (one-time)
 
-```bash
-# one-time
-fly launch --no-deploy            # sets app name + region in fly.toml
-fly volumes create webstrafe_data --size 1 --region <your-region>
+1. Open your project → **SQL Editor** and run [`supabase/schema.sql`](../supabase/schema.sql).
+   That creates `webstrafe_leaderboard` with row-level security (public read,
+   validated public insert, no update/delete).
+2. Grab **Project Settings → API**: the **Project URL** and the **publishable**
+   (anon) key. These are client-safe.
 
-# set the allowed frontend origin (or edit fly.toml [env])
-fly secrets set WEBSTRAFE_ALLOWED_ORIGINS="https://strafe.yassin.app"
+Multiplayer/bots need no tables — Realtime broadcast + presence are enough.
 
-fly deploy
-```
+## 2. Vercel
 
-Notes:
-- `fly.toml` already sets `ENABLE_BOTS`, `BOTS_PER_MAP`, `WEBSTRAFE_DATA_DIR=/data`,
-  and **`auto_stop_machines = false`** (required — an auto-stopped machine drops
-  live WebSockets).
-- Note the deployed URL (e.g. `https://webstrafe-server.fly.dev`).
-
-## 2. Frontend → Vercel
-
-Set these **Build & Development** environment variables on the Vercel project
-(point them at the backend from step 1):
+Connect the GitHub repo (`yassinsolim/WebStrafe`) as a new Vercel project
+(`vercel.json` already sets build=`npm run build`, output=`dist`). Set these
+**Environment Variables** (Production + Preview):
 
 | Variable | Value |
 |----------|-------|
 | `VITE_ENABLE_COMBAT` | `true` |
-| `VITE_WS_URL` | `wss://webstrafe-server.fly.dev/ws` |
-| `VITE_API_BASE` | `https://webstrafe-server.fly.dev` |
+| `VITE_SUPABASE_URL` | your Project URL (e.g. `https://xxxx.supabase.co`) |
+| `VITE_SUPABASE_KEY` | your **publishable** key |
 
-Then:
+That's it — `supabaseConfig` reads those at build time, so **no config file ships
+in git**. Deploy, then add `strafe.yassin.app` under the project's **Domains**
+and create a `CNAME strafe → cname.vercel-dns.com` on `yassin.app`.
 
-```bash
-vercel                 # preview
-vercel --prod          # production
-```
-
-`vercel.json` pins `buildCommand=npm run build` and `outputDirectory=dist`.
-Add `strafe.yassin.app` as a domain on the project (Vercel dashboard → Domains),
-then create the DNS `CNAME strafe → cname.vercel-dns.com` on `yassin.app`.
+> The publishable key is safe in the client bundle by design; access is
+> constrained by the RLS policies in `schema.sql`. The `service_role` key must
+> never be used here.
 
 ## 3. Verify
 
-- Open `https://strafe.yassin.app`, set a username, pick **surf_skyworld_x**, Play.
-- You should connect (no WS errors in devtools), see the leaderboard load, and —
-  with combat + bots enabled — see bots surfing and shooting (tracers, HUD,
-  kill feed).
+Open `https://strafe.yassin.app`, set a username, pick **surf_skyworld_x**, Play.
+Single-player surf works immediately; open a second tab/device to see the other
+player, and with combat on you'll see bots (run by whichever tab is host) surf
+and shoot. Submit a run to confirm the leaderboard writes to Supabase.
 
-## Single-origin alternative (no Vercel)
+## Local development
 
-The backend image already runs `npm run build` and serves `dist/`, so you can
-skip Vercel entirely and serve everything from Fly: leave `VITE_WS_URL` /
-`VITE_API_BASE` unset, build with `VITE_ENABLE_COMBAT=true`, and point
-`strafe.yassin.app` at the Fly app. Simpler, but no Vercel CDN for the static
-assets.
+- `npm run dev` alone → offline/self-hosted (the bundled WebSocket server, with
+  its own authoritative bots via `ENABLE_BOTS=true`). No Supabase needed.
+- To exercise the Supabase path locally, drop your keys into
+  `public/config/webstrafe.config.json` (gitignored; copy
+  `public/config/webstrafe.config.example.json`) **or** export
+  `VITE_SUPABASE_URL` / `VITE_SUPABASE_KEY` before `vite`.
 
-## Local production smoke test
+## Self-hosted alternative (WebSocket server)
+
+If you'd rather run the authoritative server (LAN, homelab, or a box that stays
+on), the backend image + `fly.toml` are still here — see the server env vars in
+`.env.example`. In that mode leave the `VITE_SUPABASE_*` vars unset; the client
+talks to the server over `/ws` and `/api`.
 
 ```bash
 docker build -t webstrafe-server .
 docker run --rm -p 8080:8080 -e ENABLE_BOTS=true webstrafe-server
-# open http://localhost:8080  (single-origin; server serves the client)
+# http://localhost:8080  (server serves the client + runs bots)
 ```
