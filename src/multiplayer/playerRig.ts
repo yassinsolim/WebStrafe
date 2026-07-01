@@ -138,12 +138,13 @@ function applyOptional(bone: Bone | null, base: Quaternion | null, x: number, y:
 
 /**
  * Poses the arms into a static combat knife stance for the menu hero, matching
- * the classic CS terrorist knife idle: the knife arm's upper arm hangs down with
- * the elbow tucked low near the ribs while the forearm is raised so the blade is
- * held high beside the head in an icepick grip (blade pointing up), and the
- * off-hand reaches forward at chest height as an open knife-fighter guard. Reads
- * well through the full side-to-side yaw sway. Deterministic and menu-only — the
- * in-game renderer keeps its own animated stance in RemotePlayersRenderer.applyRigPose.
+ * the classic CS terrorist knife-ready idle: the knife arm extends forward so the
+ * knife is held out in front of the body a little above the waist, with the blade
+ * pointing forward and slightly outward (a "ready to knife fight" grip), while the
+ * off-hand rests relaxed and slightly forward at belt height on its own side.
+ * Reads well through the full side-to-side yaw sway. Deterministic and menu-only —
+ * the in-game renderer keeps its own animated stance in
+ * RemotePlayersRenderer.applyRigPose.
  */
 export function applyKnifeIdlePose(rig: ArmRig): void {
   applyOptional(rig.spineMid, rig.spineMidBase, 0.05, 0, 0.02);
@@ -153,17 +154,17 @@ export function applyKnifeIdlePose(rig: ArmRig): void {
   applyOptional(rig.rightClavicle, rig.rightClavicleBase, 0.16, -0.2, 0.12);
   applyOptional(rig.leftClavicle, rig.leftClavicleBase, 0.14, 0.14, -0.06);
 
-  // Right knife arm: upper arm down with the elbow tucked low near the ribs,
-  // forearm raised to bring the blade high beside the head; the hand is rolled
-  // so the blade points up (icepick grip).
-  applyBoneOffset(rig.rightUpper, rig.rightUpperBase, -0.002, 0.011, 0.4);
-  applyBoneOffset(rig.rightLower, rig.rightLowerBase, -0.889, 0.35, 2.145);
-  applyBoneOffset(rig.rightHand, rig.rightHandBase, 0.7, 0, 0);
+  // Right knife arm: extended forward with the elbow tucked so the knife sits out
+  // in front a little above the waist; the wrist is rolled so the blade points
+  // forward and slightly outward (knife-fighter ready grip).
+  applyBoneOffset(rig.rightUpper, rig.rightUpperBase, -0.04, 0.138, 0.564);
+  applyBoneOffset(rig.rightLower, rig.rightLowerBase, -0.065, -0.025, 0.791);
+  applyBoneOffset(rig.rightHand, rig.rightHandBase, 1.357, 0.494, -1.219);
 
-  // Left support arm: reaches forward at chest height as an open guard (reads as
-  // a forward reach through the yaw sway rather than flaring out to the side).
-  applyOptional(rig.leftUpper, rig.leftUpperBase, 0.19, -0.193, 1.557);
-  applyOptional(rig.leftLower, rig.leftLowerBase, -0.102, 0.297, 0.433);
+  // Left support hand: relaxed and slightly forward at belt height on its own
+  // side (a loose guard that reads naturally through the yaw sway).
+  applyOptional(rig.leftUpper, rig.leftUpperBase, 0.021, -0.099, 0.411);
+  applyOptional(rig.leftLower, rig.leftLowerBase, -0.067, -0.062, 1.031);
   applyOptional(rig.leftHand, rig.leftHandBase, 0, 0, 0);
 }
 
