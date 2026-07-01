@@ -17,6 +17,7 @@ import {
   WebGLRenderer,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { applyKnifeIdlePose, attachKnifeModel, buildArmRig, loadKnifeMesh } from '../multiplayer/playerRig';
 
 const TARGET_HEIGHT = 1.85;
 const TAU = Math.PI * 2;
@@ -56,6 +57,7 @@ export class CharacterPreview {
   private readonly pivot = new Group();
   private current: Object3D | null = null;
   private loadToken = 0;
+  private knifePromise: Promise<Object3D | null> | null = null;
   private rafHandle: number | null = null;
   private startTime = 0;
   private baseYaw = 0;
@@ -137,8 +139,28 @@ export class CharacterPreview {
         }
       }
     });
+
+    // Pose the arms into the combat knife-hold stance and put a knife in hand,
+    // so the menu character matches the in-game models instead of T-posing.
+    const rig = buildArmRig(root);
+    if (rig) {
+      const knife = await this.getKnife();
+      if (token !== this.loadToken) {
+        return; // superseded while the knife loaded
+      }
+      attachKnifeModel(rig.rightHand, knife);
+      applyKnifeIdlePose(rig);
+    }
+
     this.current = root;
     this.pivot.add(root);
+  }
+
+  private getKnife(): Promise<Object3D | null> {
+    if (!this.knifePromise) {
+      this.knifePromise = loadKnifeMesh(loader);
+    }
+    return this.knifePromise;
   }
 
   /** Extra static yaw applied on top of the oscillation (radians). */
@@ -186,6 +208,11 @@ export class CharacterPreview {
       return;
     }
     this.pivot.remove(this.current);
+    // The attached knife is a clone that SHARES geometry/materials with the
+    // cached knife template — detach it so we don't dispose those shared
+    // resources (which would break the knife on the next model load).
+    const knife = this.current.getObjectByName('RemoteKnifeModel');
+    knife?.parent?.remove(knife);
     this.current.traverse((child) => {
       if (child instanceof Mesh) {
         child.geometry.dispose();

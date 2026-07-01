@@ -2,47 +2,24 @@ import {
   Bone,
   Box3,
   BoxGeometry,
-  Euler,
   Group,
   MathUtils,
   Mesh,
   MeshStandardMaterial,
   Object3D,
   Quaternion,
-  SRGBColorSpace,
   Vector3,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { AttackKind, MultiplayerSnapshotPlayer, PlayerModel } from '../network/types';
-
-interface ArmRig {
-  rightUpper: Bone;
-  rightLower: Bone;
-  rightHand: Bone;
-  leftUpper: Bone | null;
-  leftLower: Bone | null;
-  leftHand: Bone | null;
-  rightClavicle: Bone | null;
-  leftClavicle: Bone | null;
-  spineMid: Bone | null;
-  spineUpper: Bone | null;
-  neck: Bone | null;
-  head: Bone | null;
-
-  rightUpperBase: Quaternion;
-  rightLowerBase: Quaternion;
-  rightHandBase: Quaternion;
-  leftUpperBase: Quaternion | null;
-  leftLowerBase: Quaternion | null;
-  leftHandBase: Quaternion | null;
-  rightClavicleBase: Quaternion | null;
-  leftClavicleBase: Quaternion | null;
-  spineMidBase: Quaternion | null;
-  spineUpperBase: Quaternion | null;
-  neckBase: Quaternion | null;
-  headBase: Quaternion | null;
-}
+import {
+  attachKnifeModel,
+  applyBoneOffset,
+  buildArmRig,
+  loadKnifeMesh,
+  type ArmRig,
+} from './playerRig';
 
 interface RemotePlayerActor {
   id: string;
@@ -62,7 +39,6 @@ const MODEL_PATHS: Record<PlayerModel, string> = {
   terrorist: '/playermodels/terrorist.glb',
   counterterrorist: '/playermodels/counterterrorist.glb',
 };
-const REMOTE_KNIFE_MODEL_PATH = '/viewmodels/knife/knife.glb';
 
 const MODEL_YAW_OFFSET = Math.PI;
 const SWING_DURATION_SEC = 0.28;
@@ -76,9 +52,6 @@ export class RemotePlayersRenderer {
   private knifeTemplate: Object3D | null = null;
   private readonly actors = new Map<string, RemotePlayerActor>();
   private loaded = false;
-
-  private readonly tempOffsetQuat = new Quaternion();
-  private readonly tempEuler = new Euler(0, 0, 0, 'XYZ');
 
   constructor() {
     this.root.name = 'RemotePlayersRoot';
@@ -251,21 +224,21 @@ export class RemotePlayersRenderer {
     this.applyOptionalBoneOffset(rig.leftClavicle, rig.leftClavicleBase, 0.12, 0.16, -0.04);
 
     // Right knife arm: forward and bent.
-    this.applyBoneOffset(
+    applyBoneOffset(
       rig.rightUpper,
       rig.rightUpperBase,
       -0.98 - 0.26 * swingCurve,
       -0.32 + 0.2 * swingCurve * swingDir,
       0.1 + 0.08 * swingCurve,
     );
-    this.applyBoneOffset(
+    applyBoneOffset(
       rig.rightLower,
       rig.rightLowerBase,
       -1.1 - 0.32 * swingCurve,
       0.14 + 0.14 * swingCurve * swingDir,
       -0.03,
     );
-    this.applyBoneOffset(
+    applyBoneOffset(
       rig.rightHand,
       rig.rightHandBase,
       0.02 + 0.1 * swingCurve,
@@ -275,7 +248,7 @@ export class RemotePlayersRenderer {
 
     // Left support arm: guarded, not flared behind body.
     if (rig.leftUpper && rig.leftUpperBase) {
-      this.applyBoneOffset(
+      applyBoneOffset(
         rig.leftUpper,
         rig.leftUpperBase,
         -0.74 + idleBreath * 0.08,
@@ -284,7 +257,7 @@ export class RemotePlayersRenderer {
       );
     }
     if (rig.leftLower && rig.leftLowerBase) {
-      this.applyBoneOffset(
+      applyBoneOffset(
         rig.leftLower,
         rig.leftLowerBase,
         -0.92 + idleBreath * 0.06,
@@ -293,7 +266,7 @@ export class RemotePlayersRenderer {
       );
     }
     if (rig.leftHand && rig.leftHandBase) {
-      this.applyBoneOffset(
+      applyBoneOffset(
         rig.leftHand,
         rig.leftHandBase,
         0.02,
@@ -337,12 +310,6 @@ export class RemotePlayersRenderer {
     }
   }
 
-  private applyBoneOffset(bone: Bone, base: Quaternion, x: number, y: number, z: number): void {
-    this.tempEuler.set(x, y, z, 'XYZ');
-    this.tempOffsetQuat.setFromEuler(this.tempEuler);
-    bone.quaternion.copy(base).multiply(this.tempOffsetQuat).normalize();
-  }
-
   private applyOptionalBoneOffset(
     bone: Bone | null,
     base: Quaternion | null,
@@ -353,7 +320,7 @@ export class RemotePlayersRenderer {
     if (!bone || !base) {
       return;
     }
-    this.applyBoneOffset(bone, base, x, y, z);
+    applyBoneOffset(bone, base, x, y, z);
   }
 
   private async loadTemplate(model: PlayerModel): Promise<[PlayerModel, Object3D]> {
@@ -383,50 +350,7 @@ export class RemotePlayersRenderer {
   }
 
   private async loadKnifeTemplate(): Promise<Object3D | null> {
-    try {
-      const gltf = await gltfLoader.loadAsync(REMOTE_KNIFE_MODEL_PATH);
-      let knifeMesh: Mesh | null = null;
-      gltf.scene.traverse((child) => {
-        if (knifeMesh || !(child instanceof Mesh)) {
-          return;
-        }
-        const name = child.name.toLowerCase();
-        if (!name.includes('knife') || name.includes('arm') || name.includes('hand')) {
-          return;
-        }
-        knifeMesh = child;
-      });
-
-      if (!knifeMesh) {
-        return null;
-      }
-
-      const knife = (knifeMesh as Object3D).clone(true);
-      knife.name = 'RemoteKnifeTemplate';
-      normalizeKnifeTemplate(knife);
-      knife.traverse((child: Object3D) => {
-        if (!(child instanceof Mesh)) {
-          return;
-        }
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        for (const material of materials) {
-          const withMap = material as MeshStandardMaterial;
-          if (withMap.map) {
-            withMap.map.colorSpace = SRGBColorSpace;
-          }
-          material.depthWrite = true;
-          material.depthTest = true;
-          material.needsUpdate = true;
-        }
-        child.castShadow = false;
-        child.receiveShadow = false;
-        child.frustumCulled = false;
-      });
-
-      return knife;
-    } catch {
-      return null;
-    }
+    return loadKnifeMesh(gltfLoader);
   }
 
   private makeFallbackPlaceholder(model: PlayerModel): Object3D {
@@ -437,93 +361,6 @@ export class RemotePlayersRenderer {
     placeholder.add(mesh);
     return placeholder;
   }
-}
-
-function buildArmRig(root: Object3D): ArmRig | null {
-  const bones: Bone[] = [];
-  root.traverse((child) => {
-    if (child instanceof Bone) {
-      bones.push(child);
-    }
-  });
-
-  const pickBone = (token: string, options?: { allowTwist?: boolean; allowEnd?: boolean }): Bone | null => {
-    const allowTwist = options?.allowTwist ?? false;
-    const allowEnd = options?.allowEnd ?? false;
-    return bones.find((bone) => {
-      const name = bone.name.toLowerCase();
-      if (!name.includes(token)) {
-        return false;
-      }
-      if (!allowTwist && name.includes('twist')) {
-        return false;
-      }
-      if (!allowEnd && name.includes('_end')) {
-        return false;
-      }
-      return true;
-    }) ?? null;
-  };
-
-  const rightUpper = pickBone('arm_upper_r');
-  const rightLower = pickBone('arm_lower_r');
-  const rightHand = pickBone('weapon_hand_r') ?? pickBone('hand_r');
-  if (!rightUpper || !rightLower || !rightHand) {
-    return null;
-  }
-
-  const leftUpper = pickBone('arm_upper_l');
-  const leftLower = pickBone('arm_lower_l');
-  const leftHand = pickBone('weapon_hand_l') ?? pickBone('hand_l');
-  const rightClavicle = pickBone('clavicle_r');
-  const leftClavicle = pickBone('clavicle_l');
-  const spineMid = pickBone('spine_2') ?? pickBone('spine_1');
-  const spineUpper = pickBone('spine_3') ?? pickBone('spine_2');
-  const neck = pickBone('neck_0') ?? pickBone('neck');
-  const head = pickBone('head_0') ?? pickBone('head');
-
-  return {
-    rightUpper,
-    rightLower,
-    rightHand,
-    leftUpper,
-    leftLower,
-    leftHand,
-    rightClavicle,
-    leftClavicle,
-    spineMid,
-    spineUpper,
-    neck,
-    head,
-
-    rightUpperBase: rightUpper.quaternion.clone(),
-    rightLowerBase: rightLower.quaternion.clone(),
-    rightHandBase: rightHand.quaternion.clone(),
-    leftUpperBase: leftUpper?.quaternion.clone() ?? null,
-    leftLowerBase: leftLower?.quaternion.clone() ?? null,
-    leftHandBase: leftHand?.quaternion.clone() ?? null,
-    rightClavicleBase: rightClavicle?.quaternion.clone() ?? null,
-    leftClavicleBase: leftClavicle?.quaternion.clone() ?? null,
-    spineMidBase: spineMid?.quaternion.clone() ?? null,
-    spineUpperBase: spineUpper?.quaternion.clone() ?? null,
-    neckBase: neck?.quaternion.clone() ?? null,
-    headBase: head?.quaternion.clone() ?? null,
-  };
-}
-
-function attachKnifeModel(handBone: Bone, knifeTemplate: Object3D | null): void {
-  if (handBone.getObjectByName('RemoteKnifeModel')) {
-    return;
-  }
-  if (!knifeTemplate) {
-    return;
-  }
-
-  const knife = knifeTemplate.clone(true);
-  knife.name = 'RemoteKnifeModel';
-  knife.position.set(0.013, -0.01, -0.02);
-  knife.rotation.set(1.18, -0.58, -0.5);
-  handBone.add(knife);
 }
 
 function normalizeTemplateToPlayerHeight(root: Object3D): void {
@@ -540,20 +377,6 @@ function normalizeTemplateToPlayerHeight(root: Object3D): void {
 
   const adjustedBounds = new Box3().setFromObject(root);
   root.position.y -= adjustedBounds.min.y;
-}
-
-function normalizeKnifeTemplate(root: Object3D): void {
-  const bounds = new Box3().setFromObject(root);
-  if (bounds.isEmpty()) {
-    return;
-  }
-
-  const size = bounds.getSize(new Vector3());
-  const diagonal = Math.max(1e-5, size.length());
-  const targetDiagonal = 0.58;
-  const scale = targetDiagonal / diagonal;
-  root.scale.setScalar(scale);
-  root.updateWorldMatrix(true, true);
 }
 
 function hashToPhase(value: string): number {
