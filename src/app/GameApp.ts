@@ -34,6 +34,8 @@ import { MainMenu } from '../ui/MainMenu';
 import { defaultSettings, loadSettings, saveSettings, type GameSettings } from '../ui/SettingsStore';
 import { LeaderboardService, sanitizeLeaderboardName } from '../network/LeaderboardService';
 import { MultiplayerClient } from '../network/MultiplayerClient';
+import { createMultiplayer } from '../network/createMultiplayer';
+import type { MultiplayerTransport } from '../network/MultiplayerTransport';
 import type { LeaderboardEntry, PlayerModel } from '../network/types';
 import { RemotePlayersRenderer } from '../multiplayer/RemotePlayersRenderer';
 import { CombatHud } from '../ui/CombatHud';
@@ -82,7 +84,7 @@ export class GameApp {
   private readonly mapLoader = new MapLoader();
   private readonly hud: HUD;
   private readonly leaderboard = new LeaderboardService();
-  private readonly multiplayer = new MultiplayerClient();
+  private multiplayer: MultiplayerTransport = new MultiplayerClient();
   private readonly remotePlayers = new RemotePlayersRenderer();
   private readonly knifeAudio = new KnifeAudio();
   private readonly remoteAttackSound = new AttackSoundThrottle();
@@ -267,6 +269,10 @@ export class GameApp {
     savePlayerName(this.localPlayerName);
     this.menu.setVisible(true);
     this.setCrosshairVisible(false);
+
+    // Pick the transport: Supabase Realtime when configured (serverless deploy),
+    // else the self-hosted WebSocket client (local dev / LAN).
+    this.multiplayer = await createMultiplayer();
 
     this.multiplayer.onSnapshot = (snapshot) => {
       if (snapshot.mapId !== this.selectedMapId) {

@@ -1,0 +1,6 @@
+{
+  "supabaseUrl": "https://YOUR_PROJECT_ID.supabase.co",
+  "supabaseKey": "YOUR_SUPABASE_PUBLISHABLE_OR_ANON_KEY",
+  "leaderboardTable": "webstrafe_leaderboard",
+  "lobbyChannelPrefix": "webstrafe_room_v1"
+}
