@@ -32,8 +32,8 @@ async function main(): Promise<void> {
 
   a.connect();
   b.connect();
-  a.join('custom', 'Alice', 'terrorist');
-  b.join('custom', 'Bob', 'counterterrorist');
+  a.join('surf_skyworld_x', 'Alice', 'terrorist');
+  b.join('surf_skyworld_x', 'Bob', 'counterterrorist');
   await sleep(2500);
 
   a.sendState({ position: [1, 2, 3], velocity: [0, 0, 0], yaw: 0.1, pitch: 0 });
