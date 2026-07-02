@@ -184,7 +184,7 @@ export class GameApp {
 
     this.viewmodelRenderer = new ViewmodelRenderer(68, window.innerWidth / window.innerHeight);
     this.viewmodelRenderer.root.add(this.cosmeticsGroup);
-    this.viewmodelRenderer.root.add(this.weaponViewmodels.root);
+    this.viewmodelRenderer.camera.add(this.weaponViewmodels.root);
     this.cosmeticsManager = new CosmeticsManager(this.cosmeticsGroup);
 
     this.crosshair = this.createCrosshair();
@@ -234,6 +234,14 @@ export class GameApp {
       // eslint-disable-next-line no-console
       console.warn('[Multiplayer] Failed to load remote player models:', error);
     });
+    // Gun viewmodels (~9 MB) are only needed once combat play starts; load them
+    // in the background so they don't block the menu paint.
+    if (this.combatEnabled) {
+      void this.weaponViewmodels.load().catch((error) => {
+        // eslint-disable-next-line no-console
+        console.warn('[Combat] Failed to load gun viewmodels:', error);
+      });
+    }
     this.rebuildMapSources(builtinMaps, customRecords);
     this.selectedMapId =
       builtinMaps.find((map) => map.id === 'surf_skyworld_x')?.id
@@ -1030,7 +1038,7 @@ export class GameApp {
     const to = origin.clone().addScaledVector(forward, Math.min(result.weapon.range, 4000));
     if (this.weapon.getActive() !== 'knife') {
       this.combatEffects?.spawnShot(origin.clone(), to, nowMs);
-      this.weaponViewmodels.recoil();
+      this.weaponViewmodels.triggerFire();
     }
     this.multiplayer.sendFire(
       [origin.x, origin.y, origin.z],
@@ -1078,6 +1086,7 @@ export class GameApp {
     }
     if (this.input.isKeyDown('KeyR') && this.weapon.reload(nowMs)) {
       this.multiplayer.sendReload();
+      this.weaponViewmodels.triggerReload();
     }
   }
 
