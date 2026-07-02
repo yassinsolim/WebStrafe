@@ -45,14 +45,22 @@ export interface BotParams {
   engageRange: number;
   /** Only shoot when yaw and pitch aim error are both under this (radians). */
   fireAngleTol: number;
+  /**
+   * Human-like reaction time: a bot must have kept its target in engage range
+   * for at least this long before it is allowed to fire. Prevents the
+   * spawn-camping instakill where a freshly spawned bot lands a shot on the
+   * very first frame it sees you.
+   */
+  reactionDelaySec: number;
 }
 
 export const DEFAULT_BOT_PARAMS: BotParams = {
   turnRateRadPerSec: 3.2,
   stopDistance: 6,
   stuckSpeed: 0.6,
-  engageRange: 4000,
+  engageRange: 1500,
   fireAngleTol: 0.07, // ~4 degrees
+  reactionDelaySec: 0.75,
 };
 
 /** Normalizes an angle to (-π, π]. */
@@ -124,6 +132,8 @@ export class BotController {
   private wantsFire = false;
   private readonly aimTarget = new Vector3();
   private hasAimTarget = false;
+  /** How long the current target has been continuously within engage range. */
+  private targetSeenSec = 0;
 
   constructor(spawn: Vector3, yawDeg = 0, params: BotParams = DEFAULT_BOT_PARAMS) {
     this.params = params;
@@ -134,6 +144,7 @@ export class BotController {
     this.movement.reset(spawn, yawDeg);
     this.wantsFire = false;
     this.hasAimTarget = false;
+    this.targetSeenSec = 0;
   }
 
   getFeet(): Vector3 {
@@ -207,6 +218,11 @@ export class BotController {
 
     this.wantsFire = decision.fire;
     if (perception.targetFeet) {
+      const tx = perception.targetFeet.x - this.movement.getFeetPosition().x;
+      const ty = perception.targetFeet.y + AIM_HEIGHT - (this.movement.getFeetPosition().y + EYE_HEIGHT);
+      const tz = perception.targetFeet.z - this.movement.getFeetPosition().z;
+      const inRange = Math.hypot(tx, ty, tz) <= this.params.engageRange;
+      this.targetSeenSec = inRange ? this.targetSeenSec + dt : 0;
       this.aimTarget.set(
         perception.targetFeet.x,
         perception.targetFeet.y + AIM_HEIGHT,
@@ -214,7 +230,13 @@ export class BotController {
       );
       this.hasAimTarget = true;
     } else {
+      this.targetSeenSec = 0;
       this.hasAimTarget = false;
+    }
+    // Hold fire until the target has been in view for the reaction delay, so a
+    // just-spawned bot can't headshot you on the first frame.
+    if (this.targetSeenSec < this.params.reactionDelaySec) {
+      this.wantsFire = false;
     }
   }
 }

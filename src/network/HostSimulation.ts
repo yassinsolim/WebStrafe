@@ -1,6 +1,6 @@
 import { Vector3 } from 'three';
 import { BotController } from '../combat/BotController';
-import { CombatArena } from '../combat/CombatArena';
+import { CombatArena, PLAYER_CAPSULE_HEIGHT, PLAYER_CAPSULE_RADIUS } from '../combat/CombatArena';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import type { PlayerModel } from './types';
 import type { DeathEvent, HealthEvent, HitEvent, RespawnEvent, ShotEvent } from './MultiplayerTransport';
@@ -41,11 +41,20 @@ export interface HostEmitter {
 const MAP_ID = 'host';
 const BOT_NAMES = ['Ada', 'Byte', 'Cypher', 'Delta', 'Echo', 'Flux', 'Ghost', 'Hex'];
 
+/** How far from the player spawn bots are seeded, so they never spawn on top of you. */
+const BOT_RING_RADIUS = 18;
+/** Below its own spawn height by this much, a bot is considered fallen and reset. */
+const BOT_FALL_LIMIT = 60;
+const BOT_CAPSULE = { height: PLAYER_CAPSULE_HEIGHT, radius: PLAYER_CAPSULE_RADIUS };
+
 interface Bot {
   id: string;
   name: string;
   model: PlayerModel;
   controller: BotController;
+  /** Grounded seed position this bot returns to on death or after falling. */
+  spawn: Vector3;
+  yawDeg: number;
 }
 
 /**
@@ -70,13 +79,38 @@ export class HostSimulation {
       const id = `bot:${i}`;
       const model: PlayerModel = i % 2 === 0 ? 'terrorist' : 'counterterrorist';
       const name = `${BOT_NAMES[i % BOT_NAMES.length]} (bot)`;
-      const pos = spawn.position.clone();
-      pos.x += (i - botCount / 2) * 2;
-      const controller = new BotController(pos, spawn.yawDeg);
+
+      // Seed bots on a ring around the player spawn (not stacked on it), and drop
+      // each onto the ground below so they start standing on the map instead of
+      // hovering in the air at the spawn drop.
+      const angle = (i / Math.max(1, botCount)) * Math.PI * 2 + Math.PI * 0.25;
+      const radius = BOT_RING_RADIUS + (i % 2) * 6;
+      const candidate = new Vector3(
+        spawn.position.x + Math.cos(angle) * radius,
+        spawn.position.y,
+        spawn.position.z + Math.sin(angle) * radius,
+      );
+      const seed = this.groundOrFallback(candidate, spawn.position);
+      // Face roughly back toward the player spawn.
+      const yawDeg =
+        (Math.atan2(-(spawn.position.x - seed.x), -(spawn.position.z - seed.z)) * 180) / Math.PI;
+
+      const controller = new BotController(seed, yawDeg);
       this.arena.addPlayer(id, MAP_ID, 'deagle');
-      this.arena.setPosition(id, tuple(pos), MAP_ID);
-      this.bots.push({ id, name, model, controller });
+      this.arena.setPosition(id, tuple(seed), MAP_ID);
+      this.bots.push({ id, name, model, controller, spawn: seed.clone(), yawDeg });
     }
+  }
+
+  /** Traces down from a candidate to seat a bot on the ground, else falls back. */
+  private groundOrFallback(candidate: Vector3, fallback: Vector3): Vector3 {
+    const start = candidate.clone().add(new Vector3(0, 2, 0));
+    const end = candidate.clone().add(new Vector3(0, -200, 0));
+    const trace = this.world.traceCapsule(start, end, BOT_CAPSULE);
+    if (trace.hit) {
+      return trace.position.clone().add(new Vector3(0, 0.04, 0));
+    }
+    return fallback.clone();
   }
 
   /** Registers/updates the human roster in the arena from the latest snapshot. */
@@ -130,6 +164,13 @@ export class HostSimulation {
     for (const bot of this.bots) {
       if (!this.arena.isAlive(bot.id)) {
         this.arena.setPosition(bot.id, tuple(bot.controller.getFeet()), MAP_ID);
+        continue;
+      }
+      // If a bot has fallen off the map (e.g. slid off a surf ramp), reset it to
+      // its seed instead of letting it plummet forever.
+      if (bot.controller.getFeet().y < bot.spawn.y - BOT_FALL_LIMIT) {
+        bot.controller.respawn(bot.spawn, bot.yawDeg);
+        this.arena.setPosition(bot.id, tuple(bot.spawn), MAP_ID);
         continue;
       }
       const targetFeet = nearest(bot.controller.getFeet(), targets);
@@ -195,13 +236,17 @@ export class HostSimulation {
   private onRespawn(id: string, position: [number, number, number]): void {
     const bot = this.bots.find((b) => b.id === id);
     if (bot) {
-      bot.controller.respawn(new Vector3(position[0], position[1], position[2]), this.spawn.yawDeg);
+      bot.controller.respawn(new Vector3(position[0], position[1], position[2]), bot.yawDeg);
     }
     this.emit.respawn({ playerId: id, position });
     this.emit.health({ playerId: id, health: this.arena.getHealth(id) ?? 100, alive: true });
   }
 
-  private spawnFor(_id: string): [number, number, number] {
+  private spawnFor(id: string): [number, number, number] {
+    const bot = this.bots.find((b) => b.id === id);
+    if (bot) {
+      return tuple(bot.spawn);
+    }
     return tuple(this.spawn.position);
   }
 
