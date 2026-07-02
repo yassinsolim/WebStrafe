@@ -52,20 +52,37 @@ export interface BotParams {
    * very first frame it sees you.
    */
   reactionDelaySec: number;
+  /**
+   * Angular aim inaccuracy (radians). The bot aims at a point that wanders
+   * around the true target within roughly this cone, so it is not a
+   * pixel-perfect aimbot: it drifts, over/under-shoots, and misses like a human.
+   * The wander is smoothed over time and scales with distance.
+   */
+  aimWanderRad: number;
 }
 
 export const DEFAULT_BOT_PARAMS: BotParams = {
-  turnRateRadPerSec: 3.2,
+  turnRateRadPerSec: 2.4,
   stopDistance: 6,
   stuckSpeed: 0.6,
   engageRange: 1500,
-  fireAngleTol: 0.07, // ~4 degrees
-  reactionDelaySec: 0.75,
+  fireAngleTol: 0.05, // ~3 degrees
+  reactionDelaySec: 0.9,
+  aimWanderRad: 0.06, // ~3.5 degrees of wander
 };
 
 /** Normalizes an angle to (-π, π]. */
 function wrapAngle(angle: number): number {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
+}
+
+/** Approximate standard-normal sample (Box–Muller) for bot aim wander. */
+function gaussian(): number {
+  let u = 0;
+  let v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
 /**
@@ -134,6 +151,9 @@ export class BotController {
   private hasAimTarget = false;
   /** How long the current target has been continuously within engage range. */
   private targetSeenSec = 0;
+  /** Smoothly-drifting world-space aim offset that makes the bot miss like a human. */
+  private readonly aimWander = new Vector3();
+  private readonly perturbedTarget = new Vector3();
 
   constructor(spawn: Vector3, yawDeg = 0, params: BotParams = DEFAULT_BOT_PARAMS) {
     this.params = params;
@@ -145,6 +165,7 @@ export class BotController {
     this.wantsFire = false;
     this.hasAimTarget = false;
     this.targetSeenSec = 0;
+    this.aimWander.set(0, 0, 0);
   }
 
   getFeet(): Vector3 {
@@ -185,6 +206,28 @@ export class BotController {
   tick(dt: number, world: CollisionAdapter, perception: BotPerception): void {
     const debug = this.movement.getDebugState();
     const horizontalSpeed = Math.hypot(debug.velocity.x, debug.velocity.z);
+
+    // Perturb the aim with a smoothly-drifting offset so the bot is not a
+    // pixel-perfect aimbot. The wander is an Ornstein-Uhlenbeck-style random
+    // walk (pulled back toward zero) whose amplitude grows with distance, so
+    // far targets are genuinely hard for the bot to hit.
+    let aimPerception = perception;
+    if (perception.targetFeet) {
+      const feet = this.movement.getFeetPosition();
+      const dist = Math.hypot(
+        perception.targetFeet.x - feet.x,
+        perception.targetFeet.y - feet.y,
+        perception.targetFeet.z - feet.z,
+      );
+      const amp = Math.tan(this.params.aimWanderRad) * Math.max(dist, 1);
+      const pull = Math.exp(-dt * 1.6); // relax toward zero
+      this.aimWander.x = this.aimWander.x * pull + gaussian() * amp * (1 - pull);
+      this.aimWander.y = this.aimWander.y * pull + gaussian() * amp * 0.5 * (1 - pull);
+      this.aimWander.z = this.aimWander.z * pull + gaussian() * amp * (1 - pull);
+      this.perturbedTarget.copy(perception.targetFeet).add(this.aimWander);
+      aimPerception = { targetFeet: this.perturbedTarget };
+    }
+
     const decision = decideBotInput(
       {
         feet: this.movement.getFeetPosition(),
@@ -193,7 +236,7 @@ export class BotController {
         horizontalSpeed,
         grounded: debug.grounded,
       },
-      perception,
+      aimPerception,
       this.params,
       dt,
     );
