@@ -78,6 +78,14 @@ interface GunPlacement {
   /** Mesh-name substrings to hide (helper/aim geometry). */
   hide: string[];
   /**
+   * Centre + size the fit on the *visible mesh* world-bounds instead of the
+   * skeleton's bone positions. Bones on these gun rigs are clustered/placed
+   * unpredictably (the fit becomes wildly sensitive), whereas the visible mesh
+   * bounds are exactly what the player sees — so for a gun-only viewmodel (arms
+   * hidden) this frames the weapon predictably.
+   */
+  centerOnMeshes?: boolean;
+  /**
    * Fixed uniform scale. When set, the model is scaled by this directly instead
    * of auto-fitting `size` to the focus-bone span (more stable for full-body
    * character rigs like the Deagle, where the bone cluster span is tiny and the
@@ -121,12 +129,19 @@ const PLACEMENTS: Record<GunId, GunPlacement> = {
     },
   },
   awp: {
-    rot: [0.06, 0.05, 0],
-    pos: [0.03, -0.2, -0.55],
-    size: 0.82,
+    // Gun-only, angled to look down the length of the rifle (barrel forward/up),
+    // scope + receiver reading like a CS rifle. The model's mannequin arms are
+    // low-poly/untextured and wreck the framing (the fit centres on the arm
+    // bones), so we hide them and centre the fit on the gun bones instead — a
+    // clean rifle, consistent with the gun-only Deagle. The barrel axis is the
+    // model's local +Y, hence the ~-60° pitch.
+    rot: [-1.05, 0.5, 0],
+    pos: [0.17, -0.18, -0.48],
+    size: 0.68,
     focus: [],
+    centerOnMeshes: true,
     clips: { idle: /idle/i, draw: /draw|equip/i, fire: /fire/i, reload: /reload/i },
-    hide: [],
+    hide: ['object_86'],
   },
 };
 
@@ -370,6 +385,28 @@ export class WeaponViewmodels {
       g.mount.updateWorldMatrix(true, true);
       const box = new Box3();
       const v = new Vector3();
+      // Frame on the visible mesh geometry (what the player actually sees) —
+      // robust for gun-only viewmodels where bone positions are unpredictable.
+      if (place.centerOnMeshes) {
+        model.traverse((o) => {
+          const mesh = o as Mesh;
+          if (!mesh.isMesh || !mesh.visible || !mesh.geometry) return;
+          mesh.geometry.computeBoundingBox();
+          const bb = mesh.geometry.boundingBox;
+          if (!bb) return;
+          for (const cx of [bb.min.x, bb.max.x]) {
+            for (const cy of [bb.min.y, bb.max.y]) {
+              for (const cz of [bb.min.z, bb.max.z]) {
+                v.set(cx, cy, cz);
+                mesh.localToWorld(v);
+                g.mount.worldToLocal(v);
+                box.expandByPoint(v);
+              }
+            }
+          }
+        });
+        return box;
+      }
       const add = (b: Object3D) => {
         b.getWorldPosition(v);
         g.mount.worldToLocal(v); // express in camera-local space (pos is camera-local)

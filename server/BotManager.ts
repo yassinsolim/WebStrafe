@@ -40,6 +40,9 @@ interface Bot {
   name: string;
   model: BotModel;
   controller: BotController;
+  /** Grounded seed this bot returns to on death or after falling off the map. */
+  spawn: Vector3;
+  yawDeg: number;
 }
 
 /**
@@ -106,6 +109,14 @@ export class BotManager {
         if (!this.arena.isAlive(bot.id)) {
           // Dead bots hold still until the respawn tick repositions them.
           this.arena.setPosition(bot.id, toTuple(bot.controller.getFeet()), mapId);
+          continue;
+        }
+        // Reset a bot that has genuinely fallen off the map (plummeting, not
+        // surfing) back to its seed so it rejoins the fight instead of dropping
+        // into the void forever.
+        if (bot.controller.hasFallenOff()) {
+          bot.controller.respawn(bot.spawn, bot.yawDeg);
+          this.arena.setPosition(bot.id, toTuple(bot.spawn), mapId);
           continue;
         }
         const targetFeet = nearestLivingTarget(bot.controller.getFeet(), targets);
@@ -232,7 +243,8 @@ export class BotManager {
       const controller = new BotController(spawn, world.spawn.yawDeg);
       this.arena.addPlayer(id, mapId, 'deagle');
       this.arena.setPosition(id, toTuple(spawn), mapId);
-      bots.push({ id, mapId, name, model, controller });
+      this.arena.protectSpawn(id, Date.now());
+      bots.push({ id, mapId, name, model, controller, spawn: spawn.clone(), yawDeg: world.spawn.yawDeg });
     }
     this.botsByMap.set(mapId, bots);
   }

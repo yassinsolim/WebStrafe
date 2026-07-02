@@ -159,3 +159,36 @@ describe('CombatArena membership', () => {
     expect(a.getHealth('p')).toBeNull();
   });
 });
+
+describe('CombatArena spawn protection', () => {
+  it('ignores damage to a spawn-protected target, then lands once it expires', () => {
+    const a = twoPlayers();
+    a.protectSpawn('target', 1000); // protected until 1000 + SPAWN_PROTECTION_MS
+
+    // Shot during protection: counts as fired but deals no damage.
+    const blocked = a.handleFire('shooter', eye, aimAtTarget, 1500);
+    expect(blocked.fired).toBe(true);
+    expect(blocked.hit).toBeUndefined();
+    expect(a.getHealth('target')).toBe(MAX_HEALTH);
+    expect(a.isSpawnProtected('target', 1500)).toBe(true);
+
+    // After the window, the same shot connects.
+    const landed = a.handleFire('shooter', eye, aimAtTarget, 4000);
+    expect(landed.hit?.targetId).toBe('target');
+    expect(a.getHealth('target')).toBeLessThan(MAX_HEALTH);
+  });
+
+  it('re-grants protection on respawn', () => {
+    const a = twoPlayers();
+    // Kill the target outright with repeated fire.
+    for (let i = 0; i < 4; i += 1) {
+      a.handleFire('shooter', eye, aimAtTarget, 1000 + i * deagle.fireIntervalMs);
+    }
+    expect(a.isAlive('target')).toBe(false);
+    const respawnAt = 1000 + 4 * deagle.fireIntervalMs + RESPAWN_DELAY_MS;
+    a.tickRespawns(respawnAt, () => [0, 0, -10]);
+    expect(a.isAlive('target')).toBe(true);
+    // Freshly respawned => protected.
+    expect(a.isSpawnProtected('target', respawnAt + 100)).toBe(true);
+  });
+});

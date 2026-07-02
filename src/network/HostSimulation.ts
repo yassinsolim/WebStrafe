@@ -43,8 +43,8 @@ const BOT_NAMES = ['Ada', 'Byte', 'Cypher', 'Delta', 'Echo', 'Flux', 'Ghost', 'H
 
 /** How far from the player spawn bots are seeded, so they never spawn on top of you. */
 const BOT_RING_RADIUS = 18;
-/** Below its own spawn height by this much, a bot is considered fallen and reset. */
-const BOT_FALL_LIMIT = 60;
+/** Absolute backstop: a bot this far below its seed is gone no matter what. */
+const BOT_FALL_LIMIT = 600;
 const BOT_CAPSULE = { height: PLAYER_CAPSULE_HEIGHT, radius: PLAYER_CAPSULE_RADIUS };
 
 interface Bot {
@@ -98,14 +98,21 @@ export class HostSimulation {
       const controller = new BotController(seed, yawDeg);
       this.arena.addPlayer(id, MAP_ID, 'deagle');
       this.arena.setPosition(id, tuple(seed), MAP_ID);
+      this.arena.protectSpawn(id, Date.now());
       this.bots.push({ id, name, model, controller, spawn: seed.clone(), yawDeg });
     }
   }
 
-  /** Traces down from a candidate to seat a bot on the ground, else falls back. */
+  /**
+   * Traces far down from a candidate to seat a bot on the first real surface
+   * below it (a ramp or the map floor), so bots start standing/surfing on
+   * geometry instead of hovering at a spawn point that has nothing beneath it
+   * (surf maps often drop you in over a gap). Falls back to the spawn only if
+   * there is genuinely nothing below.
+   */
   private groundOrFallback(candidate: Vector3, fallback: Vector3): Vector3 {
     const start = candidate.clone().add(new Vector3(0, 2, 0));
-    const end = candidate.clone().add(new Vector3(0, -200, 0));
+    const end = candidate.clone().add(new Vector3(0, -4000, 0));
     const trace = this.world.traceCapsule(start, end, BOT_CAPSULE);
     if (trace.hit) {
       return trace.position.clone().add(new Vector3(0, 0.04, 0));
@@ -120,6 +127,9 @@ export class HostSimulation {
       present.add(h.id);
       if (!this.humanPositions.has(h.id)) {
         this.arena.addPlayer(h.id, MAP_ID, 'knife');
+        // Shield freshly-joined humans briefly so bots can't drop them the
+        // instant they appear.
+        this.arena.protectSpawn(h.id, Date.now());
       }
       this.arena.setPosition(h.id, h.position, MAP_ID);
       this.humanPositions.set(h.id, new Vector3(h.position[0], h.position[1], h.position[2]));
@@ -166,9 +176,10 @@ export class HostSimulation {
         this.arena.setPosition(bot.id, tuple(bot.controller.getFeet()), MAP_ID);
         continue;
       }
-      // If a bot has fallen off the map (e.g. slid off a surf ramp), reset it to
-      // its seed instead of letting it plummet forever.
-      if (bot.controller.getFeet().y < bot.spawn.y - BOT_FALL_LIMIT) {
+      // If a bot has genuinely fallen off the map (plummeting, not surfing),
+      // reset it to its seed instead of letting it drop forever. A real surf
+      // descent keeps lots of horizontal speed, so it never trips hasFallenOff.
+      if (bot.controller.hasFallenOff() || bot.controller.getFeet().y < bot.spawn.y - BOT_FALL_LIMIT) {
         bot.controller.respawn(bot.spawn, bot.yawDeg);
         this.arena.setPosition(bot.id, tuple(bot.spawn), MAP_ID);
         continue;

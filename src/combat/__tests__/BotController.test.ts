@@ -98,6 +98,40 @@ describe('decideBotInput', () => {
     const d = decideBotInput(state(), { targetFeet: new Vector3(0, 100, -30) }, DEFAULT_BOT_PARAMS, dt);
     expect(d.pitchDelta).toBeGreaterThan(0);
   });
+
+  it('air-strafes (holds a strafe, no forward) instead of walking while surfing', () => {
+    const surfD = decideBotInput(
+      state({ grounded: false, mode: 'surf', recommendedStrafe: 'D', velX: 8, velZ: 0 }),
+      { targetFeet: new Vector3(0, 0, -50) },
+      DEFAULT_BOT_PARAMS,
+      dt,
+    );
+    expect(surfD.forwardMove).toBe(0);
+    expect(surfD.sideMove).toBe(1); // follows the 'D' auto-surf hint
+    expect(surfD.jump).toBe(false); // never jump off the ramp
+
+    const surfA = decideBotInput(
+      state({ grounded: false, mode: 'surf', recommendedStrafe: 'A', velX: 8, velZ: 0 }),
+      { targetFeet: new Vector3(0, 0, -50) },
+      DEFAULT_BOT_PARAMS,
+      dt,
+    );
+    expect(surfA.sideMove).toBe(-1); // follows the 'A' hint
+  });
+
+  it('drifts toward the target while free-falling in the air (no runaway strafe)', () => {
+    // In open air (not on a ramp) the bot should just face + drift toward the
+    // target, NOT circle-strafe for speed (which flings it off the map).
+    const d = decideBotInput(
+      state({ grounded: false, mode: 'air', recommendedStrafe: 'NONE', velX: 10, velZ: 0, yawRad: 0 }),
+      { targetFeet: new Vector3(0, 0, -200) },
+      DEFAULT_BOT_PARAMS,
+      dt,
+    );
+    expect(d.forwardMove).toBe(1); // drift toward target
+    expect(d.sideMove).toBe(0); // no speed-building strafe in free air
+    expect(Math.abs(d.yawDelta)).toBeLessThanOrEqual(DEFAULT_BOT_PARAMS.turnRateRadPerSec * dt + 1e-9);
+  });
 });
 
 describe('BotController (integrates real physics)', () => {
@@ -138,5 +172,51 @@ describe('BotController (integrates real physics)', () => {
     }
     bot.respawn(new Vector3(3, 6, 3), 90);
     expect(bot.getFeet().distanceTo(new Vector3(3, 6, 3))).toBeLessThan(1e-6);
+  });
+
+  it('fires only in disciplined bursts, not a continuous stream', () => {
+    const world = makeWorld();
+    // Bot on flat ground with a close, eye-level target dead ahead (yaw 180 =>
+    // forward +Z; target at +Z). It should aim and shoot — but in bursts.
+    const bot = new BotController(new Vector3(0, 1, 0), 180);
+    const target = new Vector3(0, 0.4, 5);
+
+    let firing = 0;
+    let idleAfterReaction = 0;
+    const ticks = 360; // 6 seconds
+    for (let i = 0; i < ticks; i += 1) {
+      bot.tick(dt, world, { targetFeet: target });
+      const afterReaction = i * dt > DEFAULT_BOT_PARAMS.reactionDelaySec + 0.3;
+      if (bot.wantsToFire()) firing += 1;
+      else if (afterReaction) idleAfterReaction += 1;
+    }
+
+    // It does shoot sometimes…
+    expect(firing).toBeGreaterThan(0);
+    // …but nowhere near every tick — bursts + cooldown keep the duty cycle low.
+    expect(firing / ticks).toBeLessThan(0.5);
+    // …and there are plenty of hold-fire ticks after the reaction delay.
+    expect(idleAfterReaction).toBeGreaterThan(0);
+  });
+
+  it('surfs a ramp (stays on it, keeps speed) instead of instantly falling off', () => {
+    const world = makeWorld();
+    // Seed on the training surf ramp with a target far along it, like a fleeing
+    // player. The surf AI should ride the ramp: spend time surfing, keep speed,
+    // and not be flagged as "fallen off".
+    const bot = new BotController(new Vector3(6, 10, 2), -90);
+    const target = new Vector3(40, 0, 2);
+
+    let maxSpeed = 0;
+    for (let i = 0; i < 240; i += 1) {
+      bot.tick(dt, world, { targetFeet: target });
+      const vel = bot.getVelocity();
+      maxSpeed = Math.max(maxSpeed, Math.hypot(vel.x, vel.z));
+    }
+
+    // It builds real horizontal speed off the ramp (a face-plant would kill it).
+    expect(maxSpeed).toBeGreaterThan(5);
+    // And it isn't treated as having fallen off the map (it surfed, didn't plummet).
+    expect(bot.hasFallenOff()).toBe(false);
   });
 });
