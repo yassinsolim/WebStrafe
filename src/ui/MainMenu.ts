@@ -389,7 +389,6 @@ export class MainMenu {
       '"CTM_SAS | CS2 Agent Model" (skfb.ly/oRO6P) by Alex — CC Attribution.',
       '"PHOENIX | CS2 Agent Model" (skfb.ly/oQyER) by Alex — CC Attribution.',
       '"AWP with Anims" by Addison Ye (sketchfab.com/redethox) — CC Attribution.',
-      '"Desert Eagle | First Person Animations" by 1Matzh (sketchfab.com/1Matzh) — CC Attribution.',
     ];
     for (const text of lines) {
       const p = document.createElement('p');
