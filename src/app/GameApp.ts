@@ -28,6 +28,7 @@ import { KnifeAudio, type KnifeSoundProfile } from '../audio/KnifeAudio';
 import { AttackSoundThrottle } from '../audio/AttackSoundThrottle';
 import { CosmeticsManager } from '../cosmetics/CosmeticsManager';
 import { ViewmodelRenderer } from '../cosmetics/ViewmodelRenderer';
+import { WeaponViewmodels, type GunId } from '../cosmetics/WeaponViewmodels';
 import type { LoadoutSelection } from '../cosmetics/types';
 import { HUD } from '../ui/HUD';
 import { MainMenu } from '../ui/MainMenu';
@@ -96,9 +97,11 @@ export class GameApp {
   private readonly killFeed = new KillFeed();
   private readonly weapon = new WeaponController('knife');
   private localAlive = true;
+  private readonly deadMoveInput = { forwardMove: 0, sideMove: 0, jumpPressed: false, jumpHeld: false };
   private readonly remotePlayerNames = new Map<string, string>();
 
   private readonly cosmeticsGroup = new Group();
+  private readonly weaponViewmodels = new WeaponViewmodels();
   private readonly cosmeticsManager: CosmeticsManager;
 
   private readonly crosshair: HTMLDivElement;
@@ -181,6 +184,7 @@ export class GameApp {
 
     this.viewmodelRenderer = new ViewmodelRenderer(68, window.innerWidth / window.innerHeight);
     this.viewmodelRenderer.root.add(this.cosmeticsGroup);
+    this.viewmodelRenderer.root.add(this.weaponViewmodels.root);
     this.cosmeticsManager = new CosmeticsManager(this.cosmeticsGroup);
 
     this.crosshair = this.createCrosshair();
@@ -405,23 +409,32 @@ export class GameApp {
           this.viewmodelRenderer.triggerInspect();
           inspectQueued = false;
         }
+        const dead = this.combatEnabled && !this.localAlive;
         if (attackQueued) {
-          this.cosmeticsManager.triggerAttackPrimary();
-          this.multiplayer.sendAttack('primary');
-          this.knifeAudio.play('primary');
-          if (this.combatEnabled) {
-            this.fireCombatWeapon(performance.now());
+          if (!dead) {
+            this.cosmeticsManager.triggerAttackPrimary();
+            this.multiplayer.sendAttack('primary');
+            this.knifeAudio.play('primary');
+            if (this.combatEnabled) {
+              this.fireCombatWeapon(performance.now());
+            }
           }
           attackQueued = false;
         }
         if (attackAltQueued) {
-          this.cosmeticsManager.triggerAttackSecondary();
-          this.multiplayer.sendAttack('secondary');
-          this.knifeAudio.play('secondary');
+          if (!dead) {
+            this.cosmeticsManager.triggerAttackSecondary();
+            this.multiplayer.sendAttack('secondary');
+            this.knifeAudio.play('secondary');
+          }
           attackAltQueued = false;
         }
 
-        const moveInput = this.input.sampleMoveInput();
+        // Always drain the sampled input (to clear edge-triggered jump/keys),
+        // but freeze movement while dead so a killed player can't keep running
+        // around as a "ghost" until they respawn.
+        const sampledMove = this.input.sampleMoveInput();
+        const moveInput = dead ? this.deadMoveInput : sampledMove;
         this.movement.tick(FIXED_TICK_DT, moveInput, this.collisionWorld);
         this.multiplayerSendAccumulator += FIXED_TICK_DT;
         this.sendMultiplayerStateIfReady();
@@ -443,6 +456,7 @@ export class GameApp {
 
     this.updateCameras(frameDt, look);
     this.cosmeticsManager.update(frameDt);
+    this.weaponViewmodels.update(frameDt);
     this.remotePlayers.update(frameDt);
     if (this.combatEnabled) {
       this.updateCombat(time);
@@ -570,6 +584,9 @@ export class GameApp {
       if (!this.didPlayInitialEquip) {
         this.cosmeticsManager.triggerEquip();
         this.didPlayInitialEquip = true;
+      }
+      if (this.combatEnabled) {
+        this.updateWeaponViewmodel(this.weapon.getActive());
       }
       this.setCrosshairVisible(this.debugCameraMode === 'firstPerson');
       this.showStatus('Map loaded');
@@ -950,14 +967,23 @@ export class GameApp {
 
     this.multiplayer.onHealth = ({ playerId, health, alive }) => {
       if (playerId === this.multiplayer.getLocalId()) {
+        const wasAlive = this.localAlive;
         this.localAlive = alive;
         this.combatHud?.setHealth(health, alive);
+        if (wasAlive && !alive) {
+          this.showStatus('You died — respawning in 3s…', 3000);
+        }
       }
     };
     this.multiplayer.onRespawn = ({ playerId }) => {
       if (playerId === this.multiplayer.getLocalId()) {
         this.localAlive = true;
         this.combatHud?.setHealth(100, true);
+        // Actually move the player back to spawn — previously the HUD flipped to
+        // "alive" but the player was left standing where they died (next to the
+        // bot that killed them), so they just died again on the spot.
+        this.respawnLocalPlayer();
+        this.showStatus('Respawned', 1200);
       }
     };
     this.multiplayer.onHit = ({ shooterId, hitbox }) => {
@@ -1004,6 +1030,7 @@ export class GameApp {
     const to = origin.clone().addScaledVector(forward, Math.min(result.weapon.range, 4000));
     if (this.weapon.getActive() !== 'knife') {
       this.combatEffects?.spawnShot(origin.clone(), to, nowMs);
+      this.weaponViewmodels.recoil();
     }
     this.multiplayer.sendFire(
       [origin.x, origin.y, origin.z],
@@ -1018,6 +1045,18 @@ export class GameApp {
     this.weapon.equip(id);
     this.multiplayer.sendEquip(id);
     this.combatHud?.setWeapon(id, this.weapon.getAmmo());
+    this.updateWeaponViewmodel(id);
+  }
+
+  /**
+   * Swaps the first-person viewmodel to match the active weapon: the knife shows
+   * its GLB hands (CosmeticsManager), while the deagle/awp show their procedural
+   * gun models. Without this, slots 2 and 3 rendered nothing.
+   */
+  private updateWeaponViewmodel(id: WeaponId): void {
+    const gun: GunId | null = id === 'deagle' || id === 'awp' ? id : null;
+    this.cosmeticsGroup.visible = gun === null;
+    this.weaponViewmodels.show(gun);
   }
 
   private updateCombat(nowMs: number): void {
@@ -1375,6 +1414,14 @@ export class GameApp {
 
   private setCrosshairVisible(visible: boolean): void {
     this.crosshair.style.display = visible ? 'block' : 'none';
+  }
+
+  /** Teleports the local player back to the map spawn after a combat death. */
+  private respawnLocalPlayer(): void {
+    if (!this.loadedMap) {
+      return;
+    }
+    this.movement.reset(this.loadedMap.spawnPosition, this.loadedMap.spawnYawDeg);
   }
 
   private resetToSpawn(message: string | null, restartTimer = false): void {

@@ -2,6 +2,7 @@ import {
   Bone,
   Box3,
   BoxGeometry,
+  Euler,
   Group,
   MathUtils,
   Mesh,
@@ -14,8 +15,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { AttackKind, MultiplayerSnapshotPlayer, PlayerModel } from '../network/types';
 import {
+  applyKnifeIdlePose,
   attachKnifeModel,
-  applyBoneOffset,
   buildArmRig,
   loadKnifeMesh,
   type ArmRig,
@@ -208,71 +209,24 @@ export class RemotePlayersRenderer {
 
     this.resetRigToBase(rig);
 
-    const idleWave = Math.sin(nowSec * 1.6 + actor.idlePhase) * 0.018;
-    const idleBreath = Math.sin(nowSec * 1.08 + actor.idlePhase * 0.5) * 0.014;
+    // Base stance: the exact same knife-hold the menu hero uses, so every player
+    // in the world reads as gripping the knife the way the character preview
+    // does (both arms in, blade out front) instead of the old splayed stance.
+    applyKnifeIdlePose(rig);
 
+    // A subtle breath so remotes are not perfectly frozen, phase-offset per id.
+    const breath = Math.sin(nowSec * 1.1 + actor.idlePhase) * 0.02;
+    composeOptional(rig.spineUpper, breath * 0.5, 0, 0);
+    composeOptional(rig.head, breath * 0.25, Math.sin(nowSec * 1.6 + actor.idlePhase) * 0.03, 0);
+
+    // Attack swing layered on top of the idle grip on the knife (right) arm.
     const swingAlpha = actor.swingTimer > 0 ? 1 - actor.swingTimer / SWING_DURATION_SEC : 0;
     const swingCurve = swingAlpha > 0 ? Math.sin(Math.PI * MathUtils.clamp(swingAlpha, 0, 1)) : 0;
-    const swingDir = actor.swingKind === 'secondary' ? -1 : 1;
-
-    // Keep a compact combat silhouette without forcing leg/pelvis warping.
-    this.applyOptionalBoneOffset(rig.spineMid, rig.spineMidBase, 0.05 + idleBreath * 0.14, 0, 0);
-    this.applyOptionalBoneOffset(rig.spineUpper, rig.spineUpperBase, 0.09 + idleBreath * 0.18, idleWave * 0.035, 0);
-    this.applyOptionalBoneOffset(rig.neck, rig.neckBase, -0.015, idleWave * 0.045, 0);
-    this.applyOptionalBoneOffset(rig.head, rig.headBase, -0.03 + idleBreath * 0.08, idleWave * 0.06, 0);
-    this.applyOptionalBoneOffset(rig.rightClavicle, rig.rightClavicleBase, 0.14, -0.18, 0.1);
-    this.applyOptionalBoneOffset(rig.leftClavicle, rig.leftClavicleBase, 0.12, 0.16, -0.04);
-
-    // Right knife arm: forward and bent.
-    applyBoneOffset(
-      rig.rightUpper,
-      rig.rightUpperBase,
-      -0.98 - 0.26 * swingCurve,
-      -0.32 + 0.2 * swingCurve * swingDir,
-      0.1 + 0.08 * swingCurve,
-    );
-    applyBoneOffset(
-      rig.rightLower,
-      rig.rightLowerBase,
-      -1.1 - 0.32 * swingCurve,
-      0.14 + 0.14 * swingCurve * swingDir,
-      -0.03,
-    );
-    applyBoneOffset(
-      rig.rightHand,
-      rig.rightHandBase,
-      0.02 + 0.1 * swingCurve,
-      -0.8 - 0.14 * swingCurve,
-      -0.06 + 0.22 * swingCurve * swingDir,
-    );
-
-    // Left support arm: guarded, not flared behind body.
-    if (rig.leftUpper && rig.leftUpperBase) {
-      applyBoneOffset(
-        rig.leftUpper,
-        rig.leftUpperBase,
-        -0.74 + idleBreath * 0.08,
-        0.14 - idleWave * 0.045,
-        -0.08,
-      );
-    }
-    if (rig.leftLower && rig.leftLowerBase) {
-      applyBoneOffset(
-        rig.leftLower,
-        rig.leftLowerBase,
-        -0.92 + idleBreath * 0.06,
-        -0.12,
-        0.02,
-      );
-    }
-    if (rig.leftHand && rig.leftHandBase) {
-      applyBoneOffset(
-        rig.leftHand,
-        rig.leftHandBase,
-        0.02,
-        0.08,
-        -0.1,
-      );
+    if (swingCurve > 0) {
+      const dir = actor.swingKind === 'secondary' ? -1 : 1;
+      composeLocal(rig.rightUpper, -0.34 * swingCurve, 0.2 * swingCurve * dir, 0.06 * swingCurve);
+      composeLocal(rig.rightLower, -0.42 * swingCurve, 0.16 * swingCurve * dir, 0);
+      composeLocal(rig.rightHand, 0.12 * swingCurve, -0.16 * swingCurve, 0.24 * swingCurve * dir);
     }
   }
 
@@ -308,19 +262,6 @@ export class RemotePlayersRenderer {
     if (rig.head && rig.headBase) {
       rig.head.quaternion.copy(rig.headBase);
     }
-  }
-
-  private applyOptionalBoneOffset(
-    bone: Bone | null,
-    base: Quaternion | null,
-    x: number,
-    y: number,
-    z: number,
-  ): void {
-    if (!bone || !base) {
-      return;
-    }
-    applyBoneOffset(bone, base, x, y, z);
   }
 
   private async loadTemplate(model: PlayerModel): Promise<[PlayerModel, Object3D]> {
@@ -386,6 +327,22 @@ function hashToPhase(value: string): number {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0) / 4294967295 * Math.PI * 2;
+}
+
+const composeEuler = new Euler(0, 0, 0, 'XYZ');
+const composeQuat = new Quaternion();
+
+/** Multiplies a local-space Euler rotation onto a bone's current quaternion. */
+function composeLocal(bone: Bone, x: number, y: number, z: number): void {
+  composeEuler.set(x, y, z, 'XYZ');
+  composeQuat.setFromEuler(composeEuler);
+  bone.quaternion.multiply(composeQuat).normalize();
+}
+
+function composeOptional(bone: Bone | null, x: number, y: number, z: number): void {
+  if (bone) {
+    composeLocal(bone, x, y, z);
+  }
 }
 
 function lerpAngle(current: number, target: number, alpha: number): number {
