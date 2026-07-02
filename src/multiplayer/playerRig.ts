@@ -58,11 +58,15 @@ const KNIFE_MODEL_PATH = '/viewmodels/knife/knife.glb';
 /**
  * Knife child-offset (relative to the right weapon-hand bone) for the static
  * menu hero pose only. The menu closes the fingers into a fist, so the knife
- * seats a little deeper in the palm / finger-curl pocket than the in-game
- * default set in {@link attachKnifeModel}. Applied by {@link applyKnifeIdlePose}
- * so the in-game third-person hold is never affected.
+ * seats deeper in the palm / finger-curl pocket than the in-game default set in
+ * {@link attachKnifeModel}. It also slides the knife along its handle so the
+ * fist grips the balance point just below the guard (rather than pinching the
+ * butt/pommel end), which leaves far less bare wooden handle exposed between the
+ * fist and the guard and tucks the pommel behind the fist — reading as a proper
+ * knife-fight grip. Applied by {@link applyKnifeIdlePose} so the in-game
+ * third-person hold is never affected.
  */
-const MENU_KNIFE_GRIP_POSITION = new Vector3(0.058, -0.0022, 0.0688);
+const MENU_KNIFE_GRIP_POSITION = new Vector3(0.0409, 0.0063, 0.0289);
 
 const offsetQuat = new Quaternion();
 const offsetEuler = new Euler(0, 0, 0, 'XYZ');
@@ -214,11 +218,12 @@ export function applyKnifeIdlePose(rig: ArmRig): void {
     applyBoneOffset(rig.rightThumb[i], rig.rightThumbBases[i], 0, 0, thumbCurl[Math.min(i, thumbCurl.length - 1)]);
   }
 
-  // Seat the knife a little deeper in the palm for the static menu pose only.
-  // attachKnifeModel keeps the in-game offset (gameplay is viewed at a distance
-  // with an open hand and no finger curl); here the fingers close, so nudging the
-  // knife into the finger-curl pocket makes the fist wrap the handle without
-  // touching the in-game third-person hold.
+  // Seat the knife deeper in the palm and slid up to the balance point below the
+  // guard for the static menu pose only. attachKnifeModel keeps the in-game
+  // offset (gameplay is viewed at a distance with an open hand and no finger
+  // curl); here the fingers close, so re-seating the knife into the finger-curl
+  // pocket makes the fist grip the handle convincingly — without touching the
+  // in-game third-person hold.
   const menuKnife = rig.rightHand.getObjectByName('RemoteKnifeModel');
   if (menuKnife) {
     menuKnife.position.copy(MENU_KNIFE_GRIP_POSITION);
