@@ -37,23 +37,31 @@ describe('HostSimulation', () => {
   });
 
   it('resolves a human gun shot that hits a bot (delegates hit + health)', () => {
-    const emit = makeEmitter();
-    const sim = new HostSimulation(makeWorld(), { position: new Vector3(0, 6, 0), yawDeg: 0 }, 1, emit);
-    const bot = sim.tick(16)[0];
+    vi.useFakeTimers();
+    try {
+      const emit = makeEmitter();
+      const sim = new HostSimulation(makeWorld(), { position: new Vector3(0, 6, 0), yawDeg: 0 }, 1, emit);
+      const bot = sim.tick(16)[0];
 
-    // Register a human with a gun and fire straight at the bot's upper body.
-    sim.syncHumans([{ id: 'h1', name: 'H', model: 'terrorist', position: [bot.position[0], bot.position[1], bot.position[2] + 30] }]);
-    sim.applyEquip('h1', 'deagle');
+      // Register a human with a gun and fire straight at the bot's upper body.
+      sim.syncHumans([{ id: 'h1', name: 'H', model: 'terrorist', position: [bot.position[0], bot.position[1], bot.position[2] + 30] }]);
+      sim.applyEquip('h1', 'deagle');
 
-    const origin: [number, number, number] = [bot.position[0], bot.position[1] + 1.6, bot.position[2] + 30];
-    const aim: [number, number, number] = [bot.position[0], bot.position[1] + 1.2, bot.position[2]];
-    sim.applyFire('h1', origin, normalize(origin, aim));
+      // Wait out the bot's spawn protection so the shot can land.
+      vi.advanceTimersByTime(2100);
 
-    expect(emit.hit).toHaveBeenCalled();
-    expect(emit.hit.mock.calls[0][0].targetId).toBe('bot:0');
-    expect(emit.health).toHaveBeenCalled();
-    const health = emit.health.mock.calls.find((c) => c[0].playerId === 'bot:0');
-    expect(health?.[0].health).toBeLessThan(100);
+      const origin: [number, number, number] = [bot.position[0], bot.position[1] + 1.6, bot.position[2] + 30];
+      const aim: [number, number, number] = [bot.position[0], bot.position[1] + 1.2, bot.position[2]];
+      sim.applyFire('h1', origin, normalize(origin, aim));
+
+      expect(emit.hit).toHaveBeenCalled();
+      expect(emit.hit.mock.calls[0][0].targetId).toBe('bot:0');
+      expect(emit.health).toHaveBeenCalled();
+      const health = emit.health.mock.calls.find((c) => c[0].playerId === 'bot:0');
+      expect(health?.[0].health).toBeLessThan(100);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('drops a human from the arena when they leave', () => {

@@ -1,6 +1,7 @@
 import { Vector3 } from 'three';
 import type { CollisionAdapter } from '../world/CollisionWorld';
 import { MovementController } from '../movement/MovementController';
+import type { MovementMode } from '../movement/types';
 
 /** applyLookDelta maps deltaX to a yaw change of `-deltaX * 0.0022 * sensitivity`. */
 const LOOK_YAW_SCALE = 0.0022;
@@ -20,6 +21,13 @@ export interface BotMovementState {
   pitchRad: number;
   horizontalSpeed: number;
   grounded: boolean;
+  /** Current movement mode from the physics core. Defaults to 'ground'. */
+  mode?: MovementMode;
+  /** Auto-surf hint from the physics core (which strafe key maintains surf). */
+  recommendedStrafe?: 'A' | 'D' | 'NONE';
+  /** Horizontal velocity components, used to air-strafe along the ramp. */
+  velX?: number;
+  velZ?: number;
 }
 
 export interface BotDecision {
@@ -59,16 +67,27 @@ export interface BotParams {
    * The wander is smoothed over time and scales with distance.
    */
   aimWanderRad: number;
+  /**
+   * Trigger discipline: a bot fires in short bursts, then holds fire. Together
+   * with the wander + reaction delay this keeps bots from being a continuous
+   * hitscan stream that melts you the instant you're in view.
+   */
+  burstDurationSec: number;
+  /** How long the bot holds fire between bursts. */
+  burstCooldownSec: number;
 }
 
 export const DEFAULT_BOT_PARAMS: BotParams = {
-  turnRateRadPerSec: 2.4,
+  // Deliberately dumbed-down so bots are fun, not an aimbot:
+  turnRateRadPerSec: 1.5, // slower tracking — can't snap onto you
   stopDistance: 6,
   stuckSpeed: 0.6,
-  engageRange: 1500,
+  engageRange: 600, // only a threat at closer range (was 1500)
   fireAngleTol: 0.05, // ~3 degrees
-  reactionDelaySec: 0.9,
-  aimWanderRad: 0.06, // ~3.5 degrees of wander
+  reactionDelaySec: 1.6, // slower to open fire (was 0.9)
+  aimWanderRad: 0.16, // ~9 degrees of wander — misses a lot (was 3.5)
+  burstDurationSec: 0.5, // fire for ~half a second…
+  burstCooldownSec: 1.2, // …then hold fire, giving you room to fight back
 };
 
 /** Normalizes an angle to (-π, π]. */
@@ -111,31 +130,74 @@ export function decideBotInput(
   const horizDist = Math.hypot(ax, az);
   const dist3D = Math.hypot(ax, ay, az);
 
-  let yawDelta = 0;
-  let pitchDelta = 0;
+  // Aim error toward the true target — drives the fire decision regardless of
+  // how the bot is steering (so it never fires while surfing away from you).
   let yawErr = 0;
   let pitchErr = 0;
   if (horizDist > 1e-3) {
-    // forward = (-sin(yaw)cos(pitch), sin(pitch), -cos(yaw)cos(pitch)).
     const desiredYaw = Math.atan2(-ax, -az);
     const desiredPitch = Math.atan2(ay, horizDist);
     yawErr = wrapAngle(desiredYaw - state.yawRad);
     pitchErr = desiredPitch - state.pitchRad;
-    yawDelta = Math.max(-maxTurn, Math.min(maxTurn, yawErr));
-    pitchDelta = Math.max(-maxTurn, Math.min(maxTurn, pitchErr));
   }
-
-  const feetDist = Math.hypot(ax, az); // horizontal distance to target feet column
-  const facing = Math.abs(yawErr) < Math.PI / 2;
-  const forwardMove = feetDist > params.stopDistance && facing ? 1 : 0;
-  const jump = state.grounded && forwardMove > 0 && state.horizontalSpeed < params.stuckSpeed;
 
   const fire =
     dist3D <= params.engageRange
     && Math.abs(yawErr) <= params.fireAngleTol
     && Math.abs(pitchErr) <= params.fireAngleTol;
 
-  return { forwardMove, sideMove: 0, jump, yawDelta, pitchDelta, fire };
+  const mode = state.mode ?? 'ground';
+
+  let forwardMove = 0;
+  let sideMove = 0;
+  let yawDelta = 0;
+  let pitchDelta = 0;
+  let jump = false;
+
+  if (mode === 'surf') {
+    // --- On a ramp: actually surf. Real surfers hold one strafe key and keep
+    // the view swinging along their velocity, which air-accelerates them along
+    // the ramp. We follow the physics core's own auto-surf hint for the strafe
+    // key, steer the view along velocity, and bias slightly toward the target so
+    // the bot rides the ramp down the map with you.
+    const velX = state.velX ?? 0;
+    const velZ = state.velZ ?? 0;
+    const speed = Math.hypot(velX, velZ);
+    const velYaw = speed > 0.5 ? Math.atan2(-velX, -velZ) : state.yawRad;
+    const targetYaw = Math.atan2(-ax, -az);
+    const towardTarget = wrapAngle(targetYaw - velYaw);
+    const desiredYaw = velYaw + Math.max(-0.5, Math.min(0.5, towardTarget)) * 0.3;
+    yawDelta = Math.max(-maxTurn, Math.min(maxTurn, wrapAngle(desiredYaw - state.yawRad)));
+    pitchDelta = Math.max(-maxTurn, Math.min(maxTurn, -state.pitchRad)); // ease pitch to level
+
+    if (state.recommendedStrafe === 'A') {
+      sideMove = -1;
+    } else if (state.recommendedStrafe === 'D') {
+      sideMove = 1;
+    } else {
+      const rightX = Math.cos(velYaw);
+      const rightZ = -Math.sin(velYaw);
+      sideMove = ax * rightX + az * rightZ >= 0 ? 1 : -1;
+    }
+  } else if (mode === 'air') {
+    // --- Free air (between ramps / dropping in): DON'T circle-strafe for speed
+    // — that just flings the bot off the map. Face the target and drift toward
+    // it with capped air control (only when roughly facing it, so it doesn't
+    // sail the wrong way while turning around), like a player dropping in.
+    const facing = Math.abs(yawErr) < Math.PI / 2;
+    forwardMove = facing ? 1 : 0;
+    yawDelta = Math.max(-maxTurn, Math.min(maxTurn, yawErr));
+    pitchDelta = Math.max(-maxTurn, Math.min(maxTurn, -state.pitchRad));
+  } else {
+    // --- Grounded: seek the target and aim at it.
+    const facing = Math.abs(yawErr) < Math.PI / 2;
+    forwardMove = horizDist > params.stopDistance && facing ? 1 : 0;
+    yawDelta = Math.max(-maxTurn, Math.min(maxTurn, yawErr));
+    pitchDelta = Math.max(-maxTurn, Math.min(maxTurn, pitchErr));
+    jump = state.grounded && forwardMove > 0 && state.horizontalSpeed < params.stuckSpeed;
+  }
+
+  return { forwardMove, sideMove, jump, yawDelta, pitchDelta, fire };
 }
 
 /**
@@ -154,6 +216,11 @@ export class BotController {
   /** Smoothly-drifting world-space aim offset that makes the bot miss like a human. */
   private readonly aimWander = new Vector3();
   private readonly perturbedTarget = new Vector3();
+  /** Trigger discipline: seconds spent in the current burst, and cooldown left. */
+  private burstActiveSec = 0;
+  private burstCooldownSec = 0;
+  /** How long the bot has been plummeting (airborne, little horizontal speed). */
+  private fallingSec = 0;
 
   constructor(spawn: Vector3, yawDeg = 0, params: BotParams = DEFAULT_BOT_PARAMS) {
     this.params = params;
@@ -166,6 +233,9 @@ export class BotController {
     this.hasAimTarget = false;
     this.targetSeenSec = 0;
     this.aimWander.set(0, 0, 0);
+    this.burstActiveSec = 0;
+    this.burstCooldownSec = 0;
+    this.fallingSec = 0;
   }
 
   getFeet(): Vector3 {
@@ -202,6 +272,18 @@ export class BotController {
     return this.hasAimTarget ? this.aimTarget.clone() : null;
   }
 
+  /**
+   * True when the bot has been in free-fall ('air' mode — neither grounded nor
+   * surfing a ramp) long enough that it has clearly dropped off the map rather
+   * than surfing down it. A genuine surf descent stays in 'surf' mode, so it
+   * never trips this; only a bot that sailed off into the void does.
+   */
+  hasFallenOff(): boolean {
+    return this.fallingSec >= BotController.FALL_TIMEOUT_SEC;
+  }
+
+  private static readonly FALL_TIMEOUT_SEC = 3;
+
   /** Advances the bot one fixed step toward (and aiming at) its target. */
   tick(dt: number, world: CollisionAdapter, perception: BotPerception): void {
     const debug = this.movement.getDebugState();
@@ -235,11 +317,22 @@ export class BotController {
         pitchRad: this.movement.getPitchRad(),
         horizontalSpeed,
         grounded: debug.grounded,
+        mode: debug.movementMode,
+        recommendedStrafe: debug.recommendedStrafe,
+        velX: debug.velocity.x,
+        velZ: debug.velocity.z,
       },
       aimPerception,
       this.params,
       dt,
     );
+
+    // Track sustained free-fall: continuous time in 'air' (neither grounded nor
+    // surfing a ramp) means the bot has dropped off the map rather than surfing
+    // it — a real surf descent stays in 'surf' mode (or only brief air hops
+    // between ramps). Reset the timer whenever it touches ground or a ramp.
+    const inAir = debug.movementMode === 'air';
+    this.fallingSec = inAir ? this.fallingSec + dt : 0;
 
     if (decision.yawDelta !== 0 || decision.pitchDelta !== 0) {
       this.movement.applyLookDelta(
@@ -280,6 +373,24 @@ export class BotController {
     // just-spawned bot can't headshot you on the first frame.
     if (this.targetSeenSec < this.params.reactionDelaySec) {
       this.wantsFire = false;
+    }
+
+    // Trigger discipline: fire in short bursts with a cooldown in between, so
+    // bots don't lay down a continuous hitscan stream. The cooldown ticks down
+    // whether or not the bot wants to fire; a burst only accrues while firing.
+    if (this.burstCooldownSec > 0) {
+      this.burstCooldownSec = Math.max(0, this.burstCooldownSec - dt);
+      this.wantsFire = false;
+      this.burstActiveSec = 0;
+    } else if (this.wantsFire) {
+      this.burstActiveSec += dt;
+      if (this.burstActiveSec >= this.params.burstDurationSec) {
+        // End the burst and start the cooldown.
+        this.burstCooldownSec = this.params.burstCooldownSec;
+        this.burstActiveSec = 0;
+      }
+    } else {
+      this.burstActiveSec = Math.max(0, this.burstActiveSec - dt);
     }
   }
 }

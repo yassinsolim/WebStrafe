@@ -237,6 +237,7 @@ wss.on('connection', (ws, req) => {
           mapId,
         });
         arena.addPlayer(client.id, mapId, 'knife');
+        arena.protectSpawn(client.id, Date.now());
         break;
       }
       case 'state': {

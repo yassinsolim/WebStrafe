@@ -15,6 +15,12 @@ export const PLAYER_CAPSULE_HEIGHT = 1.76;
 export const PLAYER_CAPSULE_RADIUS = 0.34;
 
 /**
+ * Brief post-(re)spawn invulnerability. Stops the "die the instant you spawn"
+ * problem where bots re-acquire and drop you before you can even move.
+ */
+export const SPAWN_PROTECTION_MS = 2000;
+
+/**
  * Maximum allowed gap between a client-reported fire `origin` and the shooter's
  * authoritative eye position. Guards against "teleport-shoot" spoofing while
  * tolerating latency/interpolation.
@@ -54,6 +60,8 @@ interface ArenaPlayer {
   /** Authoritative feet position in world units. */
   feet: Vector3;
   eyeHeight: number;
+  /** Damage is ignored until this time (spawn protection). 0 = unprotected. */
+  spawnProtectedUntilMs: number;
 }
 
 /**
@@ -77,6 +85,7 @@ export class CombatArena {
       weapon: new WeaponController(initialWeapon),
       feet: new Vector3(),
       eyeHeight,
+      spawnProtectedUntilMs: 0,
     });
   }
 
@@ -86,6 +95,18 @@ export class CombatArena {
 
   has(id: string): boolean {
     return this.players.has(id);
+  }
+
+  /** Grants brief post-spawn invulnerability (see {@link SPAWN_PROTECTION_MS}). */
+  protectSpawn(id: string, nowMs: number): void {
+    const p = this.players.get(id);
+    if (p) p.spawnProtectedUntilMs = nowMs + SPAWN_PROTECTION_MS;
+  }
+
+  /** True while the player is within their post-spawn invulnerability window. */
+  isSpawnProtected(id: string, nowMs: number): boolean {
+    const p = this.players.get(id);
+    return !!p && p.spawnProtectedUntilMs > nowMs;
   }
 
   setPosition(id: string, feet: [number, number, number], mapId?: string): void {
@@ -150,12 +171,14 @@ export class CombatArena {
       return { fired: true };
     }
 
-    // Build capsules for every other alive player on the same map.
+    // Build capsules for every other alive player on the same map. Players
+    // inside their spawn-protection window can't be hit (shots pass through).
     const targets: TargetCapsule[] = [];
     for (const other of this.players.values()) {
       if (other.id === shooterId) continue;
       if (other.mapId !== shooter.mapId) continue;
       if (!other.combat.alive) continue;
+      if (other.spawnProtectedUntilMs > nowMs) continue;
       targets.push({
         id: other.id,
         feet: other.feet.clone(),
@@ -201,6 +224,7 @@ export class CombatArena {
     for (const p of this.players.values()) {
       if (isRespawnDue(p.combat, nowMs)) {
         respawn(p.combat);
+        p.spawnProtectedUntilMs = nowMs + SPAWN_PROTECTION_MS;
         const pos = spawnFor?.(p.id) ?? [p.feet.x, p.feet.y, p.feet.z];
         p.feet.set(pos[0], pos[1], pos[2]);
         events.push({ playerId: p.id, position: pos });

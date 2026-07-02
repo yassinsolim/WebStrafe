@@ -465,6 +465,11 @@ export class GameApp {
     this.updateCameras(frameDt, look);
     this.cosmeticsManager.update(frameDt);
     this.weaponViewmodels.update(frameDt);
+    // Guns hang off the camera directly, so apply the same CS2-style sway/bob/
+    // dip/kick delta the ViewmodelRenderer computed for the knife — otherwise
+    // they'd be rigidly pinned to the view and feel dead.
+    this.weaponViewmodels.root.position.copy(this.viewmodelRenderer.motionPos);
+    this.weaponViewmodels.root.rotation.copy(this.viewmodelRenderer.motionRot);
     this.remotePlayers.update(frameDt);
     if (this.combatEnabled) {
       this.updateCombat(time);
@@ -1039,6 +1044,9 @@ export class GameApp {
     if (this.weapon.getActive() !== 'knife') {
       this.combatEffects?.spawnShot(origin.clone(), to, nowMs);
       this.weaponViewmodels.triggerFire();
+      // Camera-space recoil punch (on top of the weapon's own fire clip). The
+      // AWP kicks harder than the Deagle.
+      this.viewmodelRenderer.addFireKick(this.weapon.getActive() === 'awp' ? 1.4 : 0.85);
     }
     this.multiplayer.sendFire(
       [origin.x, origin.y, origin.z],
