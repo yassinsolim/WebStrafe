@@ -1,7 +1,6 @@
 import {
   AnimationMixer,
   Box3,
-  BoxGeometry,
   Euler,
   Group,
   LoopOnce,
@@ -20,6 +19,43 @@ import {
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 export type GunId = 'deagle' | 'awp';
+
+/**
+ * Rigid gun-attach config. Some FP models (the Deagle) ship a broken skinned
+ * export where the gun meshes are authored thousands of units away from the
+ * hands at an incompatible scale, so their skinning renders them off-screen —
+ * yet the arms and the `Weapon` bone are perfectly fine. Instead of throwing the
+ * model away, we extract the gun meshes' geometry, drop the broken skinning, and
+ * rigidly parent them to a hand/weapon bone (which the arm animation carries).
+ * This yields real arms + a real gun with all the authored clips intact.
+ */
+interface GunAttach {
+  /** Exact mesh names of the broken gun parts to extract. */
+  meshes: string[];
+  /** Bone whose animated transform the gun should rigidly follow. */
+  bone: RegExp;
+  /** Uniform scale applied in bone-local space (absorbs the rig's own scale). */
+  scale: number;
+  /** Offset of the gun in bone-local space. */
+  pos: [number, number, number];
+  /** Orientation of the gun in bone-local space (XYZ euler, radians). */
+  rot: [number, number, number];
+  /**
+   * Hide every other mesh in the model, leaving only the extracted gun. Used
+   * when the model's arms are unusable (bulky/broken) and we want a clean
+   * animated gun-only viewmodel that still rides the skeleton's clips.
+   */
+  hideOthers?: boolean;
+  /**
+   * Lock the gun's orientation in camera space every frame (see `camRot`)
+   * instead of inheriting the bone's rotation. The gun still follows the bone's
+   * translation, so idle sway + fire recoil from the authored clips move it, but
+   * it always points cleanly forward regardless of the bone's messy local frame.
+   */
+  lockOrient?: boolean;
+  /** Camera-space orientation (XYZ euler) used when `lockOrient` is set. */
+  camRot?: [number, number, number];
+}
 
 /**
  * Per-gun placement in the viewmodel camera space. The model is auto-fit at load
@@ -56,62 +92,33 @@ interface GunPlacement {
    * geometry instead of hand-guessing Euler angles.
    */
   orient?: { fwdFrom: string; fwdTo: string; upFrom?: string; upTo?: string };
-  /**
-   * Procedural builder. When set, the gun is built from primitives instead of
-   * loaded from a GLB (used for the Deagle, whose only available animated GLB
-   * has a broken mesh export — gun and hand meshes at incompatible 1:8000
-   * scales in one skeleton, so it cannot render). Placed directly at `pos`/`rot`
-   * scaled by `fixedScale`; no skeletal animation, just a recoil kick on fire.
-   */
-  build?: () => Object3D;
-}
-
-/** Builds a clean first-person Desert Eagle from primitives (dark gunmetal). */
-function buildDeagle(): Object3D {
-  const g = new Group();
-  const metal = new MeshStandardMaterial({ color: 0x2a2d33, metalness: 0.85, roughness: 0.38 });
-  const dark = new MeshStandardMaterial({ color: 0x17191d, metalness: 0.8, roughness: 0.5 });
-  const grip = new MeshStandardMaterial({ color: 0x3b3f46, metalness: 0.35, roughness: 0.7 });
-  const gold = new MeshStandardMaterial({ color: 0xb8963f, metalness: 0.9, roughness: 0.3 });
-  const box = (w: number, h: number, d: number, mat: MeshStandardMaterial, x: number, y: number, z: number, rx = 0) => {
-    const m = new Mesh(new BoxGeometry(w, h, d), mat);
-    m.position.set(x, y, z);
-    m.rotation.x = rx;
-    m.castShadow = false; m.receiveShadow = false; m.frustumCulled = false;
-    g.add(m);
-    return m;
-  };
-  // Slide (top), running along -Z (forward). Length in Z.
-  box(0.5, 0.5, 2.0, metal, 0, 0.42, -0.6);
-  // Slide serrations hint (rear block).
-  box(0.52, 0.52, 0.35, dark, 0, 0.42, 0.35);
-  // Barrel opening at the muzzle.
-  box(0.42, 0.42, 0.18, dark, 0, 0.42, -1.65);
-  // Gold accent line on the slide.
-  box(0.54, 0.06, 1.4, gold, 0, 0.62, -0.5);
-  // Frame / lower under the slide.
-  box(0.46, 0.34, 1.5, dark, 0, 0.1, -0.35);
-  // Trigger guard.
-  box(0.42, 0.36, 0.16, metal, 0, -0.14, -0.15);
-  box(0.42, 0.1, 0.5, metal, 0, -0.28, 0.0);
-  // Grip, raked back-down.
-  box(0.44, 1.2, 0.55, grip, 0, -0.75, 0.55, -0.34);
-  // Rear + front sights.
-  box(0.1, 0.14, 0.12, dark, 0, 0.72, 0.5);
-  box(0.08, 0.14, 0.1, dark, 0, 0.72, -1.5);
-  return g;
+  /** Extract + rigidly attach the gun to a bone (see {@link GunAttach}). */
+  gunAttach?: GunAttach;
 }
 
 const PLACEMENTS: Record<GunId, GunPlacement> = {
   deagle: {
-    rot: [0.05, -0.5, 0.05],
-    pos: [0.2, -0.2, -0.52],
-    size: 0.16,
-    fixedScale: 0.17,
-    focus: [],
-    clips: { idle: /idle/i, draw: /equip|draw/i, fire: /fire/i, reload: /reload(?!_empty)/i },
+    // Real Sketchfab FP Deagle: the arms rig + gun-mesh skinning are a broken
+    // export (arms bulky, gun authored ~15000u away), so we extract the two
+    // clean gun parts (body + slide), drop the arms, and rigidly bolt the gun to
+    // the `Weapon` bone — an animated real Deagle that rides the authored clips.
+    rot: [0, Math.PI, 0],
+    pos: [0.2, -0.16, -0.5],
+    size: 0.3,
+    fixedScale: 0.5,
+    focus: ['palmr', 'hand_r'],
+    clips: { idle: /idle/i, draw: /equip/i, fire: /fire/i, reload: /reload(?!_empty)/i },
     hide: [],
-    build: buildDeagle,
+    gunAttach: {
+      meshes: ['Object_1082', 'Object_1083'],
+      bone: /weapon/i,
+      scale: 1.7e-4,
+      pos: [0, 0, 0],
+      rot: [0, 0, 0],
+      hideOthers: true,
+      lockOrient: true,
+      camRot: [-0.05, 0.48, 0],
+    },
   },
   awp: {
     rot: [0.06, 0.05, 0],
@@ -123,7 +130,8 @@ const PLACEMENTS: Record<GunId, GunPlacement> = {
   },
 };
 
-const GUN_URLS: Partial<Record<GunId, string>> = {
+const GUN_URLS: Record<GunId, string> = {
+  deagle: '/viewmodels/deagle/deagle.glb',
   awp: '/viewmodels/awp/awp.glb',
 };
 
@@ -131,21 +139,25 @@ interface GunInstance {
   id: GunId;
   mount: Group;
   model: Object3D;
-  mixer: AnimationMixer | null;
+  mixer: AnimationMixer;
   actions: { idle: AnimationAction | null; draw: AnimationAction | null; fire: AnimationAction | null; reload: AnimationAction | null };
   bones: Bone[];
   /** Auto-computed base orientation that points the barrel forward (-Z). */
   orientQuat: Quaternion;
-  /** Procedural guns animate a simple recoil kick instead of skeletal clips. */
-  procedural: boolean;
-  recoil: number;
+  /** Rigidly-attached gun pivot (Deagle) whose orientation may be camera-locked. */
+  gunPivot: Object3D | null;
+  /** Bone the gun pivot hangs off (for the camera-space orientation lock). */
+  gunBone: Object3D | null;
+  /** Target camera-space orientation for the gun when locked, else null. */
+  gunLockQuat: Quaternion | null;
 }
 
 /**
  * Animated first-person Deagle and AWP viewmodels loaded from real GLB assets
- * (Sketchfab, credited in CREDITS.md). Each carries its own arms + skeleton and
- * plays draw/idle/fire/reload clips. GameApp shows one at a time based on the
- * active weapon; the knife keeps its own viewmodel in CosmeticsManager.
+ * (Sketchfab, credited in the README + in-game menu). Each carries its own arms
+ * + skeleton and plays draw/idle/fire/reload clips. GameApp shows one at a time
+ * based on the active weapon; the knife keeps its own viewmodel in
+ * CosmeticsManager.
  */
 export class WeaponViewmodels {
   public readonly root = new Group();
@@ -164,12 +176,7 @@ export class WeaponViewmodels {
 
   private async loadGun(id: GunId): Promise<void> {
     const place = PLACEMENTS[id];
-    if (place.build) {
-      this.buildProceduralGun(id, place);
-      return;
-    }
     const url = GUN_URLS[id];
-    if (!url) return;
     const gltf = await this.loader.loadAsync(url);
     const model = gltf.scene;
 
@@ -182,16 +189,25 @@ export class WeaponViewmodels {
         o.receiveShadow = false;
         const name = o.name.toLowerCase();
         if (place.hide.some((h) => name.includes(h))) o.visible = false;
-        const mats = Array.isArray(o.material) ? o.material : [o.material];
-        for (const m of mats) {
-          const std = m as MeshStandardMaterial;
-          if (std.map) std.map.colorSpace = SRGBColorSpace;
-          std.depthWrite = true;
-          std.depthTest = true;
-          std.needsUpdate = true;
-        }
+        this.normalizeMaterials(o);
       }
     });
+
+    // Rigid gun-attach (Deagle): extract the broken gun meshes and bolt them to
+    // the weapon bone so the arm animation carries a correctly-placed gun.
+    let gunPivot: Object3D | null = null;
+    let gunBone: Object3D | null = null;
+    let gunLockQuat: Quaternion | null = null;
+    if (place.gunAttach) {
+      const res = this.attachRigidGun(model, place.gunAttach);
+      gunPivot = res.pivot;
+      gunBone = res.bone;
+      if (place.gunAttach.lockOrient && place.gunAttach.camRot) {
+        gunLockQuat = new Quaternion().setFromEuler(
+          new Euler(place.gunAttach.camRot[0], place.gunAttach.camRot[1], place.gunAttach.camRot[2], 'XYZ'),
+        );
+      }
+    }
 
     const mount = new Group();
     mount.name = `gun:${id}`;
@@ -222,7 +238,7 @@ export class WeaponViewmodels {
     (actions.idle ?? mixer.clipAction(clips[0]))?.play();
     mixer.update(0);
     const orientQuat = this.computeOrient(model, place);
-    const instance: GunInstance = { id, mount, model, mixer, actions, bones, orientQuat, procedural: false, recoil: 0 };
+    const instance: GunInstance = { id, mount, model, mixer, actions, bones, orientQuat, gunPivot, gunBone, gunLockQuat };
     this.fit(instance);
     mixer.stopAllAction();
 
@@ -235,32 +251,67 @@ export class WeaponViewmodels {
     this.guns.set(id, instance);
   }
 
-  /** Builds a procedural gun (primitives) and places it directly in camera space. */
-  private buildProceduralGun(id: GunId, place: GunPlacement): void {
-    const model = place.build!();
+  /** Normalises a mesh's materials for the viewmodel pass (sRGB maps, depth). */
+  private normalizeMaterials(o: Mesh): void {
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) {
+      const std = m as MeshStandardMaterial;
+      if (std.map) std.map.colorSpace = SRGBColorSpace;
+      std.depthWrite = true;
+      std.depthTest = true;
+      std.needsUpdate = true;
+    }
+  }
+
+  /**
+   * Extracts the configured gun meshes' geometry, drops their broken skinning,
+   * and rigidly parents them (centred, scaled, oriented) to a hand/weapon bone.
+   * Returns the created pivot + the bone it hangs off (for the orientation lock).
+   */
+  private attachRigidGun(model: Object3D, cfg: GunAttach): { pivot: Object3D | null; bone: Object3D | null } {
+    const parts: Mesh[] = [];
+    let bone: Object3D | null = null;
     model.traverse((o) => {
-      if (o instanceof Mesh) o.frustumCulled = false;
+      if (o instanceof Mesh && cfg.meshes.includes(o.name)) parts.push(o);
+      if (!bone && (o as Bone).isBone && cfg.bone.test(o.name)) bone = o as Object3D;
     });
-    model.scale.setScalar(place.fixedScale ?? 1);
-    model.setRotationFromEuler(new Euler(place.rot[0], place.rot[1], place.rot[2], 'XYZ'));
-    model.position.set(place.pos[0], place.pos[1], place.pos[2]);
+    if (!parts.length || !bone) {
+      // eslint-disable-next-line no-console
+      console.warn('[Combat] rigid gun-attach failed: parts', parts.length, 'bone', !!bone);
+      return { pivot: null, bone: null };
+    }
 
-    const mount = new Group();
-    mount.name = `gun:${id}`;
-    mount.add(model);
-    mount.visible = false;
-    this.root.add(mount);
+    // Combined raw (pre-skinning) bounds so we can centre the gun on its origin.
+    const rawBox = new Box3();
+    for (const p of parts) {
+      p.geometry.computeBoundingBox();
+      if (p.geometry.boundingBox) rawBox.union(p.geometry.boundingBox);
+    }
+    const rawCenter = rawBox.getCenter(new Vector3());
 
-    const instance: GunInstance = {
-      id, mount, model,
-      mixer: null,
-      actions: { idle: null, draw: null, fire: null, reload: null },
-      bones: [],
-      orientQuat: new Quaternion(),
-      procedural: true,
-      recoil: 0,
-    };
-    this.guns.set(id, instance);
+    if (cfg.hideOthers) {
+      model.traverse((o) => { if (o instanceof Mesh) o.visible = false; });
+    }
+
+    const pivot = new Group();
+    pivot.name = 'rigidGun';
+    const inner = new Group();
+    pivot.add(inner);
+    for (const p of parts) {
+      const m = new Mesh(p.geometry, p.material);
+      m.frustumCulled = false;
+      m.castShadow = false;
+      m.receiveShadow = false;
+      this.normalizeMaterials(m);
+      inner.add(m);
+      p.visible = false; // hide the broken skinned copy
+    }
+    inner.position.copy(rawCenter).multiplyScalar(-1);
+    pivot.scale.setScalar(cfg.scale);
+    pivot.position.set(cfg.pos[0], cfg.pos[1], cfg.pos[2]);
+    pivot.rotation.set(cfg.rot[0], cfg.rot[1], cfg.rot[2]);
+    (bone as Object3D).add(pivot);
+    return { pivot, bone };
   }
 
   /**
@@ -395,37 +446,31 @@ export class WeaponViewmodels {
   /** Plays the fire animation for the active gun (one-shot, eases back to idle). */
   public triggerFire(): void {
     const g = this.active ? this.guns.get(this.active) : null;
-    if (!g) return;
-    if (g.procedural) {
-      g.recoil = 1;
-      return;
-    }
-    if (!g.actions.fire) return;
+    if (!g || !g.actions.fire) return;
     this.playExclusive(g, g.actions.fire, false, 0.03);
   }
 
   /** Plays the reload animation for the active gun. */
   public triggerReload(): void {
     const g = this.active ? this.guns.get(this.active) : null;
-    if (!g || g.procedural || !g.actions.reload) return;
+    if (!g || !g.actions.reload) return;
     this.playExclusive(g, g.actions.reload, false, 0.08);
   }
 
   public update(dt: number): void {
+    const wq = new Quaternion();
+    const bq = new Quaternion();
     for (const g of this.guns.values()) {
       if (!g.mount.visible) continue;
-      if (g.procedural) {
-        // Simple recoil: kick the gun back + up, then ease home.
-        if (g.recoil > 1e-3) g.recoil = Math.max(0, g.recoil - dt * 6);
-        const place = PLACEMENTS[g.id];
-        const k = g.recoil * g.recoil;
-        g.model.position.set(place.pos[0], place.pos[1] + k * 0.02, place.pos[2] + k * 0.06);
-        g.model.rotation.x = place.rot[0] - k * 0.25;
-      } else {
-        g.mixer?.update(dt);
+      g.mixer.update(dt);
+      // Camera-space orientation lock: keep the gun pointing cleanly forward
+      // (mount orientation ∘ camRot) regardless of the bone's messy local frame,
+      // while still riding the bone's translation (idle sway + fire recoil).
+      if (g.gunPivot && g.gunBone && g.gunLockQuat) {
+        g.mount.getWorldQuaternion(wq).multiply(g.gunLockQuat); // desired world quat
+        g.gunBone.getWorldQuaternion(bq).invert();              // bone world → local
+        g.gunPivot.quaternion.copy(bq.multiply(wq));
       }
     }
   }
 }
-
-

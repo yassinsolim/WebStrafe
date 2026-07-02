@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="38%" r="75%">
+      <stop offset="0%" stop-color="#1a1d24"/>
+      <stop offset="100%" stop-color="#070809"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff8a3d"/>
+      <stop offset="100%" stop-color="#ff5a1a"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <!-- crosshair ring -->
+  <circle cx="32" cy="32" r="17" fill="none" stroke="url(#ring)" stroke-width="3.5" opacity="0.9"/>
+  <!-- crosshair ticks -->
+  <g stroke="#ff6a2b" stroke-width="3.5" stroke-linecap="round">
+    <line x1="32" y1="7" x2="32" y2="16"/>
+    <line x1="32" y1="48" x2="32" y2="57"/>
+    <line x1="7" y1="32" x2="16" y2="32"/>
+    <line x1="48" y1="32" x2="57" y2="32"/>
+  </g>
+  <!-- center dot -->
+  <circle cx="32" cy="32" r="4" fill="#ff6a2b"/>
+</svg>
