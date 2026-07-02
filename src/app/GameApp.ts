@@ -155,6 +155,7 @@ export class GameApp {
   private localPlayerName = loadPlayerName();
   private multiplayerSendAccumulator = 0;
   private resumeToggleInFlight = false;
+  private remotePlayersReady: Promise<void> = Promise.resolve();
 
   private readonly tmpForward = new Vector3();
   private readonly tmpDesiredCameraPos = new Vector3();
@@ -220,12 +221,15 @@ export class GameApp {
       listCustomMaps(),
       this.cosmeticsManager.loadManifest(),
     ]);
-    try {
-      await this.remotePlayers.load();
-    } catch (error) {
+    // The remote player models (~75 MB of GLBs) are only needed once a match
+    // starts — not for the menu or its character preview, which loads its own
+    // hero model. Kick the load off in the background so the menu paints
+    // immediately instead of blocking the first render on 75 MB. Awaited before
+    // a play session actually enters a map (see startPlaySession).
+    this.remotePlayersReady = this.remotePlayers.load().catch((error) => {
       // eslint-disable-next-line no-console
       console.warn('[Multiplayer] Failed to load remote player models:', error);
-    }
+    });
     this.rebuildMapSources(builtinMaps, customRecords);
     this.selectedMapId =
       builtinMaps.find((map) => map.id === 'surf_skyworld_x')?.id
@@ -269,6 +273,7 @@ export class GameApp {
     savePlayerName(this.localPlayerName);
     this.menu.setVisible(true);
     this.setCrosshairVisible(false);
+    this.dismissBootLoader();
 
     // Pick the transport: Supabase Realtime when configured (serverless deploy),
     // else the self-hosted WebSocket client (local dev / LAN).
@@ -462,6 +467,9 @@ export class GameApp {
     if (!this.menu) {
       return;
     }
+    // The remote player models were loaded in the background during init; make
+    // sure they're ready before we drop into a map so other players render.
+    await this.remotePlayersReady;
     this.selectedMapId = mapId;
     if (await this.tryResumeLoadedMap(mapId, 'Could not lock cursor. Press Esc or click Play to resume.')) {
       return;
@@ -1469,6 +1477,16 @@ export class GameApp {
     el.style.display = 'none';
     this.container.appendChild(el);
     return el;
+  }
+
+  /** Fades out and removes the instant boot loader painted from index.html. */
+  private dismissBootLoader(): void {
+    const boot = document.getElementById('boot-loader');
+    if (!boot) {
+      return;
+    }
+    boot.classList.add('is-hiding');
+    window.setTimeout(() => boot.remove(), 360);
   }
 
   private createLoadingOverlay(): {

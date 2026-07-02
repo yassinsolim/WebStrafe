@@ -59,14 +59,14 @@ const KNIFE_MODEL_PATH = '/viewmodels/knife/knife.glb';
  * Knife child-offset (relative to the right weapon-hand bone) for the static
  * menu hero pose only. The menu closes the fingers into a fist, so the knife
  * seats deeper in the palm / finger-curl pocket than the in-game default set in
- * {@link attachKnifeModel}. It also slides the knife along its handle so the
- * fist grips the balance point just below the guard (rather than pinching the
- * butt/pommel end), which leaves far less bare wooden handle exposed between the
- * fist and the guard and tucks the pommel behind the fist — reading as a proper
- * knife-fight grip. Applied by {@link applyKnifeIdlePose} so the in-game
- * third-person hold is never affected.
+ * {@link attachKnifeModel}. It slides the knife up its handle so the fist grips
+ * right at the guard (leaving almost no bare wooden handle exposed between the
+ * fist and the guard) and seats it up into the palm so the pommel tucks under
+ * the fist rather than dangling below it — reading as a proper hammer-grip
+ * knife-fight hold from the third-person menu camera. Applied by
+ * {@link applyKnifeIdlePose} so the in-game third-person hold is never affected.
  */
-const MENU_KNIFE_GRIP_POSITION = new Vector3(0.0409, 0.0063, 0.0289);
+const MENU_KNIFE_GRIP_POSITION = new Vector3(0.0228, 0.0098, 0.0252);
 
 const offsetQuat = new Quaternion();
 const offsetEuler = new Euler(0, 0, 0, 'XYZ');

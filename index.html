@@ -5,9 +5,86 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>webstrafe</title>
+    <style>
+      /* Instant boot loader — inline so it paints before the JS bundle and
+         style.css load. Themed to match the main menu (orange on near-black)
+         instead of the old blue flash. Removed by GameApp once the menu is up. */
+      #boot-loader {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(120% 80% at 80% 8%, rgba(255, 106, 43, 0.12), transparent 55%),
+          radial-gradient(90% 70% at 0% 100%, rgba(255, 106, 43, 0.05), transparent 52%),
+          linear-gradient(180deg, #0a0d12, #050607);
+        font-family: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+        transition: opacity 320ms ease;
+      }
+      #boot-loader.is-hiding {
+        opacity: 0;
+      }
+      .boot-inner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+      }
+      .boot-word {
+        font-weight: 700;
+        font-size: clamp(2.4rem, 6vw, 3.6rem);
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        color: #f2f4f8;
+        line-height: 1;
+      }
+      .boot-word span {
+        color: #ff6a2b;
+      }
+      .boot-bar {
+        position: relative;
+        width: min(220px, 44vw);
+        height: 3px;
+        background: rgba(255, 106, 43, 0.16);
+        overflow: hidden;
+      }
+      .boot-bar::after {
+        content: '';
+        position: absolute;
+        left: -40%;
+        top: 0;
+        height: 100%;
+        width: 40%;
+        background: linear-gradient(90deg, transparent, #ff6a2b, transparent);
+        animation: boot-sweep 1.1s ease-in-out infinite;
+      }
+      .boot-tag {
+        font-family: 'Space Mono', ui-monospace, monospace;
+        font-size: 0.66rem;
+        letter-spacing: 0.42em;
+        text-transform: uppercase;
+        color: #7d8794;
+      }
+      @keyframes boot-sweep {
+        0% {
+          left: -40%;
+        }
+        100% {
+          left: 100%;
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>
+    <div id="boot-loader" aria-hidden="true">
+      <div class="boot-inner">
+        <div class="boot-word">WEB<span>STRAFE</span></div>
+        <div class="boot-bar"></div>
+        <div class="boot-tag">Loading</div>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
