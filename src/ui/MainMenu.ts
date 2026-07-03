@@ -388,8 +388,8 @@ export class MainMenu {
       'Knife animated by DJMaesen — CC Attribution.',
       '"CTM_SAS | CS2 Agent Model" (skfb.ly/oRO6P) by Alex — CC Attribution.',
       '"PHOENIX | CS2 Agent Model" (skfb.ly/oQyER) by Alex — CC Attribution.',
-      '"AWP with Anims" by Addison Ye (sketchfab.com/redethox) — CC Attribution.',
-      '"Desert Eagle | First Person Animations" by 1Matzh — CC Attribution.',
+      'Deagle gun mesh from "Desert Eagle | First Person Animations" by 1Matzh — CC Attribution.',
+      'AWP viewmodel: custom low-poly model; first-person arms from the knife (DJMaesen).',
     ];
     for (const text of lines) {
       const p = document.createElement('p');

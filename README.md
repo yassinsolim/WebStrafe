@@ -78,8 +78,8 @@ npm run build
 - Knife animations by DJMaesen (Creative Commons Attribution)
 - `CTM_SAS | CS2 Agent Model` by Alex (Creative Commons Attribution)
 - `PHOENIX | CS2 Agent Model` by Alex (Creative Commons Attribution)
-- `AWP with Anims` by Addison Ye — https://sketchfab.com/3d-models/awp-with-anims-d45669ad333d4885a854fcf899628a39 (Creative Commons Attribution)
-- `Desert Eagle | First Person Animations` by 1Matzh — https://sketchfab.com/3d-models/desert-eagle-first-person-animations-09a213d8510a42d1b747135e85712eff (Creative Commons Attribution)
+- `Desert Eagle | First Person Animations` by 1Matzh — https://sketchfab.com/3d-models/desert-eagle-first-person-animations-09a213d8510a42d1b747135e85712eff (Creative Commons Attribution) — only the Deagle gun mesh is used; the gripping first-person arms are reused from DJMaesen's knife viewmodel
+- AWP first-person viewmodel: a custom low-poly model built for this project (in `tools/blender/`); the gripping arms are reused from DJMaesen's knife viewmodel
 - Knife swing sound effects by Joseph SARDIN from BigSoundBank (`Sword through the air 2`, `Sword that cuts 3`, plus two additional swipe variants)
 - Valve/CS2 proprietary audio is not bundled in this repo; drop-in replacement files can be placed in `public/audio/`.
 
