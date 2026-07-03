@@ -52,25 +52,29 @@ const CONFIGS: Record<GunId, GunConfig> = {
     url: '/viewmodels/deagle/deagle.glb',
     idle: [0, 1],
     targetDiagonal: 0.62,
-    basePos: [0.14, -0.06, -0.42],
+    basePos: [0.14, -0.09, -0.36],
     baseRot: [0.06, Math.PI, 0.02],
-    barrelPitch: 0.12,
-    barrelYaw: 0.05,
+    barrelPitch: 0.08,
+    barrelYaw: 0.03,
   },
   awp: {
     url: '/viewmodels/awp/awp.glb',
     idle: [0, 1],
-    targetDiagonal: 0.82,
-    basePos: [0.15, -0.17, -0.5],
+    targetDiagonal: 0.8,
+    basePos: [0.17, -0.14, -0.4],
     baseRot: [0.06, Math.PI, 0.02],
-    barrelPitch: 0.14,
-    barrelYaw: 0.34,
+    barrelPitch: 0.05,
+    barrelYaw: 0.58,
   },
 };
 
 interface GunInstance {
   id: GunId;
+  cfg: GunConfig;
   mount: Group;
+  model: Object3D;
+  /** The `Gun` mesh, cached so we can re-seat it every frame (no per-frame traverse). */
+  gunMesh: Object3D | null;
   mixer: AnimationMixer;
   idle: AnimationAction | null;
 }
@@ -135,50 +139,57 @@ export class WeaponViewmodels {
       mixer.update(0);
     }
 
-    // The `Gun` mesh is authored barrel-up (+Y) in the knife rig's wrist frame, so
-    // an identity transform points it at the ceiling. Reorient it once, relative to
-    // its animated wrist parent, so the muzzle points forward (camera -Z) with a
-    // slight downward pitch — the hand keeps gripping it through the idle loop.
-    this.seatGunForward(model, cfg.barrelPitch, cfg.barrelYaw);
+    // The `Gun` mesh is authored barrel-along-local-(-Z) in the knife rig's wrist
+    // frame, so the rig's wrist rotation alone doesn't aim it where the player looks.
+    // We reorient it so the muzzle points forward (camera -Z). Because the idle
+    // animation rotates the wrist every frame, a one-time seat drifts (the barrel
+    // dips as the hand moves), so we cache the mesh and re-seat it every frame in
+    // update() — see seatGunForward.
+    let gunMesh: Object3D | null = null;
+    model.traverse((o) => {
+      if (o.name === 'Gun') gunMesh = o;
+    });
+    this.seatGunForward(gunMesh, cfg.barrelPitch, cfg.barrelYaw);
 
-    this.guns.set(id, { id, mount, mixer, idle });
+    this.guns.set(id, { id, cfg, mount, model, gunMesh, mixer, idle });
   }
 
   /**
-   * Orients the `Gun` mesh so its muzzle (local +Y) points along the viewmodel
-   * forward (`root` -Z, i.e. where the player aims) with `pitch` radians of
-   * downward tilt, and its top (local +Z) points up. The correction is computed
-   * relative to the gun's animated wrist parent, so it stays gripped as the arms
-   * move. Frame-invariant: the camera/root world rotation cancels out.
+   * Orients the `Gun` mesh so its muzzle points along the viewmodel forward
+   * (`root` -Z, i.e. where the player aims) with `pitch` radians of downward tilt
+   * and `yaw` radians of sideways cant, and its top points up. Both gun GLBs are
+   * authored with the standard glTF viewmodel convention — barrel along local -Z,
+   * up along local +Y (verified from geometry) — so we align those two local axes
+   * to the target world directions. Computed relative to the animated wrist parent
+   * so the grip stays in the hand; the camera + sway rotation cancel out (both
+   * `refQ` and `parentQ` carry them), so we recompute every frame and the barrel
+   * never drifts as the idle animation moves the wrist.
    */
-  private seatGunForward(model: Object3D, pitch: number, yaw: number): void {
-    let gun: Object3D | null = null;
-    model.traverse((o) => {
-      if (o.name === 'Gun') gun = o;
-    });
-    if (!gun) return;
-    const g = gun as Object3D;
-    if (!g.parent) return;
+  private seatGunForward(gun: Object3D | null, pitch: number, yaw: number): void {
+    if (!gun || !gun.parent) return;
 
     this.root.updateWorldMatrix(true, true);
     const refQ = new Quaternion();
     this.root.getWorldQuaternion(refQ);
-    // desired barrel/up in world = root-space forward (pitched down, yawed) / up
-    const barrel = new Vector3(
+    // Target world direction for the muzzle (root-space forward, pitched down + yawed).
+    const fwd = new Vector3(
       Math.sin(yaw) * Math.cos(pitch),
       -Math.sin(pitch),
       -Math.cos(yaw) * Math.cos(pitch),
     )
       .applyQuaternion(refQ)
       .normalize();
-    const up = new Vector3(0, 1, 0).applyQuaternion(refQ).normalize();
-    const side = new Vector3().crossVectors(barrel, up).normalize();
-    const top = new Vector3().crossVectors(side, barrel).normalize();
-    const desired = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(side, barrel, top));
+    const upW = new Vector3(0, 1, 0).applyQuaternion(refQ).normalize();
+    // Build an orthonormal right-handed basis mapping the gun's LOCAL axes to world:
+    // local +Z -> -fwd (so local -Z, the barrel, points along fwd) and local +Y -> up.
+    const zCol = fwd.clone().negate();
+    const yCol = upW.clone().sub(zCol.clone().multiplyScalar(upW.dot(zCol))).normalize();
+    const xCol = new Vector3().crossVectors(yCol, zCol).normalize();
+    const desired = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(xCol, yCol, zCol));
     const parentQ = new Quaternion();
-    g.parent.getWorldQuaternion(parentQ);
-    g.quaternion.copy(parentQ.invert().multiply(desired));
-    g.updateMatrix();
+    gun.parent.getWorldQuaternion(parentQ);
+    gun.quaternion.copy(parentQ.invert().multiply(desired));
+    gun.updateMatrix();
   }
 
   /** sRGB colour maps + depth setup for the viewmodel pass. */
@@ -260,6 +271,9 @@ export class WeaponViewmodels {
     for (const g of this.guns.values()) {
       if (!g.mount.visible) continue;
       g.mixer.update(dt);
+      // Re-seat AFTER the mixer moves the wrist, so the barrel stays locked forward
+      // instead of dipping as the idle animation plays.
+      this.seatGunForward(g.gunMesh, g.cfg.barrelPitch, g.cfg.barrelYaw);
     }
   }
 }
