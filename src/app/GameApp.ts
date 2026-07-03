@@ -13,6 +13,7 @@ import {
   LineBasicMaterial,
   Mesh,
   Object3D,
+  PMREMGenerator,
   PerspectiveCamera,
   SRGBColorSpace,
   Scene,
@@ -28,6 +29,7 @@ import { KnifeAudio, type KnifeSoundProfile } from '../audio/KnifeAudio';
 import { AttackSoundThrottle } from '../audio/AttackSoundThrottle';
 import { CosmeticsManager } from '../cosmetics/CosmeticsManager';
 import { ViewmodelRenderer } from '../cosmetics/ViewmodelRenderer';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { WeaponViewmodels, type GunId } from '../cosmetics/WeaponViewmodels';
 import type { LoadoutSelection } from '../cosmetics/types';
 import { HUD } from '../ui/HUD';
@@ -185,6 +187,11 @@ export class GameApp {
     this.viewmodelRenderer = new ViewmodelRenderer(68, window.innerWidth / window.innerHeight);
     this.viewmodelRenderer.root.add(this.cosmeticsGroup);
     this.viewmodelRenderer.camera.add(this.weaponViewmodels.root);
+    // Soft studio environment so metallic weapon materials (Deagle/AWP) read as
+    // lit gunmetal instead of near-black, and the knife/gloves gain gentle IBL.
+    const pmrem = new PMREMGenerator(this.renderer);
+    this.viewmodelRenderer.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
     this.cosmeticsManager = new CosmeticsManager(this.cosmeticsGroup);
 
     this.crosshair = this.createCrosshair();
