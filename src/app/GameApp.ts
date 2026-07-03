@@ -404,7 +404,9 @@ export class GameApp {
     while (this.accumulator >= FIXED_TICK_DT) {
       this.accumulator -= FIXED_TICK_DT;
       if (this.playing) {
-        if (resetQueued && this.loadedMap) {
+        // R resets to spawn only in non-combat (surf practice). In combat R is
+        // the reload key (handled in updateCombat), so it must not teleport you.
+        if (resetQueued && this.loadedMap && !this.combatEnabled) {
           this.resetToSpawn('Reset to spawn', true);
           resetQueued = false;
           inspectQueued = false;
