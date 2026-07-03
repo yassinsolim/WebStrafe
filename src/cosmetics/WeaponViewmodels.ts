@@ -4,9 +4,11 @@ import {
   Box3,
   Group,
   LoopRepeat,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   Object3D,
+  Quaternion,
   SRGBColorSpace,
   Vector3,
   type AnimationAction,
@@ -32,22 +34,37 @@ interface GunConfig {
   /** Base placement of the model inside its mount (sway is applied to root). */
   basePos: [number, number, number];
   baseRot: [number, number, number];
+  /**
+   * Downward pitch (radians) applied to the seated barrel so the gun rests at a
+   * natural slight downward angle instead of laser-level.
+   */
+  barrelPitch: number;
+  /**
+   * Sideways yaw (radians) applied to the seated barrel. 0 aims dead-forward
+   * (fine for a pistol); a long rifle reads better canted a little so its side
+   * profile + scope are visible instead of a foreshortened pole.
+   */
+  barrelYaw: number;
 }
 
 const CONFIGS: Record<GunId, GunConfig> = {
   deagle: {
     url: '/viewmodels/deagle/deagle.glb',
     idle: [0, 1],
-    targetDiagonal: 0.68,
-    basePos: [0.13, -0.13, -0.52],
-    baseRot: [-0.1, Math.PI, 0.02],
+    targetDiagonal: 0.62,
+    basePos: [0.14, -0.06, -0.42],
+    baseRot: [0.06, Math.PI, 0.02],
+    barrelPitch: 0.12,
+    barrelYaw: 0.05,
   },
   awp: {
     url: '/viewmodels/awp/awp.glb',
     idle: [0, 1],
-    targetDiagonal: 0.95,
-    basePos: [0.12, -0.14, -0.6],
-    baseRot: [-0.1, Math.PI, 0.02],
+    targetDiagonal: 0.82,
+    basePos: [0.15, -0.17, -0.5],
+    baseRot: [0.06, Math.PI, 0.02],
+    barrelPitch: 0.14,
+    barrelYaw: 0.34,
   },
 };
 
@@ -118,7 +135,50 @@ export class WeaponViewmodels {
       mixer.update(0);
     }
 
+    // The `Gun` mesh is authored barrel-up (+Y) in the knife rig's wrist frame, so
+    // an identity transform points it at the ceiling. Reorient it once, relative to
+    // its animated wrist parent, so the muzzle points forward (camera -Z) with a
+    // slight downward pitch — the hand keeps gripping it through the idle loop.
+    this.seatGunForward(model, cfg.barrelPitch, cfg.barrelYaw);
+
     this.guns.set(id, { id, mount, mixer, idle });
+  }
+
+  /**
+   * Orients the `Gun` mesh so its muzzle (local +Y) points along the viewmodel
+   * forward (`root` -Z, i.e. where the player aims) with `pitch` radians of
+   * downward tilt, and its top (local +Z) points up. The correction is computed
+   * relative to the gun's animated wrist parent, so it stays gripped as the arms
+   * move. Frame-invariant: the camera/root world rotation cancels out.
+   */
+  private seatGunForward(model: Object3D, pitch: number, yaw: number): void {
+    let gun: Object3D | null = null;
+    model.traverse((o) => {
+      if (o.name === 'Gun') gun = o;
+    });
+    if (!gun) return;
+    const g = gun as Object3D;
+    if (!g.parent) return;
+
+    this.root.updateWorldMatrix(true, true);
+    const refQ = new Quaternion();
+    this.root.getWorldQuaternion(refQ);
+    // desired barrel/up in world = root-space forward (pitched down, yawed) / up
+    const barrel = new Vector3(
+      Math.sin(yaw) * Math.cos(pitch),
+      -Math.sin(pitch),
+      -Math.cos(yaw) * Math.cos(pitch),
+    )
+      .applyQuaternion(refQ)
+      .normalize();
+    const up = new Vector3(0, 1, 0).applyQuaternion(refQ).normalize();
+    const side = new Vector3().crossVectors(barrel, up).normalize();
+    const top = new Vector3().crossVectors(side, barrel).normalize();
+    const desired = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(side, barrel, top));
+    const parentQ = new Quaternion();
+    g.parent.getWorldQuaternion(parentQ);
+    g.quaternion.copy(parentQ.invert().multiply(desired));
+    g.updateMatrix();
   }
 
   /** sRGB colour maps + depth setup for the viewmodel pass. */
