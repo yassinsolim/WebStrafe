@@ -34,6 +34,36 @@ npm run dev
 - Vite client (`http://localhost:5173`)
 - Multiplayer/leaderboard server (`http://localhost:8787`)
 
+For the one-bot combat range, use `npm run dev:combat`. This managed process
+starts the bot backend first, then Vite on `http://127.0.0.1:5174`, verifies
+the HTTP and WebSocket proxies, monitors both children, and stops both together.
+With it running, `npm run verify:combat-runtime` performs a 90-second proxy
+health check.
+
+### Native combat browser verification
+
+Run the complete player-facing firearm check with:
+
+```bash
+npm run verify:combat-browser
+```
+
+The command owns and cleans up a fixed loopback bot backend (`8787`), Vite
+(`5174`), and Chrome CDP session (`9223`). It uses a fresh browser profile,
+1600×900 DPR 1, and only native CDP mouse press/release, held key, wheel, Escape,
+and menu-click input. It does not call game objects or inject gameplay/network
+events. Read-only CDP observations cover real WebSocket outcomes, DOM/a11y state,
+screenshots, application console output, and `WebAudio` graph events plus
+`WebAudio.getRealtimeData` after the Play gesture. The verifier installs no page
+preload script, binding, constructor replacement, or prototype patch.
+
+Success writes `results.json` plus representative PNGs under the system
+temporary directory and prints that path in one machine-readable `RESULT` line.
+Failures are bounded, exit nonzero, retain the same concise evidence, and stop
+owned children. Set `CHROME_PATH` when Chrome/Chromium is not in a standard
+location; `COMBAT_BROWSER_TIMEOUT_MS`, `COMBAT_BROWSER_HEADED=1`, and
+`COMBAT_BROWSER_OUTPUT=.artifacts/combat-browser` are optional.
+
 ### Test + Build
 
 ```bash
@@ -48,7 +78,7 @@ npm run build
 - `Space`: jump
 - `R`: reset to spawn
 - Run timer resets on `R`
-- `F`: inspect
+- `Y`: inspect
 - `LMB` / `RMB`: knife attacks
 - `Esc`: unlock pointer / return to menu
 
@@ -78,10 +108,10 @@ npm run build
 - Knife animations by DJMaesen (Creative Commons Attribution)
 - `CTM_SAS | CS2 Agent Model` by Alex (Creative Commons Attribution)
 - `PHOENIX | CS2 Agent Model` by Alex (Creative Commons Attribution)
-- `Desert Eagle | First Person Animations` by 1Matzh — https://sketchfab.com/3d-models/desert-eagle-first-person-animations-09a213d8510a42d1b747135e85712eff (Creative Commons Attribution) — only the Deagle gun mesh is used; the gripping first-person arms are reused from DJMaesen's knife viewmodel
-- AWP first-person viewmodel: a custom low-poly model built for this project (in `tools/blender/`); the gripping arms are reused from DJMaesen's knife viewmodel
+- `Desert Eagle | First Person Animations` by 1Matzh — https://sketchfab.com/3d-models/desert-eagle-first-person-animations-09a213d8510a42d1b747135e85712eff (Creative Commons Attribution) — the production GLB preserves the authored textured two-hand rig, magazines, and reload clip
+- `AWP with Anims` by Addison Ye — https://sketchfab.com/3d-models/awp-with-anims-d45669ad333d4885a854fcf899628a39 (Creative Commons Attribution) — the production GLB preserves the authored textured two-hand rig, magazine, and reload clip
 - Knife swing sound effects by Joseph SARDIN from BigSoundBank (`Sword through the air 2`, `Sword that cuts 3`, plus two additional swipe variants)
-- Valve/CS2 proprietary audio is not bundled in this repo; drop-in replacement files can be placed in `public/audio/`.
+- Deagle/AWP shots and reloads use the CC0 Freesound recordings documented in `public/audio/README.md`; hit confirmations use project-owned procedural Web Audio. Valve/CS2 proprietary firearm audio is not bundled.
 
 ## Deployment Notes
 

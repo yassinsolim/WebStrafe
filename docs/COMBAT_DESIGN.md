@@ -29,23 +29,25 @@ buy menu/economy, anti-cheat hardening beyond basic server validation.
 ```
                  fire input (mouse1)
 Local player  ---------------------------->  WeaponController (cooldown, ammo)
-   |                                            |  emits FireRequest
-   |  raycast vs CollisionWorld + player capsules|
+   |                                            |  origin + direction
+   |  local world-impact prediction             |  observed server time
    v                                            v
-HitResolver (pure) --> candidate hit --> MultiplayerClient --> server
+presentation FX                         MultiplayerClient --> server
                                                                   |
-                                          server re-validates:    |
-                                          - fire rate / cooldown  |
-                                          - line of sight / range |
-                                          - target alive          |
-                                          - claimed hitbox vs geom |
+                                             CombatArena validates:
+                                             - equip / ammo / cooldown
+                                             - origin and direction
+                                             - bounded rewind timestamp
+                                             - target life/protection state
+                                             - authoritative capsule hit
                                                                   v
                                              CombatState (authoritative)
                                              - apply damage, clamp health
                                              - detect death -> killfeed
                                              - schedule respawn
                                                                   |
-                          broadcast Hit / Death / Respawn / health v
+                     broadcast Shot / Hit / Death / Respawn / health
+                                                                  v
                                                         all clients render FX
 ```
 
@@ -55,24 +57,20 @@ Two options were considered:
 
 | Model | Pros | Cons |
 |-------|------|------|
-| **Full server-authoritative** (server ray-traces every shot) | Cheat-proof; canonical | Server needs full collision geometry + player capsules in memory; heavier; lag compensation is complex |
-| **Client-detected + server-validated** (chosen) | Simple; responsive; server still owns damage/health and rejects implausible claims (range, rate, LoS, dead target) | Not fully cheat-proof (fine for a hobby/portfolio game) |
+| **Full server-authoritative** (chosen) | Canonical target, hitbox, distance, damage, and death | Requires authoritative capsule history and bounded rewind |
+| **Client-detected + server-validated** | Simple and responsive | A forged target or hitbox claim remains a weak link |
 
-**Decision: client-detected, server-validated.** The client computes the raycast
-and reports a candidate hit `{ targetId, weaponId, hitbox }`. The server validates
-plausibility and is the sole authority on applying damage, death, and respawn.
-This matches the game's scope and keeps latency low. A note is left in the code
-that upgrading to full server authority is the path if this ever becomes
-competitive.
+**Decision: server-authoritative capsule resolution.** The client submits only
+its shot origin, normalized direction, weapon state, and the server time at which
+the remote presentation was observed. `CombatArena` validates the shooter and
+origin, rebuilds every eligible target from authoritative state, resolves the
+nearest capsule surface and head/body band, then exclusively applies damage,
+death, and respawn. Clients never choose the target or hitbox.
 
-**Critical validation note — the `hitbox` field is the weakest link.** Because
-`hitbox` multiplies damage (head = 1.5x-2x), a naive server that trusts the
-client's claimed hitbox lets a cheater send `hitbox: 'head'` on every shot,
-turning the Deagle into a guaranteed one-shot (63 x 2 = 126 >= 100 HP). PR3 MUST
-therefore validate the claimed hitbox against the authoritative target geometry
-(target position + fixed head-offset capsule, see §4), and re-derive `distance`
-from `origin`+`dir`+`targetId` server-side rather than trusting client-sent
-values. Hitbox verification is added to the server validation list in §5.
+Remote players render behind the newest snapshot for smooth motion. Fire messages
+therefore use the same 71 ms presentation delay, while the server keeps 500 ms of
+position samples and accepts at most 250 ms of rewind. Future, stale, or invalid
+timestamps fall back to current authoritative positions.
 
 ## 4. Data model
 
@@ -97,7 +95,11 @@ interface WeaponDef {
 Initial table: `AWP` (high damage, slow, `range: Infinity` so it never hits a
 silent damage cliff on large maps — effectively one-shot to body/head), `DEAGLE`
 (medium damage, faster, finite range with falloff), `KNIFE` (existing melee,
-short range).
+1.45 m reach measured to the visible target-capsule surface).
+
+Weapon slots follow the conventional loadout order: `1` AWP primary, `2` Deagle
+secondary, and `3` knife. Fresh and migrated profiles enable auto-bhop by default;
+an explicit current-profile opt-out remains respected.
 
 ### Health / combat state (`src/combat/CombatState.ts`, server-side authoritative)
 
@@ -113,10 +115,10 @@ interface PlayerCombat {
 Constants: `MAX_HEALTH = 100`, `RESPAWN_DELAY_MS = 3000`, spawn health `= 100`.
 
 ### Hitboxes
-Start simple: two capsules per player — `body` (1.0x) and `head` (headshot
-multiplier). Derived from the existing player position + a fixed head offset.
-This same head-offset capsule is what the server uses to validate a claimed
-hitbox (see §3). Refined later if needed.
+Each player is represented by one vertical capsule with a top head band. The
+server derives body/head classification from the ray's closest point on that
+capsule; no client-provided hitbox is accepted. Refined geometry can be added
+later without changing the fire protocol.
 
 ## 5. Netcode protocol (extends existing `server/index.ts`)
 
@@ -124,7 +126,7 @@ New **client -> server** messages:
 
 | type | payload | notes |
 |------|---------|-------|
-| `fire` | `{ weaponId, origin:[x,y,z], dir:[x,y,z], targetId?, hitbox?, seq }` | rate-limited like `attack`; server validates rate, range, LoS, target-alive, **and claimed hitbox vs target geometry** |
+| `fire` | `{ weaponId, origin:[x,y,z], dir:[x,y,z], observedAtMs? }` | server validates fire state and resolves the nearest eligible authoritative capsule at a rewind no older than 250 ms |
 | `reload` | `{ weaponId }` | server tracks ammo/cooldown |
 | `equip` | `{ weaponId }` | switch active weapon |
 
@@ -183,12 +185,43 @@ are the real bottleneck, not the code. Plan, in order of reliability:
    stylized placeholder skins; quality is not yet hero-asset grade — managed
    expectations, used only as stopgaps.
 
-Until models land, `KNIFE` stays the visible weapon while all combat mechanics run.
+Production Deagle and AWP viewmodels preserve their source assets' authored
+two-hand rigs, magazines, materials, and reload clips. Runtime playback samples
+those clips against authoritative combat progress, while equip/fire feedback
+remains a small project-owned presentation layer. The knife keeps its independent
+presentation and audio path.
 
-## 9. Risks
+## 9. Runtime firearm-feedback contract
 
-- **Lag / hit registration feel.** Mitigated by client-detected hits; revisit with
-  interpolation/lag comp only if it feels bad.
-- **Cheating.** Accepted for scope; server validation (incl. hitbox verification,
-  §3) catches the obvious cases.
+- `CombatArena` remains authoritative and emits `killed` on hits plus `headshot`
+  on deaths, so the HUD can choose one normal/headshot/kill confirmation without
+  guessing or playing duplicate sounds.
+- Firearm rays resolve against rewound authoritative target capsules. The rewind
+  is bounded to 250 ms and matches the renderer's 71 ms presentation delay, so a
+  shot through a visibly moving player is judged against the position shown.
+- Local and observed remote shots create weapon-specific muzzle, short tracer,
+  and resolved world-impact effects. Every Three.js object has a bounded lifetime
+  and is disposed on expiry, weapon switching, local death, or respawn.
+- Deagle and AWP viewmodels share the established camera-space renderer but use
+  separate restrained bob, sway, recoil, and reload profiles. Switching to the
+  knife clears firearm impulses before restoring the unchanged knife profile.
+- Firearm and hit-confirmation sounds are generated with project-owned Web Audio.
+  Reload cues align to authored magazine release/drop, insertion, seating, and
+  slide/bolt phases and are cancelled on weapon switches. Context creation/resume
+  is tied to browser interaction and unavailable or blocked audio is surfaced
+  through explicit warnings.
+- Bots keep the real `MovementController`, but firing additionally requires
+  server-side collision-world line of sight, a reaction delay, imperfect aim,
+  finite range, and bounded burst/cooldown windows.
+- Backstab readiness is presentation-only: a close, visible, living target that
+  is facing away raises the knife, but damage and reach still use the ordinary
+  authoritative knife rules with no directional bonus.
+
+## 10. Risks
+
+- **Lag / hit registration feel.** Mitigated by a shared 71 ms presentation
+  timestamp and bounded authoritative rewind; timestamps older than 250 ms are
+  rejected for compensation.
+- **Cheating.** The server derives target, hitbox, distance, and damage. Broader
+  anti-cheat hardening remains outside the current scope.
 - **Scope creep.** The PR breakdown + feature flag keep each step shippable.
