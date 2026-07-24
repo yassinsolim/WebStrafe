@@ -15,7 +15,7 @@ export const defaultCvars: SourceCvars = {
   sv_maxspeed: 9.5,
   sv_jump_impulse: 5.4,
   sv_bhop_enabled: true,
-  sv_autobhop_enabled: false,
+  sv_autobhop_enabled: true,
   surf_min_angle_deg: 40,
   surf_max_angle_deg: 82,
   // Keep surf friction near-zero so ramps carry speed and do not feel sticky.

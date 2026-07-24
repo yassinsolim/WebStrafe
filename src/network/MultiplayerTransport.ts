@@ -27,13 +27,15 @@ export interface HitEvent {
   targetId: string;
   weaponId: string;
   damage: number;
-  hitbox: string;
+  hitbox: 'body' | 'head';
+  killed: boolean;
 }
 
 export interface DeathEvent {
   victimId: string;
   killerId: string;
   weaponId: string;
+  headshot: boolean;
 }
 
 export interface HealthEvent {
@@ -47,11 +49,23 @@ export interface RespawnEvent {
   position: [number, number, number];
 }
 
+export type ShotResult = 'miss' | 'hit' | 'kill';
+
 export interface ShotEvent {
+  /** Monotonic authority-local order for deterministic delivery and diagnostics. */
+  sequence: number;
+  /** Whether this accepted round missed, damaged, or killed a player. */
+  result: ShotResult;
   playerId: string;
+  /** Authoritative victim for hit/kill cues; absent for misses and wall hits. */
+  targetId?: string;
   origin: [number, number, number];
   dir: [number, number, number];
   weaponId: string;
+  /** Server-resolved player endpoint. World misses remain client-raycast. */
+  endpoint?: [number, number, number];
+  /** Surface/player-facing normal for the endpoint effect. */
+  impactNormal?: [number, number, number];
 }
 
 /**
@@ -75,9 +89,15 @@ export interface MultiplayerTransport {
   getLocalId(): string | null;
   getActiveMapId(): string;
   join(mapId: string, name: string, model: PlayerModel): void;
+  /** Marks pointer-locked active play; false removes the player from bot targets. */
+  setCombatReady(ready: boolean): void;
   sendState(state: OutgoingState): void;
   sendAttack(kind: AttackKind): void;
-  sendFire(origin: [number, number, number], dir: [number, number, number]): void;
+  sendFire(
+    origin: [number, number, number],
+    dir: [number, number, number],
+    observedAtMs?: number,
+  ): void;
   sendReload(): void;
   sendEquip(weaponId: string): void;
   /** Provides (or clears) the host-simulation context for the active map. */

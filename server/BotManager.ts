@@ -1,14 +1,20 @@
 import { Vector3 } from 'three';
 import { BotController } from '../src/combat/BotController';
+import {
+  BotTargetMemory,
+  isBotWithinTargetView,
+  type BotTargetCandidate,
+} from '../src/combat/BotPerception';
 import type { CombatArena } from '../src/combat/CombatArena';
+import { computeBotSpawnCandidate, groundBotSpawn } from '../src/combat/BotSpawn';
+import { getWeapon } from '../src/combat/weapons';
 import { loadHeadlessMap, type HeadlessMap } from './mapCollision';
+
+export { computeBotSpawnCandidate } from '../src/combat/BotSpawn';
 
 export type BotModel = 'terrorist' | 'counterterrorist';
 
-export interface BotTarget {
-  feet: Vector3;
-  alive: boolean;
-}
+export interface BotTarget extends BotTargetCandidate {}
 
 export interface BotSnapshotRow {
   id: string;
@@ -27,6 +33,13 @@ export interface BotFireEvent {
   mapId: string;
   origin: [number, number, number];
   dir: [number, number, number];
+  worldImpact?: BotWorldImpact;
+}
+
+export interface BotWorldImpact {
+  point: [number, number, number];
+  normal: [number, number, number];
+  distance: number;
 }
 
 const BOT_NAMES = [
@@ -40,6 +53,7 @@ interface Bot {
   name: string;
   model: BotModel;
   controller: BotController;
+  targetMemory: BotTargetMemory;
   /** Grounded seed this bot returns to on death or after falling off the map. */
   spawn: Vector3;
   yawDeg: number;
@@ -116,11 +130,24 @@ export class BotManager {
         // into the void forever.
         if (bot.controller.hasFallenOff()) {
           bot.controller.respawn(bot.spawn, bot.yawDeg);
+          bot.targetMemory.clear();
           this.arena.setPosition(bot.id, toTuple(bot.spawn), mapId);
           continue;
         }
-        const targetFeet = nearestLivingTarget(bot.controller.getFeet(), targets);
-        bot.controller.tick(dt, world.world, { targetFeet });
+        const eye = bot.controller.getCameraPosition();
+        const perception = bot.targetMemory.observe({
+          observer: eye,
+          yawRad: bot.controller.getYawRad(),
+          candidates: targets,
+          hasLineOfSight: (targetFeet) =>
+            !world.world.segmentIntersectsGeometry(
+              eye,
+              targetFeet.clone().add(new Vector3(0, 1.2, 0)),
+            ),
+          canAcquire: (candidate) =>
+            isBotWithinTargetView(candidate, bot.controller.getFeet()),
+        });
+        bot.controller.tick(dt, world.world, perception);
         this.arena.setPosition(bot.id, toTuple(bot.controller.getFeet()), mapId);
       }
     }
@@ -177,11 +204,22 @@ export class BotManager {
           continue;
         }
         const fwd = bot.controller.getForwardVector();
+        const weaponId = this.arena.getActiveWeapon(bot.id);
+        const worldImpact = weaponId && weaponId !== 'knife'
+          ? world.world.raycastGeometry(eye, fwd, getWeapon(weaponId).range)
+          : null;
         events.push({
           id: bot.id,
           mapId,
           origin: [eye.x, eye.y, eye.z],
           dir: [fwd.x, fwd.y, fwd.z],
+          worldImpact: worldImpact
+            ? {
+                point: toTuple(worldImpact.point),
+                normal: toTuple(worldImpact.normal),
+                distance: worldImpact.distance,
+              }
+            : undefined,
         });
       }
     }
@@ -211,17 +249,30 @@ export class BotManager {
 
   /** Spawn position for arena respawns; undefined for non-bots. */
   spawnFor(id: string): [number, number, number] | undefined {
-    const world = this.findWorldForBot(id);
-    return world ? toTuple(world.spawn.position) : undefined;
+    const bot = this.findBot(id);
+    return bot ? toTuple(bot.spawn) : undefined;
   }
 
   /** Repositions a bot's controller after the arena respawns it. */
   onRespawn(id: string, position: [number, number, number]): void {
     const bot = this.findBot(id);
-    const world = this.findWorldForBot(id);
-    if (bot && world) {
-      bot.controller.respawn(new Vector3(position[0], position[1], position[2]), world.spawn.yawDeg);
+    if (bot) {
+      bot.controller.respawn(new Vector3(position[0], position[1], position[2]), bot.yawDeg);
+      bot.targetMemory.clear();
     }
+  }
+
+  /** Clears stale last-seen and reaction state when a human leaves or re-enters play. */
+  resetTargeting(mapId: string): void {
+    for (const bot of this.botsByMap.get(mapId) ?? []) {
+      bot.targetMemory.clear();
+      bot.controller.resetEngagement();
+    }
+  }
+
+  /** Applies recoil-settle timing only after the arena accepts the bot shot. */
+  onShotFired(id: string): void {
+    this.findBot(id)?.controller.onShotFired();
   }
 
   private ensureBots(mapId: string): void {
@@ -237,14 +288,32 @@ export class BotManager {
       const id = `bot:${this.nextBotSeq++}`;
       const model: BotModel = i % 2 === 0 ? 'terrorist' : 'counterterrorist';
       const name = `${BOT_NAMES[i % BOT_NAMES.length]} (bot)`;
-      const spawn = world.spawn.position.clone();
-      // Fan bots out slightly so they don't stack on the exact spawn point.
-      spawn.x += (i - this.botsPerMap / 2) * 2;
-      const controller = new BotController(spawn, world.spawn.yawDeg);
+      const candidate = computeBotSpawnCandidate(
+        world.spawn.position,
+        world.spawn.yawDeg,
+        i,
+        this.botsPerMap,
+      );
+      const spawn = groundBotSpawn(world.world, candidate);
+      const yawDeg =
+        (Math.atan2(
+          -(world.spawn.position.x - spawn.x),
+          -(world.spawn.position.z - spawn.z),
+        ) * 180) / Math.PI;
+      const controller = new BotController(spawn, yawDeg);
       this.arena.addPlayer(id, mapId, 'deagle');
       this.arena.setPosition(id, toTuple(spawn), mapId);
       this.arena.protectSpawn(id, Date.now());
-      bots.push({ id, mapId, name, model, controller, spawn: spawn.clone(), yawDeg: world.spawn.yawDeg });
+      bots.push({
+        id,
+        mapId,
+        name,
+        model,
+        controller,
+        targetMemory: new BotTargetMemory(),
+        spawn: spawn.clone(),
+        yawDeg,
+      });
     }
     this.botsByMap.set(mapId, bots);
   }
@@ -258,29 +327,8 @@ export class BotManager {
     }
     return null;
   }
-
-  private findWorldForBot(id: string): HeadlessMap | null {
-    const mapId = this.mapOf(id);
-    return mapId ? this.worlds.get(mapId) ?? null : null;
-  }
 }
 
 function toTuple(v: Vector3): [number, number, number] {
   return [v.x, v.y, v.z];
-}
-
-function nearestLivingTarget(from: Vector3, targets: BotTarget[]): Vector3 | null {
-  let best: Vector3 | null = null;
-  let bestDist = Infinity;
-  for (const t of targets) {
-    if (!t.alive) {
-      continue;
-    }
-    const d = (t.feet.x - from.x) ** 2 + (t.feet.z - from.z) ** 2;
-    if (d < bestDist) {
-      bestDist = d;
-      best = t.feet;
-    }
-  }
-  return best;
 }

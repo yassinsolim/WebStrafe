@@ -8,6 +8,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   Object3D,
+  SkinnedMesh,
   SRGBColorSpace,
   Texture,
   TextureLoader,
@@ -17,6 +18,18 @@ import type { AnimationAction, AnimationClip } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { applyWearShader } from './WearMaterial';
+import {
+  KNIFE_EQUIP_DURATION_SEC,
+  KnifePresentationMotion,
+  type KnifePresentationSnapshot,
+} from './KnifePresentationMotion';
+import {
+  attachViewmodelWatch,
+  faceViewmodelWatchTowardCamera,
+  findViewmodelNode,
+  loadAuthoredViewmodelWatch,
+  type ViewmodelWatchAssetLoader,
+} from './ViewmodelWatch';
 import type {
   AnimationTimeRange,
   CosmeticModelEntry,
@@ -27,6 +40,122 @@ import type {
 
 const gltfLoader = new GLTFLoader();
 const textureLoader = new TextureLoader();
+export const INTEGRATED_KNIFE_BASE_POSITION = [-0.015, 0, -0.08] as const;
+const INTEGRATED_KNIFE_MODEL_SCALE = 0.62;
+const BACKSTAB_SUPPORT_ARM_SHIFT = 80;
+const INTEGRATED_KNIFE_SLEEVE_BONES = [
+  { upperArm: 'L_arm_01', elbow: 'L_elbow_02' },
+  { upperArm: 'R_arm_023', elbow: 'R_elbow_024' },
+] as const;
+const INTEGRATED_KNIFE_UPPER_ARM_RADIUS_SCALE = 0.48;
+
+export function taperIntegratedKnifeSleeves(root: Object3D): number {
+  root.updateWorldMatrix(true, true);
+  let adjustedVertices = 0;
+  root.traverse((candidate) => {
+    if (!(candidate instanceof SkinnedMesh)) {
+      return;
+    }
+    const materials = Array.isArray(candidate.material)
+      ? candidate.material
+      : [candidate.material];
+    if (!materials.some((material) => material.name === 'arms')) {
+      return;
+    }
+
+    candidate.updateWorldMatrix(true, true);
+    const axes = new Map<number, {
+      start: Vector3;
+      direction: Vector3;
+      lengthSq: number;
+    }>();
+    for (const config of INTEGRATED_KNIFE_SLEEVE_BONES) {
+      const upperArmIndex = candidate.skeleton.bones.findIndex(
+        (bone) => bone.name === config.upperArm,
+      );
+      const upperArm = candidate.skeleton.bones[upperArmIndex];
+      const elbow = candidate.skeleton.bones.find(
+        (bone) => bone.name === config.elbow,
+      );
+      if (upperArmIndex < 0 || !upperArm || !elbow) {
+        throw new Error('[Viewmodel] integrated knife is missing sleeve bones');
+      }
+      const start = candidate.worldToLocal(
+        upperArm.getWorldPosition(new Vector3()),
+      );
+      const end = candidate.worldToLocal(elbow.getWorldPosition(new Vector3()));
+      const direction = end.sub(start);
+      const lengthSq = direction.lengthSq();
+      if (lengthSq <= 1e-6) {
+        throw new Error('[Viewmodel] integrated knife has invalid sleeve bones');
+      }
+      axes.set(upperArmIndex, { start, direction, lengthSq });
+    }
+
+    const geometry = candidate.geometry;
+    const positions = geometry.getAttribute('position');
+    const skinIndices = geometry.getAttribute('skinIndex');
+    const skinWeights = geometry.getAttribute('skinWeight');
+    if (!positions || !skinIndices || !skinWeights) {
+      throw new Error('[Viewmodel] integrated knife arms are missing skin attributes');
+    }
+    const component = (
+      attribute: typeof skinIndices,
+      vertex: number,
+      lane: number,
+    ): number => {
+      if (lane === 0) return attribute.getX(vertex);
+      if (lane === 1) return attribute.getY(vertex);
+      if (lane === 2) return attribute.getZ(vertex);
+      return attribute.getW(vertex);
+    };
+
+    const tapered = geometry.clone();
+    const taperedPositions = positions.clone();
+    const position = new Vector3();
+    const closest = new Vector3();
+    const radial = new Vector3();
+    for (let vertex = 0; vertex < positions.count; vertex += 1) {
+      position.fromBufferAttribute(positions, vertex);
+      let changed = false;
+      for (let lane = 0; lane < 4; lane += 1) {
+        const axis = axes.get(component(skinIndices, vertex, lane));
+        const weight = component(skinWeights, vertex, lane);
+        if (!axis || weight < 0.25) {
+          continue;
+        }
+        const along = Math.max(
+          0,
+          Math.min(
+            1,
+            radial.copy(position).sub(axis.start).dot(axis.direction)
+              / axis.lengthSq,
+          ),
+        );
+        closest.copy(axis.start).addScaledVector(axis.direction, along);
+        radial.copy(position).sub(closest).multiplyScalar(
+          1 - weight * (1 - INTEGRATED_KNIFE_UPPER_ARM_RADIUS_SCALE),
+        );
+        position.copy(closest).add(radial);
+        changed = true;
+      }
+      if (changed) {
+        taperedPositions.setXYZ(vertex, position.x, position.y, position.z);
+        adjustedVertices += 1;
+      }
+    }
+    if (adjustedVertices === 0) {
+      throw new Error('[Viewmodel] integrated knife sleeve taper changed no geometry');
+    }
+
+    tapered.setAttribute('position', taperedPositions);
+    tapered.computeVertexNormals();
+    tapered.computeBoundingBox();
+    tapered.computeBoundingSphere();
+    candidate.geometry = tapered;
+  });
+  return adjustedVertices;
+}
 
 export class CosmeticsManager {
   private manifest: CosmeticsManifest | null = null;
@@ -36,6 +165,10 @@ export class CosmeticsManager {
 
   private currentGloves: Object3D | null = null;
   private currentKnife: Object3D | null = null;
+  private currentKnifeWatch: Group | null = null;
+  private backstabSupportArm: Object3D | null = null;
+  private readonly backstabSupportArmBaseScale = new Vector3(1, 1, 1);
+  private appliedBackstabSupportArmShift = 0;
 
   private knifeMixer: AnimationMixer | null = null;
   private knifeIdleAction: AnimationAction | null = null;
@@ -48,6 +181,7 @@ export class CosmeticsManager {
   private attackRangeSelectionMode: 'cycle' | 'random' = 'cycle';
   private activeRange: (AnimationTimeRange & { loop: boolean }) | null = null;
   private queuedAttackLane: 'mouse1' | 'mouse2' | null = null;
+  private startedAttackLane: 'mouse1' | 'mouse2' | null = null;
   private nextMouse1RangeIndex = 0;
   private nextMouse2RangeIndex = 0;
   private knifeAttackCooldown = 0;
@@ -58,8 +192,15 @@ export class CosmeticsManager {
   private usingIntegratedHands = false;
   private readonly knifeBasePosition = new Vector3(0.11, -0.02, -0.16);
   private readonly knifeBaseRotation = new Vector3(0.06, Math.PI, 0.02);
+  private readonly knifePresentation = new KnifePresentationMotion();
+  private knifeInspectAlpha = 0;
+  private backstabReady = false;
+  private backstabReadyAlpha = 0;
 
-  constructor(private readonly root: Group) {
+  constructor(
+    private readonly root: Group,
+    private readonly watchAssetLoader: ViewmodelWatchAssetLoader = loadAuthoredViewmodelWatch,
+  ) {
     this.gloveRoot.name = 'ViewmodelGlovesRoot';
     this.knifeRoot.name = 'ViewmodelKnifeRoot';
     this.root.add(this.gloveRoot);
@@ -114,7 +255,7 @@ export class CosmeticsManager {
   public setViewmodelScale(scale: number): void {
     const clamped = Math.max(0.25, Math.min(3, scale));
     this.viewmodelScale = clamped;
-    this.knifeRoot.scale.setScalar(this.viewmodelScale);
+    this.applyViewmodelScale();
   }
 
   public usesIntegratedHands(): boolean {
@@ -136,11 +277,13 @@ export class CosmeticsManager {
       throw new Error('Selected loadout variant was not found in manifest.');
     }
 
-    const [gloveResult, knifeResult] = await Promise.all([
+    const [gloveResult, knifeResult, authoredWatch] = await Promise.all([
       this.loadModelWithVariant(glove, gloveVariant, false),
       this.loadModelWithVariant(knife, knifeVariant, true, knife.includesHands ?? false),
+      knife.includesHands ? this.watchAssetLoader() : Promise.resolve(null),
     ]);
 
+    this.clearBackstabSupportArmPose();
     if (this.currentGloves) {
       this.gloveRoot.remove(this.currentGloves);
     }
@@ -150,13 +293,27 @@ export class CosmeticsManager {
 
     this.currentGloves = gloveResult.root;
     this.currentKnife = knifeResult.root;
+    this.backstabSupportArm = knife.includesHands
+      ? findViewmodelNode(knifeResult.root, 'L_arm_01')
+      : null;
+    if (this.backstabSupportArm) {
+      this.backstabSupportArmBaseScale.copy(this.backstabSupportArm.scale);
+    }
+    this.currentKnifeWatch = knife.includesHands && authoredWatch
+      ? attachViewmodelWatch(knifeResult.root, 'knife', {
+        boneName: 'L_wrist_03',
+        position: [0, 2.5, 3],
+        rotation: [-0.35, 0, Math.PI],
+        scale: 72,
+      }, authoredWatch)
+      : null;
     this.gloveRoot.add(gloveResult.root);
     this.knifeRoot.add(knifeResult.root);
 
     this.usingIntegratedHands = knife.includesHands ?? false;
     this.gloveRoot.visible = !this.usingIntegratedHands;
     if (this.usingIntegratedHands) {
-      this.knifeBasePosition.set(0, 0, 0);
+      this.knifeBasePosition.set(...INTEGRATED_KNIFE_BASE_POSITION);
       this.knifeBaseRotation.set(0, Math.PI, 0);
     } else {
       this.knifeBasePosition.set(0.11, -0.02, -0.16);
@@ -168,12 +325,13 @@ export class CosmeticsManager {
       this.knifeBaseRotation.y,
       this.knifeBaseRotation.z,
     );
-    this.knifeRoot.scale.setScalar(this.viewmodelScale);
+    this.applyViewmodelScale();
 
     this.setupKnifeAnimations(knifeResult.root, knifeResult.animations, knife);
   }
 
   public update(dt: number): void {
+    this.clearBackstabSupportArmPose();
     if (this.knifeMixer) {
       this.knifeMixer.update(dt);
     }
@@ -182,6 +340,44 @@ export class CosmeticsManager {
       this.knifeAttackCooldown = Math.max(0, this.knifeAttackCooldown - dt);
     }
     this.drainQueuedAttack();
+    const stanceTarget = this.backstabReady && this.usingIntegratedHands ? 1 : 0;
+    const stanceBlend = 1 - Math.exp(-Math.max(0, dt) * 10);
+    this.backstabReadyAlpha += (stanceTarget - this.backstabReadyAlpha) * stanceBlend;
+    this.applyKnifePresentationPose(this.knifePresentation.update(dt));
+    faceViewmodelWatchTowardCamera(this.currentKnifeWatch);
+  }
+
+  public setBackstabReady(ready: boolean): void {
+    this.backstabReady = ready;
+  }
+
+  public canInspect(): boolean {
+    return this.knifeAttackCooldown <= 0
+      && this.queuedAttackLane === null
+      && (!this.activeRange || this.activeRange.loop);
+  }
+
+  public resetKnifePresentation(): void {
+    this.clearBackstabSupportArmPose();
+    this.queuedAttackLane = null;
+    this.startedAttackLane = null;
+    this.knifeAttackCooldown = 0;
+    this.knifeInspectAlpha = 0;
+    this.backstabReady = false;
+    this.backstabReadyAlpha = 0;
+    this.gloveRoot.rotation.set(0.03, Math.PI, 0.05);
+    this.knifePresentation.reset();
+    if (this.knifeRangeAction && this.knifeIdleRange) {
+      this.playRange(this.knifeIdleRange, true);
+    } else {
+      this.knifeAttackAction?.stop();
+      if (this.knifeIdleAction) {
+        this.knifeIdleAction.reset();
+        this.knifeIdleAction.paused = false;
+        this.knifeIdleAction.play();
+      }
+    }
+    this.applyKnifePresentationPose(this.knifePresentation.sample());
   }
 
   public triggerAttackPrimary(): void {
@@ -192,11 +388,23 @@ export class CosmeticsManager {
     this.triggerAttackFromRanges(this.knifeMouse2Ranges, 'mouse2');
   }
 
+  public consumeStartedAttack(): 'primary' | 'secondary' | null {
+    const started = this.startedAttackLane;
+    this.startedAttackLane = null;
+    if (started === 'mouse1') return 'primary';
+    if (started === 'mouse2') return 'secondary';
+    return null;
+  }
+
   public triggerEquip(): boolean {
+    const duration = this.knifeEquipRange
+      ? this.knifeEquipRange.endSec - this.knifeEquipRange.startSec
+      : KNIFE_EQUIP_DURATION_SEC;
+    this.knifePresentation.triggerEquip(duration);
     if (!this.knifeRangeAction || !this.knifeEquipRange) {
-      return false;
+      return true;
     }
-    this.knifeAttackCooldown = Math.max(0.12, this.knifeEquipRange.endSec - this.knifeEquipRange.startSec);
+    this.knifeAttackCooldown = Math.max(0.12, duration);
     this.playRange(this.knifeEquipRange, false);
     return true;
   }
@@ -229,20 +437,14 @@ export class CosmeticsManager {
   }
 
   public setInspectAlpha(alpha: number): void {
-    const clamped = Math.min(1, Math.max(0, alpha));
-    const inspectScale = this.usingIntegratedHands ? 0.35 : 1;
-    this.knifeRoot.position.set(
-      this.knifeBasePosition.x - clamped * 0.12 * inspectScale,
-      this.knifeBasePosition.y + clamped * 0.06 * inspectScale,
-      this.knifeBasePosition.z + clamped * 0.16 * inspectScale,
+    this.clearBackstabSupportArmPose();
+    this.knifeInspectAlpha = Math.min(1, Math.max(0, alpha));
+    this.applyKnifePresentationPose(this.knifePresentation.sample());
+    this.gloveRoot.rotation.set(
+      0.03 + this.knifeInspectAlpha * 0.06,
+      Math.PI - this.knifeInspectAlpha * 0.2,
+      0.05 - 0.15 * this.knifeInspectAlpha,
     );
-    this.knifeRoot.rotation.set(
-      this.knifeBaseRotation.x + 0.12 * clamped * inspectScale,
-      this.knifeBaseRotation.y - clamped * 0.8 * inspectScale,
-      this.knifeBaseRotation.z - 0.25 * clamped * inspectScale,
-    );
-
-    this.gloveRoot.rotation.set(0.03 + clamped * 0.06, Math.PI - clamped * 0.2, 0.05 - 0.15 * clamped);
   }
 
   private setupKnifeAnimations(
@@ -263,7 +465,9 @@ export class CosmeticsManager {
     this.knifeMouse2Ranges = [];
     this.attackRangeSelectionMode = 'cycle';
     this.activeRange = null;
+    this.knifePresentation.reset();
     this.queuedAttackLane = null;
+    this.startedAttackLane = null;
     this.nextMouse1RangeIndex = 0;
     this.nextMouse2RangeIndex = 0;
     const clipNameOf = (clip: AnimationClip): string => {
@@ -447,6 +651,36 @@ export class CosmeticsManager {
     return clips[0] ?? null;
   }
 
+  private applyKnifePresentationPose(snapshot: KnifePresentationSnapshot): void {
+    const inspectScale = this.usingIntegratedHands ? 0.35 : 1;
+    const inspect = this.knifeInspectAlpha * inspectScale;
+    const backstab = this.backstabReadyAlpha * (1 - this.knifeInspectAlpha);
+    this.knifeRoot.position.set(
+      this.knifeBasePosition.x + snapshot.position[0] - inspect * 0.12 + backstab * 0.11,
+      this.knifeBasePosition.y + snapshot.position[1] + inspect * 0.06 + backstab * 0.1,
+      this.knifeBasePosition.z + snapshot.position[2] + inspect * 0.16 + backstab * 0.025,
+    );
+    this.knifeRoot.rotation.set(
+      this.knifeBaseRotation.x + snapshot.rotation[0] + inspect * 0.12 - backstab * 0.12,
+      this.knifeBaseRotation.y + snapshot.rotation[1] - inspect * 0.8 - backstab * 0.18,
+      this.knifeBaseRotation.z + snapshot.rotation[2] - inspect * 0.25 + backstab * 0.95,
+    );
+    if (this.backstabSupportArm) {
+      this.appliedBackstabSupportArmShift = BACKSTAB_SUPPORT_ARM_SHIFT * backstab;
+      this.backstabSupportArm.position.x += this.appliedBackstabSupportArmShift;
+      this.backstabSupportArmBaseScale.copy(this.backstabSupportArm.scale);
+      this.backstabSupportArm.scale.multiplyScalar(Math.max(0.001, 1 - backstab));
+    }
+  }
+
+  private clearBackstabSupportArmPose(): void {
+    if (this.backstabSupportArm) {
+      this.backstabSupportArm.position.x -= this.appliedBackstabSupportArmShift;
+      this.backstabSupportArm.scale.copy(this.backstabSupportArmBaseScale);
+    }
+    this.appliedBackstabSupportArmShift = 0;
+  }
+
   private readonly onKnifeActionFinished = (): void => {
     if (this.knifeIdleAction) {
       this.knifeIdleAction.paused = false;
@@ -473,7 +707,13 @@ export class CosmeticsManager {
         return;
       }
       this.queuedAttackLane = null;
-      this.knifeAttackCooldown = Math.max(0.14, chosen.endSec - chosen.startSec);
+      this.startedAttackLane = lane;
+      const duration = chosen.endSec - chosen.startSec;
+      this.knifeAttackCooldown = Math.max(0.14, duration);
+      this.knifePresentation.triggerAttack(
+        lane === 'mouse1' ? 'primary' : 'secondary',
+        duration,
+      );
       this.playRange(chosen, false);
       return;
     }
@@ -482,7 +722,12 @@ export class CosmeticsManager {
       return;
     }
     this.queuedAttackLane = null;
+    this.startedAttackLane = lane;
     this.knifeAttackCooldown = 0.18;
+    this.knifePresentation.triggerAttack(
+      lane === 'mouse1' ? 'primary' : 'secondary',
+      this.knifeAttackAction.getClip().duration,
+    );
     if (this.knifeIdleAction && this.knifeIdleAction !== this.knifeAttackAction) {
       this.knifeIdleAction.paused = true;
     }
@@ -597,6 +842,9 @@ export class CosmeticsManager {
 
     if (normalizeAsKnife) {
       this.normalizeKnifeScale(root, includesHands);
+      if (includesHands) {
+        taperIntegratedKnifeSleeves(root);
+      }
     }
 
     root.updateWorldMatrix(true, true);
@@ -719,5 +967,10 @@ export class CosmeticsManager {
     const scaleFactor = targetDiagonal / diagonal;
     root.scale.multiplyScalar(scaleFactor);
     root.updateWorldMatrix(true, true);
+  }
+
+  private applyViewmodelScale(): void {
+    const modelScale = this.usingIntegratedHands ? INTEGRATED_KNIFE_MODEL_SCALE : 1;
+    this.knifeRoot.scale.setScalar(this.viewmodelScale * modelScale);
   }
 }

@@ -1,279 +1,426 @@
 import {
-  AnimationClip,
   AnimationMixer,
   Box3,
   Group,
-  LoopRepeat,
-  Matrix4,
+  LoopOnce,
   Mesh,
   MeshStandardMaterial,
   Object3D,
-  Quaternion,
   SRGBColorSpace,
   Vector3,
   type AnimationAction,
-  type KeyframeTrack,
+  type AnimationClip,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { FIREARM_TIMINGS, type FirearmId } from '../combat/FirearmTiming';
+import {
+  attachViewmodelWatch,
+  findViewmodelNode,
+  loadAuthoredViewmodelWatch,
+  type ViewmodelWatchAssetLoader,
+  type ViewmodelWatchConfig,
+} from './ViewmodelWatch';
 
-export type GunId = 'deagle' | 'awp';
+export type GunId = FirearmId;
+type PresentationAction = 'idle' | 'equip' | 'fire' | 'reload';
 
-/**
- * Per-gun viewmodel config. Both guns are built (in tools/blender) on the SAME
- * proven arms + rig + `anims` clip as the knife viewmodel: a `Gun` mesh is
- * parented to the wrist attachment so the animated hands grip it. We therefore
- * load them exactly like the knife — a skinned model playing the idle sub-range
- * of `anims`, normalized to viewmodel size with a base transform applied.
- */
 interface GunConfig {
   url: string;
-  /** Idle loop sub-range of the `anims` clip, in seconds. */
-  idle: [number, number];
-  /** Target bounding diagonal (keeps the arms viewmodel-sized, like the knife). */
   targetDiagonal: number;
-  /** Base placement of the model inside its mount (sway is applied to root). */
-  basePos: [number, number, number];
-  baseRot: [number, number, number];
-  /**
-   * Downward pitch (radians) applied to the seated barrel so the gun rests at a
-   * natural slight downward angle instead of laser-level.
-   */
-  barrelPitch: number;
-  /**
-   * Sideways yaw (radians) applied to the seated barrel. 0 aims dead-forward
-   * (fine for a pistol); a long rifle reads better canted a little so its side
-   * profile + scope are visible instead of a foreshortened pole.
-   */
-  barrelYaw: number;
+  position: [number, number, number];
+  rotation: [number, number, number];
+  /** Materials whose mesh bounds preserve the confirmed authored weapon scale. */
+  scaleReferenceMaterials?: readonly string[];
+  handScale?: {
+    boneNames: readonly string[];
+    factor: number;
+  };
+  watch?: ViewmodelWatchConfig;
 }
 
 const CONFIGS: Record<GunId, GunConfig> = {
   deagle: {
     url: '/viewmodels/deagle/deagle.glb',
-    idle: [0, 1],
-    targetDiagonal: 0.62,
-    basePos: [0.14, -0.09, -0.36],
-    baseRot: [0.06, Math.PI, 0.02],
-    barrelPitch: 0.08,
-    barrelYaw: 0.03,
+    targetDiagonal: 0.55,
+    position: [0.16, -0.28, -0.8],
+    // Reverse the complete clasped pose around camera Y. The tiny residual yaw
+    // preserves slide readability while the muzzle and sights converge forward.
+    rotation: [0.015, Math.PI - 0.08, -0.015],
+    scaleReferenceMaterials: ['MainBody', 'Slide'],
   },
   awp: {
     url: '/viewmodels/awp/awp.glb',
-    idle: [0, 1],
-    targetDiagonal: 0.8,
-    basePos: [0.17, -0.14, -0.4],
-    baseRot: [0.06, Math.PI, 0.02],
-    barrelPitch: 0.05,
-    barrelYaw: 0.58,
+    targetDiagonal: 1.15,
+    position: [0.18, -0.34, -0.88],
+    rotation: [0, 0.03, 0],
+    scaleReferenceMaterials: ['Body'],
+    handScale: {
+      boneNames: ['Wrist.L', 'Wrist.R'],
+      factor: 1.22,
+    },
+    watch: {
+      boneName: 'Wrist.L',
+      position: [0, 0.015, 0],
+      rotation: [Math.PI, Math.PI, 0],
+      scale: 5.8,
+    },
   },
 };
 
+interface ScaledHandBone {
+  object: Object3D;
+  baseScale: Vector3;
+  factor: number;
+}
+
 interface GunInstance {
   id: GunId;
-  cfg: GunConfig;
   mount: Group;
   model: Object3D;
-  /** The `Gun` mesh, cached so we can re-seat it every frame (no per-frame traverse). */
-  gunMesh: Object3D | null;
-  mixer: AnimationMixer;
-  idle: AnimationAction | null;
+  reloadMixer: AnimationMixer;
+  reloadAction: AnimationAction;
+  reloadClip: AnimationClip;
+  scaledHandBones: ScaledHandBone[];
+  action: PresentationAction;
+  actionTime: number;
+  actionDuration: number;
+}
+
+interface ViewmodelAsset {
+  scene: Object3D;
+  animations?: AnimationClip[];
+}
+
+export interface WeaponViewmodelLoader {
+  loadAsync(url: string): Promise<ViewmodelAsset>;
+}
+
+export interface WeaponViewmodelPresentationState {
+  active: GunId | null;
+  visible: GunId | null;
+  loaded: readonly GunId[];
+  action: PresentationAction | null;
 }
 
 /**
- * Animated first-person Deagle + AWP viewmodels. Both share the knife's rig and
- * gripping arms (credited in README + menu): the real Deagle gun mesh is bolted
- * into the hand, and the AWP is a clean built rifle in the same hands. GameApp
- * shows one at a time based on the active weapon and drives sway/bob/fire-kick
- * onto {@link root} each frame; the knife keeps its own viewmodel in
- * CosmeticsManager.
+ * Loads compact production GLBs built from the licensed source files. Each GLB
+ * contains the real textured weapon, two-hand rig, magazine, and authored reload
+ * clip; playback is sampled against authoritative combat timing.
  */
 export class WeaponViewmodels {
   public readonly root = new Group();
-  private readonly loader = new GLTFLoader();
+  private readonly loader: WeaponViewmodelLoader;
+  private readonly watchAssetLoader: ViewmodelWatchAssetLoader;
   private readonly guns = new Map<GunId, GunInstance>();
+  private readonly loads = new Map<GunId, Promise<void>>();
+  private active: GunId | null = null;
+  private inspectProgress = 0;
+  private inspectWeight = 0;
 
-  constructor() {
+  constructor(
+    loader: WeaponViewmodelLoader = new GLTFLoader(),
+    watchAssetLoader: ViewmodelWatchAssetLoader = loadAuthoredViewmodelWatch,
+  ) {
+    this.loader = loader;
+    this.watchAssetLoader = watchAssetLoader;
     this.root.name = 'WeaponViewmodels';
   }
 
-  /** Loads both gun viewmodels. Safe to call once during init. */
   public async load(): Promise<void> {
-    await Promise.all((Object.keys(CONFIGS) as GunId[]).map((id) => this.loadGun(id)));
+    await Promise.all((Object.keys(CONFIGS) as GunId[]).map((id) => this.loadGunOnce(id)));
+  }
+
+  private loadGunOnce(id: GunId): Promise<void> {
+    const existing = this.loads.get(id);
+    if (existing) return existing;
+    const pending = this.loadGun(id).catch((error: unknown) => {
+      if (this.loads.get(id) === pending) this.loads.delete(id);
+      throw error;
+    });
+    this.loads.set(id, pending);
+    return pending;
   }
 
   private async loadGun(id: GunId): Promise<void> {
-    const cfg = CONFIGS[id];
-    const gltf = await this.loader.loadAsync(cfg.url);
-    const model = gltf.scene;
+    const config = CONFIGS[id];
+    const [asset, authoredWatch] = await Promise.all([
+      this.loader.loadAsync(config.url),
+      config.watch ? this.watchAssetLoader() : Promise.resolve(null),
+    ]);
+    const model = asset.scene;
+    model.name = `${id}:authored-presentation`;
+    const reloadClip = this.resolveReloadClip(id, asset.animations ?? []);
+    const reloadMixer = new AnimationMixer(model);
+    const reloadAction = reloadMixer.clipAction(reloadClip);
+    reloadAction.loop = LoopOnce;
+    reloadAction.clampWhenFinished = true;
+    reloadAction.enabled = true;
+    reloadAction.play();
+    reloadAction.time = 0;
+    reloadMixer.update(0);
 
-    model.traverse((o) => {
-      const mesh = o as Mesh;
-      if (mesh.isMesh) {
-        mesh.frustumCulled = false;
-        mesh.castShadow = false;
-        mesh.receiveShadow = false;
-        this.normalizeMaterials(mesh);
-      }
+    model.traverse((object) => {
+      const mesh = object as Mesh;
+      if (!mesh.isMesh) return;
+      mesh.frustumCulled = false;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      this.normalizeMaterials(mesh);
     });
 
-    // Normalize to viewmodel size, then apply base transform inside a mount so the
-    // camera-space sway/bob/kick that GameApp copies onto `root` composes cleanly.
-    this.normalizeScale(model, cfg.targetDiagonal);
-    model.position.set(cfg.basePos[0], cfg.basePos[1], cfg.basePos[2]);
-    model.rotation.set(cfg.baseRot[0], cfg.baseRot[1], cfg.baseRot[2]);
+    const bounds = this.getScaleBounds(model, config);
+    if (bounds.isEmpty()) {
+      throw new Error(`[Combat] ${id} production viewmodel contains no visible geometry`);
+    }
+    const diagonal = bounds.getSize(new Vector3()).length();
+    if (!Number.isFinite(diagonal) || diagonal <= 1e-6) {
+      throw new Error(`[Combat] ${id} production viewmodel has invalid bounds`);
+    }
+    const center = bounds.getCenter(new Vector3());
+    model.position.sub(center);
+    if (config.watch && authoredWatch) {
+      attachViewmodelWatch(model, id, config.watch, authoredWatch);
+    }
+    const scaledHandBones = this.resolveScaledHandBones(id, model, config);
+
+    const source = new Group();
+    source.name = `${id}:source-pivot`;
+    source.scale.setScalar(config.targetDiagonal / diagonal);
+    source.rotation.set(...config.rotation);
+    source.add(model);
 
     const mount = new Group();
     mount.name = `gun:${id}`;
-    mount.add(model);
+    mount.add(source);
     mount.visible = false;
     this.root.add(mount);
 
-    const mixer = new AnimationMixer(model);
-    const source = gltf.animations.find((c) => /anims/i.test(c.name)) ?? gltf.animations[0];
-    let idle: AnimationAction | null = null;
-    if (source) {
-      const idleClip = this.trimClip(source, cfg.idle[0], cfg.idle[1], `${id}-idle`);
-      idle = mixer.clipAction(idleClip);
-      idle.setLoop(LoopRepeat, Infinity);
-      idle.play();
-      mixer.update(0);
+    const instance: GunInstance = {
+      id,
+      mount,
+      model,
+      reloadMixer,
+      reloadAction,
+      reloadClip,
+      scaledHandBones,
+      action: 'idle',
+      actionTime: 0,
+      actionDuration: 0,
+    };
+    this.guns.set(id, instance);
+    this.applyPose(instance, config);
+
+    // The latest requested weapon owns visibility even when the two GLBs resolve
+    // out of order. A stale completion never exposes itself.
+    if (this.active === id) {
+      mount.visible = true;
+      this.startAction(instance, 'equip', 0.42);
     }
-
-    // The `Gun` mesh is authored barrel-along-local-(-Z) in the knife rig's wrist
-    // frame, so the rig's wrist rotation alone doesn't aim it where the player looks.
-    // We reorient it so the muzzle points forward (camera -Z). Because the idle
-    // animation rotates the wrist every frame, a one-time seat drifts (the barrel
-    // dips as the hand moves), so we cache the mesh and re-seat it every frame in
-    // update() — see seatGunForward.
-    let gunMesh: Object3D | null = null;
-    model.traverse((o) => {
-      if (o.name === 'Gun') gunMesh = o;
-    });
-    this.seatGunForward(gunMesh, cfg.barrelPitch, cfg.barrelYaw);
-
-    this.guns.set(id, { id, cfg, mount, model, gunMesh, mixer, idle });
   }
 
-  /**
-   * Orients the `Gun` mesh so its muzzle points along the viewmodel forward
-   * (`root` -Z, i.e. where the player aims) with `pitch` radians of downward tilt
-   * and `yaw` radians of sideways cant, and its top points up. Both gun GLBs are
-   * authored with the standard glTF viewmodel convention — barrel along local -Z,
-   * up along local +Y (verified from geometry) — so we align those two local axes
-   * to the target world directions. Computed relative to the animated wrist parent
-   * so the grip stays in the hand; the camera + sway rotation cancel out (both
-   * `refQ` and `parentQ` carry them), so we recompute every frame and the barrel
-   * never drifts as the idle animation moves the wrist.
-   */
-  private seatGunForward(gun: Object3D | null, pitch: number, yaw: number): void {
-    if (!gun || !gun.parent) return;
-
-    this.root.updateWorldMatrix(true, true);
-    const refQ = new Quaternion();
-    this.root.getWorldQuaternion(refQ);
-    // Target world direction for the muzzle (root-space forward, pitched down + yawed).
-    const fwd = new Vector3(
-      Math.sin(yaw) * Math.cos(pitch),
-      -Math.sin(pitch),
-      -Math.cos(yaw) * Math.cos(pitch),
-    )
-      .applyQuaternion(refQ)
-      .normalize();
-    const upW = new Vector3(0, 1, 0).applyQuaternion(refQ).normalize();
-    // Build an orthonormal right-handed basis mapping the gun's LOCAL axes to world:
-    // local +Z -> -fwd (so local -Z, the barrel, points along fwd) and local +Y -> up.
-    const zCol = fwd.clone().negate();
-    const yCol = upW.clone().sub(zCol.clone().multiplyScalar(upW.dot(zCol))).normalize();
-    const xCol = new Vector3().crossVectors(yCol, zCol).normalize();
-    const desired = new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(xCol, yCol, zCol));
-    const parentQ = new Quaternion();
-    gun.parent.getWorldQuaternion(parentQ);
-    gun.quaternion.copy(parentQ.invert().multiply(desired));
-    gun.updateMatrix();
+  private resolveReloadClip(id: GunId, clips: readonly AnimationClip[]): AnimationClip {
+    const named = clips.find((clip) => clip.name.toLowerCase().includes('reload'));
+    const clip = named ?? (clips.length === 1 ? clips[0] : null);
+    if (!clip || !Number.isFinite(clip.duration) || clip.duration <= 0) {
+      throw new Error(`[Combat] ${id} production viewmodel has no valid reload clip`);
+    }
+    return clip;
   }
 
-  /** sRGB colour maps + depth setup for the viewmodel pass. */
   private normalizeMaterials(mesh: Mesh): void {
-    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    for (const m of mats) {
-      const std = m as MeshStandardMaterial;
-      if (std.map) std.map.colorSpace = SRGBColorSpace;
-      std.depthWrite = true;
-      std.depthTest = true;
-      std.needsUpdate = true;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      const standard = material as MeshStandardMaterial;
+      if (standard.map) standard.map.colorSpace = SRGBColorSpace;
+      standard.depthTest = true;
+      standard.depthWrite = true;
+      standard.needsUpdate = true;
     }
   }
 
-  /** Scales the model so its bounding diagonal equals `target` (like the knife). */
-  private normalizeScale(model: Object3D, target: number): void {
-    model.updateWorldMatrix(true, true);
-    const bounds = new Box3().setFromObject(model);
-    if (bounds.isEmpty()) return;
-    const diagonal = bounds.getSize(new Vector3()).length();
-    if (!Number.isFinite(diagonal) || diagonal <= 1e-6) return;
-    model.scale.multiplyScalar(target / diagonal);
-    model.updateWorldMatrix(true, true);
-  }
-
-  /**
-   * Extracts a looping sub-clip covering [start, end] seconds from a source clip
-   * (rebased to 0). Used to loop just the idle segment of the shared `anims`
-   * animation, so the guns idle instead of playing the knife's attack swings.
-   */
-  private trimClip(clip: AnimationClip, start: number, end: number, name: string): AnimationClip {
-    const tracks: KeyframeTrack[] = [];
-    for (const track of clip.tracks) {
-      const stride = track.getValueSize();
-      const times: number[] = [];
-      const values: number[] = [];
-      for (let i = 0; i < track.times.length; i += 1) {
-        const t = track.times[i];
-        if (t >= start - 1e-4 && t <= end + 1e-4) {
-          times.push(t - start);
-          for (let j = 0; j < stride; j += 1) values.push(track.values[i * stride + j]);
-        }
-      }
-      if (times.length >= 2) {
-        const Ctor = track.constructor as new (n: string, t: number[], v: number[]) => KeyframeTrack;
-        tracks.push(new Ctor(track.name, times, values));
-      }
+  private getScaleBounds(model: Object3D, config: GunConfig): Box3 {
+    if (!config.scaleReferenceMaterials?.length) {
+      return new Box3().setFromObject(model);
     }
-    if (!tracks.length) return clip; // degenerate range: fall back to whole clip
-    return new AnimationClip(name, Math.max(end - start, 1e-3), tracks);
+    const bounds = new Box3();
+    model.traverse((object) => {
+      const mesh = object as Mesh;
+      if (!mesh.isMesh) return;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      if (materials.some((material) => config.scaleReferenceMaterials?.includes(material.name))) {
+        bounds.union(new Box3().setFromObject(mesh));
+      }
+    });
+    return bounds.isEmpty() ? new Box3().setFromObject(model) : bounds;
   }
 
-  /** Shows the given gun (hiding others), (re)starting its idle loop. */
+  private resolveScaledHandBones(
+    id: GunId,
+    model: Object3D,
+    config: GunConfig,
+  ): ScaledHandBone[] {
+    const handScale = config.handScale;
+    if (!handScale) {
+      return [];
+    }
+    return handScale.boneNames.map((name) => {
+      const object = findViewmodelNode(model, name);
+      if (!object) {
+        throw new Error(`[Combat] ${id} production viewmodel is missing hand bone ${name}`);
+      }
+      return {
+        object,
+        baseScale: object.scale.clone(),
+        factor: handScale.factor,
+      };
+    });
+  }
+
   public show(id: GunId | null): void {
-    for (const [gid, g] of this.guns) {
-      g.mount.visible = gid === id;
+    this.active = id;
+    this.inspectProgress = 0;
+    this.inspectWeight = 0;
+    for (const [gunId, instance] of this.guns) {
+      const visible = gunId === id;
+      instance.mount.visible = visible;
+      if (!visible) {
+        instance.action = 'idle';
+        instance.actionTime = 0;
+        instance.actionDuration = 0;
+        this.applyPose(instance, CONFIGS[gunId]);
+      }
     }
-    const g = id ? this.guns.get(id) : null;
-    if (g?.idle) {
-      g.idle.reset();
-      g.idle.play();
-    }
+    const instance = id ? this.guns.get(id) : null;
+    if (instance) this.startAction(instance, 'equip', 0.42);
   }
 
-  /**
-   * Fire/reload feedback is driven procedurally by ViewmodelRenderer (sway/bob/
-   * fire-kick copied onto {@link root} by GameApp), so these are intentionally
-   * light — the shared knife clip has no gun-specific fire/reload segments.
-   */
+  public getPresentationState(): WeaponViewmodelPresentationState {
+    const ids = Object.keys(CONFIGS) as GunId[];
+    const instance = this.active ? this.guns.get(this.active) : null;
+    return {
+      active: this.active,
+      visible:
+        this.root.visible && instance?.mount.visible
+          ? this.active
+          : null,
+      loaded: ids.filter((id) => this.guns.has(id)),
+      action: instance?.action ?? null,
+    };
+  }
+
   public triggerFire(): void {
-    // procedural fire-kick handles the recoil; no authored gun-fire clip.
+    const instance = this.active ? this.guns.get(this.active) : null;
+    if (!instance) return;
+    this.startAction(
+      instance,
+      'fire',
+      FIREARM_TIMINGS[instance.id].firePlaybackMs / 1000,
+    );
   }
 
   public triggerReload(): void {
-    // no authored gun-reload clip; reload state is handled by weapon logic + HUD.
+    const instance = this.active ? this.guns.get(this.active) : null;
+    if (!instance) return;
+    this.startAction(
+      instance,
+      'reload',
+      FIREARM_TIMINGS[instance.id].reloadMs / 1000,
+    );
+  }
+
+  public setInspectPose(progress: number, weight: number): void {
+    const instance = this.active ? this.guns.get(this.active) : null;
+    if (!instance || instance.action !== 'idle') {
+      this.inspectProgress = 0;
+      this.inspectWeight = 0;
+      return;
+    }
+    this.inspectProgress = Math.min(1, Math.max(0, progress));
+    this.inspectWeight = Math.min(1, Math.max(0, weight));
+    this.applyPose(instance, CONFIGS[instance.id]);
+  }
+
+  private startAction(
+    instance: GunInstance,
+    action: PresentationAction,
+    duration: number,
+  ): void {
+    this.inspectProgress = 0;
+    this.inspectWeight = 0;
+    instance.action = action;
+    instance.actionTime = 0;
+    instance.actionDuration = duration;
+    this.applyPose(instance, CONFIGS[instance.id]);
   }
 
   public update(dt: number): void {
-    for (const g of this.guns.values()) {
-      if (!g.mount.visible) continue;
-      g.mixer.update(dt);
-      // Re-seat AFTER the mixer moves the wrist, so the barrel stays locked forward
-      // instead of dipping as the idle animation plays.
-      this.seatGunForward(g.gunMesh, g.cfg.barrelPitch, g.cfg.barrelYaw);
+    const instance = this.active ? this.guns.get(this.active) : null;
+    if (!instance?.mount.visible) return;
+    if (instance.action !== 'idle') {
+      instance.actionTime = Math.min(
+        instance.actionDuration,
+        instance.actionTime + Math.max(0, dt),
+      );
+      if (instance.actionTime >= instance.actionDuration) {
+        instance.action = 'idle';
+        instance.actionTime = 0;
+        instance.actionDuration = 0;
+      }
+    }
+    this.applyPose(instance, CONFIGS[instance.id]);
+  }
+
+  private applyPose(instance: GunInstance, config: GunConfig): void {
+    let x = config.position[0];
+    let y = config.position[1];
+    let z = config.position[2];
+    let pitch = 0;
+    let yaw = 0;
+    let roll = 0;
+    const progress =
+      instance.actionDuration > 0
+        ? Math.min(1, instance.actionTime / instance.actionDuration)
+        : 0;
+
+    if (instance.action === 'equip') {
+      const remaining = (1 - progress) ** 3;
+      x += 0.12 * remaining;
+      y -= 0.2 * remaining;
+      z += 0.08 * remaining;
+      roll += (instance.id === 'awp' ? -0.18 : 0.18) * remaining;
+    } else if (instance.action === 'fire') {
+      const attackRatio = instance.id === 'awp' ? 0.18 : 0.14;
+      const impulse = progress <= attackRatio
+        ? 1 - (1 - progress / attackRatio) ** 3
+        : Math.cos(
+            ((progress - attackRatio) / (1 - attackRatio)) * Math.PI * 0.5,
+          ) ** 1.45;
+      z += (instance.id === 'awp' ? 0.075 : 0.045) * impulse;
+      pitch -= (instance.id === 'awp' ? 0.095 : 0.065) * impulse;
+      roll += (instance.id === 'awp' ? -0.018 : 0.028) * impulse;
+    }
+
+    if (instance.action === 'idle' && this.inspectWeight > 0) {
+      const sideReveal = Math.sin(this.inspectProgress * Math.PI * 2) * this.inspectWeight;
+      const isAwp = instance.id === 'awp';
+      x -= (isAwp ? 0.035 : 0.05) * sideReveal;
+      y += (isAwp ? 0.09 : 0.13) * this.inspectWeight;
+      z += (isAwp ? 0.14 : 0.18) * this.inspectWeight;
+      pitch -= (isAwp ? 0.08 : 0.13) * this.inspectWeight;
+      yaw += (isAwp ? 0.3 : 0.52) * sideReveal;
+      roll -= (isAwp ? 0.1 : 0.18) * sideReveal;
+    }
+
+    instance.mount.position.set(x, y, z);
+    instance.mount.rotation.set(pitch, yaw, roll);
+    this.applyReloadPose(instance, instance.action === 'reload' ? progress : 0);
+  }
+
+  private applyReloadPose(instance: GunInstance, progress: number): void {
+    instance.reloadAction.time = instance.reloadClip.duration * Math.max(0, Math.min(1, progress));
+    instance.reloadMixer.update(0);
+    for (const hand of instance.scaledHandBones) {
+      hand.object.scale.copy(hand.baseScale).multiplyScalar(hand.factor);
     }
   }
 }

@@ -5,8 +5,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
 import { Vector3 } from 'three';
+import { REMOTE_SHOT_VISUAL_DISTANCE } from '../src/combat/ShotPresentation';
 import { CombatArena } from '../src/combat/CombatArena';
 import type { FireOutcome } from '../src/combat/CombatArena';
+import { shouldResetCombatEntry } from '../src/combat/CombatEntryPolicy';
 import type { WeaponId } from '../src/combat/weapons';
 import { BotManager, type BotTarget } from './BotManager';
 
@@ -29,6 +31,13 @@ interface ClientState {
   ws: WebSocket;
   ip: string;
   joined: boolean;
+  /** True after the client has sent its first in-world movement state. */
+  hasState: boolean;
+  /** True only while the player has pointer-locked active gameplay. */
+  combatReady: boolean;
+  hasEnteredCombat: boolean;
+  combatPausedAtMs: number | null;
+  lastCombatAtMs: number;
   name: string;
   mapId: string;
   model: PlayerModel;
@@ -63,7 +72,7 @@ const MAX_WEBSOCKET_MESSAGE_BYTES = 2 * 1024;
 const SNAPSHOT_RATE_HZ = 20;
 const BOT_TICK_HZ = 60;
 const ENABLE_BOTS = process.env.ENABLE_BOTS === 'true';
-const BOTS_PER_MAP = clampInt(process.env.BOTS_PER_MAP, 2, 0, 8);
+const BOTS_PER_MAP = clampInt(process.env.BOTS_PER_MAP, 1, 0, 8);
 const PLAYER_STALE_TIMEOUT_MS = 12000;
 const MAP_ID_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
 const PLAYER_NAME_REGEX = /^[A-Za-z0-9 _\-.]{2,24}$/;
@@ -91,6 +100,7 @@ const requestRate = new Map<string, { count: number; resetAt: number }>();
 const clients = new Map<WebSocket, ClientState>();
 const arena = new CombatArena();
 const botManager = new BotManager(arena, BOTS_PER_MAP);
+let nextShotSequence = 1;
 
 function clampInt(raw: string | undefined, fallback: number, min: number, max: number): number {
   const parsed = Number.parseInt(raw ?? '', 10);
@@ -165,6 +175,11 @@ wss.on('connection', (ws, req) => {
     ws,
     ip: getClientIp(req),
     joined: false,
+    hasState: false,
+    combatReady: false,
+    hasEnteredCombat: false,
+    combatPausedAtMs: null,
+    lastCombatAtMs: Date.now(),
     name: 'Player',
     mapId: '',
     model: 'terrorist',
@@ -226,6 +241,11 @@ wss.on('connection', (ws, req) => {
         }
 
         client.joined = true;
+        client.hasState = false;
+        client.combatReady = false;
+        client.hasEnteredCombat = false;
+        client.combatPausedAtMs = Date.now();
+        client.lastCombatAtMs = Date.now();
         client.mapId = mapId;
         client.name = name;
         client.model = model;
@@ -237,7 +257,44 @@ wss.on('connection', (ws, req) => {
           mapId,
         });
         arena.addPlayer(client.id, mapId, 'knife');
-        arena.protectSpawn(client.id, Date.now());
+        botManager.resetTargeting(mapId);
+        break;
+      }
+      case 'combat-ready': {
+        if (!client.joined || typeof payload.ready !== 'boolean') {
+          return;
+        }
+        if (client.combatReady !== payload.ready) {
+          const now = Date.now();
+          client.combatReady = payload.ready;
+          botManager.resetTargeting(client.mapId);
+          if (client.combatReady) {
+            const cleanEntry = shouldResetCombatEntry({
+              alive: arena.isAlive(client.id),
+              pausedAtMs: client.combatPausedAtMs,
+              lastCombatAtMs: client.lastCombatAtMs,
+              nowMs: now,
+            });
+            if (cleanEntry) {
+              const respawn = arena.resetPlayer(client.id, now, client.position);
+              broadcastToMap(client.mapId, {
+                type: 'health',
+                playerId: client.id,
+                health: arena.getHealth(client.id) ?? 100,
+                alive: true,
+              });
+              if (respawn) {
+                broadcastToMap(client.mapId, { type: 'respawn', ...respawn });
+              }
+            } else if (!client.hasEnteredCombat) {
+              arena.protectSpawn(client.id, now);
+            }
+            client.hasEnteredCombat = true;
+            client.combatPausedAtMs = null;
+          } else {
+            client.combatPausedAtMs = now;
+          }
+        }
         break;
       }
       case 'state': {
@@ -265,10 +322,11 @@ wss.on('connection', (ws, req) => {
         }
 
         client.position = position;
+        client.hasState = true;
         client.velocity = velocity;
         client.yaw = yaw;
         client.pitch = pitch;
-        arena.setPosition(client.id, position, client.mapId);
+        arena.setPosition(client.id, position, client.mapId, Date.now());
         break;
       }
       case 'attack': {
@@ -296,7 +354,7 @@ wss.on('connection', (ws, req) => {
         break;
       }
       case 'fire': {
-        if (!client.joined) {
+        if (!client.joined || !client.combatReady) {
           return;
         }
         const origin = parseVector3(payload.origin, 200000);
@@ -314,9 +372,11 @@ wss.on('connection', (ws, req) => {
           ws.close(4009, 'attack_rate_limit');
           return;
         }
-        const outcome = arena.handleFire(client.id, origin, dir, now);
+        const observedAtMs = parseNumber(payload.observedAtMs, 0, now + 1000) ?? undefined;
+        const outcome = arena.handleFire(client.id, origin, dir, now, undefined, observedAtMs);
         if (outcome.fired) {
-          broadcastShot(client.mapId, client.id, origin, dir);
+          client.lastCombatAtMs = now;
+          broadcastShot(client.mapId, client.id, origin, dir, outcome);
         }
         broadcastFireOutcome(client.mapId, outcome);
         break;
@@ -350,11 +410,13 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => {
     clearTimeout(joinTimeout);
     arena.removePlayer(client.id);
+    if (client.mapId) botManager.resetTargeting(client.mapId);
     clients.delete(ws);
   });
 
   ws.on('error', () => {
     arena.removePlayer(client.id);
+    if (client.mapId) botManager.resetTargeting(client.mapId);
     clients.delete(ws);
   });
 });
@@ -373,6 +435,9 @@ setInterval(() => {
       mapId = botManager.mapOf(ev.playerId);
     } else {
       mapId = [...clients.values()].find((c) => c.id === ev.playerId)?.mapId ?? null;
+      if (mapId) {
+        botManager.resetTargeting(mapId);
+      }
     }
     if (mapId) {
       broadcastToMap(mapId, {
@@ -462,10 +527,29 @@ if (ENABLE_BOTS) {
       }
       mapsWithHumans.add(client.mapId);
       botManager.requestMap(client.mapId);
+      // Keep an empty candidate list while the player is loading/menu-bound or
+      // spawn-protected. BotManager can then populate the shared staging pad for
+      // snapshots without treating that player as an aim target.
+      if (!targetsByMap.has(client.mapId)) {
+        targetsByMap.set(client.mapId, []);
+      }
+      if (
+        !client.hasState
+        || !client.combatReady
+        || arena.isSpawnProtected(client.id, Date.now())
+      ) {
+        // Menu/map-loading clients either still have the [0,0,0] sentinel or
+        // explicitly left active pointer-locked play. Bots forget them until a
+        // fresh combat-ready transition and spawn grace grant a new reaction window.
+        continue;
+      }
       const list = targetsByMap.get(client.mapId) ?? [];
       list.push({
+        id: client.id,
         feet: new Vector3(client.position[0], client.position[1], client.position[2]),
         alive: arena.isAlive(client.id),
+        viewYawRad: client.yaw,
+        viewPitchRad: client.pitch,
       });
       targetsByMap.set(client.mapId, list);
     }
@@ -476,9 +560,16 @@ if (ENABLE_BOTS) {
     // human fire. LOS is already checked server-side in collectFireEvents.
     const now = Date.now();
     for (const ev of botManager.collectFireEvents()) {
-      const outcome = arena.handleFire(ev.id, ev.origin, ev.dir, now);
+      const outcome = arena.handleFire(
+        ev.id,
+        ev.origin,
+        ev.dir,
+        now,
+        ev.worldImpact?.distance,
+      );
       if (outcome.fired) {
-        broadcastShot(ev.mapId, ev.id, ev.origin, ev.dir);
+        botManager.onShotFired(ev.id);
+        broadcastShot(ev.mapId, ev.id, ev.origin, ev.dir, outcome, ev.worldImpact);
       }
       broadcastFireOutcome(ev.mapId, outcome);
     }
@@ -915,6 +1006,13 @@ function broadcastToMap(mapId: string, payload: Record<string, unknown>): void {
 
 function broadcastFireOutcome(mapId: string, outcome: FireOutcome): void {
   if (outcome.hit) {
+    const now = Date.now();
+    for (const client of clients.values()) {
+      if (client.id === outcome.hit.targetId) {
+        client.lastCombatAtMs = now;
+        break;
+      }
+    }
     broadcastToMap(mapId, { type: 'hit', ...outcome.hit });
     const victim = outcome.hit.targetId;
     broadcastToMap(mapId, {
@@ -935,12 +1033,48 @@ function broadcastShot(
   playerId: string,
   origin: [number, number, number],
   dir: [number, number, number],
+  outcome: FireOutcome,
+  worldImpact?: {
+    point: [number, number, number];
+    normal: [number, number, number];
+  },
 ): void {
   const weaponId = arena.getActiveWeapon(playerId);
   if (!weaponId || weaponId === 'knife') {
     return;
   }
-  broadcastToMap(mapId, { type: 'shot', playerId, origin, dir, weaponId });
+  const direction = new Vector3(dir[0], dir[1], dir[2]);
+  const payload: Record<string, unknown> = {
+    type: 'shot',
+    sequence: nextShotSequence++,
+    result: outcome.death ? 'kill' : outcome.hit ? 'hit' : 'miss',
+    playerId,
+    targetId: outcome.hit?.targetId,
+    origin,
+    dir,
+    weaponId,
+  };
+  if (
+    outcome.impactDistance !== undefined
+    && Number.isFinite(outcome.impactDistance)
+    && direction.lengthSq() > 1e-8
+  ) {
+    direction.normalize();
+    const endpoint = new Vector3(origin[0], origin[1], origin[2])
+      .addScaledVector(direction, outcome.impactDistance);
+    payload.endpoint = [endpoint.x, endpoint.y, endpoint.z];
+    payload.impactNormal = [-direction.x, -direction.y, -direction.z];
+  } else if (worldImpact) {
+    payload.endpoint = worldImpact.point;
+    payload.impactNormal = worldImpact.normal;
+  } else if (direction.lengthSq() > 1e-8) {
+    direction.normalize();
+    const endpoint = new Vector3(origin[0], origin[1], origin[2])
+      .addScaledVector(direction, REMOTE_SHOT_VISUAL_DISTANCE);
+    payload.endpoint = [endpoint.x, endpoint.y, endpoint.z];
+    payload.impactNormal = [-direction.x, -direction.y, -direction.z];
+  }
+  broadcastToMap(mapId, payload);
 }
 
 function broadcastAttack(mapId: string, playerId: string, kind: AttackKind): void {

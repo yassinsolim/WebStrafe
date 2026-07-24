@@ -5,6 +5,16 @@
   "source": "surf_skyworld_x by EVAI",
   "license": "Creative Commons Attribution",
   "sceneScale": 174.6831684033085,
+  "spawns": [
+    {
+      "position": [
+        -15,
+        144.55,
+        30
+      ],
+      "yawDeg": 225
+    }
+  ],
   "goalPad": {
     "center": [
       -183.6835,
@@ -15,5 +25,5 @@
     "tolerance": 1.1
   },
   "attribution": "Credit the creator: surf_skyworld_x by EVAI is licensed under Creative Commons Attribution.",
-  "notes": "Spawn will auto-resolve from map bounds unless explicit spawns are set here."
+  "notes": "Combat spawn is seated on the broad upper platform with room for the staged bot ahead."
 }

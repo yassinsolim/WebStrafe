@@ -1,7 +1,9 @@
 import {
   Bone,
   Box3,
+  CircleGeometry,
   Euler,
+  Group,
   Mesh,
   MeshStandardMaterial,
   Object3D,
@@ -23,6 +25,7 @@ export interface ArmRig {
   rightUpper: Bone;
   rightLower: Bone;
   rightHand: Bone;
+  rightWeaponHand: Bone;
   leftUpper: Bone | null;
   leftLower: Bone | null;
   leftHand: Bone | null;
@@ -40,6 +43,7 @@ export interface ArmRig {
   rightUpperBase: Quaternion;
   rightLowerBase: Quaternion;
   rightHandBase: Quaternion;
+  rightWeaponHandBase: Quaternion;
   leftUpperBase: Quaternion | null;
   leftLowerBase: Quaternion | null;
   leftHandBase: Quaternion | null;
@@ -66,10 +70,116 @@ const KNIFE_MODEL_PATH = '/viewmodels/knife/knife.glb';
  * knife-fight hold from the third-person menu camera. Applied by
  * {@link applyKnifeIdlePose} so the in-game third-person hold is never affected.
  */
-const MENU_KNIFE_GRIP_POSITION = new Vector3(0.0228, 0.0098, 0.0252);
+const MENU_KNIFE_GRIP_POSITION = new Vector3(-0.022, -0.009, 0.047);
+const MENU_KNIFE_GRIP_ROTATION = new Euler(1.18, -0.58, 0.75, 'XYZ');
+const EYE_DETAIL_MARKER = 'PlayerEyeDetails';
+const EYE_DETAIL_OFFSET = 0.013;
+const EYE_SCLERA_RADIUS = 0.012;
+const EYE_IRIS_RADIUS = 0.0105;
+const EYE_PUPIL_RADIUS = 0.0045;
+const EYE_CATCHLIGHT_RADIUS = 0.0009;
 
 const offsetQuat = new Quaternion();
 const offsetEuler = new Euler(0, 0, 0, 'XYZ');
+const handGripQuat = new Quaternion();
+const weaponGripQuat = new Quaternion();
+
+/**
+ * Adds life-size, light-reactive iris details to exposed player-model eye bones.
+ * The counter-terrorist model uses opaque gas-mask lenses, so it is left untouched.
+ */
+export function addPlayerEyeDetails(root: Object3D): number {
+  const existing = root.getObjectByName(EYE_DETAIL_MARKER);
+  if (existing) {
+    return Number(existing.userData.eyeCount ?? 0);
+  }
+
+  let hasMaskLenses = false;
+  const eyeBones: Bone[] = [];
+  root.traverse((child) => {
+    if (child instanceof Bone && /^eyeball_[lr]_/.test(child.name.toLowerCase())) {
+      eyeBones.push(child);
+    }
+    if (!(child instanceof Mesh)) {
+      return;
+    }
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    hasMaskLenses ||= materials.some((material) => material.name.toLowerCase().includes('lenses'));
+  });
+
+  const marker = new Group();
+  marker.name = EYE_DETAIL_MARKER;
+  root.add(marker);
+  if (hasMaskLenses) {
+    marker.userData.eyeCount = 0;
+    return 0;
+  }
+
+  for (const [index, eyeBone] of eyeBones.entries()) {
+    const detail = new Group();
+    detail.name = `PlayerEyeDetail:${index}`;
+    const localForward = new Vector3(0, 1, 0)
+      .applyQuaternion(eyeBone.quaternion.clone().invert())
+      .normalize();
+    detail.position.copy(localForward).multiplyScalar(EYE_DETAIL_OFFSET);
+    detail.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), localForward);
+
+    const sclera = new Mesh(
+      new CircleGeometry(EYE_SCLERA_RADIUS, 24),
+      new MeshStandardMaterial({
+        color: 0xb09b8e,
+        emissive: 0x181310,
+        emissiveIntensity: 0.12,
+        roughness: 0.72,
+        metalness: 0,
+      }),
+    );
+    sclera.name = 'PlayerEyeSclera';
+    sclera.scale.set(1.18, 0.66, 1);
+
+    const iris = new Mesh(
+      new CircleGeometry(EYE_IRIS_RADIUS, 24),
+      new MeshStandardMaterial({
+        color: 0x536b52,
+        emissive: 0x10150f,
+        emissiveIntensity: 0.18,
+        roughness: 0.5,
+        metalness: 0,
+      }),
+    );
+    iris.name = 'PlayerEyeIris';
+    iris.position.z = 0.00016;
+    iris.scale.y = 0.86;
+
+    const pupil = new Mesh(
+      new CircleGeometry(EYE_PUPIL_RADIUS, 20),
+      new MeshStandardMaterial({
+        color: 0x0b0b09,
+        roughness: 0.4,
+        metalness: 0,
+      }),
+    );
+    pupil.name = 'PlayerEyePupil';
+    pupil.position.z = 0.00032;
+
+    const catchlight = new Mesh(
+      new CircleGeometry(EYE_CATCHLIGHT_RADIUS, 12),
+      new MeshStandardMaterial({
+        color: 0xc8c2b5,
+        roughness: 0.2,
+        metalness: 0,
+      }),
+    );
+    catchlight.name = 'PlayerEyeCatchlight';
+    catchlight.position.set(-0.00135, 0.0014, 0.00048);
+
+    detail.add(sclera, iris, pupil, catchlight);
+    eyeBone.add(detail);
+  }
+
+  marker.userData.eyeCount = eyeBones.length;
+  return eyeBones.length;
+}
 
 /** Locates the arm/spine bones of a player model and captures their bind pose. */
 export function buildArmRig(root: Object3D): ArmRig | null {
@@ -98,16 +208,24 @@ export function buildArmRig(root: Object3D): ArmRig | null {
     }) ?? null;
   };
 
+  const pickAnatomicalHand = (side: 'l' | 'r'): Bone | null => (
+    bones.find((bone) => {
+      const name = bone.name.toLowerCase();
+      return name.includes(`hand_${side}`) && !name.includes('weapon_hand');
+    }) ?? null
+  );
+
   const rightUpper = pickBone('arm_upper_r');
   const rightLower = pickBone('arm_lower_r');
-  const rightHand = pickBone('weapon_hand_r') ?? pickBone('hand_r');
+  const rightHand = pickAnatomicalHand('r') ?? pickBone('weapon_hand_r');
   if (!rightUpper || !rightLower || !rightHand) {
     return null;
   }
+  const rightWeaponHand = pickBone('weapon_hand_r') ?? rightHand;
 
   const leftUpper = pickBone('arm_upper_l');
   const leftLower = pickBone('arm_lower_l');
-  const leftHand = pickBone('weapon_hand_l') ?? pickBone('hand_l');
+  const leftHand = pickAnatomicalHand('l') ?? pickBone('weapon_hand_l');
   const rightClavicle = pickBone('clavicle_r');
   const leftClavicle = pickBone('clavicle_l');
   const spineMid = pickBone('spine_2') ?? pickBone('spine_1');
@@ -136,6 +254,7 @@ export function buildArmRig(root: Object3D): ArmRig | null {
     rightUpper,
     rightLower,
     rightHand,
+    rightWeaponHand,
     leftUpper,
     leftLower,
     leftHand,
@@ -151,6 +270,7 @@ export function buildArmRig(root: Object3D): ArmRig | null {
     rightUpperBase: rightUpper.quaternion.clone(),
     rightLowerBase: rightLower.quaternion.clone(),
     rightHandBase: rightHand.quaternion.clone(),
+    rightWeaponHandBase: rightWeaponHand.quaternion.clone(),
     leftUpperBase: leftUpper?.quaternion.clone() ?? null,
     leftLowerBase: leftLower?.quaternion.clone() ?? null,
     leftHandBase: leftHand?.quaternion.clone() ?? null,
@@ -184,26 +304,42 @@ function applyOptional(bone: Bone | null, base: Quaternion | null, x: number, y:
  * of the body a little above the waist with the fingers wrapped around the
  * handle in a cylinder grip, and the blade angled inward across the body (toward
  * the centreline) rather than splayed outward, while the off-hand rests relaxed
- * and slightly forward at belt height on its own side. Reads well through the
- * full side-to-side yaw sway. Deterministic and menu-only — the in-game renderer
- * keeps its own animated stance in RemotePlayersRenderer.applyRigPose.
+ * and slightly forward at belt height on its own side. Reads well through a
+ * restrained breathing cycle. Deterministic and menu-only — the in-game
+ * renderer keeps its own animated stance in RemotePlayersRenderer.applyRigPose.
  */
-export function applyKnifeIdlePose(rig: ArmRig): void {
-  applyOptional(rig.spineMid, rig.spineMidBase, 0.05, 0, 0.02);
-  applyOptional(rig.spineUpper, rig.spineUpperBase, 0.09, 0.02, 0.03);
-  applyOptional(rig.neck, rig.neckBase, -0.02, 0, 0);
-  applyOptional(rig.head, rig.headBase, -0.03, 0.02, 0);
-  applyOptional(rig.rightClavicle, rig.rightClavicleBase, 0.16, -0.2, 0.12);
-  applyOptional(rig.leftClavicle, rig.leftClavicleBase, 0.14, 0.14, -0.06);
+export function applyKnifeIdlePose(rig: ArmRig, breath = 0): void {
+  const inhale = Math.max(-1, Math.min(1, breath));
+  applyOptional(rig.spineMid, rig.spineMidBase, 0.05 + inhale * 0.006, 0, 0.02);
+  applyOptional(rig.spineUpper, rig.spineUpperBase, 0.09 + inhale * 0.011, 0.02, 0.03);
+  applyOptional(rig.neck, rig.neckBase, -0.02 - inhale * 0.002, 0, 0);
+  applyOptional(rig.head, rig.headBase, -0.03 - inhale * 0.003, 0.02, 0);
+  applyOptional(rig.rightClavicle, rig.rightClavicleBase, 0.16 + inhale * 0.005, -0.2, 0.12);
+  applyOptional(rig.leftClavicle, rig.leftClavicleBase, 0.14 + inhale * 0.005, 0.14, -0.06);
 
   // Right knife arm: extended forward with the elbow tucked so the knife sits out
   // in front a little above the waist; the wrist is rolled so the blade points
   // forward and inward, angled across the body toward the centreline.
-  applyBoneOffset(rig.rightUpper, rig.rightUpperBase, -0.04, 0.138, 0.564);
-  applyBoneOffset(rig.rightLower, rig.rightLowerBase, -0.065, -0.025, 0.791);
-  applyBoneOffset(rig.rightHand, rig.rightHandBase, -0.446, 0.69, 0.924);
+  applyBoneOffset(rig.rightUpper, rig.rightUpperBase, -0.04 + inhale * 0.004, 0.138, 0.564);
+  applyBoneOffset(rig.rightLower, rig.rightLowerBase, -0.065 + inhale * 0.003, -0.025, 0.791);
+  offsetEuler.set(-0.12, 0.08, 0.22, 'XYZ');
+  handGripQuat.setFromEuler(offsetEuler);
+  rig.rightHand.quaternion.copy(rig.rightHandBase).multiply(handGripQuat).normalize();
 
-  // Right hand: curl the fingers and thumb into a tight cylinder grip that wraps
+  // Keep the weapon helper stable while the anatomical wrist closes around it.
+  // The menu-only knife rotation below then follows the fist/palm channel rather
+  // than preserving the in-game horizontal blade.
+  offsetEuler.set(-0.446, 0.69, 0.924, 'XYZ');
+  weaponGripQuat.setFromEuler(offsetEuler);
+  rig.rightWeaponHand.quaternion
+    .copy(handGripQuat)
+    .invert()
+    .multiply(rig.rightWeaponHandBase)
+    .multiply(weaponGripQuat)
+    .normalize();
+
+  // Right hand: rotate the anatomical wrist, then curl the fingers and thumb
+  // around the weapon helper that follows it.
   // the knife handle seated in the palm. The knuckles roll over the top of the
   // handle while the mid and tip joints close hard around and under it, so the
   // fingers visibly hug the wooden grip instead of clenching into a featureless
@@ -224,15 +360,16 @@ export function applyKnifeIdlePose(rig: ArmRig): void {
   // curl); here the fingers close, so re-seating the knife into the finger-curl
   // pocket makes the fist grip the handle convincingly — without touching the
   // in-game third-person hold.
-  const menuKnife = rig.rightHand.getObjectByName('RemoteKnifeModel');
+  const menuKnife = rig.rightWeaponHand.getObjectByName('RemoteKnifeModel');
   if (menuKnife) {
     menuKnife.position.copy(MENU_KNIFE_GRIP_POSITION);
+    menuKnife.rotation.copy(MENU_KNIFE_GRIP_ROTATION);
   }
 
   // Left support hand: relaxed and slightly forward at belt height on its own
-  // side (a loose guard that reads naturally through the yaw sway).
-  applyOptional(rig.leftUpper, rig.leftUpperBase, 0.021, -0.099, 0.411);
-  applyOptional(rig.leftLower, rig.leftLowerBase, -0.067, -0.062, 1.031);
+  // side, with only the restrained breathing offsets above keeping it alive.
+  applyOptional(rig.leftUpper, rig.leftUpperBase, 0.021 + inhale * 0.005, -0.099, 0.411);
+  applyOptional(rig.leftLower, rig.leftLowerBase, -0.067 + inhale * 0.004, -0.062, 1.031);
   applyOptional(rig.leftHand, rig.leftHandBase, 0, 0, 0);
 }
 

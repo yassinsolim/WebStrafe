@@ -187,7 +187,7 @@ export class MainMenu {
     footer.className = 'menu-foot';
     const help = document.createElement('p');
     help.className = 'menu-help';
-    help.textContent = 'WASD + Mouse · Space jump · 1/2/3 weapons · R reload · Esc menu';
+    help.textContent = 'WASD + Mouse · Space jump · 1 AWP · 2 Deagle · 3 Knife · R reload · Esc menu';
     footer.appendChild(help);
     footer.appendChild(this.buildCredits());
     left.appendChild(footer);
@@ -388,8 +388,8 @@ export class MainMenu {
       'Knife animated by DJMaesen — CC Attribution.',
       '"CTM_SAS | CS2 Agent Model" (skfb.ly/oRO6P) by Alex — CC Attribution.',
       '"PHOENIX | CS2 Agent Model" (skfb.ly/oQyER) by Alex — CC Attribution.',
-      'Deagle gun mesh from "Desert Eagle | First Person Animations" by 1Matzh — CC Attribution.',
-      'AWP viewmodel: custom low-poly model; first-person arms from the knife (DJMaesen).',
+      '"Desert Eagle | First Person Animations" rig by 1Matzh — CC Attribution.',
+      '"AWP with Anims" rig by Addison Ye (sketchfab.com/redethox) — CC Attribution.',
     ];
     for (const text of lines) {
       const p = document.createElement('p');

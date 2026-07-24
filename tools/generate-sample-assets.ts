@@ -36,9 +36,9 @@ async function generateSampleMaps(): Promise<void> {
       source: 'https://github.com/OuiSURF/Surf_Maps',
       license: 'Original placeholder training geometry',
       obj: buildMovementTestObj(),
-      spawn: [0, 4, 16],
+      spawn: [0, 0.04, 56],
       yawDeg: 0,
-      attribution: 'Original geometry shipped with WebStrafe for movement acceptance diagnostics.',
+      attribution: 'Original movement and firearm practice geometry shipped with WebStrafe.',
     },
     {
       id: 'training_straight',
@@ -308,14 +308,32 @@ function buildSwitchbackTrainingObj(): string {
 function buildMovementTestObj(): string {
   return [
     '# movement_test_scene',
+    'o safety_catch_floor',
+    cuboid(-260, -32, -260, 260, -12, 260, 1),
     'o floor',
-    quad([-45, 0, -45], [45, 0, -45], [45, 0, 45], [-45, 0, 45], 1),
-    'o surf_left',
-    quad([-26, 14, -14], [-16, -3, -14], [-16, -3, 6], [-26, 14, 6], 5),
-    'o surf_right',
-    quad([16, -3, 8], [26, 14, 8], [26, 14, 28], [16, -3, 28], 9),
-    'o jump_pad',
-    quad([-6, 4, -28], [6, 4, -28], [6, 4, -16], [-6, 4, -16], 13),
+    cuboid(-110, -2, -110, 110, 0, 110, 9),
+    'o firearm_backstop',
+    cuboid(-15, 0, 25.5, 15, 6.5, 26.5, 17),
+    'o range_wall_left',
+    cuboid(-15.5, 0, 25, -14.5, 4, 52, 25),
+    'o range_wall_right',
+    cuboid(14.5, 0, 25, 15.5, 4, 52, 33),
+    'o peek_cover',
+    cuboid(-5.5, 0, 49.2, -1, 3.2, 50.4, 41),
+    'o impact_panel',
+    cuboid(5.9, 0, 40.6, 10.1, 4.2, 41.4, 49),
+    'o bot_staging_pad',
+    cuboid(-2, 0, 42.9, 2, 0.4, 46.1, 57),
+    'o body_reference',
+    cuboid(-0.9, 0.555, 26.52, 0.9, 1.805, 26.64, 65),
+    'o head_reference',
+    cuboid(-0.36, 1.88, 26.52, 0.36, 2.36, 26.64, 73),
+    'o walkable_ramp_26deg',
+    rotatedCuboidZ(30, 8, 24, 26, [-48, 5.5, 18], 81),
+    'o surf_ramp_56deg',
+    rotatedCuboidZ(34, 10, 30, 56, [16, 7.2, 2], 89),
+    'o steep_ramp_78deg',
+    rotatedCuboidZ(26, 10, 24, 78, [62, 8.8, -12], 97),
   ].join('\n');
 }
 
@@ -379,6 +397,52 @@ function cuboid(
   ] as const;
   return [
     ...v.map((p) => `v ${p[0]} ${p[1]} ${p[2]}`),
+    `f ${indexStart} ${indexStart + 1} ${indexStart + 2}`,
+    `f ${indexStart} ${indexStart + 2} ${indexStart + 3}`,
+    `f ${indexStart + 4} ${indexStart + 6} ${indexStart + 5}`,
+    `f ${indexStart + 4} ${indexStart + 7} ${indexStart + 6}`,
+    `f ${indexStart} ${indexStart + 4} ${indexStart + 5}`,
+    `f ${indexStart} ${indexStart + 5} ${indexStart + 1}`,
+    `f ${indexStart + 1} ${indexStart + 5} ${indexStart + 6}`,
+    `f ${indexStart + 1} ${indexStart + 6} ${indexStart + 2}`,
+    `f ${indexStart + 2} ${indexStart + 6} ${indexStart + 7}`,
+    `f ${indexStart + 2} ${indexStart + 7} ${indexStart + 3}`,
+    `f ${indexStart + 3} ${indexStart + 7} ${indexStart + 4}`,
+    `f ${indexStart + 3} ${indexStart + 4} ${indexStart}`,
+  ].join('\n');
+}
+
+function rotatedCuboidZ(
+  width: number,
+  height: number,
+  depth: number,
+  angleDeg: number,
+  position: [number, number, number],
+  indexStart: number,
+): string {
+  const halfWidth = width * 0.5;
+  const halfHeight = height * 0.5;
+  const halfDepth = depth * 0.5;
+  const angle = angleDeg * Math.PI / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const local = [
+    [-halfWidth, -halfHeight, -halfDepth],
+    [halfWidth, -halfHeight, -halfDepth],
+    [halfWidth, halfHeight, -halfDepth],
+    [-halfWidth, halfHeight, -halfDepth],
+    [-halfWidth, -halfHeight, halfDepth],
+    [halfWidth, -halfHeight, halfDepth],
+    [halfWidth, halfHeight, halfDepth],
+    [-halfWidth, halfHeight, halfDepth],
+  ] as const;
+  const vertices = local.map(([x, y, z]) => [
+    position[0] + x * cos - y * sin,
+    position[1] + x * sin + y * cos,
+    position[2] + z,
+  ]);
+  return [
+    ...vertices.map((point) => `v ${point[0]} ${point[1]} ${point[2]}`),
     `f ${indexStart} ${indexStart + 1} ${indexStart + 2}`,
     `f ${indexStart} ${indexStart + 2} ${indexStart + 3}`,
     `f ${indexStart + 4} ${indexStart + 6} ${indexStart + 5}`,

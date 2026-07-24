@@ -4,13 +4,13 @@
   "author": "WebStrafe Team",
   "source": "https://github.com/OuiSURF/Surf_Maps",
   "license": "Original placeholder training geometry",
-  "attribution": "Original geometry shipped with WebStrafe for movement acceptance diagnostics.",
+  "attribution": "Original movement and firearm practice geometry shipped with WebStrafe.",
   "spawns": [
     {
       "position": [
         0,
-        4,
-        16
+        0.04,
+        56
       ],
       "yawDeg": 0
     }

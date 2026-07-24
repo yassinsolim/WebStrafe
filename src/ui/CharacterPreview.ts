@@ -17,38 +17,48 @@ import {
   WebGLRenderer,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { applyKnifeIdlePose, attachKnifeModel, buildArmRig, loadKnifeMesh } from '../multiplayer/playerRig';
+import {
+  addPlayerEyeDetails,
+  applyKnifeIdlePose,
+  attachKnifeModel,
+  buildArmRig,
+  loadKnifeMesh,
+  type ArmRig,
+} from '../multiplayer/playerRig';
 
 const TARGET_HEIGHT = 1.85;
 const TAU = Math.PI * 2;
+const FRAME_PADDING = 1.18;
 
-export interface OscillationOptions {
-  amplitudeRad?: number;
-  periodMs?: number;
-  phase?: number;
+/** Slow normalized breathing cycle for the preview skeleton. */
+export function previewBreath(elapsedMs: number, periodMs = 4400): number {
+  return Math.sin((elapsedMs / periodMs) * TAU);
 }
 
-/**
- * Gentle side-to-side yaw for the menu character: an eased sine sweep, not a
- * full spin. Pure and deterministic so it can be unit-tested.
- */
-export function previewYaw(elapsedMs: number, opts: OscillationOptions = {}): number {
-  const { amplitudeRad = 0.62, periodMs = 7200, phase = 0 } = opts;
-  return Math.sin((elapsedMs / periodMs) * TAU + phase) * amplitudeRad;
-}
-
-/** Subtle vertical breathing bob (metres). Pure. */
-export function previewBob(elapsedMs: number, amplitude = 0.018, periodMs = 3600): number {
-  return Math.sin((elapsedMs / periodMs) * TAU) * amplitude;
+/** Camera distance that fits a complete bounding box in a perspective frame. */
+export function previewCameraDistance(
+  width: number,
+  height: number,
+  depth: number,
+  aspect: number,
+  verticalFovDeg: number,
+  padding = FRAME_PADDING,
+): number {
+  const verticalFov = (verticalFovDeg * Math.PI) / 180;
+  const safeAspect = Math.max(0.1, aspect);
+  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * safeAspect);
+  const verticalDistance = (height * 0.5 * padding) / Math.tan(verticalFov / 2);
+  const horizontalDistance = (width * 0.5 * padding) / Math.tan(horizontalFov / 2);
+  return Math.max(verticalDistance, horizontalDistance) + depth * 0.5;
 }
 
 const loader = new GLTFLoader();
 
 /**
  * Self-contained 3D character stage for the main menu. Owns its own transparent
- * WebGL renderer + scene, loads a player model GLB, and animates a slow,
- * elegant yaw oscillation with a soft rim light. Paused while hidden to save
- * the GPU. Completely independent of the game's renderer.
+ * WebGL renderer + scene, loads a player model GLB, and animates a restrained
+ * breathing pose with a soft rim light. Paused while hidden to save the GPU.
+ * Completely independent of the game's renderer.
  */
 export class CharacterPreview {
   private readonly renderer: WebGLRenderer;
@@ -56,6 +66,8 @@ export class CharacterPreview {
   private readonly camera: PerspectiveCamera;
   private readonly pivot = new Group();
   private current: Object3D | null = null;
+  private currentBounds: Box3 | null = null;
+  private currentRig: ArmRig | null = null;
   private loadToken = 0;
   private knifePromise: Promise<Object3D | null> | null = null;
   private rafHandle: number | null = null;
@@ -124,6 +136,7 @@ export class CharacterPreview {
 
     this.clearModel();
     normalizeToHeight(root, TARGET_HEIGHT);
+    addPlayerEyeDetails(root);
     root.traverse((child) => {
       if (child instanceof Mesh) {
         child.castShadow = false;
@@ -148,12 +161,16 @@ export class CharacterPreview {
       if (token !== this.loadToken) {
         return; // superseded while the knife loaded
       }
-      attachKnifeModel(rig.rightHand, knife);
+      attachKnifeModel(rig.rightWeaponHand, knife);
       applyKnifeIdlePose(rig);
+      this.currentRig = rig;
     }
 
     this.current = root;
     this.pivot.add(root);
+    root.updateWorldMatrix(true, true);
+    this.currentBounds = new Box3().setFromObject(root);
+    this.frameCurrentModel();
   }
 
   private getKnife(): Promise<Object3D | null> {
@@ -163,7 +180,7 @@ export class CharacterPreview {
     return this.knifePromise;
   }
 
-  /** Extra static yaw applied on top of the oscillation (radians). */
+  /** Static model yaw in radians. */
   setBaseYaw(yaw: number): void {
     this.baseYaw = yaw;
   }
@@ -179,8 +196,11 @@ export class CharacterPreview {
         return;
       }
       const elapsed = performance.now() - this.startTime;
-      this.pivot.rotation.y = this.baseYaw + previewYaw(elapsed);
-      this.pivot.position.y = previewBob(elapsed);
+      this.pivot.rotation.y = this.baseYaw;
+      this.pivot.position.y = 0;
+      if (this.currentRig) {
+        applyKnifeIdlePose(this.currentRig, previewBreath(elapsed));
+      }
       this.renderer.render(this.scene, this.camera);
       this.rafHandle = requestAnimationFrame(loop);
     };
@@ -208,6 +228,8 @@ export class CharacterPreview {
       return;
     }
     this.pivot.remove(this.current);
+    this.currentBounds = null;
+    this.currentRig = null;
     // The attached knife is a clone that SHARES geometry/materials with the
     // cached knife template — detach it so we don't dispose those shared
     // resources (which would break the knife on the next model load).
@@ -231,6 +253,25 @@ export class CharacterPreview {
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    this.frameCurrentModel();
+  }
+
+  private frameCurrentModel(): void {
+    if (!this.currentBounds) {
+      return;
+    }
+    const size = this.currentBounds.getSize(new Vector3());
+    const center = this.currentBounds.getCenter(new Vector3());
+    const distance = previewCameraDistance(
+      size.x,
+      size.y,
+      size.z,
+      this.camera.aspect,
+      this.camera.fov,
+    );
+    const targetY = center.y - size.y * 0.025;
+    this.camera.position.set(center.x, targetY, center.z + distance);
+    this.camera.lookAt(center.x, targetY, center.z);
   }
 }
 

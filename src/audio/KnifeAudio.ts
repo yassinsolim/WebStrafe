@@ -11,12 +11,12 @@ const SOUND_CONFIG: Record<KnifeSoundProfile, AudioLaneConfig> = {
   knifeGloves1: {
     primary: ['/audio/knife1_primary_1.ogg', '/audio/knife1_primary_2.ogg'],
     secondary: ['/audio/knife1_secondary_1.ogg', '/audio/knife1_secondary_2.ogg'],
-    baseVolume: 0.5,
+    baseVolume: 0.32,
   },
   knifeGloves2: {
     primary: ['/audio/knife2_primary_1.ogg', '/audio/knife2_primary_2.ogg'],
     secondary: ['/audio/knife2_secondary_1.ogg', '/audio/knife2_secondary_2.ogg'],
-    baseVolume: 0.48,
+    baseVolume: 0.3,
   },
 };
 
@@ -61,10 +61,24 @@ export class KnifeAudio {
     const clampedVolume = Math.max(0, Math.min(1, baseVolume * Math.max(0, volumeScale)));
     audio.volume = clampedVolume;
     audio.currentTime = 0;
-    audio.playbackRate = 0.95 + Math.random() * 0.12;
+    audio.playbackRate = 0.9 + Math.random() * 0.04;
     void audio.play().catch(() => {
       // Ignore autoplay/user-gesture restrictions; next user input usually succeeds.
     });
+  }
+
+
+  public stopAll(): void {
+    for (const pool of Object.values(this.pools)) {
+      for (const audio of [...pool.primary, ...pool.secondary]) {
+        audio.pause();
+        audio.currentTime = 0;
+      }
+    }
+  }
+
+  public dispose(): void {
+    this.stopAll();
   }
 
   private createProfilePool(profile: KnifeSoundProfile): ProfilePool {

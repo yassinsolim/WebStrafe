@@ -13,6 +13,13 @@ dist-ssr
 *.local
 .cache
 data/leaderboard.json
+/.artifacts/
+/.goals/
+/.playwright-mcp/
+/.serena/
+/docs/qa/
+/tests/qa-iteration5-visual.mjs
+/tests/qa-screenshots/
 /map_custom.glb
 /knife_viewmodel.glb
 /knife_animated.glb

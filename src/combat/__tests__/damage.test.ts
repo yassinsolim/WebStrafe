@@ -4,6 +4,7 @@ import { getWeapon } from '../weapons';
 
 const awp = getWeapon('awp');
 const deagle = getWeapon('deagle');
+const knife = getWeapon('knife');
 
 describe('falloffMultiplier', () => {
   it('is 1 for weapons without falloff (AWP)', () => {
@@ -56,6 +57,12 @@ describe('computeDamage', () => {
 
   it('deals 0 just beyond effective range', () => {
     expect(computeDamage({ weapon: deagle, hitbox: 'body', distance: deagle.range + 1 })).toBe(0);
+    expect(computeDamage({ weapon: knife, hitbox: 'body', distance: knife.range + 0.01 })).toBe(0);
+  });
+
+  it('keeps knife damage inside a close meter-scale reach', () => {
+    expect(knife.range).toBe(1.45);
+    expect(computeDamage({ weapon: knife, hitbox: 'body', distance: knife.range })).toBe(knife.damage);
   });
 
   it('AWP (infinite range) still deals full damage at extreme distance', () => {

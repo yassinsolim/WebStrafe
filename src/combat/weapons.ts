@@ -1,3 +1,5 @@
+import { FIREARM_TIMINGS } from './FirearmTiming';
+
 export type WeaponId = 'awp' | 'deagle' | 'knife';
 
 export type WeaponSlot = 'primary' | 'secondary' | 'melee';
@@ -39,9 +41,9 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     damage: 115,
     headshotMultiplier: 1.5,
     range: Infinity,
-    fireIntervalMs: 1500,
+    fireIntervalMs: FIREARM_TIMINGS.awp.fireIntervalMs,
     magazine: 10,
-    reloadMs: 3700,
+    reloadMs: FIREARM_TIMINGS.awp.reloadMs,
   },
   deagle: {
     id: 'deagle',
@@ -50,9 +52,9 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     damage: 63,
     headshotMultiplier: 2,
     range: 4096,
-    fireIntervalMs: 225,
+    fireIntervalMs: FIREARM_TIMINGS.deagle.fireIntervalMs,
     magazine: 7,
-    reloadMs: 2200,
+    reloadMs: FIREARM_TIMINGS.deagle.reloadMs,
     falloff: { start: 512, end: 3072, minMultiplier: 0.55 },
   },
   knife: {
@@ -61,7 +63,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     slot: 'melee',
     damage: 55,
     headshotMultiplier: 1.6,
-    range: 96,
+    range: 1.45,
     fireIntervalMs: 400,
     magazine: 0,
     reloadMs: 0,

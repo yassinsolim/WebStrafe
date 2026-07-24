@@ -19,7 +19,7 @@ export interface TargetCapsule {
 export interface HitCandidate {
   targetId: string;
   hitbox: Hitbox;
-  /** Distance from ray origin to the hit, in world units. */
+  /** Distance from ray origin to the capsule's visible entry surface. */
   distance: number;
 }
 
@@ -104,13 +104,19 @@ export function resolveHit(
     const b = new Vector3().copy(a).addScaledVector(UP, target.height);
     const { distanceAlongRay, gap, segT } = closestRayToSegment(origin, direction, a, b);
     if (gap > target.radius) continue;
-    if (distanceAlongRay <= 0 || distanceAlongRay > maxRange) continue;
+    if (distanceAlongRay <= 0) continue;
 
     const headFraction = target.headFraction ?? 0.18;
     const hitbox: Hitbox = segT >= 1 - headFraction ? 'head' : 'body';
+    // The closest-point distance lands on the capsule's center axis. Using it
+    // as the visual endpoint buried impact effects inside remote models (or
+    // inside the local victim's camera). Move back to the ray's near surface.
+    const surfaceOffset = Math.sqrt(Math.max(0, target.radius ** 2 - gap ** 2));
+    const surfaceDistance = Math.max(0, distanceAlongRay - surfaceOffset);
+    if (surfaceDistance > maxRange) continue;
 
-    if (!best || distanceAlongRay < best.distance) {
-      best = { targetId: target.id, hitbox, distance: distanceAlongRay };
+    if (!best || surfaceDistance < best.distance) {
+      best = { targetId: target.id, hitbox, distance: surfaceDistance };
     }
   }
 

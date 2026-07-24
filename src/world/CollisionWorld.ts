@@ -1,6 +1,7 @@
 import {
   Box3,
   BufferGeometry,
+  DoubleSide,
   Float32BufferAttribute,
   Line3,
   MathUtils,
@@ -19,6 +20,12 @@ export interface TraceResult {
   fraction: number;
   normal: Vector3;
   position: Vector3;
+}
+
+export interface WorldRayHit {
+  point: Vector3;
+  normal: Vector3;
+  distance: number;
 }
 
 export interface CollisionAdapter {
@@ -98,6 +105,10 @@ export class CollisionWorld implements CollisionAdapter {
         opacity: 0.08,
         depthWrite: false,
         visible: false,
+        // Imported collision meshes are authored for capsule queries, where
+        // winding is irrelevant. LOS and firearm rays must still hit either
+        // side (notably the generated range floor, whose top is back-facing).
+        side: DoubleSide,
       }),
     );
     this.collisionMesh.name = 'CollisionMesh';
@@ -110,21 +121,37 @@ export class CollisionWorld implements CollisionAdapter {
    * is blocked by collision geometry. Uses the BVH raycaster (not the capsule
    * sweep), so it never tunnels through thin walls regardless of segment length.
    */
-  public segmentIntersectsGeometry(from: Vector3, to: Vector3): boolean {
-    if (!this.collisionMesh) {
-      return false;
+  /** Returns the first world-geometry hit for a ray, including impact normal. */
+  public raycastGeometry(from: Vector3, direction: Vector3, maxDistance: number): WorldRayHit | null {
+    if (!this.collisionMesh || maxDistance <= 0 || direction.lengthSq() < 1e-12) {
+      return null;
     }
+    const normalized = this.tempPush.copy(direction).normalize();
+    this.losRaycaster.set(from, normalized);
+    this.losRaycaster.near = 0;
+    this.losRaycaster.far = maxDistance;
+    this.losRaycaster.firstHitOnly = true;
+    const hit = this.losRaycaster.intersectObject(this.collisionMesh, false)[0];
+    if (!hit) {
+      return null;
+    }
+    const normal = hit.face?.normal.clone().normalize() ?? UP.clone();
+    // Always face the impact normal back toward the incoming ray so decals and
+    // sparks sit on the player-visible surface even for back-face hits.
+    if (normal.dot(normalized) > 0) {
+      normal.negate();
+    }
+    return {
+      point: hit.point.clone(),
+      normal,
+      distance: hit.distance,
+    };
+  }
+
+  public segmentIntersectsGeometry(from: Vector3, to: Vector3): boolean {
     const delta = this.tempPush.copy(to).sub(from);
     const distance = delta.length();
-    if (distance < 1e-6) {
-      return false;
-    }
-    delta.multiplyScalar(1 / distance);
-    this.losRaycaster.set(from, delta);
-    this.losRaycaster.near = 0;
-    this.losRaycaster.far = distance;
-    this.losRaycaster.firstHitOnly = true;
-    return this.losRaycaster.intersectObject(this.collisionMesh, false).length > 0;
+    return distance >= 1e-6 && this.raycastGeometry(from, delta, distance) !== null;
   }
 
   public resolveCapsulePosition(feetPosition: Vector3, capsule: CapsuleShape): OverlapResult {

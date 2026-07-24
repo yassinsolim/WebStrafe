@@ -15,6 +15,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { AttackKind, MultiplayerSnapshotPlayer, PlayerModel } from '../network/types';
 import {
+  addPlayerEyeDetails,
   applyKnifeIdlePose,
   attachKnifeModel,
   buildArmRig,
@@ -43,6 +44,10 @@ const MODEL_PATHS: Record<PlayerModel, string> = {
 
 const MODEL_YAW_OFFSET = Math.PI;
 const SWING_DURATION_SEC = 0.28;
+export const REMOTE_POSITION_SMOOTHING_RATE = 14;
+export const REMOTE_PRESENTATION_DELAY_MS = Math.round(
+  1000 / REMOTE_POSITION_SMOOTHING_RATE,
+);
 
 const gltfLoader = new GLTFLoader();
 
@@ -76,7 +81,7 @@ export class RemotePlayersRenderer {
   }
 
   public update(dt: number): void {
-    const smoothing = 1 - Math.exp(-dt * 14);
+    const smoothing = 1 - Math.exp(-dt * REMOTE_POSITION_SMOOTHING_RATE);
     const nowSec = performance.now() * 0.001;
 
     for (const actor of this.actors.values()) {
@@ -192,7 +197,7 @@ export class RemotePlayersRenderer {
     const clone = cloneSkeleton(template);
     const rig = buildArmRig(clone);
     if (rig) {
-      attachKnifeModel(rig.rightHand, this.knifeTemplate);
+      attachKnifeModel(rig.rightWeaponHand, this.knifeTemplate);
     }
 
     return {
@@ -271,6 +276,7 @@ export class RemotePlayersRenderer {
     root.updateWorldMatrix(true, true);
 
     normalizeTemplateToPlayerHeight(root);
+    addPlayerEyeDetails(root);
 
     root.traverse((child) => {
       if (!(child instanceof Mesh)) {

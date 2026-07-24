@@ -60,6 +60,21 @@ describe('WeaponController', () => {
     expect(wc.getAmmo()).toBe(deagle.magazine);
   });
 
+  it.each(['deagle', 'awp'] as const)(
+    'refills %s exactly at its visible reload completion',
+    (weaponId) => {
+      const def = getWeapon(weaponId);
+      const wc = new WeaponController(weaponId);
+      wc.tryFire(0);
+      expect(wc.reload(100)).toBe(true);
+      wc.update(100 + def.reloadMs - 1);
+      expect(wc.getAmmo()).toBe(def.magazine - 1);
+      wc.update(100 + def.reloadMs);
+      expect(wc.getAmmo()).toBe(def.magazine);
+      expect(wc.isReloading(100 + def.reloadMs)).toBe(false);
+    },
+  );
+
   it('cannot fire while reloading', () => {
     const wc = new WeaponController('deagle');
     wc.tryFire(0);
@@ -89,5 +104,21 @@ describe('WeaponController', () => {
     expect(wc.isReloading(200)).toBe(true);
     wc.equip('awp');
     expect(wc.isReloading(200)).toBe(false);
+  });
+
+  it('restores every magazine and cancels transient state on respawn', () => {
+    const wc = new WeaponController('deagle');
+    wc.tryFire(0);
+    wc.equip('awp');
+    wc.tryFire(1_000);
+    wc.reload(1_100);
+
+    wc.reset();
+
+    expect(wc.getActive()).toBe('awp');
+    expect(wc.getAmmo('deagle')).toBe(getWeapon('deagle').magazine);
+    expect(wc.getAmmo('awp')).toBe(getWeapon('awp').magazine);
+    expect(wc.isReloading(1_100)).toBe(false);
+    expect(wc.tryFire(1_100).fired).toBe(true);
   });
 });

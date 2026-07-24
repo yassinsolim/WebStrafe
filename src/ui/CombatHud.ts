@@ -1,5 +1,10 @@
 import type { KillFeed } from '../combat/KillFeed';
 import { getWeapon, type WeaponId } from '../combat/weapons';
+import {
+  HitmarkerFeedback,
+  type HitmarkerSnapshot,
+  type HitmarkerTrigger,
+} from './HitmarkerFeedback';
 
 /**
  * DOM overlay for combat: health bar, weapon/ammo readout, a transient
@@ -11,10 +16,15 @@ export class CombatHud {
   private readonly healthFill: HTMLDivElement;
   private readonly healthText: HTMLSpanElement;
   private readonly ammoText: HTMLDivElement;
+  private readonly practiceGuide: HTMLDivElement;
+  private readonly audioStatus: HTMLSpanElement;
   private readonly hitmarker: HTMLDivElement;
+  private readonly incomingCue: HTMLDivElement;
   private readonly killFeedEl: HTMLDivElement;
   private readonly deathBanner: HTMLDivElement;
-  private hitmarkerTimer: number | null = null;
+  private readonly hitmarkerFeedback = new HitmarkerFeedback();
+  private lastHitmarkerSequence = 0;
+  private incomingCueExpiresAtMs = 0;
   private lastKillFeedSig = '';
 
   constructor(parent: HTMLElement) {
@@ -37,11 +47,30 @@ export class CombatHud {
     this.ammoText.className = 'combat-ammo';
     this.ammoText.textContent = '';
 
+    // Player-facing range drill: normal controls and real world geometry only.
+    this.practiceGuide = document.createElement('div');
+    this.practiceGuide.className = 'combat-practice-guide';
+    this.practiceGuide.hidden = true;
+    this.practiceGuide.innerHTML = [
+      '<strong>FIREARM RANGE</strong>  1 AWP · 2 Deagle · 3 Knife · R reload · wheel cycles · Esc menu',
+      '<span>Center bot = body · gold head = headshot · orange cover breaks LOS · tan panel / floor show impacts</span>',
+    ].join('<br>');
+    this.audioStatus = document.createElement('span');
+    this.audioStatus.className = 'combat-audio-status starting';
+    this.audioStatus.textContent = 'AUDIO STARTING';
+    this.practiceGuide.append(document.createElement('br'), this.audioStatus);
+
     // Hitmarker (center)
     this.hitmarker = document.createElement('div');
     this.hitmarker.className = 'combat-hitmarker';
-    this.hitmarker.textContent = '✕';
+    this.hitmarker.hidden = true;
+    this.hitmarker.setAttribute('role', 'status');
+    this.hitmarker.setAttribute('aria-live', 'polite');
+    this.hitmarker.setAttribute('aria-atomic', 'true');
     this.hitmarker.style.opacity = '0';
+
+    this.incomingCue = document.createElement('div');
+    this.incomingCue.className = 'combat-incoming-cue';
 
     // Kill feed (top-right)
     this.killFeedEl = document.createElement('div');
@@ -56,6 +85,8 @@ export class CombatHud {
     this.root.append(
       healthWrap,
       this.ammoText,
+      this.practiceGuide,
+      this.incomingCue,
       this.hitmarker,
       this.killFeedEl,
       this.deathBanner,
@@ -67,33 +98,107 @@ export class CombatHud {
     this.root.style.display = visible ? 'block' : 'none';
   }
 
-  setHealth(health: number, alive: boolean): void {
+  setHealth(health: number, alive: boolean, showDeath = !alive): void {
     const clamped = Math.max(0, Math.min(100, Math.round(health)));
     this.healthFill.style.width = `${clamped}%`;
     this.healthText.textContent = String(clamped);
     this.healthFill.classList.toggle('low', clamped <= 25);
-    this.deathBanner.style.display = alive ? 'none' : 'block';
+    this.deathBanner.style.display = !alive && showDeath ? 'block' : 'none';
   }
 
-  setWeapon(weaponId: WeaponId, ammo: number): void {
+  setDeathVisible(visible: boolean): void {
+    this.deathBanner.style.display = visible ? 'block' : 'none';
+  }
+
+  setWeapon(weaponId: WeaponId, ammo: number, reloading = false): void {
     const def = getWeapon(weaponId);
     const ammoStr = Number.isFinite(ammo) ? String(ammo) : '∞';
-    this.ammoText.textContent = `${def.name}  ${ammoStr}`;
+    this.ammoText.textContent = `${def.name}  ${ammoStr}${reloading ? ' · RELOADING' : ''}`;
   }
 
-  flashHitmarker(headshot: boolean): void {
-    this.hitmarker.classList.toggle('headshot', headshot);
+  setPracticeGuide(visible: boolean): void {
+    this.practiceGuide.hidden = !visible;
+  }
+
+  setAudioStatus(status: 'running' | 'suspended' | 'unavailable' | 'error'): void {
+    this.audioStatus.className = `combat-audio-status ${status}`;
+    this.audioStatus.textContent = status === 'running'
+      ? 'AUDIO READY'
+      : status === 'suspended'
+        ? 'AUDIO NEEDS GESTURE'
+        : status === 'unavailable'
+          ? 'AUDIO UNAVAILABLE · VISUAL FEEDBACK ACTIVE'
+          : 'AUDIO ERROR · SEE CONSOLE';
+  }
+
+  public flashHitmarker(kind: HitmarkerTrigger, nowMs = performance.now()): void {
+    this.renderHitmarker(this.hitmarkerFeedback.trigger(kind, nowMs), nowMs);
+  }
+
+  public flashIncomingDamage(fatal: boolean, nowMs = performance.now()): void {
+    this.incomingCueExpiresAtMs = nowMs + (fatal ? 780 : 380);
+    this.incomingCue.classList.remove('nonfatal', 'fatal', 'is-active');
+    this.incomingCue.classList.add(fatal ? 'fatal' : 'nonfatal');
+    void this.incomingCue.offsetWidth;
+    this.incomingCue.classList.add('is-active');
+  }
+
+  private renderHitmarker(state: HitmarkerSnapshot, nowMs: number): void {
+    const kind = state.kind;
+    this.hitmarker.classList.remove('normal', 'headshot', 'kill', 'is-active');
+    this.hitmarker.classList.add(kind);
+    this.hitmarker.hidden = false;
+    this.hitmarker.textContent = kind === 'kill' ? '✦' : kind === 'headshot' ? '◆' : '✕';
+    this.hitmarker.setAttribute(
+      'aria-label',
+      kind === 'kill' ? 'Kill confirmed' : kind === 'headshot' ? 'Headshot' : 'Body hit',
+    );
+    this.hitmarker.style.setProperty('--hit-chain-scale', String(1 + (state.chainCount - 1) * 0.12));
+    const phaseMs = Math.max(180, state.phaseEndsAtMs - nowMs);
+    this.hitmarker.style.setProperty('--hitmarker-phase-ms', `${Math.round(phaseMs)}ms`);
+    // Force the short keyframe to restart even if multiple hit events land in one frame.
+    void this.hitmarker.offsetWidth;
+    this.hitmarker.classList.add('is-active');
     this.hitmarker.style.opacity = '1';
-    if (this.hitmarkerTimer !== null) {
-      window.clearTimeout(this.hitmarkerTimer);
-    }
-    this.hitmarkerTimer = window.setTimeout(() => {
-      this.hitmarker.style.opacity = '0';
-      this.hitmarkerTimer = null;
-    }, 120);
+    this.lastHitmarkerSequence = state.sequence;
   }
 
   /** Re-renders the kill feed from the pure model. Cheap no-op when unchanged. */
+  public update(nowMs: number): void {
+    const state = this.hitmarkerFeedback.get(nowMs);
+    if (state.sequence !== this.lastHitmarkerSequence) {
+      this.lastHitmarkerSequence = state.sequence;
+      if (state.active) {
+        this.renderHitmarker(state, nowMs);
+      }
+    }
+    if (!state.active) {
+      this.hitmarker.classList.remove('is-active');
+      this.hitmarker.style.opacity = '0';
+      this.hitmarker.hidden = true;
+      this.hitmarker.textContent = '';
+      this.hitmarker.removeAttribute('aria-label');
+    }
+    if (this.incomingCueExpiresAtMs > 0 && nowMs >= this.incomingCueExpiresAtMs) {
+      this.incomingCueExpiresAtMs = 0;
+      this.incomingCue.classList.remove('nonfatal', 'fatal', 'is-active');
+    }
+  }
+
+  public clearTransient(preserveIncoming = false): void {
+    const state = this.hitmarkerFeedback.clear();
+    this.lastHitmarkerSequence = state.sequence;
+    this.hitmarker.classList.remove('normal', 'headshot', 'kill', 'is-active');
+    this.hitmarker.style.opacity = '0';
+    this.hitmarker.hidden = true;
+    this.hitmarker.textContent = '';
+    this.hitmarker.removeAttribute('aria-label');
+    if (!preserveIncoming) {
+      this.incomingCueExpiresAtMs = 0;
+      this.incomingCue.classList.remove('nonfatal', 'fatal', 'is-active');
+    }
+  }
+
   renderKillFeed(feed: KillFeed, nowMs: number): void {
     const entries = feed.visible(nowMs);
     // Entries are immutable once added; the visible set only changes when one is
@@ -115,9 +220,7 @@ export class CombatHud {
   }
 
   dispose(): void {
-    if (this.hitmarkerTimer !== null) {
-      window.clearTimeout(this.hitmarkerTimer);
-    }
+    this.hitmarkerFeedback.clear();
     this.root.remove();
   }
 }

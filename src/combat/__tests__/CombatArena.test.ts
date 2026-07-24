@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { CombatArena } from '../CombatArena';
+import {
+  CombatArena,
+  MAX_LAG_COMPENSATION_MS,
+  PLAYER_CAPSULE_RADIUS,
+  SPAWN_PROTECTION_MS,
+} from '../CombatArena';
 import { MAX_HEALTH, RESPAWN_DELAY_MS } from '../CombatState';
 import { getWeapon } from '../weapons';
 
@@ -33,12 +38,76 @@ describe('CombatArena.handleFire', () => {
     expect(out.fired).toBe(true);
     expect(out.hit?.targetId).toBe('target');
     expect(out.hit?.damage).toBeGreaterThan(0);
+    // The endpoint is the near capsule surface, not its hidden center axis.
+    expect(out.impactDistance).toBeCloseTo(10 - PLAYER_CAPSULE_RADIUS, 6);
     expect(a.getHealth('target')).toBe(MAX_HEALTH - out.hit!.damage);
+  });
+
+  it('rewinds an AWP ray to the recent target position the shooter rendered', () => {
+    const a = new CombatArena();
+    a.addPlayer('shooter', 'map1', 'awp');
+    a.addPlayer('target', 'map1', 'deagle');
+    a.setPosition('shooter', [0, 0, 0], 'map1', 1000);
+    a.setPosition('target', [0, 0, -10], 'map1', 1000);
+    a.setPosition('target', [1, 0, -10], 'map1', 1100);
+
+    const out = a.handleFire('shooter', eye, aimAtTarget, 1120, undefined, 1000);
+
+    expect(out.hit).toMatchObject({
+      targetId: 'target',
+      weaponId: 'awp',
+    });
+  });
+
+  it('does not honor a stale client-selected rewind time', () => {
+    const a = new CombatArena();
+    a.addPlayer('shooter', 'map1', 'awp');
+    a.addPlayer('target', 'map1', 'deagle');
+    a.setPosition('shooter', [0, 0, 0], 'map1', 1000);
+    a.setPosition('target', [0, 0, -10], 'map1', 1000);
+    a.setPosition('target', [1, 0, -10], 'map1', 1300);
+
+    const out = a.handleFire(
+      'shooter',
+      eye,
+      aimAtTarget,
+      1300,
+      undefined,
+      1300 - MAX_LAG_COMPENSATION_MS - 1,
+    );
+
+    expect(out.fired).toBe(true);
+    expect(out.hit).toBeUndefined();
+  });
+
+  it('allows a close knife hit but rejects a target beyond arm reach', () => {
+    const close = new CombatArena();
+    close.addPlayer('shooter', 'map1', 'knife');
+    close.addPlayer('target', 'map1', 'knife');
+    close.setPosition('shooter', [0, 0, 0]);
+    close.setPosition('target', [0, 0, -1.7]);
+    expect(close.handleFire('shooter', eye, aimAtTarget, 1000).hit?.targetId).toBe('target');
+
+    const far = new CombatArena();
+    far.addPlayer('shooter', 'map1', 'knife');
+    far.addPlayer('target', 'map1', 'knife');
+    far.setPosition('shooter', [0, 0, 0]);
+    far.setPosition('target', [0, 0, -2]);
+    expect(far.handleFire('shooter', eye, aimAtTarget, 1000).hit).toBeUndefined();
   });
 
   it('misses when aimed away from every target', () => {
     const a = twoPlayers();
     const out = a.handleFire('shooter', eye, [1, 0, 0], 1000);
+    expect(out.fired).toBe(true);
+    expect(out.hit).toBeUndefined();
+    expect(out.impactDistance).toBeUndefined();
+    expect(a.getHealth('target')).toBe(MAX_HEALTH);
+  });
+
+  it('consumes the shot but cannot damage a target behind world geometry', () => {
+    const a = twoPlayers();
+    const out = a.handleFire('shooter', eye, aimAtTarget, 1000, 5);
     expect(out.fired).toBe(true);
     expect(out.hit).toBeUndefined();
     expect(a.getHealth('target')).toBe(MAX_HEALTH);
@@ -99,12 +168,25 @@ describe('CombatArena.handleFire', () => {
     a.addPlayer('target', 'map1', 'deagle');
     a.setPosition('shooter', [0, 0, 0]);
     a.setPosition('target', [0, 0, -10]);
-    const out = a.handleFire('shooter', eye, aimAtTarget, 1000); // AWP one-shots
-    expect(out.death?.victimId).toBe('target');
+    const out = a.handleFire('shooter', eye, aimAtTarget, 1000); // Eye-level AWP headshot one-shots.
+    expect(out.hit).toMatchObject({ killed: true, hitbox: 'head' });
+    expect(out.death).toMatchObject({ victimId: 'target', headshot: true });
     expect(a.isAlive('target')).toBe(false);
     // A dead target is no longer a valid capsule.
     const out2 = a.handleFire('shooter', eye, aimAtTarget, 1000 + getWeapon('awp').fireIntervalMs);
     expect(out2.hit).toBeUndefined();
+  });
+
+
+  it('marks a body-shot kill without headshot metadata', () => {
+    const a = twoPlayers();
+    const bodyAim: [number, number, number] = [0, -0.06, -1];
+    const first = a.handleFire('shooter', eye, bodyAim, 1000);
+    expect(first.hit).toMatchObject({ killed: false, hitbox: 'body' });
+
+    const second = a.handleFire('shooter', eye, bodyAim, 1000 + deagle.fireIntervalMs);
+    expect(second.hit).toMatchObject({ killed: true, hitbox: 'body' });
+    expect(second.death).toMatchObject({ victimId: 'target', headshot: false });
   });
 
   it('cannot fire with an empty magazine', () => {
@@ -147,6 +229,22 @@ describe('CombatArena.tickRespawns', () => {
     const events = a.tickRespawns(1000 + RESPAWN_DELAY_MS, () => [7, 8, 9]);
     expect(events[0].position).toEqual([7, 8, 9]);
   });
+
+  it('supports an immediate authoritative clean re-entry with full ammo', () => {
+    const a = new CombatArena();
+    a.addPlayer('player', 'map1', 'deagle');
+    a.setPosition('player', [0, 0, 0]);
+    a.handleFire('player', eye, [1, 0, 0], 100);
+    expect(a.getAmmo('player')).toBe(deagle.magazine - 1);
+
+    expect(a.resetPlayer('player', 500, [7, 8, 9])).toEqual({
+      playerId: 'player',
+      position: [7, 8, 9],
+    });
+    expect(a.getHealth('player')).toBe(MAX_HEALTH);
+    expect(a.getAmmo('player')).toBe(deagle.magazine);
+    expect(a.isSpawnProtected('player', 501)).toBe(true);
+  });
 });
 
 describe('CombatArena membership', () => {
@@ -173,7 +271,12 @@ describe('CombatArena spawn protection', () => {
     expect(a.isSpawnProtected('target', 1500)).toBe(true);
 
     // After the window, the same shot connects.
-    const landed = a.handleFire('shooter', eye, aimAtTarget, 4000);
+    const landed = a.handleFire(
+      'shooter',
+      eye,
+      aimAtTarget,
+      1000 + SPAWN_PROTECTION_MS,
+    );
     expect(landed.hit?.targetId).toBe('target');
     expect(a.getHealth('target')).toBeLessThan(MAX_HEALTH);
   });

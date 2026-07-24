@@ -21,16 +21,20 @@ import {
   WebGLRenderer,
 } from 'three';
 import { InputManager } from '../core/InputManager';
+import { FixedInputActionBuffer } from '../core/FixedInputActionBuffer';
+import { selectWeaponFromInput } from '../core/GameplayWeaponInput';
 import { MovementController } from '../movement/MovementController';
 import { runMovementAcceptanceDiagnostics } from '../movement/MovementAcceptanceDiagnostics';
 import { logMovementAcceptance } from '../movement/MovementTestScene';
 import type { MovementDebugState } from '../movement/types';
 import { KnifeAudio, type KnifeSoundProfile } from '../audio/KnifeAudio';
+import { GunAudio, type GunAudioStatus } from '../audio/GunAudio';
 import { AttackSoundThrottle } from '../audio/AttackSoundThrottle';
 import { CosmeticsManager } from '../cosmetics/CosmeticsManager';
 import { ViewmodelRenderer } from '../cosmetics/ViewmodelRenderer';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { WeaponViewmodels, type GunId } from '../cosmetics/WeaponViewmodels';
+import { ViewmodelPresentation } from '../cosmetics/ViewmodelPresentation';
 import type { LoadoutSelection } from '../cosmetics/types';
 import { HUD } from '../ui/HUD';
 import { MainMenu } from '../ui/MainMenu';
@@ -40,17 +44,32 @@ import { MultiplayerClient } from '../network/MultiplayerClient';
 import { createMultiplayer } from '../network/createMultiplayer';
 import type { MultiplayerTransport } from '../network/MultiplayerTransport';
 import type { LeaderboardEntry, PlayerModel } from '../network/types';
-import { RemotePlayersRenderer } from '../multiplayer/RemotePlayersRenderer';
+import {
+  REMOTE_PRESENTATION_DELAY_MS,
+  RemotePlayersRenderer,
+} from '../multiplayer/RemotePlayersRenderer';
 import { CombatHud } from '../ui/CombatHud';
+import { planHitConfirmation } from '../ui/HitmarkerFeedback';
 import { CombatEffects } from '../combat/CombatEffects';
+import {
+  createRemoteShotHandler,
+} from '../combat/FirearmShotFeedback';
 import { KillFeed } from '../combat/KillFeed';
+import { fireLocalWeapon } from '../combat/LocalFirearmShot';
+import {
+  findBackstabOpportunity,
+  type BackstabTarget,
+} from '../combat/BackstabOpportunity';
 import { WeaponController } from '../combat/WeaponController';
 import { isCombatEnabled } from '../combat/combatConfig';
-import { type WeaponId } from '../combat/weapons';
+import { getWeapon, type WeaponId } from '../combat/weapons';
 import { CollisionWorld } from '../world/CollisionWorld';
 import { deleteCustomMap, listCustomMaps } from '../world/CustomMapStore';
 import { MapLoader, type MapLoadReporter } from '../world/MapLoader';
 import { loadBuiltinManifest } from '../world/MapManifestService';
+import { loadSelectedMapId, saveSelectedMapId } from '../world/MapSelectionStore';
+import { groundResolvedSpawn } from '../world/SpawnResolver';
+import { resolveRunGoal, type GoalPad } from '../world/RunGoal';
 import type { CustomMapRecord, LoadedMap, MapManifestEntry } from '../world/types';
 
 type MapSource =
@@ -66,14 +85,10 @@ type MapSource =
 
 type DebugCameraMode = 'firstPerson' | 'thirdPerson' | 'freecam';
 
-interface GoalPad {
-  center: Vector3;
-  radius: number;
-  y: number;
-  tolerance: number;
-}
-
 const FIXED_TICK_DT = 1 / 128;
+/** Gives the slowest remote round several rendered arrival frames before UI cover. */
+const FATAL_CUE_LEAD_MS = 320;
+const RESPAWN_DELAY_MS = 3000;
 
 export class GameApp {
   private readonly container: HTMLElement;
@@ -82,6 +97,7 @@ export class GameApp {
   private readonly worldCamera: PerspectiveCamera;
   private readonly viewmodelRenderer: ViewmodelRenderer;
   private readonly input: InputManager;
+  private readonly fixedInputActions = new FixedInputActionBuffer();
   private readonly movement = new MovementController();
   private readonly collisionWorld = new CollisionWorld();
   private readonly mapLoader = new MapLoader();
@@ -90,6 +106,9 @@ export class GameApp {
   private multiplayer: MultiplayerTransport = new MultiplayerClient();
   private readonly remotePlayers = new RemotePlayersRenderer();
   private readonly knifeAudio = new KnifeAudio();
+  private readonly remoteKnifeAudio = new KnifeAudio();
+  private readonly gunAudio = new GunAudio();
+  private combatAudioStatus: GunAudioStatus | null = null;
   private readonly remoteAttackSound = new AttackSoundThrottle();
   private readonly knownRemoteIds = new Set<string>();
 
@@ -99,11 +118,18 @@ export class GameApp {
   private readonly killFeed = new KillFeed();
   private readonly weapon = new WeaponController('knife');
   private localAlive = true;
+  private deathPresentationTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly deadMoveInput = { forwardMove: 0, sideMove: 0, jumpPressed: false, jumpHeld: false };
   private readonly remotePlayerNames = new Map<string, string>();
+  private backstabTargets: BackstabTarget[] = [];
+  private latestSnapshotServerTimeMs: number | null = null;
 
   private readonly cosmeticsGroup = new Group();
   private readonly weaponViewmodels = new WeaponViewmodels();
+  private readonly viewmodelPresentation = new ViewmodelPresentation(
+    this.cosmeticsGroup,
+    this.weaponViewmodels,
+  );
   private readonly cosmeticsManager: CosmeticsManager;
 
   private readonly crosshair: HTMLDivElement;
@@ -250,12 +276,15 @@ export class GameApp {
       });
     }
     this.rebuildMapSources(builtinMaps, customRecords);
-    this.selectedMapId =
-      builtinMaps.find((map) => map.id === 'surf_skyworld_x')?.id
+    const fallbackMapId =
+      (this.combatEnabled
+        ? builtinMaps.find((map) => map.id === 'movement_test_scene')?.id
+        : builtinMaps.find((map) => map.id === 'surf_skyworld_x')?.id)
       ?? builtinMaps.find((map) => map.id === 'movement_test_scene')?.id
       ?? builtinMaps[0]?.id
       ?? Array.from(this.mapSources.keys())[0]
       ?? '';
+    this.selectedMapId = loadSelectedMapId(this.mapSources.keys(), fallbackMapId);
 
     this.loadout = this.cosmeticsManager.getDefaultLoadout();
     await this.cosmeticsManager.applyLoadout(this.loadout);
@@ -272,7 +301,10 @@ export class GameApp {
       },
       onMapSelected: (mapId) => {
         this.selectedMapId = mapId;
+        this.persistSelectedMapId(mapId);
         this.remotePlayers.applySnapshot([], null);
+        this.backstabTargets = [];
+        this.latestSnapshotServerTimeMs = null;
         void this.refreshLeaderboard(mapId);
         this.syncMultiplayerIdentity();
       },
@@ -302,7 +334,31 @@ export class GameApp {
       if (snapshot.mapId !== this.selectedMapId) {
         return;
       }
-      this.remotePlayers.applySnapshot(snapshot.players, this.multiplayer.getLocalId());
+      const localId = this.multiplayer.getLocalId();
+      this.latestSnapshotServerTimeMs = snapshot.serverTimeMs;
+      this.remotePlayers.applySnapshot(snapshot.players, localId);
+      this.backstabTargets = snapshot.players
+        .filter((player) => player.id !== localId)
+        .map((player) => ({
+          id: player.id,
+          position: player.position,
+          yaw: player.yaw,
+          alive: player.alive !== false,
+        }));
+      const local = localId
+        ? snapshot.players.find((player) => player.id === localId)
+        : undefined;
+      if (
+        this.combatEnabled
+        && local
+        && typeof local.health === 'number'
+        && Number.isFinite(local.health)
+        && typeof local.alive === 'boolean'
+      ) {
+        // Snapshot reconciliation recovers from a transport reconnect that
+        // missed the one-shot respawn event while the page was paused.
+        this.applyLocalHealth(local.health, local.alive);
+      }
       const present = new Set<string>();
       for (const p of snapshot.players) {
         present.add(p.id);
@@ -342,7 +398,7 @@ export class GameApp {
         const remoteProfile = remoteModel
           ? this.getKnifeSoundProfileFromModel(remoteModel)
           : this.activeKnifeSoundProfile;
-        this.knifeAudio.play(kind, 0.48, remoteProfile);
+        this.remoteKnifeAudio.play(kind, 0.48, remoteProfile);
       }
     };
     this.multiplayer.connect();
@@ -360,6 +416,10 @@ export class GameApp {
 
   public dispose(): void {
     this.running = false;
+    if (this.deathPresentationTimer !== null) {
+      clearTimeout(this.deathPresentationTimer);
+      this.deathPresentationTimer = null;
+    }
     this.multiplayer.disconnect();
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('keydown', this.onGlobalKeyDown);
@@ -369,6 +429,11 @@ export class GameApp {
     this.renderer.dispose();
     this.combatEffects?.dispose();
     this.combatHud?.dispose();
+    this.gunAudio.dispose();
+    this.knifeAudio.dispose();
+    this.remoteKnifeAudio.dispose();
+    this.cosmeticsManager.resetKnifePresentation();
+    this.viewmodelRenderer.clearPresentationTransient();
     this.menu?.dispose();
   }
 
@@ -385,6 +450,10 @@ export class GameApp {
     this.movement.applyLookDelta(look.x, look.y, this.settings.mouseSensitivity);
 
     const actions = this.input.consumeActions();
+    this.fixedInputActions.enqueue(actions);
+    if (!this.playing) {
+      this.fixedInputActions.clear();
+    }
     if (actions.toggleGridPressed) {
       this.showWorldDebugHelpers = !this.showWorldDebugHelpers;
       this.debugGrid.visible = this.showWorldDebugHelpers;
@@ -403,10 +472,32 @@ export class GameApp {
       this.showStatus(this.drawSurfNormal ? 'Surf normal debug ON' : 'Surf normal debug OFF');
     }
 
-    let inspectQueued = actions.inspectPressed;
-    let resetQueued = actions.resetPressed;
-    let attackQueued = actions.attackPressed;
-    let attackAltQueued = actions.attackAltPressed;
+    if (this.playing && this.combatEnabled) {
+      const selectedWeapon = selectWeaponFromInput(
+        this.weapon.getActive(),
+        actions.weaponSlotPressed,
+        actions.weaponCycleDirection,
+      );
+      if (selectedWeapon !== this.weapon.getActive()) {
+        this.equipCombatWeapon(selectedWeapon);
+      }
+      if (actions.resetPressed && this.localAlive) {
+        this.reloadCombatWeapon(time);
+      }
+    }
+
+    let inspectQueued = false;
+    let resetQueued = false;
+    let attackQueued = false;
+    let attackAltQueued = false;
+    if (this.accumulator >= FIXED_TICK_DT) {
+      ({
+        inspectPressed: inspectQueued,
+        resetPressed: resetQueued,
+        attackPressed: attackQueued,
+        attackAltPressed: attackAltQueued,
+      } = this.fixedInputActions.consume());
+    }
 
     while (this.accumulator >= FIXED_TICK_DT) {
       this.accumulator -= FIXED_TICK_DT;
@@ -422,27 +513,34 @@ export class GameApp {
           this.input.sampleMoveInput();
           continue;
         }
+        const dead = this.combatEnabled && !this.localAlive;
         if (inspectQueued) {
-          this.viewmodelRenderer.triggerInspect();
+          if (!dead && this.canInspectActiveWeapon(time)) {
+            this.viewmodelRenderer.triggerInspect();
+          }
           inspectQueued = false;
         }
-        const dead = this.combatEnabled && !this.localAlive;
         if (attackQueued) {
           if (!dead) {
-            this.cosmeticsManager.triggerAttackPrimary();
-            this.multiplayer.sendAttack('primary');
-            this.knifeAudio.play('primary');
-            if (this.combatEnabled) {
-              this.fireCombatWeapon(performance.now());
+            this.viewmodelRenderer.cancelInspect();
+            const activeWeapon = this.weapon.getActive();
+            if (this.combatEnabled && activeWeapon !== 'knife') {
+              this.fireCombatWeapon(time);
+            } else {
+              this.cosmeticsManager.triggerAttackPrimary();
+              this.multiplayer.sendAttack('primary');
+              if (this.combatEnabled) {
+                this.fireCombatWeapon(time);
+              }
             }
           }
           attackQueued = false;
         }
         if (attackAltQueued) {
-          if (!dead) {
+          if (!dead && (!this.combatEnabled || this.weapon.getActive() === 'knife')) {
+            this.viewmodelRenderer.cancelInspect();
             this.cosmeticsManager.triggerAttackSecondary();
             this.multiplayer.sendAttack('secondary');
-            this.knifeAudio.play('secondary');
           }
           attackAltQueued = false;
         }
@@ -472,7 +570,31 @@ export class GameApp {
     }
 
     this.updateCameras(frameDt, look);
+    const cameraPosition = this.movement.getCameraPosition();
+    this.cosmeticsManager.setBackstabReady(
+      this.playing
+      && this.combatEnabled
+      && this.localAlive
+      && this.weapon.getActive() === 'knife'
+      && findBackstabOpportunity({
+        attackerFeet: this.movement.getFeetPosition(),
+        attackerForward: this.movement.getForwardVector(),
+        targets: this.backstabTargets,
+        hasLineOfSight: (target) => !this.collisionWorld.segmentIntersectsGeometry(
+          cameraPosition,
+          new Vector3(
+            target.position[0],
+            target.position[1] + 1.2,
+            target.position[2],
+          ),
+        ),
+      }) !== null,
+    );
     this.cosmeticsManager.update(frameDt);
+    const startedKnifeAttack = this.cosmeticsManager.consumeStartedAttack();
+    if (startedKnifeAttack) {
+      this.knifeAudio.play(startedKnifeAttack);
+    }
     this.weaponViewmodels.update(frameDt);
     // Guns hang off the camera directly, so apply the same CS2-style sway/bob/
     // dip/kick delta the ViewmodelRenderer computed for the knife — otherwise
@@ -499,21 +621,36 @@ export class GameApp {
     requestAnimationFrame(this.loop);
   };
 
+  private persistSelectedMapId(mapId: string): void {
+    if (!this.mapSources.has(mapId)) {
+      return;
+    }
+    if (!saveSelectedMapId(mapId)) {
+      // eslint-disable-next-line no-console
+      console.warn(`[Maps] Could not persist selected map "${mapId}"; continuing without storage.`);
+    }
+  }
+
   private async startPlaySession(mapId: string): Promise<void> {
     if (!this.menu) {
       return;
     }
+    if (this.combatEnabled) {
+      // Begin Web Audio while the Play gesture is still active, before any map
+      // or model await can consume browser user activation.
+      void this.prepareCombatAudio(false);
+    }
     // The remote player models were loaded in the background during init; make
     // sure they're ready before we drop into a map so other players render.
     await this.remotePlayersReady;
-    this.selectedMapId = mapId;
-    if (await this.tryResumeLoadedMap(mapId, 'Could not lock cursor. Press Esc or click Play to resume.')) {
-      return;
-    }
-
     const source = this.mapSources.get(mapId);
     if (!source) {
       this.showLoadingError(new Error(`Unknown map id: ${mapId}`), mapId);
+      return;
+    }
+    this.selectedMapId = mapId;
+    this.persistSelectedMapId(mapId);
+    if (await this.tryResumeLoadedMap(mapId, 'Could not lock cursor. Press Esc or click Play to resume.')) {
       return;
     }
 
@@ -526,6 +663,7 @@ export class GameApp {
 
     this.showLoadingOverlay(mapName);
     this.playing = false;
+    this.multiplayer.setCombatReady(false);
     this.setCrosshairVisible(false);
 
     const refreshProgress = (stageText?: string): void => {
@@ -586,6 +724,9 @@ export class GameApp {
       }
 
       this.activateLoadedMap(this.loadedMap);
+      if (this.combatEnabled) {
+        this.resetLocalCombatState();
+      }
       this.debugCameraMode = 'firstPerson';
       this.freecamInitialized = false;
       this.hideLoadingOverlay();
@@ -602,6 +743,7 @@ export class GameApp {
       }
       this.menu.setVisible(false);
       this.playing = true;
+      this.multiplayer.setCombatReady(true);
       this.syncMultiplayerIdentity();
       if (!this.didPlayInitialEquip) {
         this.cosmeticsManager.triggerEquip();
@@ -646,6 +788,10 @@ export class GameApp {
     );
 
     const spawn = this.resolveSpawnInLoadedWorld(map);
+    // Persist the validated spawn so void resets and authoritative respawns use
+    // the same grounded position as initial entry.
+    map.spawnPosition.copy(spawn.position);
+    map.spawnYawDeg = spawn.yawDeg;
     this.movement.reset(spawn.position, spawn.yawDeg);
 
     // In Supabase mode the elected host runs the bot/combat sim; give it this
@@ -655,7 +801,7 @@ export class GameApp {
         ? {
             collisionWorld: this.collisionWorld,
             spawn: { position: spawn.position.clone(), yawDeg: spawn.yawDeg },
-            botCount: 2,
+            botCount: 1,
           }
         : null,
     );
@@ -670,7 +816,7 @@ export class GameApp {
       const margin = Math.max(12, Math.min(120, height * 0.2));
       this.voidResetY = collisionBounds.min.y - margin;
 
-      this.goalPad = this.resolveGoalPad(map, collisionBounds);
+      this.goalPad = this.resolveGoalPad(map);
       if (this.goalPad) {
         this.finishTargetY = this.goalPad.y;
       } else {
@@ -680,6 +826,7 @@ export class GameApp {
         this.finishTargetY = goalFromMeta ?? Number.NEGATIVE_INFINITY;
       }
     }
+    this.combatHud?.setPracticeGuide(map.entry.id === 'movement_test_scene');
     this.updateRunInfoWithLeaderboard([]);
   }
 
@@ -720,20 +867,33 @@ export class GameApp {
       return;
     }
     if (this.loadedMap && this.loadedMap.entry.id === this.selectedMapId) {
-      this.resetToSpawn('Run restarted', true);
+      if (this.combatEnabled) {
+        this.resetLocalCombatState();
+      } else {
+        this.resetToSpawn('Run restarted', true);
+      }
       this.hideRunSubmitOverlay();
+      this.debugCameraMode = 'firstPerson';
+      this.freecamInitialized = false;
       const lockAcquired = await this.input.requestPointerLock();
       if (!lockAcquired) {
         this.pauseRunTimer();
         this.playing = false;
+        this.multiplayer.setCombatReady(false);
         this.menu?.setVisible(true);
         this.setCrosshairVisible(false);
         this.showStatus('Could not lock cursor. Click Play to resume.');
         return;
       }
+      if (this.combatEnabled) {
+        this.startRunTimer();
+      }
       this.menu?.setVisible(false);
       this.playing = true;
-      this.setCrosshairVisible(this.debugCameraMode === 'firstPerson');
+      this.multiplayer.setCombatReady(true);
+      this.syncMultiplayerIdentity();
+      this.setCrosshairVisible(true);
+      this.showStatus('Run restarted');
       return;
     }
     await this.startPlaySession(this.selectedMapId);
@@ -770,187 +930,16 @@ export class GameApp {
     this.runInfoLabel.textContent = `Goal: ${goalText} | Best: ${bestText}`;
   }
 
-  private resolveGoalPad(map: LoadedMap, collisionBounds: Box3): GoalPad | null {
-    const fromMeta = map.meta.goalPad;
-    if (fromMeta) {
-      const [x, y, z] = fromMeta.center;
-      if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) && Number.isFinite(fromMeta.radius)) {
-        return {
-          center: new Vector3(x, y, z),
-          radius: Math.max(0.25, fromMeta.radius),
-          y,
-          tolerance: Math.max(0.2, fromMeta.tolerance ?? 0.6),
-        };
-      }
-    }
-
-    const inferred = this.detectGoalPadFromCollisionRoot(map.collisionRoot, collisionBounds);
-    if (inferred) {
+  private resolveGoalPad(map: LoadedMap): GoalPad | null {
+    const goal = resolveRunGoal(map.meta);
+    if (!goal) {
+      // Maps without an authored finish are open-ended play spaces. Guessing a
+      // goal from their lowest floor can terminate combat as soon as a player
+      // lands on a catch plane.
       // eslint-disable-next-line no-console
-      console.log(
-        `[GoalPad] inferred center=(${inferred.center.x.toFixed(3)}, ${inferred.center.y.toFixed(3)}, ${inferred.center.z.toFixed(3)}) radius=${inferred.radius.toFixed(3)} tolerance=${inferred.tolerance.toFixed(3)}`,
-      );
-    } else {
-      // eslint-disable-next-line no-console
-      console.warn('[GoalPad] No circular bottom pad detected. Set meta.goalPad to enforce exact run finish area.');
+      console.log(`[GoalPad] ${map.entry.id} has no configured run finish; Play remains open-ended.`);
     }
-    return inferred;
-  }
-
-  private detectGoalPadFromCollisionRoot(root: Object3D, collisionBounds: Box3): GoalPad | null {
-    const minY = collisionBounds.min.y;
-    const upDotThreshold = 0.94;
-    const yBand = Math.max(0.9, this.movement.capsule.radius * 3.2);
-
-    const a = new Vector3();
-    const b = new Vector3();
-    const c = new Vector3();
-    const ab = new Vector3();
-    const ac = new Vector3();
-    const normal = new Vector3();
-    const centroid = new Vector3();
-
-    let weightedArea = 0;
-    let weightedX = 0;
-    let weightedY = 0;
-    let weightedZ = 0;
-
-    root.updateWorldMatrix(true, true);
-    root.traverse((child) => {
-      if (!(child instanceof Mesh)) {
-        return;
-      }
-
-      const geometry = child.geometry as BufferGeometry;
-      const positions = geometry.getAttribute('position');
-      if (!positions) {
-        return;
-      }
-
-      const index = geometry.index;
-      const triCount = index ? Math.floor(index.count / 3) : Math.floor(positions.count / 3);
-      for (let tri = 0; tri < triCount; tri += 1) {
-        const i0 = index ? index.getX(tri * 3) : tri * 3;
-        const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
-        const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
-
-        a.fromBufferAttribute(positions, i0).applyMatrix4(child.matrixWorld);
-        b.fromBufferAttribute(positions, i1).applyMatrix4(child.matrixWorld);
-        c.fromBufferAttribute(positions, i2).applyMatrix4(child.matrixWorld);
-
-        ab.copy(b).sub(a);
-        ac.copy(c).sub(a);
-        normal.copy(ab).cross(ac);
-        const doubleArea = normal.length();
-        if (doubleArea <= 1e-7) {
-          continue;
-        }
-        normal.multiplyScalar(1 / doubleArea);
-        if (normal.y < upDotThreshold) {
-          continue;
-        }
-
-        centroid.copy(a).add(b).add(c).multiplyScalar(1 / 3);
-        if (centroid.y > minY + yBand) {
-          continue;
-        }
-
-        const area = doubleArea * 0.5;
-        weightedArea += area;
-        weightedX += centroid.x * area;
-        weightedY += centroid.y * area;
-        weightedZ += centroid.z * area;
-      }
-    });
-
-    if (weightedArea <= 1e-4) {
-      return null;
-    }
-
-    const centerX = weightedX / weightedArea;
-    const centerY = weightedY / weightedArea;
-    const centerZ = weightedZ / weightedArea;
-
-    const distances: number[] = [];
-    let minX = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    let minZ = Number.POSITIVE_INFINITY;
-    let maxZ = Number.NEGATIVE_INFINITY;
-
-    root.traverse((child) => {
-      if (!(child instanceof Mesh)) {
-        return;
-      }
-
-      const geometry = child.geometry as BufferGeometry;
-      const positions = geometry.getAttribute('position');
-      if (!positions) {
-        return;
-      }
-
-      const index = geometry.index;
-      const triCount = index ? Math.floor(index.count / 3) : Math.floor(positions.count / 3);
-      for (let tri = 0; tri < triCount; tri += 1) {
-        const i0 = index ? index.getX(tri * 3) : tri * 3;
-        const i1 = index ? index.getX(tri * 3 + 1) : tri * 3 + 1;
-        const i2 = index ? index.getX(tri * 3 + 2) : tri * 3 + 2;
-
-        a.fromBufferAttribute(positions, i0).applyMatrix4(child.matrixWorld);
-        b.fromBufferAttribute(positions, i1).applyMatrix4(child.matrixWorld);
-        c.fromBufferAttribute(positions, i2).applyMatrix4(child.matrixWorld);
-
-        ab.copy(b).sub(a);
-        ac.copy(c).sub(a);
-        normal.copy(ab).cross(ac);
-        const doubleArea = normal.length();
-        if (doubleArea <= 1e-7) {
-          continue;
-        }
-        normal.multiplyScalar(1 / doubleArea);
-        if (normal.y < upDotThreshold) {
-          continue;
-        }
-
-        centroid.copy(a).add(b).add(c).multiplyScalar(1 / 3);
-        if (centroid.y > minY + yBand) {
-          continue;
-        }
-
-        const radiusA = Math.hypot(a.x - centerX, a.z - centerZ);
-        const radiusB = Math.hypot(b.x - centerX, b.z - centerZ);
-        const radiusC = Math.hypot(c.x - centerX, c.z - centerZ);
-        distances.push(radiusA, radiusB, radiusC);
-
-        minX = Math.min(minX, a.x, b.x, c.x);
-        maxX = Math.max(maxX, a.x, b.x, c.x);
-        minZ = Math.min(minZ, a.z, b.z, c.z);
-        maxZ = Math.max(maxZ, a.z, b.z, c.z);
-      }
-    });
-
-    if (distances.length < 12) {
-      return null;
-    }
-
-    distances.sort((lhs, rhs) => lhs - rhs);
-    const p90 = distances[Math.floor((distances.length - 1) * 0.9)];
-    const areaRadius = Math.sqrt(weightedArea / Math.PI);
-    const radius = Math.max(0.6, Math.min(220, Math.max(p90 * 0.92, areaRadius * 0.92)));
-
-    const width = Math.max(1e-3, maxX - minX);
-    const depth = Math.max(1e-3, maxZ - minZ);
-    const aspect = Math.max(width, depth) / Math.min(width, depth);
-    const fill = weightedArea / (Math.PI * radius * radius);
-    if (aspect > 2.35 || fill < 0.24) {
-      return null;
-    }
-
-    return {
-      center: new Vector3(centerX, centerY, centerZ),
-      radius,
-      y: centerY,
-      tolerance: Math.max(0.45, this.movement.capsule.radius * 1.35),
-    };
+    return goal;
   }
 
   private syncMultiplayerIdentity(): void {
@@ -984,83 +973,174 @@ export class GameApp {
       return;
     }
     this.combatHud = new CombatHud(document.body);
-    this.combatEffects = new CombatEffects(this.worldScene);
+    this.combatEffects = new CombatEffects(this.worldScene, this.weaponViewmodels.root);
     this.combatHud.setWeapon(this.weapon.getActive(), this.weapon.getAmmo());
 
     this.multiplayer.onHealth = ({ playerId, health, alive }) => {
-      if (playerId === this.multiplayer.getLocalId()) {
-        const wasAlive = this.localAlive;
-        this.localAlive = alive;
-        this.combatHud?.setHealth(health, alive);
-        if (wasAlive && !alive) {
-          this.showStatus('You died — respawning in 3s…', 3000);
-        }
+      if (playerId !== this.multiplayer.getLocalId()) {
+        return;
       }
+      this.applyLocalHealth(health, alive);
     };
     this.multiplayer.onRespawn = ({ playerId }) => {
       if (playerId === this.multiplayer.getLocalId()) {
-        this.localAlive = true;
-        this.combatHud?.setHealth(100, true);
-        // Actually move the player back to spawn — previously the HUD flipped to
-        // "alive" but the player was left standing where they died (next to the
-        // bot that killed them), so they just died again on the spot.
-        this.respawnLocalPlayer();
-        this.showStatus('Respawned', 1200);
+        this.restoreLocalAfterRespawn();
       }
     };
-    this.multiplayer.onHit = ({ shooterId, hitbox }) => {
+    this.multiplayer.onHit = ({ shooterId, hitbox, killed }) => {
       if (shooterId === this.multiplayer.getLocalId()) {
-        this.combatHud?.flashHitmarker(hitbox === 'head');
+        const confirmation = planHitConfirmation(hitbox, killed);
+        this.combatHud?.flashHitmarker(confirmation.visual);
+        // Lethal headshots intentionally sequence ◆ then ✦ visually while
+        // retaining one concise confirmation sound for the single hit event.
+        this.gunAudio.confirm(confirmation.audio);
       }
     };
-    this.multiplayer.onDeath = ({ killerId, victimId, weaponId }) => {
+    this.multiplayer.onDeath = ({ killerId, victimId, weaponId, headshot }) => {
       const nameOf = (id: string) =>
-        id === this.multiplayer.getLocalId() ? this.localPlayerName : this.remotePlayerNames.get(id) ?? 'Player';
+        id === this.multiplayer.getLocalId()
+          ? this.localPlayerName
+          : this.remotePlayerNames.get(id) ?? 'Player';
       this.killFeed.add(
         {
           killer: nameOf(killerId),
           victim: nameOf(victimId),
           weaponId,
-          headshot: false,
+          headshot,
         },
         performance.now(),
       );
     };
-    this.multiplayer.onShot = ({ playerId, origin, dir, weaponId }) => {
-      // Draw tracers for OTHER players'/bots' gunfire so combat is visible.
-      if (playerId === this.multiplayer.getLocalId() || weaponId === 'knife') {
-        return;
+    const presentRemoteShot = createRemoteShotHandler({
+      effects: this.combatEffects,
+      collisionWorld: this.collisionWorld,
+      getLocalPlayerId: () => this.multiplayer.getLocalId(),
+      nowMs: () => performance.now(),
+    });
+    this.multiplayer.onShot = (event) => {
+      presentRemoteShot(event);
+      const localId = this.multiplayer.getLocalId();
+      if (
+        localId
+        && event.playerId !== localId
+        && event.targetId === localId
+        && (event.result === 'hit' || event.result === 'kill')
+      ) {
+        this.combatHud?.flashIncomingDamage(event.result === 'kill');
       }
-      const from = new Vector3(origin[0], origin[1], origin[2]);
-      const forward = new Vector3(dir[0], dir[1], dir[2]);
-      const to = from.clone().addScaledVector(forward, 4000);
-      this.combatEffects?.spawnShot(from, to, performance.now());
     };
+  }
+
+  private applyLocalHealth(health: number, alive: boolean): void {
+    const wasAlive = this.localAlive;
+    this.localAlive = alive;
+    // Authoritative health applies immediately, while the centered death
+    // presentation waits for the incoming round to travel to its endpoint.
+    // Repeated dead snapshots must not hide the delayed death banner after its
+    // fatal-cue lead has elapsed. The transition snapshot still updates health
+    // to zero immediately, and all living snapshots continue to reconcile it.
+    if (wasAlive || alive) {
+      this.combatHud?.setHealth(health, alive, false);
+    }
+    if (wasAlive && !alive) {
+      this.viewmodelPresentation.setAlive(false);
+      this.combatEffects?.clearForDeath(performance.now());
+      this.combatHud?.clearTransient(true);
+      this.viewmodelRenderer.clearPresentationTransient();
+      this.cosmeticsManager.resetKnifePresentation();
+      this.knifeAudio.stopAll();
+      if (this.deathPresentationTimer !== null) {
+        clearTimeout(this.deathPresentationTimer);
+      }
+      this.deathPresentationTimer = setTimeout(() => {
+        this.deathPresentationTimer = null;
+        if (!this.localAlive) {
+          this.combatHud?.setDeathVisible(true);
+          this.showStatus(
+            'You died — respawning…',
+            RESPAWN_DELAY_MS - FATAL_CUE_LEAD_MS,
+          );
+        }
+      }, FATAL_CUE_LEAD_MS);
+    } else if (!wasAlive && alive) {
+      this.restoreLocalAfterRespawn();
+      this.combatHud?.setHealth(health, true);
+    }
+  }
+
+  private resetLocalCombatState(): void {
+    this.localAlive = true;
+    if (this.deathPresentationTimer !== null) {
+      clearTimeout(this.deathPresentationTimer);
+      this.deathPresentationTimer = null;
+    }
+    this.viewmodelPresentation.setAlive(true);
+    this.combatEffects?.clear();
+    this.combatHud?.clearTransient();
+    this.viewmodelRenderer.clearPresentationTransient();
+    this.cosmeticsManager.resetKnifePresentation();
+    this.knifeAudio.stopAll();
+    this.crosshair.classList.remove('shot-deagle', 'shot-awp');
+    this.weapon.reset();
+    this.updateWeaponViewmodel(this.weapon.getActive());
+    this.combatHud?.setWeapon(this.weapon.getActive(), this.weapon.getAmmo());
+    this.combatHud?.setHealth(100, true);
+    this.respawnLocalPlayer();
+  }
+
+  private restoreLocalAfterRespawn(): void {
+    this.resetLocalCombatState();
+    this.showStatus('Respawned', 1200);
+  }
+
+  private pulseCrosshair(weaponId: GunId): void {
+    this.crosshair.classList.remove('shot-deagle', 'shot-awp');
+    void this.crosshair.offsetWidth;
+    this.crosshair.classList.add(`shot-${weaponId}`);
   }
 
   private fireCombatWeapon(nowMs: number): void {
     if (!this.combatEnabled || !this.localAlive) {
       return;
     }
-    const result = this.weapon.tryFire(nowMs);
+    if (!this.combatEffects) {
+      throw new Error('[Combat] local firearm effects were not initialized');
+    }
+    const origin = this.movement.getCameraPosition();
+    const forward = new Vector3(0, 0, -1).applyEuler(this.worldCamera.rotation).normalize();
+    const result = fireLocalWeapon(
+      {
+        weapon: this.weapon,
+        effects: this.combatEffects,
+        collisionWorld: this.collisionWorld,
+        onPresented: (weaponId) => {
+          this.weaponViewmodels.triggerFire();
+          this.viewmodelRenderer.addFireKick(weaponId);
+          this.gunAudio.shot(weaponId);
+          this.pulseCrosshair(weaponId);
+        },
+      },
+      {
+        origin,
+        direction: forward,
+        cameraUp: new Vector3(0, 1, 0).applyQuaternion(this.worldCamera.quaternion),
+        nowMs,
+      },
+    );
     this.combatHud?.setWeapon(this.weapon.getActive(), this.weapon.getAmmo());
     if (!result.fired) {
       return;
     }
-    const origin = this.movement.getCameraPosition();
-    const forward = new Vector3(0, 0, -1).applyEuler(this.worldCamera.rotation);
-    const to = origin.clone().addScaledVector(forward, Math.min(result.weapon.range, 4000));
-    if (this.weapon.getActive() !== 'knife') {
-      this.combatEffects?.spawnShot(origin.clone(), to, nowMs);
-      this.weaponViewmodels.triggerFire();
-      // Camera-space recoil punch (on top of the weapon's own fire clip). The
-      // AWP kicks harder than the Deagle.
-      this.viewmodelRenderer.addFireKick(this.weapon.getActive() === 'awp' ? 1.4 : 0.85);
-    }
     this.multiplayer.sendFire(
       [origin.x, origin.y, origin.z],
       [forward.x, forward.y, forward.z],
+      this.latestSnapshotServerTimeMs === null
+        ? undefined
+        : this.latestSnapshotServerTimeMs - REMOTE_PRESENTATION_DELAY_MS,
     );
+    if (result.magazineEmptied) {
+      this.reloadCombatWeapon(nowMs);
+    }
   }
 
   private equipCombatWeapon(id: WeaponId): void {
@@ -1069,42 +1149,96 @@ export class GameApp {
     }
     this.weapon.equip(id);
     this.multiplayer.sendEquip(id);
+    this.combatEffects?.clear();
+    this.combatHud?.clearTransient();
+    this.crosshair.classList.remove('shot-deagle', 'shot-awp');
     this.combatHud?.setWeapon(id, this.weapon.getAmmo());
     this.updateWeaponViewmodel(id);
   }
 
   /**
-   * Swaps the first-person viewmodel to match the active weapon: the knife shows
-   * its GLB hands (CosmeticsManager), while the deagle/awp show their procedural
-   * gun models. Without this, slots 2 and 3 rendered nothing.
+   * Atomically transfers first-person visibility ownership between the authored
+   * knife presentation and exactly one production firearm presentation.
    */
   private updateWeaponViewmodel(id: WeaponId): void {
+    this.gunAudio.stopReload();
     const gun: GunId | null = id === 'deagle' || id === 'awp' ? id : null;
-    this.cosmeticsGroup.visible = gun === null;
-    this.weaponViewmodels.show(gun);
+    this.viewmodelPresentation.setWeapon(id);
+    this.viewmodelRenderer.setFirearm(gun);
+    if (id === 'knife') {
+      this.cosmeticsManager.triggerEquip();
+    } else {
+      this.cosmeticsManager.resetKnifePresentation();
+      this.knifeAudio.stopAll();
+    }
+  }
+
+  private reloadCombatWeapon(nowMs: number): void {
+    const active = this.weapon.getActive();
+    if (!this.weapon.reload(nowMs)) {
+      return;
+    }
+    this.multiplayer.sendReload();
+    this.weaponViewmodels.triggerReload();
+    if (active === 'deagle' || active === 'awp') {
+      this.viewmodelRenderer.triggerReload(getWeapon(active).reloadMs);
+      this.gunAudio.reload(active);
+    }
+  }
+
+  private canInspectActiveWeapon(nowMs: number): boolean {
+    const active = this.weapon.getActive();
+    if (active === 'knife') {
+      return this.cosmeticsManager.canInspect();
+    }
+    const presentation = this.weaponViewmodels.getPresentationState();
+    return !this.weapon.isReloading(nowMs)
+      && presentation.active === active
+      && presentation.action === 'idle';
+  }
+
+  private async prepareCombatAudio(announce: boolean): Promise<void> {
+    const status = await this.gunAudio.resume();
+    const changed = status !== this.combatAudioStatus;
+    this.combatAudioStatus = status;
+    this.combatHud?.setAudioStatus(status);
+
+    if (changed) {
+      if (status === 'running') {
+        console.info('[GunAudio] Audio context ready (running).');
+      } else if (status === 'suspended') {
+        console.info('[GunAudio] Audio context is suspended pending a browser gesture.');
+      }
+    }
+    if (!announce && !changed) {
+      return;
+    }
+
+    const message = status === 'running'
+      ? 'Combat audio ready · Deagle/AWP fire + reload active'
+      : status === 'suspended'
+        ? 'Combat audio waiting for a browser gesture'
+        : status === 'unavailable'
+          ? 'Combat audio unavailable · visual feedback remains active'
+          : 'Combat audio failed to start · see console for details';
+    this.showStatus(message, status === 'running' ? 3200 : 5000);
   }
 
   private updateCombat(nowMs: number): void {
     this.weapon.update(nowMs);
+    this.combatHud?.setWeapon(
+      this.weapon.getActive(),
+      this.weapon.getAmmo(),
+      this.weapon.isReloading(nowMs),
+    );
     this.combatEffects?.update(nowMs);
+    this.combatHud?.update(nowMs);
     this.killFeed.prune(nowMs);
     this.combatHud?.setVisible(this.playing);
     if (!this.playing) {
       return;
     }
     this.combatHud?.renderKillFeed(this.killFeed, nowMs);
-    // Weapon switch: 1 = knife, 2 = deagle, 3 = awp; R = reload.
-    if (this.input.isKeyDown('Digit1') && this.weapon.getActive() !== 'knife') {
-      this.equipCombatWeapon('knife');
-    } else if (this.input.isKeyDown('Digit2') && this.weapon.getActive() !== 'deagle') {
-      this.equipCombatWeapon('deagle');
-    } else if (this.input.isKeyDown('Digit3') && this.weapon.getActive() !== 'awp') {
-      this.equipCombatWeapon('awp');
-    }
-    if (this.input.isKeyDown('KeyR') && this.weapon.reload(nowMs)) {
-      this.multiplayer.sendReload();
-      this.weaponViewmodels.triggerReload();
-    }
   }
 
   private getPlayerModelFromLoadout(loadout: LoadoutSelection): PlayerModel {
@@ -1249,36 +1383,16 @@ export class GameApp {
   }
 
   private resolveSpawnInLoadedWorld(map: LoadedMap): { position: Vector3; yawDeg: number } {
-    if (map.meta.spawns && map.meta.spawns.length > 0) {
-      return {
-        position: map.spawnPosition.clone(),
-        yawDeg: map.spawnYawDeg,
-      };
-    }
-
     const bounds = new Box3().setFromObject(map.collisionRoot);
-    if (bounds.isEmpty()) {
-      return {
-        position: map.spawnPosition.clone(),
+    return groundResolvedSpawn(
+      {
+        position: map.spawnPosition,
         yawDeg: map.spawnYawDeg,
-      };
-    }
-
-    const center = bounds.getCenter(new Vector3());
-    const start = new Vector3(center.x, bounds.max.y + 2, center.z);
-    const end = new Vector3(center.x, bounds.min.y - 80, center.z);
-    const trace = this.collisionWorld.traceCapsule(start, end, this.movement.capsule);
-    if (trace.hit) {
-      return {
-        position: trace.position.clone().add(new Vector3(0, 0.04, 0)),
-        yawDeg: map.spawnYawDeg,
-      };
-    }
-
-    return {
-      position: start,
-      yawDeg: map.spawnYawDeg,
-    };
+      },
+      bounds,
+      this.collisionWorld,
+      this.movement.capsule,
+    );
   }
 
   private countTriangles(root: Object3D): number {
@@ -1393,6 +1507,10 @@ export class GameApp {
     }
 
     const inspectWeight = this.viewmodelRenderer.update(dt, this.worldCamera, this.movement.getVelocity(), look);
+    this.weaponViewmodels.setInspectPose(
+      this.viewmodelRenderer.getInspectProgress(),
+      inspectWeight,
+    );
     this.cosmeticsManager.setInspectAlpha(inspectWeight);
     this.setCrosshairVisible(this.playing && this.debugCameraMode === 'firstPerson');
   }
@@ -1547,6 +1665,8 @@ export class GameApp {
   private createStatusLabel(): HTMLDivElement {
     const el = document.createElement('div');
     el.className = 'status-label';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
     el.style.display = 'none';
     this.container.appendChild(el);
     return el;
@@ -1687,10 +1807,15 @@ export class GameApp {
   private readonly onPointerLockChange = (): void => {
     const locked = this.input.isPointerLocked();
     if (!locked) {
+      this.fixedInputActions.clear();
       if (this.playing && !this.runComplete && this.finishedRunTimeMs === null) {
         this.pauseRunTimer();
       }
       this.playing = false;
+      this.multiplayer.setCombatReady(false);
+      this.viewmodelRenderer.clearPresentationTransient();
+      this.cosmeticsManager.resetKnifePresentation();
+      this.knifeAudio.stopAll();
       this.menu?.setVisible(true);
       this.setCrosshairVisible(false);
       return;
@@ -1699,6 +1824,11 @@ export class GameApp {
       this.resumeRunTimer();
     }
     this.playing = this.loadedMap !== null && !this.runComplete;
+    this.multiplayer.setCombatReady(this.playing);
+    void this.prepareCombatAudio(true);
+    if (this.combatEnabled && this.localAlive && this.weapon.getActive() === 'knife') {
+      this.cosmeticsManager.triggerEquip();
+    }
     this.menu?.setVisible(false);
     this.setCrosshairVisible(this.playing && this.debugCameraMode === 'firstPerson');
   };
@@ -1718,6 +1848,11 @@ export class GameApp {
       return;
     }
     if (this.input.isPointerLocked()) {
+      // Do not rely on the browser's implicit Escape default: automated native
+      // input and some kiosk shells suppress it. Explicitly release the same
+      // pointer lock a normal player entered, then pointerlockchange opens menu.
+      event.preventDefault();
+      document.exitPointerLock();
       return;
     }
     if (!this.loadedMap || this.runComplete || this.finishedRunTimeMs !== null) {
@@ -1762,21 +1897,36 @@ export class GameApp {
 
     this.hideLoadingOverlay();
     this.hideRunSubmitOverlay();
+    this.debugCameraMode = 'firstPerson';
+    this.freecamInitialized = false;
+    if (this.combatEnabled) {
+      this.resetLocalCombatState();
+    }
     const lockAcquired = await this.input.requestPointerLock();
     if (!lockAcquired) {
       this.playing = false;
+      this.multiplayer.setCombatReady(false);
       this.menu?.setVisible(true);
       this.setCrosshairVisible(false);
       this.showStatus(lockFailureMessage);
       return true;
     }
 
-    this.resumeRunTimer();
+    if (this.combatEnabled) {
+      this.startRunTimer();
+    } else {
+      this.resumeRunTimer();
+    }
     this.menu?.setVisible(false);
     this.playing = true;
-    this.setCrosshairVisible(this.debugCameraMode === 'firstPerson');
+    this.multiplayer.setCombatReady(true);
+    this.syncMultiplayerIdentity();
+    if (this.combatEnabled) {
+      this.updateWeaponViewmodel(this.weapon.getActive());
+    }
+    this.setCrosshairVisible(true);
     if (showResumedStatus) {
-      this.showStatus('Resumed');
+      this.showStatus(this.combatEnabled ? 'Combat restarted' : 'Resumed');
     }
     return true;
   }

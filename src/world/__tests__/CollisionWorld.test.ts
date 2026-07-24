@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Vector3 } from 'three';
+import { BufferGeometry, Float32BufferAttribute, Vector3 } from 'three';
 import { CollisionWorld } from '../CollisionWorld';
 import { createMovementTestScene } from '../../movement/MovementTestScene';
 
@@ -41,5 +41,48 @@ describe('CollisionWorld.segmentIntersectsGeometry (line of sight)', () => {
   it('returns false for a degenerate zero-length segment', () => {
     const world = makeWorld();
     expect(world.segmentIntersectsGeometry(new Vector3(0, 10, 0), new Vector3(0, 10, 0))).toBe(false);
+  });
+});
+
+
+describe('CollisionWorld.raycastGeometry', () => {
+  it('returns the resolved point, normal, and distance for impact feedback', () => {
+    const world = makeWorld();
+    const hit = world.raycastGeometry(new Vector3(0, 10, 0), new Vector3(0, -4, 0), 20);
+
+    expect(hit).not.toBeNull();
+    expect(hit?.point.y).toBeCloseTo(0, 4);
+    expect(hit?.distance).toBeCloseTo(10, 4);
+    expect(hit?.normal.length()).toBeCloseTo(1, 6);
+  });
+
+  it('honors range and rejects unusable rays', () => {
+    const world = makeWorld();
+    expect(world.raycastGeometry(new Vector3(0, 10, 0), new Vector3(0, -1, 0), 5)).toBeNull();
+    expect(world.raycastGeometry(new Vector3(), new Vector3(), 20)).toBeNull();
+    expect(world.raycastGeometry(new Vector3(), new Vector3(0, -1, 0), 0)).toBeNull();
+  });
+
+  it('hits back-facing imported floors and orients the impact toward the shot', () => {
+    const geometry = new BufferGeometry();
+    // Clockwise from above: the authored face normal points down.
+    geometry.setAttribute('position', new Float32BufferAttribute([
+      -5, 0, -5,
+      5, 0, -5,
+      0, 0, 5,
+    ], 3));
+    const world = new CollisionWorld();
+    world.setCollisionGeometry(geometry);
+
+    const hit = world.raycastGeometry(
+      new Vector3(0, 4, 0),
+      new Vector3(0, -1, 0),
+      10,
+    );
+
+    expect(hit?.point.y).toBeCloseTo(0, 6);
+    expect(hit?.normal.x).toBeCloseTo(0, 6);
+    expect(hit?.normal.y).toBeCloseTo(1, 6);
+    expect(hit?.normal.z).toBeCloseTo(0, 6);
   });
 });

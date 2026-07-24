@@ -7,12 +7,13 @@ export interface GameSettings {
   viewmodelScale: number;
 }
 
-const STORAGE_KEY = 'webstrafe-settings-v1';
+const STORAGE_KEY = 'webstrafe-settings-v2';
+const LEGACY_STORAGE_KEY = 'webstrafe-settings-v1';
 
 export const defaultSettings: GameSettings = {
   mouseSensitivity: 1,
   worldFov: 100,
-  autoBhop: false,
+  autoBhop: true,
   showHud: true,
   viewmodelFov: 68,
   viewmodelScale: 1,
@@ -20,21 +21,30 @@ export const defaultSettings: GameSettings = {
 
 export function loadSettings(): GameSettings {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const current = localStorage.getItem(STORAGE_KEY);
+    const legacy = current === null ? localStorage.getItem(LEGACY_STORAGE_KEY) : null;
+    const raw = current ?? legacy;
     if (!raw) {
       return { ...defaultSettings };
     }
 
     const parsed = JSON.parse(raw) as Partial<GameSettings>;
-    return {
+    const settings = {
       mouseSensitivity: clamp(parsed.mouseSensitivity, 0.1, 4, defaultSettings.mouseSensitivity),
       worldFov: clamp(parsed.worldFov, 70, 130, defaultSettings.worldFov),
-      autoBhop: parsed.autoBhop ?? defaultSettings.autoBhop,
+      autoBhop: legacy === null
+        ? parsed.autoBhop ?? defaultSettings.autoBhop
+        : true,
       showHud: parsed.showHud ?? defaultSettings.showHud,
       viewmodelFov: clamp(parsed.viewmodelFov, 45, 110, defaultSettings.viewmodelFov),
       viewmodelScale: clamp(parsed.viewmodelScale, 0.25, 3, defaultSettings.viewmodelScale),
     };
-  } catch {
+    if (legacy !== null) {
+      saveSettings(settings);
+    }
+    return settings;
+  } catch (error) {
+    console.warn('[Settings] Stored preferences could not be loaded; using defaults.', error);
     return { ...defaultSettings };
   }
 }

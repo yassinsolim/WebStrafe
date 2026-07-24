@@ -23,6 +23,7 @@ interface RemoteRecord {
   name: string;
   model: PlayerModel;
   state: OutgoingState | null;
+  combatReady: boolean;
   lastSeen: number;
 }
 
@@ -49,6 +50,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   private localName = '';
   private localModel: PlayerModel = 'terrorist';
   private localState: OutgoingState | null = null;
+  private localCombatReady = false;
   private readonly remotes = new Map<string, RemoteRecord>();
   private stateTimer: ReturnType<typeof setInterval> | null = null;
   private snapshotTimer: ReturnType<typeof setInterval> | null = null;
@@ -60,6 +62,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   private botRows: HostBotRow[] = [];
   private botRowsAt = 0;
   private presenceSynced = false;
+  private latestSnapshotServerTimeMs: number | null = null;
 
   constructor(
     private readonly client: SupabaseClient,
@@ -73,6 +76,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   }
 
   disconnect(): void {
+    this.localCombatReady = false;
     this.stopTimers();
     this.stopHost();
     if (this.channel) {
@@ -80,6 +84,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       this.channel = null;
     }
     this.remotes.clear();
+    this.latestSnapshotServerTimeMs = null;
     this.botRows = [];
     this.onConnectedChange?.(false);
   }
@@ -124,6 +129,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       this.updateHostRole();
     });
     channel.on('broadcast', { event: 'state' }, ({ payload }) => this.onRemoteState(payload));
+    channel.on('broadcast', { event: 'combatready' }, ({ payload }) => this.onRemoteCombatReady(payload));
     channel.on('broadcast', { event: 'attack' }, ({ payload }) => this.onRemoteAttack(payload));
     channel.on('broadcast', { event: 'botstate' }, ({ payload }) => this.onBotState(payload));
     channel.on('broadcast', { event: 'fire' }, ({ payload }) => this.onRemoteFire(payload));
@@ -146,6 +152,17 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     });
   }
 
+  setCombatReady(ready: boolean): void {
+    if (this.localCombatReady === ready) {
+      return;
+    }
+    this.localCombatReady = ready;
+    if (this.channel) {
+      void this.channel.track(this.presencePayload());
+      this.broadcast('combatready', { id: this.localId, ready });
+    }
+  }
+
   sendState(state: OutgoingState): void {
     this.localState = state;
   }
@@ -160,15 +177,29 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
 
   // Combat is resolved by the elected host. If we ARE the host, apply directly;
   // otherwise broadcast for the host to resolve.
-  sendFire(origin: [number, number, number], dir: [number, number, number]): void {
+  sendFire(
+    origin: [number, number, number],
+    dir: [number, number, number],
+    observedAtMs?: number,
+  ): void {
     if (this.hostSim) {
-      this.hostSim.applyFire(this.localId, origin, dir);
+      this.hostSim.applyFire(
+        this.localId,
+        origin,
+        dir,
+        observedAtMs ?? this.latestSnapshotServerTimeMs ?? undefined,
+      );
       return;
     }
     void this.channel?.send({
       type: 'broadcast',
       event: 'fire',
-      payload: { id: this.localId, origin, dir },
+      payload: {
+        id: this.localId,
+        origin,
+        dir,
+        observedAtMs: observedAtMs ?? this.latestSnapshotServerTimeMs,
+      },
     });
   }
 
@@ -194,7 +225,12 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   }
 
   private presencePayload(): Record<string, unknown> {
-    return { id: this.localId, name: this.localName, model: this.localModel };
+    return {
+      id: this.localId,
+      name: this.localName,
+      model: this.localModel,
+      combatReady: this.localCombatReady,
+    };
   }
 
   /** The currently elected host id (lowest present id), or null before presence syncs. */
@@ -259,11 +295,27 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
 
     const humans = [];
     if (this.localState) {
-      humans.push({ id: this.localId, name: this.localName, model: this.localModel, position: this.localState.position });
+      humans.push({
+        id: this.localId,
+        name: this.localName,
+        model: this.localModel,
+        position: this.localState.position,
+        combatReady: this.localCombatReady,
+        yaw: this.localState.yaw,
+        pitch: this.localState.pitch,
+      });
     }
     for (const [id, record] of this.remotes) {
       if (record.state) {
-        humans.push({ id, name: record.name, model: record.model, position: record.state.position });
+        humans.push({
+          id,
+          name: record.name,
+          model: record.model,
+          position: record.state.position,
+          combatReady: record.combatReady,
+          yaw: record.state.yaw,
+          pitch: record.state.pitch,
+        });
       }
     }
     this.hostSim.syncHumans(humans);
@@ -293,9 +345,19 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   }
 
   private onRemoteFire(payload: unknown): void {
-    const p = payload as { id?: string; origin?: [number, number, number]; dir?: [number, number, number] };
+    const p = payload as {
+      id?: string;
+      origin?: [number, number, number];
+      dir?: [number, number, number];
+      observedAtMs?: number;
+    };
     if (this.hostSim && p.id && p.origin && p.dir) {
-      this.hostSim.applyFire(p.id, p.origin, p.dir);
+      this.hostSim.applyFire(
+        p.id,
+        p.origin,
+        p.dir,
+        Number.isFinite(p.observedAtMs) ? p.observedAtMs : undefined,
+      );
     }
   }
 
@@ -317,7 +379,12 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (!this.channel) {
       return;
     }
-    const state = this.channel.presenceState<{ id: string; name: string; model: PlayerModel }>();
+    const state = this.channel.presenceState<{
+      id: string;
+      name: string;
+      model: PlayerModel;
+      combatReady?: boolean;
+    }>();
     const present = new Set<string>();
     for (const entries of Object.values(state)) {
       for (const entry of entries) {
@@ -330,6 +397,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
           name: entry.name,
           model: entry.model,
           state: existing?.state ?? null,
+          combatReady: entry.combatReady === true,
           lastSeen: existing?.lastSeen ?? Date.now(),
         });
       }
@@ -350,6 +418,17 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (record) {
       record.state = p.state;
       record.lastSeen = Date.now();
+    }
+  }
+
+  private onRemoteCombatReady(payload: unknown): void {
+    const p = payload as { id?: string; ready?: boolean };
+    if (!p.id || p.id === this.localId || typeof p.ready !== 'boolean') {
+      return;
+    }
+    const record = this.remotes.get(p.id);
+    if (record) {
+      record.combatReady = p.ready;
     }
   }
 
@@ -427,6 +506,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       }
     }
 
+    this.latestSnapshotServerTimeMs = now;
     this.onSnapshot({ mapId: this.activeMapId, players, serverTimeMs: now });
   }
 }

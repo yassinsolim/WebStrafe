@@ -1,4 +1,10 @@
 import type { MoveInput } from '../movement/types';
+import {
+  isEditableGameplayTarget,
+  weaponCycleDirection,
+  weaponSlotForKey,
+} from './GameplayWeaponInput';
+import type { WeaponCycleDirection, WeaponSlot } from './GameplayWeaponInput';
 
 export interface InputActions {
   inspectPressed: boolean;
@@ -8,9 +14,12 @@ export interface InputActions {
   toggleSurfNormalPressed: boolean;
   attackPressed: boolean;
   attackAltPressed: boolean;
+  weaponSlotPressed: WeaponSlot | null;
+  weaponCycleDirection: WeaponCycleDirection;
 }
 
 const JUMP_KEYS = new Set(['Space']);
+const MAX_MOUSE_DELTA_PER_EVENT = 512;
 
 export class InputManager {
   private readonly keysDown = new Set<string>();
@@ -22,17 +31,22 @@ export class InputManager {
   private toggleSurfNormalQueued = false;
   private attackQueued = false;
   private attackAltQueued = false;
+  private weaponSlotQueued: WeaponSlot | null = null;
+  private weaponCycleQueued: WeaponCycleDirection = 0;
 
   private lookDeltaX = 0;
   private lookDeltaY = 0;
   private pointerLocked = false;
+  private ignoreNextMouseMove = false;
 
   constructor(private readonly domElement: HTMLElement) {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('mousemove', this.onMouseMove);
     window.addEventListener('mousedown', this.onMouseDown);
+    window.addEventListener('wheel', this.onWheel, { passive: false });
     window.addEventListener('contextmenu', this.onContextMenu);
+    window.addEventListener('blur', this.onBlur);
     document.addEventListener('pointerlockchange', this.onPointerLockChange);
   }
 
@@ -41,13 +55,15 @@ export class InputManager {
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('mousemove', this.onMouseMove);
     window.removeEventListener('mousedown', this.onMouseDown);
+    window.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('contextmenu', this.onContextMenu);
+    window.removeEventListener('blur', this.onBlur);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
   }
 
   public async requestPointerLock(): Promise<boolean> {
     if (document.pointerLockElement === this.domElement) {
-      this.pointerLocked = true;
+      this.setPointerLocked(true);
       return true;
     }
 
@@ -65,14 +81,14 @@ export class InputManager {
 
       const onChange = (): void => {
         const locked = document.pointerLockElement === this.domElement;
-        this.pointerLocked = locked;
+        this.setPointerLocked(locked);
         if (locked) {
           finish(true);
         }
       };
 
       const onError = (): void => {
-        this.pointerLocked = document.pointerLockElement === this.domElement;
+        this.setPointerLocked(document.pointerLockElement === this.domElement);
         finish(false);
       };
 
@@ -96,7 +112,7 @@ export class InputManager {
           return;
         }
         if (document.pointerLockElement === this.domElement) {
-          this.pointerLocked = true;
+          this.setPointerLocked(true);
           finish(true);
           return;
         }
@@ -148,6 +164,8 @@ export class InputManager {
       toggleSurfNormalPressed: this.toggleSurfNormalQueued,
       attackPressed: this.attackQueued,
       attackAltPressed: this.attackAltQueued,
+      weaponSlotPressed: this.weaponSlotQueued,
+      weaponCycleDirection: this.weaponCycleQueued,
     };
     this.inspectQueued = false;
     this.resetQueued = false;
@@ -156,6 +174,8 @@ export class InputManager {
     this.toggleSurfNormalQueued = false;
     this.attackQueued = false;
     this.attackAltQueued = false;
+    this.weaponSlotQueued = null;
+    this.weaponCycleQueued = 0;
     return actions;
   }
 
@@ -164,11 +184,23 @@ export class InputManager {
   }
 
   private readonly onPointerLockChange = (): void => {
-    this.pointerLocked = document.pointerLockElement === this.domElement;
+    this.setPointerLocked(document.pointerLockElement === this.domElement);
   };
 
   private readonly onMouseMove = (event: MouseEvent): void => {
-    if (!this.pointerLocked) {
+    if (!this.pointerLocked || document.pointerLockElement !== this.domElement) {
+      return;
+    }
+    if (this.ignoreNextMouseMove) {
+      this.ignoreNextMouseMove = false;
+      return;
+    }
+    if (
+      !Number.isFinite(event.movementX)
+      || !Number.isFinite(event.movementY)
+      || Math.abs(event.movementX) > MAX_MOUSE_DELTA_PER_EVENT
+      || Math.abs(event.movementY) > MAX_MOUSE_DELTA_PER_EVENT
+    ) {
       return;
     }
     this.lookDeltaX += event.movementX;
@@ -186,6 +218,20 @@ export class InputManager {
     }
   };
 
+  private readonly onWheel = (event: WheelEvent): void => {
+    if (!this.isGameplayInputActive(event.target)) {
+      return;
+    }
+    const direction = weaponCycleDirection(event.deltaY);
+    if (direction === 0) {
+      return;
+    }
+    event.preventDefault();
+    // Keep one normalized wheel step per rendered frame. Trackpad bursts must
+    // not skip several weapons before the player can see the first switch.
+    this.weaponCycleQueued = direction;
+  };
+
   private readonly onContextMenu = (event: MouseEvent): void => {
     if (this.pointerLocked) {
       event.preventDefault();
@@ -193,30 +239,82 @@ export class InputManager {
   };
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    if (!this.keysDown.has(event.code) && JUMP_KEYS.has(event.code)) {
+    const keyIdentity = event.code || `key:${event.key}`;
+    const firstPress = !event.repeat && !this.keysDown.has(keyIdentity);
+    if (firstPress && JUMP_KEYS.has(event.code)) {
       this.jumpQueued = true;
     }
-    if (!this.keysDown.has(event.code) && event.code === 'KeyF') {
+    if (firstPress && event.code === 'KeyY') {
       this.inspectQueued = true;
     }
-    if (!this.keysDown.has(event.code) && event.code === 'KeyR') {
+    if (firstPress && event.code === 'KeyR') {
       this.resetQueued = true;
     }
-    if (!this.keysDown.has(event.code) && event.code === 'KeyG') {
+    if (firstPress && event.code === 'KeyG') {
       this.toggleGridQueued = true;
     }
-    if (!this.keysDown.has(event.code) && event.code === 'KeyV') {
+    if (firstPress && event.code === 'KeyV') {
       this.toggleDebugCameraQueued = true;
     }
-    if (!this.keysDown.has(event.code) && event.code === 'KeyN') {
+    if (firstPress && event.code === 'KeyN') {
       this.toggleSurfNormalQueued = true;
     }
-    this.keysDown.add(event.code);
+    if (firstPress && this.isGameplayInputActive(event.target)) {
+      const slot = weaponSlotForKey(event);
+      if (slot !== null) {
+        event.preventDefault();
+        this.weaponSlotQueued = slot;
+      }
+    }
+    this.keysDown.add(keyIdentity);
   };
 
   private readonly onKeyUp = (event: KeyboardEvent): void => {
-    this.keysDown.delete(event.code);
+    this.keysDown.delete(event.code || `key:${event.key}`);
   };
+
+  private readonly onBlur = (): void => {
+    this.clearPressedState();
+    this.ignoreNextMouseMove = this.pointerLocked;
+  };
+
+  private isGameplayInputActive(target: EventTarget | null): boolean {
+    return document.pointerLockElement === this.domElement
+      && !isEditableGameplayTarget(target)
+      && !isEditableGameplayTarget(document.activeElement);
+  }
+
+  private clearPressedState(): void {
+    this.keysDown.clear();
+    this.jumpQueued = false;
+    this.inspectQueued = false;
+    this.resetQueued = false;
+    this.toggleGridQueued = false;
+    this.toggleDebugCameraQueued = false;
+    this.toggleSurfNormalQueued = false;
+    this.attackQueued = false;
+    this.attackAltQueued = false;
+    this.weaponSlotQueued = null;
+    this.weaponCycleQueued = 0;
+    this.lookDeltaX = 0;
+    this.lookDeltaY = 0;
+  }
+
+  private setPointerLocked(locked: boolean): void {
+    if (locked === this.pointerLocked) {
+      if (!locked) {
+        this.clearPressedState();
+      }
+      return;
+    }
+    this.pointerLocked = locked;
+    this.lookDeltaX = 0;
+    this.lookDeltaY = 0;
+    this.ignoreNextMouseMove = locked;
+    if (!locked) {
+      this.clearPressedState();
+    }
+  }
 
   private isDown(code: string): boolean {
     return this.keysDown.has(code);

@@ -2,6 +2,13 @@ import { Vector3 } from 'three';
 import type { CollisionAdapter } from '../world/CollisionWorld';
 import { MovementController } from '../movement/MovementController';
 import type { MovementMode } from '../movement/types';
+import {
+  isWithinBotVisualFov,
+  wrapBotAngle,
+  type BotPerception,
+} from './BotPerception';
+
+export type { BotPerception } from './BotPerception';
 
 /** applyLookDelta maps deltaX to a yaw change of `-deltaX * 0.0022 * sensitivity`. */
 const LOOK_YAW_SCALE = 0.0022;
@@ -9,11 +16,10 @@ const LOOK_YAW_SCALE = 0.0022;
 const EYE_HEIGHT = 1.6;
 /** Aim at roughly the target's upper body. */
 const AIM_HEIGHT = 1.2;
-
-export interface BotPerception {
-  /** Feet position of the target to pursue/shoot, or null when there is nothing to chase. */
-  targetFeet: Vector3 | null;
-}
+/** First round lands into nearby cover beside the player before follow-up taps. */
+const OPENING_WARNING_MISS_LATERAL = 2.4;
+/** Keep the two follow-up rounds in the torso capsule, never the head band. */
+const OPENING_BODY_AIM_DROP = 0.35;
 
 export interface BotMovementState {
   feet: Vector3;
@@ -54,6 +60,12 @@ export interface BotParams {
   /** Only shoot when yaw and pitch aim error are both under this (radians). */
   fireAngleTol: number;
   /**
+   * Visible staging time before the bot begins tracking or moving. This is
+   * separate from reactionDelaySec: players first get a readable settled target,
+   * then see the bot acquire them before it can fire.
+   */
+  acquisitionGraceSec: number;
+  /**
    * Human-like reaction time: a bot must have kept its target in engage range
    * for at least this long before it is allowed to fire. Prevents the
    * spawn-camping instakill where a freshly spawned bot lands a shot on the
@@ -75,33 +87,66 @@ export interface BotParams {
   burstDurationSec: number;
   /** How long the bot holds fire between bursts. */
   burstCooldownSec: number;
+  /** Minimum settle time between committed Deagle taps. */
+  tapIntervalSec: number;
 }
 
 export const DEFAULT_BOT_PARAMS: BotParams = {
   // Deliberately dumbed-down so bots are fun, not an aimbot:
-  turnRateRadPerSec: 1.5, // slower tracking — can't snap onto you
-  stopDistance: 6,
+  turnRateRadPerSec: 1.2, // slower tracking — cannot snap onto a target
+  stopDistance: 13,
   stuckSpeed: 0.6,
-  engageRange: 600, // only a threat at closer range (was 1500)
+  engageRange: 110,
   fireAngleTol: 0.05, // ~3 degrees
-  reactionDelaySec: 1.6, // slower to open fire (was 0.9)
-  aimWanderRad: 0.16, // ~9 degrees of wander — misses a lot (was 3.5)
-  burstDurationSec: 0.5, // fire for ~half a second…
-  burstCooldownSec: 1.2, // …then hold fire, giving you room to fight back
+  acquisitionGraceSec: 0.85,
+  reactionDelaySec: 1.4,
+  // Correct OU variance makes this a real ~2.6° standard deviation instead of
+  // the former tick-rate-dependent fraction of the configured angle.
+  aimWanderRad: 0.045,
+  // Two deliberate Deagle taps fit in a burst, separated by enough time for
+  // visible recoil recovery. The longer pause between bursts keeps the bot a
+  // threat without producing a hitscan damage dump.
+  burstDurationSec: 1.05,
+  burstCooldownSec: 1.5,
+  tapIntervalSec: 0.68,
 };
 
-/** Normalizes an angle to (-π, π]. */
-function wrapAngle(angle: number): number {
-  return Math.atan2(Math.sin(angle), Math.cos(angle));
-}
-
 /** Approximate standard-normal sample (Box–Muller) for bot aim wander. */
-function gaussian(): number {
+function gaussian(random: () => number): number {
   let u = 0;
   let v = 0;
-  while (u === 0) u = Math.random();
-  while (v === 0) v = Math.random();
+  while (u === 0) u = random();
+  while (v === 0) v = random();
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+/**
+ * Advances a bounded Ornstein-Uhlenbeck aim offset. The innovation term uses
+ * sqrt(1 - decay²), giving the same steady-state variance at 30, 60, or 120 Hz.
+ */
+export function advanceBotAimWander(
+  current: Vector3,
+  amplitude: number,
+  dt: number,
+  random: () => number = Math.random,
+): Vector3 {
+  const safeDt = Math.max(0, dt);
+  const decay = Math.exp(-safeDt * 1.6);
+  const innovation = Math.sqrt(Math.max(0, 1 - decay * decay));
+  const limit = Math.max(0, amplitude) * 2;
+  const next = (value: number, scale: number) => Math.max(
+    -limit * scale,
+    Math.min(
+      limit * scale,
+      value * decay + gaussian(random) * amplitude * scale * innovation,
+    ),
+  );
+  current.set(
+    next(current.x, 1),
+    next(current.y, 0.5),
+    next(current.z, 1),
+  );
+  return current;
 }
 
 /**
@@ -137,12 +182,13 @@ export function decideBotInput(
   if (horizDist > 1e-3) {
     const desiredYaw = Math.atan2(-ax, -az);
     const desiredPitch = Math.atan2(ay, horizDist);
-    yawErr = wrapAngle(desiredYaw - state.yawRad);
+    yawErr = wrapBotAngle(desiredYaw - state.yawRad);
     pitchErr = desiredPitch - state.pitchRad;
   }
 
   const fire =
-    dist3D <= params.engageRange
+    perception.targetVisible !== false
+    && dist3D <= params.engageRange
     && Math.abs(yawErr) <= params.fireAngleTol
     && Math.abs(pitchErr) <= params.fireAngleTol;
 
@@ -165,9 +211,9 @@ export function decideBotInput(
     const speed = Math.hypot(velX, velZ);
     const velYaw = speed > 0.5 ? Math.atan2(-velX, -velZ) : state.yawRad;
     const targetYaw = Math.atan2(-ax, -az);
-    const towardTarget = wrapAngle(targetYaw - velYaw);
+    const towardTarget = wrapBotAngle(targetYaw - velYaw);
     const desiredYaw = velYaw + Math.max(-0.5, Math.min(0.5, towardTarget)) * 0.3;
-    yawDelta = Math.max(-maxTurn, Math.min(maxTurn, wrapAngle(desiredYaw - state.yawRad)));
+    yawDelta = Math.max(-maxTurn, Math.min(maxTurn, wrapBotAngle(desiredYaw - state.yawRad)));
     pitchDelta = Math.max(-maxTurn, Math.min(maxTurn, -state.pitchRad)); // ease pitch to level
 
     if (state.recommendedStrafe === 'A') {
@@ -185,13 +231,20 @@ export function decideBotInput(
     // it with capped air control (only when roughly facing it, so it doesn't
     // sail the wrong way while turning around), like a player dropping in.
     const facing = Math.abs(yawErr) < Math.PI / 2;
-    forwardMove = facing ? 1 : 0;
+    // Drop into a clear firing lane instead of air-accelerating through the
+    // target. Advance only while searching around occluding geometry.
+    forwardMove = perception.targetVisible === true ? 0 : facing ? 1 : 0;
     yawDelta = Math.max(-maxTurn, Math.min(maxTurn, yawErr));
     pitchDelta = Math.max(-maxTurn, Math.min(maxTurn, -state.pitchRad));
   } else {
     // --- Grounded: seek the target and aim at it.
     const facing = Math.abs(yawErr) < Math.PI / 2;
-    forwardMove = horizDist > params.stopDistance && facing ? 1 : 0;
+    // A visible target is already a valid engagement: hold the staged lane so
+    // remote muzzle/tracer feedback remains readable instead of rushing through
+    // the player's camera. Seek only when LOS is blocked or unknown.
+    forwardMove = perception.targetVisible === true
+      ? 0
+      : horizDist > params.stopDistance && facing ? 1 : 0;
     yawDelta = Math.max(-maxTurn, Math.min(maxTurn, yawErr));
     pitchDelta = Math.max(-maxTurn, Math.min(maxTurn, pitchErr));
     jump = state.grounded && forwardMove > 0 && state.horizontalSpeed < params.stuckSpeed;
@@ -213,29 +266,60 @@ export class BotController {
   private hasAimTarget = false;
   /** How long the current target has been continuously within engage range. */
   private targetSeenSec = 0;
+  /** Initial visible hold before tracking starts; reset on a fresh engagement. */
+  private acquisitionSeenSec = 0;
+  private engagementReleased = false;
   /** Smoothly-drifting world-space aim offset that makes the bot miss like a human. */
   private readonly aimWander = new Vector3();
   private readonly perturbedTarget = new Vector3();
+  /** Accepted rounds in this visible engagement; drives the fair opening cadence. */
+  private openingShotsFired = 0;
   /** Trigger discipline: seconds spent in the current burst, and cooldown left. */
   private burstActiveSec = 0;
   private burstCooldownSec = 0;
+  /** Recoil-settle delay after the arena accepts a Deagle tap. */
+  private tapCooldownSec = 0;
   /** How long the bot has been plummeting (airborne, little horizontal speed). */
   private fallingSec = 0;
+  /** Stable target identity used to reset reaction and trigger state on switches. */
+  private targetId: string | null = null;
 
-  constructor(spawn: Vector3, yawDeg = 0, params: BotParams = DEFAULT_BOT_PARAMS) {
+  constructor(
+    spawn: Vector3,
+    yawDeg = 0,
+    params: BotParams = DEFAULT_BOT_PARAMS,
+    private readonly random: () => number = Math.random,
+  ) {
     this.params = params;
     this.movement.reset(spawn, yawDeg);
   }
 
   respawn(spawn: Vector3, yawDeg = 0): void {
     this.movement.reset(spawn, yawDeg);
+    this.resetEngagement();
+    this.fallingSec = 0;
+  }
+
+  /** Drops all target/reaction/trigger state without disturbing movement. */
+  resetEngagement(): void {
     this.wantsFire = false;
     this.hasAimTarget = false;
     this.targetSeenSec = 0;
+    this.acquisitionSeenSec = 0;
+    this.engagementReleased = false;
+    this.openingShotsFired = 0;
     this.aimWander.set(0, 0, 0);
     this.burstActiveSec = 0;
     this.burstCooldownSec = 0;
-    this.fallingSec = 0;
+    this.tapCooldownSec = 0;
+    this.targetId = null;
+  }
+
+  /** Starts a human-readable recoil-settle delay after an accepted shot. */
+  onShotFired(): void {
+    this.openingShotsFired += 1;
+    this.tapCooldownSec = this.params.tapIntervalSec;
+    this.wantsFire = false;
   }
 
   getFeet(): Vector3 {
@@ -272,6 +356,14 @@ export class BotController {
     return this.hasAimTarget ? this.aimTarget.clone() : null;
   }
 
+  /** Exposes the player-visible first-engagement phase for deterministic parity tests. */
+  getEngagementPhase(): 'holding' | 'reacting' | 'engaged' {
+    if (!this.engagementReleased) {
+      return 'holding';
+    }
+    return this.targetSeenSec < this.params.reactionDelaySec ? 'reacting' : 'engaged';
+  }
+
   /**
    * True when the bot has been in free-fall ('air' mode — neither grounded nor
    * surfing a ramp) long enough that it has clearly dropped off the map rather
@@ -282,32 +374,104 @@ export class BotController {
     return this.fallingSec >= BotController.FALL_TIMEOUT_SEC;
   }
 
-  private static readonly FALL_TIMEOUT_SEC = 3;
+  private static readonly FALL_TIMEOUT_SEC = 5;
 
   /** Advances the bot one fixed step toward (and aiming at) its target. */
   tick(dt: number, world: CollisionAdapter, perception: BotPerception): void {
+    this.tapCooldownSec = Math.max(0, this.tapCooldownSec - Math.max(0, dt));
+    const nextTargetId = perception.targetFeet
+      ? perception.targetId ?? '__anonymous-target__'
+      : null;
+    if (nextTargetId !== this.targetId) {
+      this.targetId = nextTargetId;
+      this.targetSeenSec = 0;
+      this.acquisitionSeenSec = 0;
+      this.engagementReleased = false;
+      this.openingShotsFired = 0;
+      this.aimWander.set(0, 0, 0);
+      this.burstActiveSec = 0;
+      this.burstCooldownSec = 0;
+      this.tapCooldownSec = 0;
+      this.wantsFire = false;
+    }
+
     const debug = this.movement.getDebugState();
     const horizontalSpeed = Math.hypot(debug.velocity.x, debug.velocity.z);
+    const safeDt = Math.max(0, dt);
 
-    // Perturb the aim with a smoothly-drifting offset so the bot is not a
-    // pixel-perfect aimbot. The wander is an Ornstein-Uhlenbeck-style random
-    // walk (pulled back toward zero) whose amplitude grows with distance, so
-    // far targets are genuinely hard for the bot to hit.
-    let aimPerception = perception;
-    if (perception.targetFeet) {
+    if (!this.engagementReleased) {
       const feet = this.movement.getFeetPosition();
-      const dist = Math.hypot(
-        perception.targetFeet.x - feet.x,
-        perception.targetFeet.y - feet.y,
-        perception.targetFeet.z - feet.z,
-      );
-      const amp = Math.tan(this.params.aimWanderRad) * Math.max(dist, 1);
-      const pull = Math.exp(-dt * 1.6); // relax toward zero
-      this.aimWander.x = this.aimWander.x * pull + gaussian() * amp * (1 - pull);
-      this.aimWander.y = this.aimWander.y * pull + gaussian() * amp * 0.5 * (1 - pull);
-      this.aimWander.z = this.aimWander.z * pull + gaussian() * amp * (1 - pull);
-      this.perturbedTarget.copy(perception.targetFeet).add(this.aimWander);
-      aimPerception = { targetFeet: this.perturbedTarget };
+      const acquisitionVisible = perception.targetFeet !== null
+        && perception.targetVisible !== false
+        && feet.distanceTo(perception.targetFeet) <= this.params.engageRange
+        && isWithinBotVisualFov(feet, this.movement.getYawRad(), perception.targetFeet);
+      this.acquisitionSeenSec = acquisitionVisible
+        ? this.acquisitionSeenSec + safeDt
+        : 0;
+      if (this.acquisitionSeenSec < this.params.acquisitionGraceSec) {
+        // Keep gravity/collision live while visibly staged; this is a finite
+        // neutral settle, not a frozen or inspector-only bot.
+        this.wantsFire = false;
+        this.hasAimTarget = false;
+        this.targetSeenSec = 0;
+        this.aimWander.multiplyScalar(Math.exp(-safeDt * 3));
+        const inAir = debug.movementMode === 'air';
+        this.fallingSec = inAir ? this.fallingSec + safeDt : 0;
+        this.movement.tick(
+          dt,
+          {
+            forwardMove: 0,
+            sideMove: 0,
+            jumpPressed: false,
+            jumpHeld: false,
+          },
+          world,
+        );
+        return;
+      }
+      this.engagementReleased = true;
+    }
+
+    // Each fresh visible engagement opens with one deliberately lateral
+    // warning round. In the practice lane it resolves into the orange cover,
+    // then two center-mass taps provide a readable nonfatal/fatal sequence.
+    // Later rounds return to smooth imperfect wander. Breaking LOS resets this
+    // cadence, so a peek always earns the same fair warning.
+    let aimPerception = perception;
+    if (perception.targetFeet && perception.targetVisible !== false) {
+      this.perturbedTarget.copy(perception.targetFeet);
+      if (this.openingShotsFired === 0 && perception.targetVisible === true) {
+        const feet = this.movement.getFeetPosition();
+        const dx = perception.targetFeet.x - feet.x;
+        const dz = perception.targetFeet.z - feet.z;
+        const horizontalDistance = Math.hypot(dx, dz);
+        if (horizontalDistance > 1e-5) {
+          this.perturbedTarget.x -= dz / horizontalDistance * OPENING_WARNING_MISS_LATERAL;
+          this.perturbedTarget.z += dx / horizontalDistance * OPENING_WARNING_MISS_LATERAL;
+        }
+        this.aimWander.multiplyScalar(Math.exp(-Math.max(0, dt) * 5));
+      } else if (this.openingShotsFired < 3) {
+        this.perturbedTarget.y -= OPENING_BODY_AIM_DROP;
+        this.aimWander.multiplyScalar(Math.exp(-Math.max(0, dt) * 5));
+      } else {
+        const feet = this.movement.getFeetPosition();
+        const dist = Math.hypot(
+          perception.targetFeet.x - feet.x,
+          perception.targetFeet.y - feet.y,
+          perception.targetFeet.z - feet.z,
+        );
+        const amp = Math.tan(this.params.aimWanderRad) * Math.max(dist, 1);
+        advanceBotAimWander(this.aimWander, amp, dt, this.random);
+        this.perturbedTarget.add(this.aimWander);
+      }
+      aimPerception = { ...perception, targetFeet: this.perturbedTarget };
+    } else {
+      // Keep pursuing only the remembered point while hidden. Existing visual
+      // error decays; no fresh noise or hidden live coordinates enter decisions.
+      this.aimWander.multiplyScalar(Math.exp(-Math.max(0, dt) * 3));
+      if (perception.targetVisible === false) {
+        this.openingShotsFired = 0;
+      }
     }
 
     const decision = decideBotInput(
@@ -358,7 +522,15 @@ export class BotController {
       const ty = perception.targetFeet.y + AIM_HEIGHT - (this.movement.getFeetPosition().y + EYE_HEIGHT);
       const tz = perception.targetFeet.z - this.movement.getFeetPosition().z;
       const inRange = Math.hypot(tx, ty, tz) <= this.params.engageRange;
-      this.targetSeenSec = inRange ? this.targetSeenSec + dt : 0;
+      const visible = perception.targetVisible !== false;
+      const inFov = isWithinBotVisualFov(
+        this.movement.getFeetPosition(),
+        this.movement.getYawRad(),
+        perception.targetFeet,
+      );
+      this.targetSeenSec = inRange && visible && inFov
+        ? this.targetSeenSec + dt
+        : 0;
       this.aimTarget.set(
         perception.targetFeet.x,
         perception.targetFeet.y + AIM_HEIGHT,
@@ -375,9 +547,9 @@ export class BotController {
       this.wantsFire = false;
     }
 
-    // Trigger discipline: fire in short bursts with a cooldown in between, so
-    // bots don't lay down a continuous hitscan stream. The cooldown ticks down
-    // whether or not the bot wants to fire; a burst only accrues while firing.
+    // Trigger discipline: a burst is a short window containing deliberate taps,
+    // followed by a longer cooldown. The tap cooldown is started only after the
+    // authoritative arena accepts a shot via onShotFired().
     if (this.burstCooldownSec > 0) {
       this.burstCooldownSec = Math.max(0, this.burstCooldownSec - dt);
       this.wantsFire = false;
@@ -385,9 +557,11 @@ export class BotController {
     } else if (this.wantsFire) {
       this.burstActiveSec += dt;
       if (this.burstActiveSec >= this.params.burstDurationSec) {
-        // End the burst and start the cooldown.
         this.burstCooldownSec = this.params.burstCooldownSec;
         this.burstActiveSec = 0;
+        this.wantsFire = false;
+      } else if (this.tapCooldownSec > 0) {
+        this.wantsFire = false;
       }
     } else {
       this.burstActiveSec = Math.max(0, this.burstActiveSec - dt);

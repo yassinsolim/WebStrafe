@@ -18,7 +18,7 @@ export const PLAYER_CAPSULE_RADIUS = 0.34;
  * Brief post-(re)spawn invulnerability. Stops the "die the instant you spawn"
  * problem where bots re-acquire and drop you before you can even move.
  */
-export const SPAWN_PROTECTION_MS = 2000;
+export const SPAWN_PROTECTION_MS = 3500;
 
 /**
  * Maximum allowed gap between a client-reported fire `origin` and the shooter's
@@ -26,6 +26,13 @@ export const SPAWN_PROTECTION_MS = 2000;
  * tolerating latency/interpolation.
  */
 export const MAX_ORIGIN_DEVIATION = 3;
+export const MAX_LAG_COMPENSATION_MS = 250;
+const POSITION_HISTORY_RETENTION_MS = MAX_LAG_COMPENSATION_MS * 2;
+
+interface PositionSample {
+  atMs: number;
+  feet: Vector3;
+}
 
 export interface HitEvent {
   shooterId: string;
@@ -33,16 +40,20 @@ export interface HitEvent {
   weaponId: WeaponId;
   damage: number;
   hitbox: 'body' | 'head';
+  killed: boolean;
 }
 
 export interface DeathEvent {
   victimId: string;
   killerId: string;
   weaponId: WeaponId;
+  headshot: boolean;
 }
 
 export interface FireOutcome {
   fired: boolean;
+  /** Exact distance along the accepted shot ray when it struck a player. */
+  impactDistance?: number;
   hit?: HitEvent;
   death?: DeathEvent;
 }
@@ -59,6 +70,7 @@ interface ArenaPlayer {
   weapon: WeaponController;
   /** Authoritative feet position in world units. */
   feet: Vector3;
+  positionHistory: PositionSample[];
   eyeHeight: number;
   /** Damage is ignored until this time (spawn protection). 0 = unprotected. */
   spawnProtectedUntilMs: number;
@@ -84,6 +96,7 @@ export class CombatArena {
       combat: createPlayerCombat(),
       weapon: new WeaponController(initialWeapon),
       feet: new Vector3(),
+      positionHistory: [],
       eyeHeight,
       spawnProtectedUntilMs: 0,
     });
@@ -103,17 +116,59 @@ export class CombatArena {
     if (p) p.spawnProtectedUntilMs = nowMs + SPAWN_PROTECTION_MS;
   }
 
+  /**
+   * Authoritatively starts a clean life while preserving the selected weapon.
+   * Both health and all magazines are reset, and spawn protection is renewed.
+   */
+  resetPlayer(
+    id: string,
+    nowMs: number,
+    position?: [number, number, number],
+  ): RespawnEvent | null {
+    const p = this.players.get(id);
+    if (!p) return null;
+    p.combat = createPlayerCombat();
+    p.weapon.reset();
+    p.spawnProtectedUntilMs = nowMs + SPAWN_PROTECTION_MS;
+    if (position) {
+      p.feet.set(position[0], position[1], position[2]);
+    }
+    p.positionHistory = [{ atMs: nowMs, feet: p.feet.clone() }];
+    return {
+      playerId: id,
+      position: position ?? [p.feet.x, p.feet.y, p.feet.z],
+    };
+  }
+
   /** True while the player is within their post-spawn invulnerability window. */
   isSpawnProtected(id: string, nowMs: number): boolean {
     const p = this.players.get(id);
     return !!p && p.spawnProtectedUntilMs > nowMs;
   }
 
-  setPosition(id: string, feet: [number, number, number], mapId?: string): void {
+  setPosition(
+    id: string,
+    feet: [number, number, number],
+    mapId?: string,
+    nowMs = Date.now(),
+  ): void {
     const p = this.players.get(id);
     if (!p) return;
     p.feet.set(feet[0], feet[1], feet[2]);
     if (mapId !== undefined) p.mapId = mapId;
+    if (!Number.isFinite(nowMs)) return;
+
+    const sample = { atMs: nowMs, feet: p.feet.clone() };
+    const previous = p.positionHistory.at(-1);
+    if (previous && previous.atMs === nowMs) {
+      p.positionHistory[p.positionHistory.length - 1] = sample;
+    } else if (!previous || previous.atMs < nowMs) {
+      p.positionHistory.push(sample);
+    }
+    const cutoff = nowMs - POSITION_HISTORY_RETENTION_MS;
+    while (p.positionHistory.length > 1 && p.positionHistory[1].atMs < cutoff) {
+      p.positionHistory.shift();
+    }
   }
 
   equip(id: string, weaponId: WeaponId): void {
@@ -151,6 +206,8 @@ export class CombatArena {
     origin: [number, number, number],
     dir: [number, number, number],
     nowMs: number,
+    blockingDistance?: number,
+    observedAtMs?: number,
   ): FireOutcome {
     const shooter = this.players.get(shooterId);
     if (!shooter || !shooter.combat.alive) {
@@ -173,22 +230,44 @@ export class CombatArena {
 
     // Build capsules for every other alive player on the same map. Players
     // inside their spawn-protection window can't be hit (shots pass through).
+    const rewindAt = (
+      observedAtMs !== undefined
+      && Number.isFinite(observedAtMs)
+      && observedAtMs <= nowMs
+      && nowMs - observedAtMs <= MAX_LAG_COMPENSATION_MS
+    )
+      ? observedAtMs
+      : null;
     const targets: TargetCapsule[] = [];
     for (const other of this.players.values()) {
       if (other.id === shooterId) continue;
       if (other.mapId !== shooter.mapId) continue;
       if (!other.combat.alive) continue;
       if (other.spawnProtectedUntilMs > nowMs) continue;
+      let targetFeet = other.feet;
+      if (rewindAt !== null) {
+        for (let index = other.positionHistory.length - 1; index >= 0; index -= 1) {
+          const sample = other.positionHistory[index];
+          if (sample.atMs <= rewindAt) {
+            targetFeet = sample.feet;
+            break;
+          }
+        }
+      }
       targets.push({
         id: other.id,
-        feet: other.feet.clone(),
+        feet: targetFeet.clone(),
         height: PLAYER_CAPSULE_HEIGHT,
         radius: PLAYER_CAPSULE_RADIUS,
       });
     }
 
     const dirVec = new Vector3(dir[0], dir[1], dir[2]);
-    const hit = resolveHit(originVec, dirVec, weapon.range, targets);
+    const acceptedRange =
+      blockingDistance !== undefined && Number.isFinite(blockingDistance)
+        ? Math.min(weapon.range, Math.max(0, blockingDistance))
+        : weapon.range;
+    const hit = resolveHit(originVec, dirVec, acceptedRange, targets);
     if (!hit) {
       return { fired: true };
     }
@@ -201,16 +280,23 @@ export class CombatArena {
     const result = applyDamage(target.combat, weapon, hit.hitbox, hit.distance, nowMs);
     const outcome: FireOutcome = {
       fired: true,
+      impactDistance: hit.distance,
       hit: {
         shooterId,
         targetId: hit.targetId,
         weaponId: weapon.id,
         damage: result.applied,
         hitbox: hit.hitbox,
+        killed: result.killed,
       },
     };
     if (result.killed) {
-      outcome.death = { victimId: hit.targetId, killerId: shooterId, weaponId: weapon.id };
+      outcome.death = {
+        victimId: hit.targetId,
+        killerId: shooterId,
+        weaponId: weapon.id,
+        headshot: hit.hitbox === 'head',
+      };
     }
     return outcome;
   }
@@ -224,9 +310,11 @@ export class CombatArena {
     for (const p of this.players.values()) {
       if (isRespawnDue(p.combat, nowMs)) {
         respawn(p.combat);
+        p.weapon.reset();
         p.spawnProtectedUntilMs = nowMs + SPAWN_PROTECTION_MS;
         const pos = spawnFor?.(p.id) ?? [p.feet.x, p.feet.y, p.feet.z];
         p.feet.set(pos[0], pos[1], pos[2]);
+        p.positionHistory = [{ atMs: nowMs, feet: p.feet.clone() }];
         events.push({ playerId: p.id, position: pos });
       }
     }

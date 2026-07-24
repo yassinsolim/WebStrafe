@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { Vector3 } from 'three';
 import { CollisionWorld } from '../../world/CollisionWorld';
 import { createMovementTestScene } from '../../movement/MovementTestScene';
+import { PLAYER_CAPSULE_HEIGHT, PLAYER_CAPSULE_RADIUS } from '../CombatArena';
+import { resolveHit } from '../HitResolver';
 import {
   BotController,
   DEFAULT_BOT_PARAMS,
+  advanceBotAimWander,
   decideBotInput,
   type BotMovementState,
 } from '../BotController';
@@ -134,6 +137,272 @@ describe('decideBotInput', () => {
   });
 });
 
+
+describe('bot visibility fairness', () => {
+  it('does not accumulate reaction time for a target outside visual FOV', () => {
+    const world = new CollisionWorld();
+    const bot = new BotController(new Vector3(0, 1, 0), 0, {
+      ...DEFAULT_BOT_PARAMS,
+      aimWanderRad: 0,
+      reactionDelaySec: 0.1,
+    });
+    const behind = new Vector3(0, 0.4, 20);
+
+    for (let index = 0; index < 8; index += 1) {
+      bot.tick(dt, world, {
+        targetId: 'behind',
+        targetFeet: behind,
+        targetVisible: true,
+      });
+    }
+    expect(bot.wantsToFire()).toBe(false);
+  });
+
+  it('will not fire through blocked line of sight', () => {
+    const target = new Vector3(0, -0.4, -30);
+    const visible = decideBotInput(
+      state({ pitchRad: 0 }),
+      { targetFeet: target, targetVisible: true },
+      DEFAULT_BOT_PARAMS,
+      dt,
+    );
+    const blocked = decideBotInput(
+      state({ pitchRad: 0 }),
+      { targetFeet: target, targetVisible: false },
+      DEFAULT_BOT_PARAMS,
+      dt,
+    );
+
+    expect(visible.fire).toBe(true);
+    expect(blocked.fire).toBe(false);
+    expect(visible.forwardMove).toBe(0);
+    expect(blocked.forwardMove).toBe(1);
+  });
+
+  it('requires a fresh reaction window after sight is blocked', () => {
+    const world = new CollisionWorld();
+    const params = {
+      ...DEFAULT_BOT_PARAMS,
+      aimWanderRad: 0,
+      acquisitionGraceSec: 0,
+      reactionDelaySec: 0.1,
+      burstDurationSec: 1,
+      burstCooldownSec: 1,
+    };
+    const bot = new BotController(new Vector3(0, 1, 0), 180, params);
+    const target = new Vector3(0, 0.4, 20);
+
+    for (let i = 0; i < 7; i += 1) {
+      bot.tick(dt, world, { targetFeet: target, targetVisible: true });
+    }
+    expect(bot.wantsToFire()).toBe(true);
+
+    bot.tick(dt, world, { targetFeet: target, targetVisible: false });
+    expect(bot.wantsToFire()).toBe(false);
+
+    bot.tick(dt, world, { targetFeet: target, targetVisible: true });
+    expect(bot.wantsToFire()).toBe(false);
+    for (let i = 0; i < 6; i += 1) {
+      bot.tick(dt, world, { targetFeet: target, targetVisible: true });
+    }
+    expect(bot.wantsToFire()).toBe(true);
+  });
+
+  it('requires a fresh reaction window when target identity switches', () => {
+    const world = new CollisionWorld();
+    const params = {
+      ...DEFAULT_BOT_PARAMS,
+      aimWanderRad: 0,
+      acquisitionGraceSec: 0,
+      reactionDelaySec: 0.1,
+      burstDurationSec: 1,
+      burstCooldownSec: 1,
+    };
+    const bot = new BotController(new Vector3(0, 1, 0), 180, params);
+    const target = new Vector3(0, 0.4, 20);
+
+    for (let index = 0; index < 7; index += 1) {
+      bot.tick(dt, world, { targetId: 'first', targetFeet: target, targetVisible: true });
+    }
+    expect(bot.wantsToFire()).toBe(true);
+
+    bot.tick(dt, world, { targetId: 'second', targetFeet: target, targetVisible: true });
+    expect(bot.wantsToFire()).toBe(false);
+    for (let index = 0; index < 6; index += 1) {
+      bot.tick(dt, world, { targetId: 'second', targetFeet: target, targetVisible: true });
+    }
+    expect(bot.wantsToFire()).toBe(true);
+  });
+
+
+  it('enforces Deagle settle time and reacquires after an engagement reset', () => {
+    const world = new CollisionWorld();
+    const params = {
+      ...DEFAULT_BOT_PARAMS,
+      aimWanderRad: 0,
+      acquisitionGraceSec: 0,
+      reactionDelaySec: 0.1,
+      stopDistance: 100,
+      burstDurationSec: 2,
+      burstCooldownSec: 1,
+      tapIntervalSec: 0.1,
+    };
+    const bot = new BotController(new Vector3(0, 1, 0), 180, params);
+    const perception = {
+      targetId: 'human',
+      targetFeet: new Vector3(0, 0.4, 20),
+      targetVisible: true,
+    };
+
+    for (let index = 0; index < 7; index += 1) bot.tick(dt, world, perception);
+    expect(bot.wantsToFire()).toBe(true);
+    bot.onShotFired();
+    for (let index = 0; index < 5; index += 1) {
+      bot.tick(dt, world, perception);
+      expect(bot.wantsToFire()).toBe(false);
+    }
+    let settledTap = false;
+    for (let index = 0; index < 3; index += 1) {
+      bot.tick(dt, world, perception);
+      settledTap ||= bot.wantsToFire();
+    }
+    expect(settledTap).toBe(true);
+
+    bot.resetEngagement();
+    bot.tick(dt, world, perception);
+    expect(bot.wantsToFire()).toBe(false);
+    for (let index = 0; index < 6; index += 1) bot.tick(dt, world, perception);
+    expect(bot.wantsToFire()).toBe(true);
+  });
+
+
+  it('opens each visible encounter with a warning miss before center-mass taps', () => {
+    const { root } = createMovementTestScene();
+    const world = new CollisionWorld();
+    world.setCollisionFromRoot(root);
+    const params = {
+      ...DEFAULT_BOT_PARAMS,
+      turnRateRadPerSec: 20,
+      aimWanderRad: 0,
+      acquisitionGraceSec: 0,
+      reactionDelaySec: 0.05,
+      burstDurationSec: 10,
+      burstCooldownSec: 0,
+      tapIntervalSec: 0.05,
+    };
+    const bot = new BotController(new Vector3(0, 0.04, 0), 180, params);
+    const target = {
+      targetId: 'human',
+      targetFeet: new Vector3(0, 0.04, 20),
+      targetVisible: true,
+    };
+    const tickToShot = () => {
+      for (let index = 0; index < 120; index += 1) {
+        bot.tick(dt, world, target);
+        if (bot.wantsToFire()) {
+          return {
+            yaw: bot.getYawRad(),
+            origin: bot.getCameraPosition(),
+            direction: bot.getForwardVector(),
+          };
+        }
+      }
+      throw new Error('bot did not reach its shot window');
+    };
+    const capsule = [{
+      id: 'human',
+      feet: target.targetFeet,
+      height: PLAYER_CAPSULE_HEIGHT,
+      radius: PLAYER_CAPSULE_RADIUS,
+    }];
+
+    const warning = tickToShot();
+    bot.onShotFired();
+    const body = tickToShot();
+    bot.onShotFired();
+    const fatalBody = tickToShot();
+    bot.onShotFired();
+
+    expect(resolveHit(warning.origin, warning.direction, 100, capsule)).toBeNull();
+    expect(resolveHit(body.origin, body.direction, 100, capsule)?.hitbox).toBe('body');
+    expect(resolveHit(fatalBody.origin, fatalBody.direction, 100, capsule)?.hitbox).toBe('body');
+    expect(Math.abs(warning.yaw - body.yaw)).toBeGreaterThan(0.05);
+    expect(fatalBody.yaw).toBeCloseTo(body.yaw, 2);
+
+    bot.tick(dt, world, { ...target, targetVisible: false });
+    const peekWarning = tickToShot();
+    expect(resolveHit(peekWarning.origin, peekWarning.direction, 100, capsule)).toBeNull();
+    expect(Math.abs(peekWarning.yaw - body.yaw)).toBeGreaterThan(0.05);
+  });
+
+  it('visibly holds before acquisition, then reacts and becomes threatening', () => {
+    const world = new CollisionWorld();
+    const bot = new BotController(new Vector3(0, 1, 0), 180, {
+      ...DEFAULT_BOT_PARAMS,
+      acquisitionGraceSec: 0.2,
+      reactionDelaySec: 0.15,
+      aimWanderRad: 0,
+      burstDurationSec: 1,
+      burstCooldownSec: 1,
+    });
+    const target = {
+      targetId: 'human',
+      targetFeet: new Vector3(0, 0.4, 20),
+      targetVisible: true,
+    };
+    const initialYaw = bot.getYawRad();
+
+    for (let index = 0; index < 11; index += 1) {
+      bot.tick(dt, world, target);
+      expect(bot.getEngagementPhase()).toBe('holding');
+      expect(bot.wantsToFire()).toBe(false);
+      expect(bot.getYawRad()).toBeCloseTo(initialYaw, 8);
+    }
+
+    for (let index = 0; index < 3; index += 1) bot.tick(dt, world, target);
+    expect(bot.getEngagementPhase()).toBe('reacting');
+    expect(bot.wantsToFire()).toBe(false);
+
+    for (let index = 0; index < 10; index += 1) bot.tick(dt, world, target);
+    expect(bot.getEngagementPhase()).toBe('engaged');
+    expect(bot.wantsToFire()).toBe(true);
+  });
+});
+
+describe('bot aim wander', () => {
+  function seeded(seed: number): () => number {
+    let value = seed >>> 0;
+    return () => {
+      value += 0x6d2b79f5;
+      let t = value;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function stationaryRms(rate: number): number {
+    let squareSum = 0;
+    const samples = 320;
+    for (let seed = 1; seed <= samples; seed += 1) {
+      const offset = new Vector3();
+      const random = seeded(seed);
+      for (let tick = 0; tick < rate * 6; tick += 1) {
+        advanceBotAimWander(offset, 1, 1 / rate, random);
+      }
+      squareSum += offset.x * offset.x;
+    }
+    return Math.sqrt(squareSum / samples);
+  }
+
+  it('maintains comparable seeded variance across server tick rates', () => {
+    const at30Hz = stationaryRms(30);
+    const at120Hz = stationaryRms(120);
+    expect(at30Hz / at120Hz).toBeGreaterThan(0.85);
+    expect(at30Hz / at120Hz).toBeLessThan(1.15);
+  });
+});
+
 describe('BotController (integrates real physics)', () => {
   function makeWorld(): CollisionWorld {
     const { root } = createMovementTestScene();
@@ -144,7 +413,10 @@ describe('BotController (integrates real physics)', () => {
 
   it('moves toward a target over time without leaving the world (no noclip)', () => {
     const world = makeWorld();
-    const bot = new BotController(new Vector3(0, 6, 8), 180);
+    const bot = new BotController(new Vector3(0, 6, 8), 180, {
+      ...DEFAULT_BOT_PARAMS,
+      acquisitionGraceSec: 0,
+    });
     const target = new Vector3(0, 0, -8);
 
     const start = bot.getFeet().clone();

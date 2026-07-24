@@ -48,6 +48,17 @@ export class WeaponController {
     this.reloadingWeapon = null;
   }
 
+  /** Restores every magazine and cancels cooldown/reload state on a true respawn. */
+  reset(): void {
+    for (const id of ['awp', 'deagle', 'knife'] as WeaponId[]) {
+      const def = getWeapon(id);
+      this.ammo.set(id, isMelee(def) ? Infinity : def.magazine);
+    }
+    this.lastFireAtMs = {};
+    this.reloadingUntilMs = null;
+    this.reloadingWeapon = null;
+  }
+
   /**
    * Attempts to fire the active weapon. Succeeds only when off cooldown, not
    * reloading, and with ammo remaining. On success, consumes a round and starts
