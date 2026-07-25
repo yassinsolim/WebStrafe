@@ -50,8 +50,8 @@ const CONFIGS: Record<GunId, GunConfig> = {
   },
   awp: {
     url: '/viewmodels/awp/awp.glb',
-    targetDiagonal: 1.15,
-    position: [0.18, -0.34, -0.88],
+    targetDiagonal: 0.82,
+    position: [0.18, -0.2, -0.88],
     rotation: [0, 0.03, 0],
     scaleReferenceMaterials: ['Body'],
     handScale: {

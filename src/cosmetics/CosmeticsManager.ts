@@ -8,6 +8,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   Object3D,
+  Quaternion,
   SkinnedMesh,
   SRGBColorSpace,
   Texture,
@@ -40,14 +41,26 @@ import type {
 
 const gltfLoader = new GLTFLoader();
 const textureLoader = new TextureLoader();
-export const INTEGRATED_KNIFE_BASE_POSITION = [-0.015, 0, -0.08] as const;
-const INTEGRATED_KNIFE_MODEL_SCALE = 0.62;
+export const INTEGRATED_KNIFE_BASE_POSITION = [-0.085, 0.025, -0.08] as const;
+const INTEGRATED_KNIFE_MODEL_SCALE = 0.72;
 const BACKSTAB_SUPPORT_ARM_SHIFT = 80;
+const BACKSTAB_POSE_TIME_SEC = 2.75;
+const BACKSTAB_BLADE_TURN = new Quaternion().setFromAxisAngle(
+  new Vector3(0, 0, 1),
+  -Math.PI / 2,
+);
 const INTEGRATED_KNIFE_SLEEVE_BONES = [
   { upperArm: 'L_arm_01', elbow: 'L_elbow_02' },
   { upperArm: 'R_arm_023', elbow: 'R_elbow_024' },
 ] as const;
 const INTEGRATED_KNIFE_UPPER_ARM_RADIUS_SCALE = 0.48;
+
+interface BackstabPoseNode {
+  object: Object3D;
+  position: Vector3;
+  quaternion: Quaternion;
+  scale: Vector3;
+}
 
 export function taperIntegratedKnifeSleeves(root: Object3D): number {
   root.updateWorldMatrix(true, true);
@@ -169,6 +182,7 @@ export class CosmeticsManager {
   private backstabSupportArm: Object3D | null = null;
   private readonly backstabSupportArmBaseScale = new Vector3(1, 1, 1);
   private appliedBackstabSupportArmShift = 0;
+  private backstabPoseNodes: BackstabPoseNode[] = [];
 
   private knifeMixer: AnimationMixer | null = null;
   private knifeIdleAction: AnimationAction | null = null;
@@ -302,9 +316,10 @@ export class CosmeticsManager {
     this.currentKnifeWatch = knife.includesHands && authoredWatch
       ? attachViewmodelWatch(knifeResult.root, 'knife', {
         boneName: 'L_wrist_03',
-        position: [0, 2.5, 3],
+        position: [2, 2.5, 3],
         rotation: [-0.35, 0, Math.PI],
-        scale: 72,
+        scale: 108,
+        faceCamera: true,
       }, authoredWatch)
       : null;
     this.gloveRoot.add(gloveResult.root);
@@ -465,6 +480,7 @@ export class CosmeticsManager {
     this.knifeMouse2Ranges = [];
     this.attackRangeSelectionMode = 'cycle';
     this.activeRange = null;
+    this.backstabPoseNodes = [];
     this.knifePresentation.reset();
     this.queuedAttackLane = null;
     this.startedAttackLane = null;
@@ -499,6 +515,7 @@ export class CosmeticsManager {
       this.knifeRangeAction.loop = LoopRepeat;
       this.knifeRangeAction.clampWhenFinished = false;
       this.knifeRangeAction.play();
+      this.captureBackstabPose(knifeRoot, sourceClip);
 
       this.knifeEquipRange = rangeConfig.equipRange;
       this.knifeIdleRange = rangeConfig.idleLoopRange;
@@ -655,21 +672,77 @@ export class CosmeticsManager {
     const inspectScale = this.usingIntegratedHands ? 0.35 : 1;
     const inspect = this.knifeInspectAlpha * inspectScale;
     const backstab = this.backstabReadyAlpha * (1 - this.knifeInspectAlpha);
+    const modelScale = this.usingIntegratedHands ? INTEGRATED_KNIFE_MODEL_SCALE : 1;
+    const backstabPerspectiveScale = this.usingIntegratedHands
+      ? 1 - backstab * 0.22
+      : 1;
+    this.knifeRoot.scale.setScalar(
+      this.viewmodelScale * modelScale * backstabPerspectiveScale,
+    );
     this.knifeRoot.position.set(
-      this.knifeBasePosition.x + snapshot.position[0] - inspect * 0.12 + backstab * 0.11,
-      this.knifeBasePosition.y + snapshot.position[1] + inspect * 0.06 + backstab * 0.1,
-      this.knifeBasePosition.z + snapshot.position[2] + inspect * 0.16 + backstab * 0.025,
+      this.knifeBasePosition.x + snapshot.position[0] - inspect * 0.12 + backstab * 0.02,
+      this.knifeBasePosition.y + snapshot.position[1] + inspect * 0.06 + backstab * 0.015,
+      this.knifeBasePosition.z + snapshot.position[2] + inspect * 0.16 - backstab * 0.03,
     );
     this.knifeRoot.rotation.set(
-      this.knifeBaseRotation.x + snapshot.rotation[0] + inspect * 0.12 - backstab * 0.12,
-      this.knifeBaseRotation.y + snapshot.rotation[1] - inspect * 0.8 - backstab * 0.18,
-      this.knifeBaseRotation.z + snapshot.rotation[2] - inspect * 0.25 + backstab * 0.95,
+      this.knifeBaseRotation.x + snapshot.rotation[0] + inspect * 0.12,
+      this.knifeBaseRotation.y + snapshot.rotation[1] - inspect * 0.8,
+      this.knifeBaseRotation.z + snapshot.rotation[2] - inspect * 0.25,
     );
+    this.applyBackstabPose(backstab);
     if (this.backstabSupportArm) {
       this.appliedBackstabSupportArmShift = BACKSTAB_SUPPORT_ARM_SHIFT * backstab;
       this.backstabSupportArm.position.x += this.appliedBackstabSupportArmShift;
       this.backstabSupportArmBaseScale.copy(this.backstabSupportArm.scale);
       this.backstabSupportArm.scale.multiplyScalar(Math.max(0.001, 1 - backstab));
+    }
+  }
+
+  private captureBackstabPose(root: Object3D, clip: AnimationClip): void {
+    if (!this.knifeMixer || !this.knifeRangeAction) {
+      return;
+    }
+    const action = this.knifeRangeAction;
+    const originalTime = action.time;
+    const originalPaused = action.paused;
+    const originalWeight = action.weight;
+    const bladeBaseQuaternion = findViewmodelNode(root, 'knife')?.quaternion.clone();
+    action.paused = false;
+    action.weight = 1;
+    action.time = Math.min(BACKSTAB_POSE_TIME_SEC, clip.duration);
+    this.knifeMixer.update(0);
+
+    const nodeNames = new Set(
+      clip.tracks.map((track) => track.name.slice(0, track.name.lastIndexOf('.'))),
+    );
+    this.backstabPoseNodes = [...nodeNames]
+      .map((name) => findViewmodelNode(root, name))
+      .filter((object): object is Object3D => object !== null)
+      .map((object) => ({
+        object,
+        position: object.position.clone(),
+        quaternion: object.quaternion.clone(),
+        scale: object.scale.clone(),
+      }));
+    const blade = this.backstabPoseNodes.find((pose) => pose.object.name === 'knife');
+    if (blade && bladeBaseQuaternion) {
+      blade.quaternion.copy(bladeBaseQuaternion).multiply(BACKSTAB_BLADE_TURN);
+    }
+
+    action.time = originalTime;
+    action.weight = originalWeight;
+    this.knifeMixer.update(0);
+    action.paused = originalPaused;
+  }
+
+  private applyBackstabPose(alpha: number): void {
+    if (alpha <= 0) {
+      return;
+    }
+    for (const pose of this.backstabPoseNodes) {
+      pose.object.position.lerp(pose.position, alpha);
+      pose.object.quaternion.slerp(pose.quaternion, alpha);
+      pose.object.scale.lerp(pose.scale, alpha);
     }
   }
 

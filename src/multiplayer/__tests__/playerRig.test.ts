@@ -98,11 +98,10 @@ describe('menu knife grip', () => {
     const gameplayRotationZ = knife?.rotation.z;
     applyKnifeIdlePose(rig);
 
-    expect(knife?.position.toArray()).toEqual([-0.022, -0.009, 0.047]);
+    expect(knife?.position.toArray()).toEqual([0.04, 0.02, 0.0252]);
     expect(knife?.rotation.toArray().slice(0, 3)).toEqual([1.18, -0.58, 0.75]);
     expect(knife?.rotation.z).toBeGreaterThan((gameplayRotationZ ?? 0) + 1.2);
     expect(hand.quaternion.equals(rig.rightHandBase)).toBe(false);
-    expect(knife?.position.x).toBeLessThan(0);
-    expect(knife?.position.y).toBeLessThan(0);
+    expect(knife?.position.z).toBeLessThan(0.03);
   });
 });

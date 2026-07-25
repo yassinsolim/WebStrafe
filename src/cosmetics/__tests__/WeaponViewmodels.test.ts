@@ -178,7 +178,7 @@ describe('WeaponViewmodels', () => {
 
     const mount = viewmodels.root.getObjectByName('gun:awp');
     const source = viewmodels.root.getObjectByName('awp:source-pivot');
-    expect(mount?.position.toArray()).toEqual([0.18, -0.34, -0.88]);
+    expect(mount?.position.toArray()).toEqual([0.18, -0.2, -0.88]);
     expect(source?.scale.x).toBeLessThan(1);
     expect(awp.scene.getObjectByName('Wrist.L')?.scale.toArray()).toEqual([1.22, 1.22, 1.22]);
     expect(awp.scene.getObjectByName('Wrist.R')?.scale.toArray()).toEqual([1.22, 1.22, 1.22]);
@@ -187,7 +187,7 @@ describe('WeaponViewmodels', () => {
 
   it.each([
     ['deagle', [0.16, -0.28, -0.8]],
-    ['awp', [0.18, -0.34, -0.88]],
+    ['awp', [0.18, -0.2, -0.88]],
   ] as const)('reveals both sides of the %s and returns to its exact idle mount', async (id, idle) => {
     const loader: WeaponViewmodelLoader = {
       loadAsync: async (url) => url.includes('deagle') ? asset('deagle') : asset('awp'),

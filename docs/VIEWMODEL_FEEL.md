@@ -54,27 +54,31 @@ rotation < 0.15 rad) and composited every frame.
   to a flat white stare. Counter-terrorist gas-mask lenses remain untouched.
 - The menu knife follows the weapon-hand helper while the anatomical wrist and
   fingers rotate into the grip. Its menu-only diagonal rotation follows the
-  fist/palm channel, with the guard above the index finger and the pommel below
-  the curled fingers instead of crossing the knuckle line.
-- The integrated first-person knife rig is moved slightly forward and upward so
-  both hands stay readable through idle and attack motion.
+  fist/palm channel, with the wooden handle inside the curled fingers and the
+  guard outside the index knuckle instead of intersecting the closed fist.
+- The integrated first-person knife rig is enlarged and recentered so both hands
+  and the complete idle blade stay readable through idle and attack motion.
 - The Deagle retains its authored two-hand rig. Disconnected source clothing is
   removed during export, so no synthetic forearm or duplicate hand is added at
   runtime.
-- Knife, Deagle, and AWP hands keep their authored geometry but now share black
-  tactical gloves and covered wrists. Knife arm texels are recolored to graphite
-  while retaining source luminance detail; the knife and AWP rigs, skinning, and
-  animation channels remain unchanged.
+- Knife, Deagle, and AWP hands keep their authored geometry and share black
+  tactical gloves. The knife atlas keeps its glove islands graphite while its
+  forearm islands use the Deagle skin palette; source luminance detail, rigs,
+  skinning, and animation channels remain unchanged.
 - Knife and AWP reuse the exact static `Watch` and `Watch_Emission` geometry
   extracted from the authored Deagle reload rig. The attachment follows the
   skinned wrist and faces the ancestor viewmodel camera, never world origin.
 - Deagle and AWP use the same viewmodel camera. AWP framing is normalized from
   the rifle body rather than its long forearms, then its wrists are proportioned
-  against the Deagle reference so the hands no longer read as miniature.
+  against the Deagle reference so the hands no longer read as miniature. The
+  rifle is reduced and raised enough to keep its scope, receiver, hands, and
+  stock readable without changing barrel alignment.
 - A valid close-range target facing away smoothly raises the knife into a
-  one-handed backstab-ready stance. The support arm is reversibly collapsed
-  before each authored mixer update, and the normal two-hand idle returns when
-  range, aim, facing, elevation, life state, or line of sight becomes invalid.
+  one-handed reverse-grip backstab-ready stance. Readiness blends tracked nodes
+  toward an authored secondary-stab frame, rotates only the blade downward, and
+  reversibly collapses the support arm after each mixer update. The normal
+  two-hand idle returns when range, aim, facing, elevation, life state, or line
+  of sight becomes invalid.
 - Pointer-lock transitions clear pending look input and discard the first stale
   movement event. Normal raw deltas accumulate without clipping; only isolated
   per-event spikes above 512 counts are rejected.

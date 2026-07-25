@@ -5,13 +5,17 @@ import {
   Float32BufferAttribute,
   Group,
   MeshStandardMaterial,
+  Quaternion,
+  QuaternionKeyframeTrack,
   Skeleton,
   SkinnedMesh,
   Uint16BufferAttribute,
+  Vector3,
 } from 'three';
 import { describe, expect, it } from 'vitest';
 import {
   CosmeticsManager,
+  INTEGRATED_KNIFE_BASE_POSITION,
   taperIntegratedKnifeSleeves,
 } from '../CosmeticsManager';
 
@@ -69,6 +73,60 @@ describe('CosmeticsManager knife presentation composition', () => {
     manager.update(0.31);
     expect(manager.consumeStartedAttack()).toBe('secondary');
     expect(manager.consumeStartedAttack()).toBeNull();
+  });
+
+  it('blends an authored raised-hand frame with a blade-only reverse grip', () => {
+    const root = new Group();
+    const manager = new CosmeticsManager(root);
+    const knifeRoot = root.getObjectByName('ViewmodelKnifeRoot');
+    if (!knifeRoot) {
+      throw new Error('Expected the knife presentation root');
+    }
+    const internal = manager as unknown as {
+      usingIntegratedHands: boolean;
+      knifeBasePosition: { set(x: number, y: number, z: number): void };
+      knifeBaseRotation: { set(x: number, y: number, z: number): void };
+      setupKnifeAnimations(
+        root: Group,
+        clips: AnimationClip[],
+        entry: unknown,
+      ): void;
+    };
+    internal.usingIntegratedHands = true;
+    internal.knifeBasePosition.set(...INTEGRATED_KNIFE_BASE_POSITION);
+    internal.knifeBaseRotation.set(0, Math.PI, 0);
+    const knifeModel = new Group();
+    const blade = new Group();
+    blade.name = 'knife';
+    knifeModel.add(blade);
+    const raised = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 0.45);
+    internal.setupKnifeAnimations(
+      knifeModel,
+      [new AnimationClip('all', 4, [new QuaternionKeyframeTrack(
+        'knife.quaternion',
+        [0, 2.75],
+        [0, 0, 0, 1, raised.x, raised.y, raised.z, raised.w],
+      )])],
+      {
+        animationBehavior: {
+          sourceClip: 'all',
+          idleLoopRange: { startSec: 0, endSec: 1 },
+          mouse1Ranges: [{ startSec: 1, endSec: 2 }],
+          mouse2Ranges: [{ startSec: 2.5, endSec: 3.5 }],
+        },
+      },
+    );
+    manager.update(0);
+    const idleBlade = blade.quaternion.clone();
+
+    manager.setBackstabReady(true);
+    manager.update(1);
+
+    expect(knifeRoot.position.x).toBeCloseTo(-0.065, 3);
+    expect(knifeRoot.position.y).toBeCloseTo(0.04, 3);
+    expect(knifeRoot.rotation.z).toBeCloseTo(0);
+    expect(knifeRoot.scale.x).toBeGreaterThan(0.55);
+    expect(blade.quaternion.angleTo(idleBlade)).toBeGreaterThan(1.5);
   });
 
   it('tapers upper-arm sleeves without moving wrist-owned geometry', () => {

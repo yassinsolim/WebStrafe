@@ -70,7 +70,7 @@ const KNIFE_MODEL_PATH = '/viewmodels/knife/knife.glb';
  * knife-fight hold from the third-person menu camera. Applied by
  * {@link applyKnifeIdlePose} so the in-game third-person hold is never affected.
  */
-const MENU_KNIFE_GRIP_POSITION = new Vector3(-0.022, -0.009, 0.047);
+const MENU_KNIFE_GRIP_POSITION = new Vector3(0.04, 0.02, 0.0252);
 const MENU_KNIFE_GRIP_ROTATION = new Euler(1.18, -0.58, 0.75, 'XYZ');
 const EYE_DETAIL_MARKER = 'PlayerEyeDetails';
 const EYE_DETAIL_OFFSET = 0.013;
