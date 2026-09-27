@@ -69,8 +69,8 @@ export class ScopeOverlay {
     for (const cls of ['ws-scope-line is-h', 'ws-scope-line is-v', 'ws-scope-post is-left', 'ws-scope-post is-right', 'ws-scope-post is-bottom']) {
       lens.appendChild(part(cls));
     }
-    // small range ticks on the thin lines, both sides of the centre
-    for (const offset of [-24, -12, 12, 24]) {
+    // small range ticks on the thin part of the lines, between centre and posts
+    for (const offset of [-9, -4.5, 4.5, 9]) {
       const onH = part('ws-scope-tick is-h');
       onH.style.left = `${50 + offset}%`;
       lens.appendChild(onH);
