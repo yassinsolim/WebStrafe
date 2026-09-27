@@ -45,7 +45,6 @@ import { createMultiplayer } from '../network/createMultiplayer';
 import type { MultiplayerTransport } from '../network/MultiplayerTransport';
 import type { LeaderboardEntry, PlayerModel } from '../network/types';
 import {
-  REMOTE_PRESENTATION_DELAY_MS,
   RemotePlayersRenderer,
 } from '../multiplayer/RemotePlayersRenderer';
 import { CombatHud } from '../ui/CombatHud';
@@ -122,7 +121,6 @@ export class GameApp {
   private readonly deadMoveInput = { forwardMove: 0, sideMove: 0, jumpPressed: false, jumpHeld: false };
   private readonly remotePlayerNames = new Map<string, string>();
   private backstabTargets: BackstabTarget[] = [];
-  private latestSnapshotServerTimeMs: number | null = null;
 
   private readonly cosmeticsGroup = new Group();
   private readonly weaponViewmodels = new WeaponViewmodels();
@@ -184,7 +182,6 @@ export class GameApp {
   private goalPad: GoalPad | null = null;
   private runComplete = false;
   private localPlayerName = loadPlayerName();
-  private multiplayerSendAccumulator = 0;
   private resumeToggleInFlight = false;
   private remotePlayersReady: Promise<void> = Promise.resolve();
 
@@ -304,7 +301,6 @@ export class GameApp {
         this.persistSelectedMapId(mapId);
         this.remotePlayers.applySnapshot([], null);
         this.backstabTargets = [];
-        this.latestSnapshotServerTimeMs = null;
         void this.refreshLeaderboard(mapId);
         this.syncMultiplayerIdentity();
       },
@@ -335,7 +331,6 @@ export class GameApp {
         return;
       }
       const localId = this.multiplayer.getLocalId();
-      this.latestSnapshotServerTimeMs = snapshot.serverTimeMs;
       this.remotePlayers.applySnapshot(snapshot.players, localId);
       this.backstabTargets = snapshot.players
         .filter((player) => player.id !== localId)
@@ -551,8 +546,8 @@ export class GameApp {
         const sampledMove = this.input.sampleMoveInput();
         const moveInput = dead ? this.deadMoveInput : sampledMove;
         this.movement.tick(FIXED_TICK_DT, moveInput, this.collisionWorld);
-        this.multiplayerSendAccumulator += FIXED_TICK_DT;
-        this.sendMultiplayerStateIfReady();
+        // the tick ends where the leftover accumulator begins
+        this.sendMultiplayerState(Date.now() - this.accumulator * 1000);
         this.tryCompleteRun();
         if (this.loadedMap && this.movement.getFeetPosition().y < this.voidResetY) {
           const now = performance.now();
@@ -1134,9 +1129,7 @@ export class GameApp {
     this.multiplayer.sendFire(
       [origin.x, origin.y, origin.z],
       [forward.x, forward.y, forward.z],
-      this.latestSnapshotServerTimeMs === null
-        ? undefined
-        : this.latestSnapshotServerTimeMs - REMOTE_PRESENTATION_DELAY_MS,
+      this.remotePlayers.getFireView(),
     );
     if (result.magazineEmptied) {
       this.reloadCombatWeapon(nowMs);
@@ -1253,11 +1246,7 @@ export class GameApp {
     return model === 'terrorist' ? 'knifeGloves1' : 'knifeGloves2';
   }
 
-  private sendMultiplayerStateIfReady(): void {
-    if (this.multiplayerSendAccumulator < 1 / 20) {
-      return;
-    }
-    this.multiplayerSendAccumulator = 0;
+  private sendMultiplayerState(tickWallMs: number): void {
     if (!this.playing || !this.loadedMap) {
       return;
     }
@@ -1269,6 +1258,7 @@ export class GameApp {
       velocity: [velocity.x, velocity.y, velocity.z],
       yaw: this.movement.getYawRad(),
       pitch: this.movement.getPitchRad(),
+      t: tickWallMs,
     });
   }
 
