@@ -2386,6 +2386,12 @@ export class GameApp {
       stab: () => this.attackCombatKnife('secondary', performance.now()),
       scope: () => this.combatAim.toggleScope(performance.now(), { reloading: this.weapon.isReloading(performance.now()), alive: this.localAlive }),
       scoped: () => this.combatAim.isScoped(),
+      canSee: (id: string) => {
+        const target = this.remotePlayers.getDisplayedPlayers().find((p) => p.id === id);
+        if (!target) return false;
+        const eye = this.movement.getCameraPosition();
+        return !this.collisionWorld.segmentIntersectsGeometry(eye, target.position.clone().add(new Vector3(0, 1.3, 0)));
+      },
       scoreboardText: () => document.querySelector('.hud-scoreboard')?.textContent ?? null,
       killfeedLines: () => Array.from(document.querySelectorAll('.combat-killfeed-line')).map((el) => el.textContent ?? ''),
     };

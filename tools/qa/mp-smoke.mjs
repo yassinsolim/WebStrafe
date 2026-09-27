@@ -76,7 +76,12 @@ try {
   check('combat enabled on this build', weapon === 'deagle', { weapon });
 
   // smooth remote movement: B strafes, A samples B's drawn position every frame for 3 s
-  await qa(B, (q) => q.move(0, 1));
+  const fa = (await state(A)).feet;
+  const fb = (await state(B)).feet;
+  await qa(B, (q, p) => q.teleport(p[0], p[1] + 0.5, p[2], 90), [(fa[0] + fb[0]) / 2, Math.max(fa[1], fb[1]), (fa[2] + fb[2]) / 2]);
+  await sleep(800);
+  const truth0 = (await state(B)).feet;
+  await qa(B, (q) => q.move(1, 0));
   await sleep(600);
   const samples = await A.page.evaluate((id) => new Promise((resolve) => {
     const out = [];
@@ -90,6 +95,7 @@ try {
     requestAnimationFrame(tick);
   }), idB);
   await qa(B, (q) => q.move(0, 0));
+  const truth1 = (await state(B)).feet;
   const speeds = [];
   for (let i = 1; i < samples.length; i += 1) {
     const dt = (samples[i][0] - samples[i - 1][0]) / 1000;
@@ -102,7 +108,7 @@ try {
   const frozen = speeds.filter((s) => s < med * 0.1).length;
   const jumps = speeds.filter((s) => s > med * 3).length;
   const smooth = med > 1 && frozen / Math.max(1, speeds.length) < 0.1 && jumps / Math.max(1, speeds.length) < 0.03;
-  check('smooth remote movement', smooth, { frames: speeds.length, medianSpeed: +med.toFixed(2), frozenPct: +(100 * frozen / Math.max(1, speeds.length)).toFixed(1), jumpPct: +(100 * jumps / Math.max(1, speeds.length)).toFixed(1) });
+  check('smooth remote movement', smooth, { truthMoved: +Math.hypot(truth1[0] - truth0[0], truth1[2] - truth0[2]).toFixed(1), frames: speeds.length, medianSpeed: +med.toFixed(2), frozenPct: +(100 * frozen / Math.max(1, speeds.length)).toFixed(1), jumpPct: +(100 * jumps / Math.max(1, speeds.length)).toFixed(1) });
 
   // shoot B from A with each weapon until B dies; wait for respawn between
   const killWith = async (shooter, victimId, victim, weaponId, maxShots) => {
@@ -111,10 +117,17 @@ try {
     const feedBefore = (await qa(shooter, (q) => q.killfeedLines())).length;
     // stand next to (knife) or 8 m from (guns) the victim so cover never blocks the line
     const v = (await state(victim)).feet;
-    const gap = weaponId === 'knife' ? 1.0 : 8;
-    await qa(shooter, (q, a) => q.teleport(a.pos[0], a.pos[1] + 0.05, a.pos[2] + a.gap, 0), { pos: v, gap });
     await qa(victim, (q) => q.move(0, 0));
-    await sleep(700);
+    const offsets = weaponId === 'knife' ? [[0, 1], [1, 0], [0, -1], [-1, 0]] : [[0, 7], [7, 0], [0, -7], [-7, 0], [5, 5], [-5, -5], [5, -5], [-5, 5]];
+    let clear = false;
+    for (const [dx, dz] of offsets) {
+      await qa(shooter, (q, a) => q.teleport(a.x, a.y, a.z, 0), { x: v[0] + dx, y: v[1] + 0.05, z: v[2] + dz });
+      await sleep(500);
+      if (await qa(shooter, (q, id) => q.canSee(id), victimId)) { clear = true; break; }
+    }
+    report.checks[`${weaponId} line of sight`] = { ok: clear };
+    // spawn protection after a respawn
+    await sleep(1500);
     if (weaponId === 'awp') {
       await qa(shooter, (q) => q.scope());
       await sleep(400);
@@ -162,14 +175,27 @@ try {
     const cdp = await host.context.newCDPSession(host.page);
     const { windowId } = await cdp.send('Browser.getWindowForTarget');
     await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } });
-    const hidden = await host.page.evaluate(() => document.visibilityState);
+    await sleep(1000);
+    let hidden = await host.page.evaluate(() => document.visibilityState);
+    let how = 'minimized window';
+    if (hidden !== 'hidden') {
+      // chrome under automation doesn't always report a minimized window as hidden,
+      // so fire the same visibility change the game listens for
+      await host.page.evaluate(() => {
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+        document.dispatchEvent(new Event('visibilitychange'));
+      });
+      hidden = 'hidden (synthetic)';
+      how = 'visibilitychange';
+    }
     let newHost = -1;
     for (let i = 0; i < 60 && newHost < 0; i += 1) {
       await sleep(250);
       const now = await Promise.all(clients.map(async (c, k) => (k === hostIndex ? false : (await state(c)).hosting)));
       newHost = now.indexOf(true);
     }
-    check('host handoff when the host tab is hidden', newHost >= 0, { oldHost: host.name, hostTab: hidden, newHost: clients[newHost]?.name ?? null });
+    check('host handoff when the host tab is hidden', newHost >= 0, { oldHost: host.name, hostTab: hidden, how, newHost: clients[newHost]?.name ?? null });
     if (newHost >= 0) {
       // combat still resolves under the new host
       const others = clients.filter((c, k) => k !== hostIndex);
