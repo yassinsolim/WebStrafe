@@ -397,10 +397,13 @@ players show your knife; finishes (the existing `WearMaterial` shader).
 
 ## 6. Viewmodels, feedback, maps, UI, audio
 
-- **Viewmodels:** keep the current rig for now. Build original arms (procedural
-  or Blender, which isn't installed on this machine) to replace the imported
-  ones (see section 7). Add sway, bob and landing dip per weapon (partly there
-  in `ViewmodelRenderer`).
+- **Viewmodels:** done in v2. One original arms rig (`public/viewmodels/v2/arms.glb`,
+  gloves, sleeves and a bone-attached dive watch showing local time) holds the
+  new Deagle, AWP and all 20 procedural knives through two bone IK and finger
+  poses (`src/viewmodel/`). Clips cover draw, fire, reload, inspect (with a
+  watch check), the AWP bolt cycle and per-knife draw and inspect styles. The
+  imported Sketchfab rigs are deleted. `ViewmodelRenderer` still adds sway,
+  bob, landing dip and recoil kick on top.
 - **Hit feedback:** server-confirmed hitmarkers and damage numbers exist.
   Add a headshot ding, kill confirm, directional damage indicator, and blood or
   impact decals from the server-resolved endpoint.
