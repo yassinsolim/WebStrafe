@@ -107,14 +107,22 @@ try {
   const med = speeds[Math.floor(speeds.length / 2)] ?? 0;
   const frozen = speeds.filter((s) => s < med * 0.1).length;
   const jumps = speeds.filter((s) => s > med * 3).length;
+  // where the frozen frames sit: long runs mean snapshot gaps, singles mean duplicate frames
+  const runs = [];
+  let run = 0;
+  for (const s of speeds) {
+    if (s < med * 0.1) run += 1;
+    else if (run) { runs.push(run); run = 0; }
+  }
+  if (run) runs.push(run);
   const smooth = med > 1 && frozen / Math.max(1, speeds.length) < 0.1 && jumps / Math.max(1, speeds.length) < 0.03;
-  check('smooth remote movement', smooth, { truthMoved: +Math.hypot(truth1[0] - truth0[0], truth1[2] - truth0[2]).toFixed(1), frames: speeds.length, medianSpeed: +med.toFixed(2), frozenPct: +(100 * frozen / Math.max(1, speeds.length)).toFixed(1), jumpPct: +(100 * jumps / Math.max(1, speeds.length)).toFixed(1) });
+  check('smooth remote movement', smooth, { frozenRuns: runs.slice(0, 12), truthMoved: +Math.hypot(truth1[0] - truth0[0], truth1[2] - truth0[2]).toFixed(1), frames: speeds.length, medianSpeed: +med.toFixed(2), frozenPct: +(100 * frozen / Math.max(1, speeds.length)).toFixed(1), jumpPct: +(100 * jumps / Math.max(1, speeds.length)).toFixed(1) });
 
   // shoot B from A with each weapon until B dies; wait for respawn between
   const killWith = async (shooter, victimId, victim, weaponId, maxShots) => {
     await qa(shooter, (q, w) => q.equip(w), weaponId);
     await sleep(weaponId === 'awp' ? 1300 : 900);
-    const feedBefore = (await qa(shooter, (q) => q.killfeedLines())).length;
+    const feedBefore = await qa(shooter, (q) => q.killfeedLines());
     // stand next to (knife) or 8 m from (guns) the victim so cover never blocks the line
     const v = (await state(victim)).feet;
     await qa(victim, (q) => q.move(0, 0));
@@ -146,8 +154,12 @@ try {
     }
     await sleep(500);
     const feedAfter = await qa(shooter, (q) => q.killfeedLines());
-    check(`${weaponId} kill`, dead, { feedLines: feedAfter.length, newest: feedAfter[0] ?? null });
-    check(`${weaponId} killfeed updates`, feedAfter.length > feedBefore, { before: feedBefore, after: feedAfter.length });
+    // a bot can kill the victim too, so the kill only counts with a killfeed line naming our shooter
+    const shooterName = (await state(shooter)).name;
+    const victimName = (await state(victim)).name;
+    const ours = feedAfter.find((line) => line.startsWith(shooterName) && line.includes(victimName) && !feedBefore.includes(line));
+    check(`${weaponId} kill by the shooter`, dead && !!ours, { line: ours ?? null, newest: feedAfter[0] ?? null });
+    check(`${weaponId} killfeed updates`, !!ours, { before: feedBefore.length, after: feedAfter.length });
     // respawn
     for (let i = 0; i < 60; i += 1) {
       if ((await state(victim)).alive) break;

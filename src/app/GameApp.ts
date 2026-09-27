@@ -2356,6 +2356,7 @@ export class GameApp {
     const qa = {
       state: () => ({
         localId: this.multiplayer.getLocalId(),
+        name: this.localPlayerName,
         hosting: this.multiplayer.isHosting?.() ?? null,
         alive: this.localAlive,
         weapon: this.weapon.getActive(),
