@@ -25,11 +25,6 @@ interface LoadoutPreset {
 type TabId = 'maps' | 'character' | 'knives' | 'settings' | 'ranks';
 type TeamId = 'terrorist' | 'counterterrorist';
 
-const MODEL_BY_TEAM: Record<TeamId, string> = {
-  terrorist: '/playermodels/terrorist.glb',
-  counterterrorist: '/playermodels/counterterrorist.glb',
-};
-
 const TEAM_LABEL: Record<TeamId, string> = {
   terrorist: 'Terrorist',
   counterterrorist: 'Counter-Terrorist',
@@ -416,7 +411,7 @@ export class MainMenu {
   private applyTeam(team: TeamId, emit: boolean): void {
     this.activeTeam = team;
     this.stageTeam.textContent = TEAM_LABEL[team];
-    void this.preview?.setModel(MODEL_BY_TEAM[team]);
+    void this.preview?.setModel(team);
     this.renderTeamCards();
     if (emit) {
       const preset = this.loadoutPresets.find((p) => p.team === team);
@@ -434,8 +429,7 @@ export class MainMenu {
     details.appendChild(summary);
     const lines = [
       'Knife animated by DJMaesen — CC Attribution.',
-      '"CTM_SAS | CS2 Agent Model" (skfb.ly/oRO6P) by Alex — CC Attribution.',
-      '"PHOENIX | CS2 Agent Model" (skfb.ly/oQyER) by Alex — CC Attribution.',
+      'Player models and knives: original, generated in code.',
       '"Desert Eagle | First Person Animations" rig by 1Matzh — CC Attribution.',
       '"AWP with Anims" rig by Addison Ye (sketchfab.com/redethox) — CC Attribution.',
     ];

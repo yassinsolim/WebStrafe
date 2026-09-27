@@ -3383,12 +3383,12 @@ async function runBrowserMatrix(browser, results, supervisor) {
     async () => {
       const resources = await browser.evaluate(`(() => {
         const names = performance.getEntriesByType('resource').map((entry) => entry.name);
+        // player models are generated in code now, only the knife is fetched
         return {
-          player: names.find((name) => name.includes('/playermodels/terrorist.glb')) ?? null,
           knife: names.find((name) => name.includes('/viewmodels/knife/knife.glb')) ?? null,
         };
       })()`);
-      return resources.player && resources.knife ? resources : null;
+      return resources.knife ? resources : null;
     },
     15_000,
   );
