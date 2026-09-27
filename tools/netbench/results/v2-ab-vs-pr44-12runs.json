@@ -1,0 +1,42 @@
+{
+  "base:rtt150_jitter_loss": {
+    "runs": 12,
+    "hits": 111,
+    "shots": 132,
+    "hitRatePct": 84.1,
+    "errP50m_median": 4.451,
+    "errP95m_median": 6.305,
+    "frozenPct_mean": 0.72,
+    "downKBps_mean": 21.65
+  },
+  "base:rtt60_jitter_loss": {
+    "runs": 12,
+    "hits": 118,
+    "shots": 120,
+    "hitRatePct": 98.3,
+    "errP50m_median": 3.205,
+    "errP95m_median": 4.324,
+    "frozenPct_mean": 0.07,
+    "downKBps_mean": 21.65
+  },
+  "v2:rtt150_jitter_loss": {
+    "runs": 12,
+    "hits": 114,
+    "shots": 130,
+    "hitRatePct": 87.7,
+    "errP50m_median": 4.549,
+    "errP95m_median": 6.179,
+    "frozenPct_mean": 0.67,
+    "downKBps_mean": 21.65
+  },
+  "v2:rtt60_jitter_loss": {
+    "runs": 12,
+    "hits": 118,
+    "shots": 122,
+    "hitRatePct": 96.7,
+    "errP50m_median": 3.1,
+    "errP95m_median": 4.319,
+    "frozenPct_mean": 0.06,
+    "downKBps_mean": 21.65
+  }
+}

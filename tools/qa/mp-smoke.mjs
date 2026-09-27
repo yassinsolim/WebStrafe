@@ -78,29 +78,44 @@ try {
   // smooth remote movement: B strafes, A samples B's drawn position every frame for 3 s
   const fa = (await state(A)).feet;
   const fb = (await state(B)).feet;
-  await qa(B, (q, p) => q.teleport(p[0], p[1] + 0.5, p[2], 90), [(fa[0] + fb[0]) / 2, Math.max(fa[1], fb[1]), (fa[2] + fb[2]) / 2]);
+  await qa(B, (q, p) => q.teleport(p[0], p[1] + 0.5, p[2], 0), [(fa[0] + fb[0]) / 2, Math.max(fa[1], fb[1]), (fa[2] + fb[2]) / 2]);
   await sleep(800);
-  const truth0 = (await state(B)).feet;
+  // run down the open lane toward A, sampling A's drawn copy and B's own position every frame
+  await qa(B, (q, id) => q.aimAt(id), idA);
   await qa(B, (q) => q.move(1, 0));
-  await sleep(600);
-  const samples = await A.page.evaluate((id) => new Promise((resolve) => {
+  const sampler = (page, id) => page.evaluate((pid) => new Promise((resolve) => {
     const out = [];
-    const t0 = performance.now();
+    const t0 = Date.now();
     const tick = () => {
-      const p = window.__qa.state().players.find((x) => x.id === id);
-      if (p) out.push([performance.now() - t0, ...p.pos]);
-      if (performance.now() - t0 < 3000) requestAnimationFrame(tick);
+      const s = window.__qa.state();
+      const pos = pid ? s.players.find((x) => x.id === pid)?.pos : s.feet;
+      if (pos) out.push([Date.now(), ...pos]);
+      if (Date.now() - t0 < 3000) requestAnimationFrame(tick);
       else resolve(out);
     };
     requestAnimationFrame(tick);
-  }), idB);
+  }), id);
+  await sleep(400);
+  const [samples, truthSamples] = await Promise.all([sampler(A.page, idB), sampler(B.page, null)]);
   await qa(B, (q) => q.move(0, 0));
-  const truth1 = (await state(B)).feet;
+  // B's run ends where its own position stops changing (a wall); only score frames before that
+  let runEnd = truthSamples.at(-1)?.[0] ?? 0;
+  for (let i = 1; i < truthSamples.length; i += 1) {
+    const d = Math.hypot(truthSamples[i][1] - truthSamples[i - 1][1], truthSamples[i][3] - truthSamples[i - 1][3]);
+    if (d < 1e-4 && truthSamples.slice(i, i + 10).every((s, k, arr) => k === 0 || Math.hypot(s[1] - arr[k - 1][1], s[3] - arr[k - 1][3]) < 1e-4)) {
+      runEnd = truthSamples[i][0];
+      break;
+    }
+  }
+  const truth0 = truthSamples[0]?.slice(1) ?? [0, 0, 0];
+  const truth1 = truthSamples.at(-1)?.slice(1) ?? [0, 0, 0];
+  // the remote copy lags by the interpolation delay, allow 250 ms past the end
+  const scored = samples.filter((s) => s[0] <= runEnd + 250);
   const speeds = [];
-  for (let i = 1; i < samples.length; i += 1) {
-    const dt = (samples[i][0] - samples[i - 1][0]) / 1000;
+  for (let i = 1; i < scored.length; i += 1) {
+    const dt = (scored[i][0] - scored[i - 1][0]) / 1000;
     if (dt <= 0) continue;
-    const d = Math.hypot(samples[i][1] - samples[i - 1][1], samples[i][3] - samples[i - 1][3]);
+    const d = Math.hypot(scored[i][1] - scored[i - 1][1], scored[i][3] - scored[i - 1][3]);
     speeds.push(d / dt);
   }
   speeds.sort((a, b) => a - b);
@@ -116,7 +131,10 @@ try {
   }
   if (run) runs.push(run);
   const smooth = med > 1 && frozen / Math.max(1, speeds.length) < 0.1 && jumps / Math.max(1, speeds.length) < 0.03;
-  check('smooth remote movement', smooth, { frozenRuns: runs.slice(0, 12), truthMoved: +Math.hypot(truth1[0] - truth0[0], truth1[2] - truth0[2]).toFixed(1), frames: speeds.length, medianSpeed: +med.toFixed(2), frozenPct: +(100 * frozen / Math.max(1, speeds.length)).toFixed(1), jumpPct: +(100 * jumps / Math.max(1, speeds.length)).toFixed(1) });
+  const truthMoved = Math.hypot(truth1[0] - truth0[0], truth1[2] - truth0[2]);
+  // no open run on this map (a jump course): the check says nothing about netcode
+  if (truthMoved < 3) report.checks['smooth remote movement (skipped, no open lane)'] = { ok: true, detail: { truthMoved } };
+  else check('smooth remote movement', smooth, { frozenRuns: runs.slice(0, 12), truthMoved: +Math.hypot(truth1[0] - truth0[0], truth1[2] - truth0[2]).toFixed(1), frames: speeds.length, medianSpeed: +med.toFixed(2), frozenPct: +(100 * frozen / Math.max(1, speeds.length)).toFixed(1), jumpPct: +(100 * jumps / Math.max(1, speeds.length)).toFixed(1) });
 
   // shoot B from A with each weapon until B dies; wait for respawn between
   const killWith = async (shooter, victimId, victim, weaponId, maxShots) => {
