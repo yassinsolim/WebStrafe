@@ -9,28 +9,37 @@
     </style>
   </head>
   <body>
-    <!-- dev tool: npm run dev, then open /tools/knife-gallery.html -->
+    <!-- dev tool: npm run dev, then open /tools/knife-gallery.html (?fold=0.5 swings folders and the balisong) -->
     <script type="module">
       import {
-        AmbientLight, CanvasTexture, DirectionalLight, Mesh, OrthographicCamera, PlaneGeometry,
-        MeshBasicMaterial, Scene, WebGLRenderer,
+        ACESFilmicToneMapping, AmbientLight, CanvasTexture, DirectionalLight, Mesh, OrthographicCamera, PlaneGeometry,
+        MeshBasicMaterial, PMREMGenerator, Scene, SRGBColorSpace, WebGLRenderer,
       } from 'three';
+      import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
       import { KNIVES } from '/src/combat/knives.ts';
       import { buildProceduralKnife } from '/src/cosmetics/ProceduralKnife.ts';
 
+      const params = new URLSearchParams(location.search);
+      const fold = Number(params.get('fold') ?? 0);
       const cols = 5;
       const rows = Math.ceil(KNIVES.length / cols);
       const cell = 0.34;
-      const width = 1500;
+      const width = Number(params.get('width') ?? 1500);
       const height = Math.round((width * rows) / cols);
       const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
       renderer.setSize(width, height);
       renderer.setClearColor(0x0a0d12);
+      renderer.outputColorSpace = SRGBColorSpace;
+      renderer.toneMapping = ACESFilmicToneMapping;
       document.body.appendChild(renderer.domElement);
       const scene = new Scene();
-      scene.add(new AmbientLight(0xffffff, 0.8));
-      const key = new DirectionalLight(0xffffff, 2.2);
-      key.position.set(0.3, 1, 1.2);
+      // same studio environment the viewmodel scene uses, metals need something to reflect
+      const pmrem = new PMREMGenerator(renderer);
+      scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      scene.add(new AmbientLight(0xffffff, 0.35));
+      const key = new DirectionalLight(0xffffff, 1.6);
+      key.position.set(0.4, 1, 1.2);
       scene.add(key);
       const halfW = (cols * cell) / 2;
       const halfH = (rows * cell) / 2;
@@ -44,9 +53,14 @@
         const len = knife.userData.overallLength;
         // centre the knife in its cell: tip at +x, handle at -x
         knife.position.set(cx - (def.shape.bladeLength - def.shape.handleLength) / 2, cy + 0.02, 0);
-        knife.rotation.x = -0.35;
+        knife.rotation.set(-0.35, 0.28, 0);
         const scale = Math.min(1.25, 0.3 / len);
         knife.scale.setScalar(scale);
+        if (fold) {
+          knife.getObjectByName('blade_pivot')?.rotation.set(0, 0, -Math.PI * fold);
+          knife.getObjectByName('handle_safe')?.rotation.set(0, 0, Math.PI * fold);
+          knife.getObjectByName('handle_bite')?.rotation.set(0, 0, -Math.PI * fold);
+        }
         scene.add(knife);
 
         const c = document.createElement('canvas');
