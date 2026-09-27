@@ -1,10 +1,15 @@
 import type { AttackKind, MultiplayerSnapshot, PlayerModel } from './types';
 import { resolveWsUrl } from './endpoints';
 import type {
+  FireView,
   MultiplayerTransport,
   OutgoingState,
   ShotEvent,
 } from './MultiplayerTransport';
+import { SendCadence } from '../netcode/SendCadence';
+
+/** server rate limit is 70/s; 30 Hz leaves headroom and matches the snapshot rate */
+export const WS_STATE_SEND_HZ = 30;
 
 interface DesiredJoin {
   mapId: string;
@@ -24,6 +29,7 @@ export class MultiplayerClient implements MultiplayerTransport {
   private activeMapId = '';
   private combatReady = false;
   private latestSnapshotServerTimeMs: number | null = null;
+  private readonly sendCadence = new SendCadence(WS_STATE_SEND_HZ);
 
   public onSnapshot: ((snapshot: MultiplayerSnapshot) => void) | null = null;
   public onAttack: ((event: { mapId: string; playerId: string; kind: AttackKind }) => void) | null = null;
@@ -98,13 +104,18 @@ export class MultiplayerClient implements MultiplayerTransport {
     if (!this.localId || !this.desiredJoin) {
       return;
     }
+    const t = state.t ?? Date.now();
+    if (!this.sendCadence.due(t)) {
+      return;
+    }
 
     this.send({
       type: 'state',
-      position: state.position,
-      velocity: state.velocity,
-      yaw: state.yaw,
-      pitch: state.pitch,
+      t: Math.round(t),
+      position: roundVec(state.position),
+      velocity: roundVec(state.velocity),
+      yaw: Math.round(state.yaw * 10000) / 10000,
+      pitch: Math.round(state.pitch * 10000) / 10000,
     });
   }
 
@@ -125,7 +136,7 @@ export class MultiplayerClient implements MultiplayerTransport {
   public sendFire(
     origin: [number, number, number],
     dir: [number, number, number],
-    observedAtMs?: number,
+    view?: FireView | number,
   ): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return;
@@ -133,11 +144,14 @@ export class MultiplayerClient implements MultiplayerTransport {
     if (!this.localId || !this.desiredJoin) {
       return;
     }
+    const fireView: FireView = typeof view === 'number' ? { observedAtMs: view } : view ?? {};
     this.send({
       type: 'fire',
       origin,
       dir,
-      observedAtMs: observedAtMs ?? this.latestSnapshotServerTimeMs,
+      observedAtMs: fireView.observedAtMs ?? this.latestSnapshotServerTimeMs,
+      targets: fireView.targets,
+      t: Date.now(),
     });
   }
 
@@ -165,6 +179,7 @@ export class MultiplayerClient implements MultiplayerTransport {
     this.ws = ws;
 
     ws.addEventListener('open', () => {
+      this.sendCadence.flush();
       this.setConnected(true);
       this.clearReconnect();
       this.startHeartbeat();
@@ -232,8 +247,11 @@ export class MultiplayerClient implements MultiplayerTransport {
             if (typeof casted.yaw !== 'number' || typeof casted.pitch !== 'number') {
               return false;
             }
+            if (casted.t !== undefined && typeof casted.t !== 'number') {
+              return false;
+            }
             return true;
-          });
+          }).map((entry) => (typeof entry.t === 'number' ? { ...entry, clock: 'server' } : entry));
 
           const serverTimeMs = typeof payload.serverTimeMs === 'number'
             ? payload.serverTimeMs
@@ -434,6 +452,10 @@ export class MultiplayerClient implements MultiplayerTransport {
 
 function buildDefaultWsUrl(): string {
   return resolveWsUrl(import.meta.env, window.location);
+}
+
+function roundVec(v: [number, number, number]): [number, number, number] {
+  return [Math.round(v[0] * 1000) / 1000, Math.round(v[1] * 1000) / 1000, Math.round(v[2] * 1000) / 1000];
 }
 
 function isVec3(value: unknown): value is [number, number, number] {

@@ -11,6 +11,7 @@ import type { FireOutcome } from '../src/combat/CombatArena';
 import { shouldResetCombatEntry } from '../src/combat/CombatEntryPolicy';
 import type { WeaponId } from '../src/combat/weapons';
 import { BotManager, type BotTarget } from './BotManager';
+import { SourceClock } from '../src/netcode/SourceClock';
 
 type PlayerModel = 'terrorist' | 'counterterrorist';
 type AttackKind = 'primary' | 'secondary';
@@ -45,6 +46,10 @@ interface ClientState {
   velocity: [number, number, number];
   yaw: number;
   pitch: number;
+  /** server-time of the latest movement sample (dejittered from the client stamp) */
+  sampleT: number;
+  /** maps this client's wall-clock stamps onto server time */
+  clock: SourceClock;
   lastMessageAt: number;
   stateMessageCount: number;
   stateWindowStart: number;
@@ -69,7 +74,9 @@ const DEV_MODE = process.env.NODE_ENV !== 'production';
 const MAX_HTTP_BODY_BYTES = 4 * 1024;
 const MAX_STATE_MESSAGES_PER_SECOND = 70;
 const MAX_WEBSOCKET_MESSAGE_BYTES = 2 * 1024;
-const SNAPSHOT_RATE_HZ = 20;
+const SNAPSHOT_RATE_HZ = clampInt(process.env.SNAPSHOT_RATE_HZ, 30, 10, 64);
+/** a client whose socket has this much unsent data gets no new snapshots until it drains */
+const MAX_BUFFERED_BYTES = 64 * 1024;
 const BOT_TICK_HZ = 60;
 const ENABLE_BOTS = process.env.ENABLE_BOTS === 'true';
 const BOTS_PER_MAP = clampInt(process.env.BOTS_PER_MAP, 1, 0, 8);
@@ -187,6 +194,8 @@ wss.on('connection', (ws, req) => {
     velocity: [0, 0, 0],
     yaw: 0,
     pitch: 0,
+    sampleT: Date.now(),
+    clock: new SourceClock(),
     lastMessageAt: Date.now(),
     stateMessageCount: 0,
     stateWindowStart: Date.now(),
@@ -321,12 +330,26 @@ wss.on('connection', (ws, req) => {
           return;
         }
 
+        // clients stamp each sample with their tick time. mapping it through a
+        // min-offset clock removes upstream jitter, so the history (and what
+        // other players interpolate) follows when the move happened, not when
+        // the packet happened to land
+        let sampleT = now;
+        const clientT = parseNumber(payload.t, 0, Number.MAX_SAFE_INTEGER);
+        if (clientT !== null) {
+          client.clock.observe(clientT, now);
+          sampleT = Math.min(now, client.clock.toLocal(clientT));
+        }
+        if (sampleT <= client.sampleT && client.hasState) {
+          return;
+        }
         client.position = position;
         client.hasState = true;
         client.velocity = velocity;
         client.yaw = yaw;
         client.pitch = pitch;
-        arena.setPosition(client.id, position, client.mapId, Date.now());
+        client.sampleT = sampleT;
+        arena.setPosition(client.id, position, client.mapId, sampleT, velocity);
         break;
       }
       case 'attack': {
@@ -373,7 +396,13 @@ wss.on('connection', (ws, req) => {
           return;
         }
         const observedAtMs = parseNumber(payload.observedAtMs, 0, now + 1000) ?? undefined;
-        const outcome = arena.handleFire(client.id, origin, dir, now, undefined, observedAtMs);
+        const targetTimes = parseTargetTimes(payload.targets, now);
+        const outcome = arena.handleFire(client.id, origin, dir, now, undefined, observedAtMs, {
+          targetTimes,
+          shooterTimeMs: typeof payload.t === 'number' && Number.isFinite(payload.t) && client.clock.hasOffset()
+            ? Math.min(now, client.clock.toLocal(payload.t))
+            : client.sampleT,
+        });
         if (outcome.fired) {
           client.lastCombatAtMs = now;
           broadcastShot(client.mapId, client.id, origin, dir, outcome);
@@ -421,7 +450,7 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-setInterval(() => {
+function snapshotTick(): void {
   const now = Date.now();
 
   const respawns = arena.tickRespawns(
@@ -464,6 +493,7 @@ setInterval(() => {
     pitch: number;
     health: number;
     alive: boolean;
+    t: number;
   }>>();
 
   for (const client of clients.values()) {
@@ -489,6 +519,7 @@ setInterval(() => {
       pitch: client.pitch,
       health: arena.getHealth(client.id) ?? 100,
       alive: arena.isAlive(client.id),
+      t: client.sampleT,
     });
     groupedByMap.set(client.mapId, list);
   }
@@ -505,20 +536,29 @@ setInterval(() => {
     if (!client.joined || client.ws.readyState !== WebSocket.OPEN) {
       continue;
     }
+    // skip, don't queue: a stale snapshot behind a full buffer is worthless and
+    // only adds latency to the next one
+    if (client.ws.bufferedAmount > MAX_BUFFERED_BYTES) {
+      continue;
+    }
     const players = groupedByMap.get(client.mapId) ?? [];
     sendWs(client.ws, {
       type: 'snapshot',
       mapId: client.mapId,
-      players,
+      players: players.map(quantizeRow),
       serverTimeMs: now,
     });
   }
-}, Math.round(1000 / SNAPSHOT_RATE_HZ));
+}
+
+// setInterval drifts late and bunches under load; schedule against an ideal
+// timeline instead so snapshots leave at an even cadence
+scheduleFixedRate(SNAPSHOT_RATE_HZ, snapshotTick);
 
 if (ENABLE_BOTS) {
   const botDt = 1 / BOT_TICK_HZ;
   let sincePrune = 0;
-  setInterval(() => {
+  scheduleFixedRate(BOT_TICK_HZ, () => {
     const mapsWithHumans = new Set<string>();
     const targetsByMap = new Map<string, BotTarget[]>();
     for (const client of clients.values()) {
@@ -554,7 +594,7 @@ if (ENABLE_BOTS) {
       targetsByMap.set(client.mapId, list);
     }
 
-    botManager.tick(botDt, targetsByMap);
+    botManager.tick(botDt, targetsByMap, Date.now());
 
     // Bots fire through the authoritative arena, with the same broadcasts as
     // human fire. LOS is already checked server-side in collectFireEvents.
@@ -580,7 +620,7 @@ if (ENABLE_BOTS) {
       sincePrune = 0;
       botManager.pruneEmptyMaps(mapsWithHumans);
     }
-  }, Math.round(1000 / BOT_TICK_HZ));
+  });
 }
 
 async function handleApiRequest(
@@ -959,6 +999,66 @@ function parseVector3(value: unknown, absLimit: number): [number, number, number
     return null;
   }
   return [x, y, z];
+}
+
+/** per-target rewind times from a fire message, bounded to a sane window */
+function parseTargetTimes(value: unknown, nowMs: number): Record<string, number> | undefined {
+  if (!isObject(value)) {
+    return undefined;
+  }
+  const out: Record<string, number> = {};
+  let count = 0;
+  for (const [id, t] of Object.entries(value)) {
+    if (count >= 32 || id.length > 64) break;
+    if (typeof t !== 'number' || !Number.isFinite(t) || t > nowMs + 1000 || t < nowMs - 5000) continue;
+    out[id] = t;
+    count += 1;
+  }
+  return count > 0 ? out : undefined;
+}
+
+const round3 = (v: number): number => Math.round(v * 1000) / 1000;
+const round4 = (v: number): number => Math.round(v * 10000) / 10000;
+
+/** mm/cm-level precision is plenty on the wire and cuts snapshot json ~40% */
+function quantizeRow<T extends {
+  position: [number, number, number];
+  velocity: [number, number, number];
+  yaw: number;
+  pitch: number;
+  t: number;
+}>(row: T): T {
+  return {
+    ...row,
+    position: [round3(row.position[0]), round3(row.position[1]), round3(row.position[2])],
+    velocity: [round3(row.velocity[0]), round3(row.velocity[1]), round3(row.velocity[2])],
+    yaw: round4(row.yaw),
+    pitch: round4(row.pitch),
+    t: Math.round(row.t),
+  };
+}
+
+/**
+ * Runs `fn` at `hz` against an ideal schedule. Late wakeups are absorbed by the
+ * next wait instead of accumulating; if the process stalls longer than a few
+ * periods the schedule resets rather than firing a burst of catch-up ticks.
+ */
+function scheduleFixedRate(hz: number, fn: () => void): void {
+  const periodMs = 1000 / hz;
+  let next = performance.now() + periodMs;
+  const run = (): void => {
+    const now = performance.now();
+    if (now - next > periodMs * 4) {
+      next = now;
+    }
+    next += periodMs;
+    try {
+      fn();
+    } finally {
+      setTimeout(run, Math.max(0, next - performance.now()));
+    }
+  };
+  setTimeout(run, periodMs);
 }
 
 function isObject(value: unknown): value is JsonObject {
