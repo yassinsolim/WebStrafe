@@ -418,7 +418,8 @@ export class ViewmodelSystem {
     );
     qA.setFromEuler(eA);
 
-    arms.root.position.copy(ARMS_OFFSET[this.active]);
+    // the rifle's shoulder offset eases out for the watch check so the forearm stays level
+    arms.root.position.copy(ARMS_OFFSET[this.active]).multiplyScalar(1 - this.channel('watch'));
     const base = this.itemBase();
     this.itemPivot.position.set(base.position.x + px, base.position.y + py, base.position.z + pz);
     this.itemPivot.quaternion.copy(qA).multiply(base.rotation);

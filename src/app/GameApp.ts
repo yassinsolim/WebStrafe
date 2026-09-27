@@ -2349,6 +2349,8 @@ export class GameApp {
     this.viewmodel.setPaused(true);
     // let the map, lightmaps and a few frames settle before the capture
     await new Promise((resolve) => setTimeout(resolve, 1500));
+    const info = this.renderer.info.render;
+    (window as unknown as { __shotInfo?: unknown }).__shotInfo = { calls: info.calls, triangles: info.triangles };
     (window as unknown as { __shotReady?: boolean }).__shotReady = true;
   }
 

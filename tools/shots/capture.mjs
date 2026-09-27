@@ -42,6 +42,8 @@ for (const job of jobs) {
     }
     await page.waitForTimeout(Number(process.env.SETTLE_MS ?? 150));
     await page.screenshot({ path: join(outDir, file) });
+    const info = await page.evaluate(() => window.__shotInfo ?? null);
+    if (info) console.log(`info ${file} ${JSON.stringify(info)}`);
     console.log(`ok ${file}`);
   } catch (err) {
     failed += 1;
