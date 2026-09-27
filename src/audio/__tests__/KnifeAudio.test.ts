@@ -1,40 +1,57 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AudioEngine } from '../AudioEngine';
 import { KnifeAudio } from '../KnifeAudio';
+import { mulberry32 } from '../audioMath';
+import { FakeAudioContext, asContext } from './fakeAudioContext';
 
-class FakeAudio {
-  public static instances: FakeAudio[] = [];
-  public preload = '';
-  public volume = 1;
-  public currentTime = 0;
-  public playbackRate = 1;
-  public readonly play = vi.fn(async () => undefined);
-  public readonly pause = vi.fn();
-
-  constructor(public readonly src: string) {
-    FakeAudio.instances.push(this);
-  }
+function readyKnifeAudio() {
+  const fake = new FakeAudioContext();
+  const engine = new AudioEngine({ createContext: () => asContext(fake), random: mulberry32(9) });
+  engine.unlock();
+  return { audio: new KnifeAudio(engine), engine, fake };
 }
 
 afterEach(() => {
-  FakeAudio.instances = [];
   vi.restoreAllMocks();
-  vi.unstubAllGlobals();
 });
 
 describe('KnifeAudio presentation', () => {
-  it('plays both profiles quietly with narrow, softened pitch variation', () => {
-    vi.stubGlobal('Audio', FakeAudio);
-    vi.spyOn(Math, 'random').mockReturnValue(0.5);
-    const audio = new KnifeAudio();
-
+  it('synthesizes a slash for primary and a heavier stab for secondary', () => {
+    const { audio, engine } = readyKnifeAudio();
+    const play = vi.spyOn(engine, 'play');
     audio.play('primary');
     audio.play('secondary', 1, 'knifeGloves2');
+    expect(play.mock.calls).toEqual([
+      ['knifeSwing', { volume: 1, variant: 0 }],
+      ['knifeStab', { volume: 0.94, variant: 1 }],
+    ]);
+    expect(play.mock.results.every((result) => result.value !== null)).toBe(true);
+  });
 
-    const firstProfile = FakeAudio.instances.find((entry) => entry.src.endsWith('knife1_primary_1.ogg'));
-    const secondProfile = FakeAudio.instances.find((entry) => entry.src.endsWith('knife2_secondary_1.ogg'));
-    expect(firstProfile).toMatchObject({ volume: 0.32, currentTime: 0, playbackRate: 0.92 });
-    expect(secondProfile).toMatchObject({ volume: 0.3, currentTime: 0, playbackRate: 0.92 });
-    expect(firstProfile?.play).toHaveBeenCalledOnce();
-    expect(secondProfile?.play).toHaveBeenCalledOnce();
+  it('scales volume and can place remote swings in the world', () => {
+    const { audio, engine } = readyKnifeAudio();
+    const playAt = vi.spyOn(engine, 'playAt');
+    audio.setProfile('knifeGloves2');
+    audio.play('primary', 0.48, undefined, [1, 2, 3]);
+    expect(playAt).toHaveBeenCalledWith('knifeSwing', [1, 2, 3], { volume: expect.closeTo(0.4512, 4), variant: 1 });
+  });
+
+  it('stops live swings on death or weapon switch', () => {
+    const { audio, engine } = readyKnifeAudio();
+    const play = vi.spyOn(engine, 'play');
+    audio.play('primary');
+    const handle = play.mock.results[0].value as { stop: () => void };
+    const stop = vi.spyOn(handle, 'stop');
+    audio.stopAll();
+    expect(stop).toHaveBeenCalledOnce();
+    audio.stopAll();
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it('stays silent without throwing before audio is unlocked', () => {
+    const engine = new AudioEngine({ createContext: () => asContext(new FakeAudioContext()) });
+    const audio = new KnifeAudio(engine);
+    expect(() => audio.play('primary')).not.toThrow();
+    expect(engine.getContext()).toBeNull();
   });
 });

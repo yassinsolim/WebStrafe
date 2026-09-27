@@ -1,136 +1,51 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GunAudio } from '../GunAudio';
+import { AudioEngine } from '../AudioEngine';
+import { AWP_BOLT_CYCLE, GunAudio } from '../GunAudio';
+import { mulberry32 } from '../audioMath';
+import {
+  FakeAudioContext,
+  asContext,
+  reaches,
+  type FakeBufferSource,
+  type FakeGain,
+  type FakeNode,
+  type FakePanner,
+} from './fakeAudioContext';
 
-interface RecordedParam {
-  values: number[];
-  setValueAtTime(value: number, time: number): void;
-  exponentialRampToValueAtTime(value: number, time: number): void;
+const SIZES: Record<string, number> = {
+  '/audio/deagle_shot.mp3': 1200,
+  '/audio/awp_shot.mp3': 2500,
+  '/audio/deagle_reload.mp3': 1800,
+  '/audio/awp_reload.mp3': 2400,
+};
+
+async function readyGunAudio(fake = new FakeAudioContext()) {
+  const engine = new AudioEngine({
+    createContext: () => asContext(fake),
+    fetchArrayBuffer: async (url) => new Uint8Array(SIZES[url] ?? 1000).buffer,
+    random: mulberry32(3),
+  });
+  const audio = new GunAudio(engine);
+  await audio.resume();
+  await Promise.all(Object.keys(SIZES).map((url) => engine.loadSample(url)));
+  return { audio, engine, fake };
 }
 
-interface RecordedOscillator {
-  frequency: RecordedParam;
-  startTimes: number[];
-  stopTimes: Array<number | undefined>;
-}
-
-interface RecordedBufferSource {
-  startTimes: number[];
-  stopTimes: Array<number | undefined>;
-}
-
-class FakeReloadAudio {
-  public preload = '';
-  public volume = 1;
-  public currentTime = 0;
-  public playbackRate = 1;
-  public preservesPitch = false;
-  public playCount = 0;
-  public pauseCount = 0;
-
-  constructor(public readonly src: string) {}
-
-  async play(): Promise<void> {
-    this.playCount += 1;
-  }
-
-  pause(): void {
-    this.pauseCount += 1;
-  }
-}
-
-function recordedParam(): RecordedParam {
-  return {
-    values: [],
-    setValueAtTime(value) {
-      this.values.push(value);
-    },
-    exponentialRampToValueAtTime(value) {
-      this.values.push(value);
-    },
-  };
-}
-
-class FakeAudioContext {
-  public state: AudioContextState = 'running';
-  public currentTime = 2;
-  public sampleRate = 1000;
-  public readonly destination = {} as AudioDestinationNode;
-  public readonly oscillators: RecordedOscillator[] = [];
-  public readonly bufferSources: RecordedBufferSource[] = [];
-
-  async resume(): Promise<void> {
-    this.state = 'running';
-  }
-
-  async close(): Promise<void> {
-    this.state = 'closed';
-  }
-
-  createOscillator(): OscillatorNode {
-    const recorded = {
-      frequency: recordedParam(),
-      startTimes: [] as number[],
-      stopTimes: [] as Array<number | undefined>,
-    };
-    this.oscillators.push(recorded);
-    return {
-      type: 'sine',
-      frequency: recorded.frequency,
-      connect: (target: AudioNode) => target,
-      start: (time?: number) => recorded.startTimes.push(time ?? 0),
-      stop: (time?: number) => recorded.stopTimes.push(time),
-    } as unknown as OscillatorNode;
-  }
-
-  createGain(): GainNode {
-    return {
-      gain: recordedParam(),
-      connect: (target: AudioNode) => target,
-    } as unknown as GainNode;
-  }
-
-  createBuffer(_channels: number, frameCount: number): AudioBuffer {
-    const samples = new Float32Array(frameCount);
-    return { getChannelData: () => samples } as unknown as AudioBuffer;
-  }
-
-  createBufferSource(): AudioBufferSourceNode {
-    const recorded = {
-      startTimes: [] as number[],
-      stopTimes: [] as Array<number | undefined>,
-    };
-    this.bufferSources.push(recorded);
-    return {
-      buffer: null,
-      connect: (target: AudioNode) => target,
-      start: (time?: number) => recorded.startTimes.push(time ?? 0),
-      stop: (time?: number) => recorded.stopTimes.push(time),
-    } as unknown as AudioBufferSourceNode;
-  }
-
-  createBiquadFilter(): BiquadFilterNode {
-    return {
-      type: 'lowpass',
-      frequency: recordedParam(),
-      connect: (target: AudioNode) => target,
-    } as unknown as BiquadFilterNode;
-  }
+function newSources(fake: FakeAudioContext, from: number): FakeBufferSource[] {
+  return fake.nodes.slice(from).filter((node) => node.kind === 'bufferSource') as FakeBufferSource[];
 }
 
 afterEach(() => {
-  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 describe('GunAudio browser readiness', () => {
   it('reports running after resuming from a player gesture', async () => {
-    class SuspendedContext extends FakeAudioContext {
-      public override state: AudioContextState = 'suspended';
-    }
-    vi.stubGlobal('window', { AudioContext: SuspendedContext });
-
-    const audio = new GunAudio();
+    const fake = new FakeAudioContext();
+    fake.state = 'suspended';
+    const engine = new AudioEngine({ createContext: () => asContext(fake), fetchArrayBuffer: async () => new ArrayBuffer(8) });
+    const audio = new GunAudio(engine);
     await expect(audio.resume()).resolves.toBe('running');
     audio.dispose();
   });
@@ -138,116 +53,99 @@ describe('GunAudio browser readiness', () => {
   it('surfaces unavailable Web Audio once without throwing', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     vi.stubGlobal('window', {});
-    const audio = new GunAudio();
+    const audio = new GunAudio(new AudioEngine({ fetchArrayBuffer: async () => new ArrayBuffer(8) }));
 
     await expect(audio.resume()).resolves.toBe('unavailable');
     await expect(audio.resume()).resolves.toBe('unavailable');
     expect(warn).toHaveBeenCalledTimes(1);
+    expect(() => audio.shot('deagle')).not.toThrow();
+  });
+});
+
+describe('GunAudio playback', () => {
+  it('plays each weapon recording at its own level and lets shots overlap', async () => {
+    const { audio, engine, fake } = await readyGunAudio();
+    const count = fake.nodes.length;
+    audio.shot('deagle');
+    audio.shot('deagle');
+    const shots = newSources(fake, count);
+    expect(shots).toHaveLength(2);
+    expect(shots[0].buffer).toBe(engine.getSample('/audio/deagle_shot.mp3'));
+    expect(shots.every((source) => source.stops.length === 1)).toBe(true);
+    const level = shots[0].outputs[0] as FakeGain;
+    expect(level.gain.value).toBeCloseTo(0.52);
+    expect(reaches(shots[0], engine.getBus('effects') as unknown as FakeNode)).toBe(true);
+
+    const next = fake.nodes.length;
+    audio.boltCycleEnabled = false;
+    audio.shot('awp');
+    const awp = newSources(fake, next);
+    expect(awp).toHaveLength(1);
+    expect(awp[0].buffer).toBe(engine.getSample('/audio/awp_shot.mp3'));
+    expect((awp[0].outputs[0] as FakeGain).gain.value).toBeCloseTo(0.62);
   });
 
-  it('keeps Deagle and AWP shot and reload signatures distinct', () => {
-    vi.useFakeTimers();
-    const samples: FakeReloadAudio[] = [];
-    const createAudio = (url: string): HTMLAudioElement => {
-      const audio = new FakeReloadAudio(url);
-      samples.push(audio);
-      return audio as unknown as HTMLAudioElement;
-    };
-
-    const deagle = new GunAudio(createAudio);
-    deagle.shot('deagle');
-    deagle.shot('deagle');
-    expect(samples).toHaveLength(4);
-    expect(samples.slice(0, 4).map((audio) => ({
-      src: audio.src,
-      volume: audio.volume,
-      preload: audio.preload,
-    }))).toEqual(Array.from({ length: 4 }, () => ({
-      src: '/audio/deagle_shot.mp3',
-      volume: 0.52,
-      preload: 'auto',
-    })));
-    expect(samples[0].playCount).toBe(1);
-    expect(samples[1].playCount).toBe(1);
-
-    const awp = new GunAudio(createAudio);
-    awp.shot('awp');
-    expect(samples.slice(4, 6).map((audio) => ({
-      src: audio.src,
-      volume: audio.volume,
-      preload: audio.preload,
-    }))).toEqual(Array.from({ length: 2 }, () => ({
-      src: '/audio/awp_shot.mp3',
-      volume: 0.62,
-      preload: 'auto',
-    })));
-    expect(samples[4].playCount).toBe(1);
-
-    const deagleReload = new GunAudio(createAudio);
-    deagleReload.reload('deagle');
-    expect(samples).toHaveLength(10);
-    expect(samples.slice(6).map((audio) => ({
-      src: audio.src,
-      volume: audio.volume,
-      playbackRate: audio.playbackRate,
-      preload: audio.preload,
-    }))).toEqual([
-      { src: '/audio/deagle_reload.mp3', volume: 0.68, playbackRate: 1, preload: 'auto' },
-      { src: '/audio/deagle_reload.mp3', volume: 0.72, playbackRate: 1, preload: 'auto' },
-      { src: '/audio/deagle_reload.mp3', volume: 0.7, playbackRate: 1, preload: 'auto' },
-      { src: '/audio/deagle_reload.mp3', volume: 0.74, playbackRate: 1, preload: 'auto' },
-    ]);
-    vi.advanceTimersByTime(280);
-    expect(samples[6]).toMatchObject({ playCount: 1, currentTime: 0 });
-    vi.advanceTimersByTime(230);
-    expect(samples[7]).toMatchObject({ playCount: 1, currentTime: 0.5 });
-    vi.advanceTimersByTime(1430);
-    expect(samples[8]).toMatchObject({ playCount: 1, currentTime: 1.05 });
-    vi.advanceTimersByTime(680);
-    expect(samples[9]).toMatchObject({ playCount: 1, currentTime: 1.24 });
-
-    const awpReload = new GunAudio(createAudio);
-    awpReload.reload('awp');
-    expect(samples.slice(10).map((audio) => ({
-      src: audio.src,
-      volume: audio.volume,
-      playbackRate: audio.playbackRate,
-    }))).toEqual([
-      { src: '/audio/awp_reload.mp3', volume: 0.62, playbackRate: 1 },
-      { src: '/audio/awp_reload.mp3', volume: 0.68, playbackRate: 1 },
-      { src: '/audio/awp_reload.mp3', volume: 0.66, playbackRate: 1 },
-      { src: '/audio/awp_reload.mp3', volume: 0.72, playbackRate: 1 },
-    ]);
-    vi.advanceTimersByTime(350);
-    expect(samples[10]).toMatchObject({ playCount: 1, currentTime: 0 });
-  });
-
-  it('cancels a pending or playing reload sample on weapon switch', () => {
-    vi.useFakeTimers();
-    const samples: FakeReloadAudio[] = [];
-    const createReloadAudio = (url: string): HTMLAudioElement => {
-      const audio = new FakeReloadAudio(url);
-      samples.push(audio);
-      return audio as unknown as HTMLAudioElement;
-    };
-
-    const audio = new GunAudio(createReloadAudio);
+  it('schedules the authored reload cues on the audio clock', async () => {
+    const { audio, fake } = await readyGunAudio();
+    const count = fake.nodes.length;
     audio.reload('deagle');
-    expect(samples).toHaveLength(4);
-    audio.stopReload();
-    vi.advanceTimersByTime(500);
-    expect(samples.every((sample) => sample.playCount === 0)).toBe(true);
-    expect(samples.every((sample) => sample.pauseCount === 1)).toBe(true);
-    expect(samples.every((sample) => sample.currentTime === 0)).toBe(true);
+    const cues = newSources(fake, count);
+    const t0 = fake.currentTime + 0.002;
+    expect(cues.map((cue) => cue.starts[0].when - t0)).toEqual([0.28, 0.51, 1.94, 2.62].map((v) => expect.closeTo(v, 5)));
+    expect(cues.map((cue) => cue.starts[0].offset)).toEqual([0, 0.5, 1.05, 1.24]);
+    expect(cues.map((cue) => cue.starts[0].duration)).toEqual([0.26, 0.38, 0.19, 0.26].map((v) => expect.closeTo(v, 5)));
 
+    const next = fake.nodes.length;
     audio.reload('awp');
-    expect(samples).toHaveLength(8);
-    vi.advanceTimersByTime(350);
-    expect(samples[4].playCount).toBe(1);
+    const awpCues = newSources(fake, next);
+    expect(awpCues.map((cue) => cue.starts[0].when - t0)).toEqual([0.35, 0.83, 1.42, 2.79].map((v) => expect.closeTo(v, 5)));
+    expect(awpCues.map((cue) => cue.starts[0].offset)).toEqual([0, 0.55, 1.25, 1.6]);
+  });
+
+  it('cancels pending reload cues on weapon switch', async () => {
+    const { audio, fake } = await readyGunAudio();
+    const count = fake.nodes.length;
+    audio.reload('deagle');
+    const cues = newSources(fake, count);
     audio.stopReload();
-    expect(samples[4].pauseCount).toBe(1);
-    expect(samples[4].currentTime).toBe(0);
-    vi.advanceTimersByTime(3000);
-    expect(samples.slice(5).every((sample) => sample.playCount === 0)).toBe(true);
+    for (const cue of cues) {
+      // natural stop plus the cancel, which lands before the cue would start
+      expect(cue.stops).toHaveLength(2);
+      expect(cue.stops[1]).toBeLessThan(cue.starts[0].when);
+    }
+  });
+
+  it('places remote shots in the world', async () => {
+    const { audio, engine, fake } = await readyGunAudio();
+    engine.setListener([0, 1.6, 0], [0, 0, -1]);
+    const count = fake.nodes.length;
+    audio.shotAt('awp', [30, 2, -50]);
+    const panner = fake.nodes.slice(count).find((node) => node.kind === 'panner') as FakePanner;
+    expect([panner.positionX.value, panner.positionY.value, panner.positionZ.value]).toEqual([30, 2, -50]);
+    const source = newSources(fake, count)[0];
+    expect(reaches(source, panner)).toBe(true);
+  });
+
+  it('cycles the awp bolt after a shot and cancels it on switch', async () => {
+    const { audio, engine } = await readyGunAudio();
+    const play = vi.spyOn(engine, 'play');
+    audio.shot('awp');
+    expect(play.mock.calls.map(([name, options]) => [name, options?.delay])).toEqual(
+      AWP_BOLT_CYCLE.map((step) => [step.sound, step.delaySec]),
+    );
+    const handles = play.mock.results.map((result) => result.value as { stop: () => void });
+    const stops = handles.map((handle) => vi.spyOn(handle, 'stop'));
+    audio.stopReload();
+    expect(stops.every((stop) => stop.mock.calls.length === 1)).toBe(true);
+  });
+
+  it('maps hit confirmations to distinct procedural cues', async () => {
+    const { audio, engine } = await readyGunAudio();
+    const play = vi.spyOn(engine, 'play');
+    audio.confirm('normal');
+    audio.confirm('headshot');
+    audio.confirm('kill');
+    audio.dryFire();
+    expect(play.mock.calls.map(([name]) => name)).toEqual(['hitmarker', 'headshot', 'killConfirm', 'dryFire']);
   });
 });
