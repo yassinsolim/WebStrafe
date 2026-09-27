@@ -270,6 +270,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     origin: [number, number, number],
     dir: [number, number, number],
     view?: FireView | number,
+    melee?: AttackKind,
   ): void {
     const fireView: FireView = typeof view === 'number' ? { observedAtMs: view } : view ?? {};
     const shooterT = this.localState?.t ?? Date.now();
@@ -277,7 +278,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       this.hostSim.applyFire(this.localId, origin, dir, fireView.observedAtMs, {
         targetTimes: fireView.targets,
         shooterTimeMs: shooterT,
-      });
+        attackTimeMs: Date.now(),
+      }, melee);
       this.flushCombat();
       return;
     }
@@ -287,6 +289,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       dir,
       targets: fireView.targets,
       t: shooterT,
+      ...(melee ? { melee } : {}),
     });
   }
 
@@ -532,7 +535,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (Array.isArray(p.s) && p.s.length === 8 && (record.t === null || p.t > record.t)) {
       record.state = unpack(p.s);
       record.t = p.t;
-      this.hostSim?.recordHumanSample(p.id, record.state.position, p.t, record.state.velocity);
+      this.hostSim?.recordHumanSample(
+        p.id,
+        record.state.position,
+        p.t,
+        record.state.velocity,
+        record.state.yaw,
+      );
     }
 
     if (Array.isArray(p.b) && p.id === this.electedHostId() && !this.hostSim) {
@@ -585,12 +594,17 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       dir?: [number, number, number];
       targets?: Record<string, number>;
       t?: number;
+      melee?: unknown;
     };
+    const melee = p.melee === undefined ? undefined : parseMelee(p.melee);
+    if (melee === null) {
+      return;
+    }
     if (this.hostSim && p.id && p.origin && p.dir) {
       this.hostSim.applyFire(p.id, p.origin, p.dir, undefined, {
         targetTimes: sanitizeTargets(p.targets),
         shooterTimeMs: Number.isFinite(p.t) ? p.t : undefined,
-      });
+      }, melee);
       this.flushCombat();
     }
   }
@@ -717,6 +731,11 @@ function unpack(s: Packed): OutgoingState {
     yaw: s[6],
     pitch: s[7],
   };
+}
+
+/** a malformed melee field drops the whole fire instead of guessing */
+function parseMelee(value: unknown): AttackKind | null {
+  return value === 'primary' || value === 'secondary' ? value : null;
 }
 
 function sanitizeTargets(value: unknown): Record<string, number> | undefined {

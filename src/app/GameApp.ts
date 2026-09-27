@@ -39,7 +39,7 @@ import { LeaderboardService, sanitizeLeaderboardName } from '../network/Leaderbo
 import { MultiplayerClient } from '../network/MultiplayerClient';
 import { createMultiplayer } from '../network/createMultiplayer';
 import type { MultiplayerTransport } from '../network/MultiplayerTransport';
-import type { LeaderboardEntry, PlayerModel } from '../network/types';
+import type { AttackKind, LeaderboardEntry, PlayerModel } from '../network/types';
 import {
   RemotePlayersRenderer,
 } from '../multiplayer/RemotePlayersRenderer';
@@ -56,6 +56,13 @@ import {
   type BackstabTarget,
 } from '../combat/BackstabOpportunity';
 import { WeaponController } from '../combat/WeaponController';
+import { CombatAim } from '../combat/CombatAim';
+import { PLAYER_CAPSULE_HEIGHT, PLAYER_CAPSULE_RADIUS } from '../combat/CombatArena';
+import { resolveHit } from '../combat/HitResolver';
+import { LocalKnife } from '../combat/LocalKnife';
+import type { MeleeTarget } from '../combat/MeleeResolver';
+import { DEFAULT_ZOOM_SENSITIVITY_RATIO } from '../combat/Scope';
+import { ScopeOverlay } from '../ui/ScopeOverlay';
 import { isCombatEnabled } from '../combat/combatConfig';
 import { getWeapon, type WeaponId } from '../combat/weapons';
 import { DEFAULT_KNIFE_ID, getKnife, isKnifeId, type KnifeId } from '../combat/knives';
@@ -124,6 +131,13 @@ export class GameApp {
   private readonly deadMoveInput = { forwardMove: 0, sideMove: 0, jumpPressed: false, jumpHeld: false };
   private readonly remotePlayerNames = new Map<string, string>();
   private backstabTargets: BackstabTarget[] = [];
+  // combat aim: spread, recoil, awp scope and the local knife gate
+  private readonly combatAim = new CombatAim();
+  private readonly localKnife = new LocalKnife();
+  private scopeOverlay: ScopeOverlay | null = null;
+  private viewmodelHiddenForScope = false;
+  /** current cone radius for the crosshair, radians */
+  private crosshairSpreadRad = 0;
 
   private readonly cosmeticsGroup = new Group();
   private readonly weaponViewmodels = new WeaponViewmodels();
@@ -421,6 +435,11 @@ export class GameApp {
     requestAnimationFrame(this.loop);
   }
 
+  /** cone radius of the held gun for the crosshair, radians, refreshed every frame */
+  public getCrosshairSpreadRadians(): number {
+    return this.crosshairSpreadRad;
+  }
+
   public dispose(): void {
     this.running = false;
     if (this.deathPresentationTimer !== null) {
@@ -436,6 +455,7 @@ export class GameApp {
     this.renderer.dispose();
     this.combatEffects?.dispose();
     this.combatHud?.dispose();
+    this.scopeOverlay?.dispose();
     this.gunAudio.dispose();
     this.knifeAudio.dispose();
     this.remoteKnifeAudio.dispose();
@@ -454,7 +474,11 @@ export class GameApp {
     this.accumulator += frameDt;
 
     const look = this.input.consumeLookDelta();
-    this.movement.applyLookDelta(look.x, look.y, this.settings.mouseSensitivity);
+    this.movement.applyLookDelta(
+      look.x,
+      look.y,
+      this.settings.mouseSensitivity * this.getScopeSensitivityScale(),
+    );
 
     const actions = this.input.consumeActions();
     this.fixedInputActions.enqueue(actions);
@@ -533,21 +557,32 @@ export class GameApp {
             const activeWeapon = this.weapon.getActive();
             if (this.combatEnabled && activeWeapon !== 'knife') {
               this.fireCombatWeapon(time);
+            } else if (this.combatEnabled) {
+              this.attackCombatKnife('primary', time);
             } else {
               this.cosmeticsManager.triggerAttackPrimary();
               this.multiplayer.sendAttack('primary');
-              if (this.combatEnabled) {
-                this.fireCombatWeapon(time);
-              }
             }
           }
           attackQueued = false;
         }
         if (attackAltQueued) {
-          if (!dead && (!this.combatEnabled || this.weapon.getActive() === 'knife')) {
-            this.viewmodelRenderer.cancelInspect();
-            this.cosmeticsManager.triggerAttackSecondary();
-            this.multiplayer.sendAttack('secondary');
+          if (!dead) {
+            const activeWeapon = this.weapon.getActive();
+            if (!this.combatEnabled) {
+              this.viewmodelRenderer.cancelInspect();
+              this.cosmeticsManager.triggerAttackSecondary();
+              this.multiplayer.sendAttack('secondary');
+            } else if (activeWeapon === 'knife') {
+              this.viewmodelRenderer.cancelInspect();
+              this.attackCombatKnife('secondary', time);
+            } else if (activeWeapon === 'awp') {
+              this.combatAim.toggleScope(time, {
+                reloading: this.weapon.isReloading(time),
+                alive: this.localAlive,
+              });
+            }
+            // deagle right click does nothing
           }
           attackAltQueued = false;
         }
@@ -559,6 +594,9 @@ export class GameApp {
         const moveInput = dead ? this.deadMoveInput : sampledMove;
         this.movement.tick(FIXED_TICK_DT, moveInput, this.collisionWorld);
         this.updateMapTriggers();
+        if (this.combatEnabled) {
+          this.tickCombatAim(FIXED_TICK_DT);
+        }
         // the tick ends where the leftover accumulator begins
         this.sendMultiplayerState(Date.now() - this.accumulator * 1000);
         this.tryCompleteRun();
@@ -798,6 +836,7 @@ export class GameApp {
     this.mapEnvironment.apply(map);
 
     this.collisionWorld.setCollisionFromRoot(map.collisionRoot);
+    this.combatEffects?.clearDecals();
 
     const bounds = new Box3().setFromObject(map.sceneRoot);
     const triCount = this.countTriangles(map.sceneRoot);
@@ -1015,7 +1054,10 @@ export class GameApp {
       return;
     }
     this.combatHud = new CombatHud(document.body);
-    this.combatEffects = new CombatEffects(this.worldScene, this.weaponViewmodels.root);
+    this.combatEffects = new CombatEffects(this.worldScene, this.weaponViewmodels.root, {
+      impactEffects: true,
+    });
+    this.scopeOverlay = new ScopeOverlay(this.container);
     this.combatHud.setWeapon(this.weapon.getActive(), this.weapon.getAmmo());
 
     this.multiplayer.onHealth = ({ playerId, health, alive }) => {
@@ -1029,8 +1071,11 @@ export class GameApp {
         this.restoreLocalAfterRespawn();
       }
     };
-    this.multiplayer.onHit = ({ shooterId, hitbox, killed }) => {
+    this.multiplayer.onHit = ({ shooterId, hitbox, killed, weaponId, melee }) => {
       if (shooterId === this.multiplayer.getLocalId()) {
+        if (weaponId === 'knife' && melee) {
+          this.localKnife.onServerHit(melee);
+        }
         const confirmation = planHitConfirmation(hitbox, killed);
         this.combatHud?.flashHitmarker(confirmation.visual);
         // Lethal headshots intentionally sequence ◆ then ✦ visually while
@@ -1085,6 +1130,7 @@ export class GameApp {
       this.combatHud?.setHealth(health, alive, false);
     }
     if (wasAlive && !alive) {
+      this.combatAim.cancelScope(performance.now());
       this.viewmodelPresentation.setAlive(false);
       this.combatEffects?.clearForDeath(performance.now());
       this.combatHud?.clearTransient(true);
@@ -1124,6 +1170,9 @@ export class GameApp {
     this.knifeAudio.stopAll();
     this.crosshair.classList.remove('shot-deagle', 'shot-awp');
     this.weapon.reset();
+    this.combatAim.reset();
+    this.combatAim.setWeapon(this.weapon.getActive(), performance.now());
+    this.localKnife.reset();
     this.updateWeaponViewmodel(this.weapon.getActive());
     this.combatHud?.setWeapon(this.weapon.getActive(), this.weapon.getAmmo());
     this.combatHud?.setHealth(100, true);
@@ -1149,12 +1198,15 @@ export class GameApp {
       throw new Error('[Combat] local firearm effects were not initialized');
     }
     const origin = this.movement.getCameraPosition();
-    const forward = new Vector3(0, 0, -1).applyEuler(this.worldCamera.rotation).normalize();
+    // view angles + aim punch + a cs spread sample; the camera's own punch is visual only
+    const forward = this.combatAim.shotDirection(this.movement.getYawRad(), this.movement.getPitchRad());
     const result = fireLocalWeapon(
       {
         weapon: this.weapon,
         effects: this.combatEffects,
         collisionWorld: this.collisionWorld,
+        playerOcclusion: (from, direction, maxDistance) =>
+          resolveHit(from, direction, maxDistance, this.getDrawnPlayerCapsules())?.distance ?? null,
         onPresented: (weaponId) => {
           this.weaponViewmodels.triggerFire();
           this.viewmodelRenderer.addFireKick(weaponId);
@@ -1178,9 +1230,110 @@ export class GameApp {
       [forward.x, forward.y, forward.z],
       this.remotePlayers.getFireView(),
     );
+    this.combatAim.onShotFired(nowMs);
     if (result.magazineEmptied) {
       this.reloadCombatWeapon(nowMs);
     }
+  }
+
+  /**
+   * Knife input: gated locally with the same cs cooldowns the authority uses
+   * (hit or miss predicted against the drawn remotes), then the swing visual,
+   * the 'attack' broadcast for remote swing visuals and the melee fire.
+   */
+  private attackCombatKnife(kind: AttackKind, nowMs: number): void {
+    if (!this.localAlive) {
+      return;
+    }
+    const origin = this.movement.getCameraPosition();
+    const direction = this.movement.getForwardVector();
+    const swing = this.localKnife.tryAttack(kind, nowMs, {
+      origin,
+      direction,
+      targets: this.getDrawnPlayerCapsules(),
+      isBlocked: (from, to) => this.collisionWorld.segmentIntersectsGeometry(from, to),
+    });
+    if (!swing.accepted) {
+      return;
+    }
+    if (kind === 'primary') {
+      this.cosmeticsManager.triggerAttackPrimary();
+    } else {
+      this.cosmeticsManager.triggerAttackSecondary();
+    }
+    this.multiplayer.sendAttack(kind);
+    this.multiplayer.sendFire(
+      [origin.x, origin.y, origin.z],
+      [direction.x, direction.y, direction.z],
+      this.remotePlayers.getFireView(),
+      kind,
+    );
+  }
+
+  /** living remotes where they are drawn, as hit capsules (knife prediction, local tracer stops) */
+  private getDrawnPlayerCapsules(): MeleeTarget[] {
+    const alive = new Map(this.backstabTargets.map((target) => [target.id, target.alive]));
+    return this.remotePlayers.getDisplayedPlayers()
+      .filter((player) => alive.get(player.id) !== false)
+      .map((player) => ({
+        id: player.id,
+        feet: player.position,
+        height: PLAYER_CAPSULE_HEIGHT,
+        radius: PLAYER_CAPSULE_RADIUS,
+      }));
+  }
+
+  private tickCombatAim(dt: number): void {
+    const cvars = this.movement.getCvars();
+    this.combatAim.tick(dt, {
+      velocity: this.movement.getVelocity(),
+      grounded: this.movement.getDebugState().grounded,
+      maxSpeed: cvars.sv_maxspeed,
+      jumpImpulse: cvars.sv_jump_impulse,
+    });
+  }
+
+  /** per frame: re-scope timer, zoomed fov, overlay, viewmodel and crosshair hooks */
+  private updateCombatAimPresentation(nowMs: number): void {
+    this.combatAim.update(nowMs, {
+      reloading: this.weapon.isReloading(nowMs),
+      alive: this.localAlive,
+    });
+    const scoped = this.combatAim.isScoped();
+    const fov = this.combatAim.getFovDeg(this.settings.worldFov, nowMs);
+    if (Math.abs(this.worldCamera.fov - fov) > 1e-4) {
+      this.worldCamera.fov = fov;
+      this.worldCamera.updateProjectionMatrix();
+    }
+    this.scopeOverlay?.setZoomLevel(this.combatAim.getZoomLevel());
+    this.scopeOverlay?.setVisible(this.playing && scoped && this.debugCameraMode === 'firstPerson');
+    if (scoped !== this.viewmodelHiddenForScope) {
+      this.setViewmodelHiddenForScope(scoped);
+    }
+    this.crosshairSpreadRad = this.combatAim.getInaccuracyRadians();
+    // todo(ui): hand crosshairSpreadRad to the crosshair's setSpread(radians)
+    // once it exists; the value is spread + inaccuracy of the held gun, 0 for the knife
+  }
+
+  /**
+   * Hides the first-person weapon while scoped (cs hides the AWP viewmodel
+   * zoomed). The one place that decides it, so a new viewmodel can re-point it.
+   */
+  private setViewmodelHiddenForScope(hidden: boolean): void {
+    this.viewmodelHiddenForScope = hidden;
+    this.weaponViewmodels.root.visible = !hidden;
+  }
+
+  /** zoom sensitivity: fov ratio x zoom ratio (settings.zoomSensitivityRatio if present) */
+  private getScopeSensitivityScale(): number {
+    if (!this.combatEnabled) {
+      return 1;
+    }
+    const configured = (this.settings as Partial<{ zoomSensitivityRatio: number }>).zoomSensitivityRatio;
+    const ratio = typeof configured === 'number' && Number.isFinite(configured) && configured > 0
+      ? configured
+      : DEFAULT_ZOOM_SENSITIVITY_RATIO;
+    return this.combatAim.getSensitivityScale(this.settings.worldFov, ratio);
   }
 
   private equipCombatWeapon(id: WeaponId): void {
@@ -1188,6 +1341,7 @@ export class GameApp {
       return;
     }
     this.weapon.equip(id);
+    this.combatAim.setWeapon(id, performance.now());
     this.multiplayer.sendEquip(id);
     this.combatEffects?.clear();
     this.combatHud?.clearTransient();
@@ -1218,6 +1372,7 @@ export class GameApp {
     if (!this.weapon.reload(nowMs)) {
       return;
     }
+    this.combatAim.cancelScope(nowMs);
     this.multiplayer.sendReload();
     this.weaponViewmodels.triggerReload();
     if (active === 'deagle' || active === 'awp') {
@@ -1266,6 +1421,7 @@ export class GameApp {
 
   private updateCombat(nowMs: number): void {
     this.weapon.update(nowMs);
+    this.updateCombatAimPresentation(nowMs);
     this.combatHud?.setWeapon(
       this.weapon.getActive(),
       this.weapon.getAmmo(),
@@ -1511,7 +1667,14 @@ export class GameApp {
     if (this.debugCameraMode === 'firstPerson') {
       this.freecamInitialized = false;
       this.worldCamera.position.copy(cameraPos);
-      this.worldCamera.rotation.set(this.movement.getPitchRad(), this.movement.getYawRad(), 0, 'YXZ');
+      // cs style view punch: a camera offset on top of the real view angles
+      const punch = this.combatEnabled ? this.combatAim.getViewPunch() : { pitch: 0, yaw: 0 };
+      this.worldCamera.rotation.set(
+        this.movement.getPitchRad() + punch.pitch,
+        this.movement.getYawRad() + punch.yaw,
+        0,
+        'YXZ',
+      );
     } else if (this.debugCameraMode === 'thirdPerson') {
       this.freecamInitialized = false;
       this.tmpForward.copy(this.movement.getForwardVector()).setY(0);
@@ -1557,7 +1720,9 @@ export class GameApp {
       inspectWeight,
     );
     this.cosmeticsManager.setInspectAlpha(inspectWeight);
-    this.setCrosshairVisible(this.playing && this.debugCameraMode === 'firstPerson');
+    this.setCrosshairVisible(
+      this.playing && this.debugCameraMode === 'firstPerson' && !this.combatAim.isScoped(),
+    );
   }
 
   private updateSurfNormalLine(debug: MovementDebugState): void {
@@ -1883,6 +2048,7 @@ export class GameApp {
       }
       this.playing = false;
       this.multiplayer.setCombatReady(false);
+      this.combatAim.cancelScope(performance.now());
       this.viewmodelRenderer.clearPresentationTransient();
       this.cosmeticsManager.resetKnifePresentation();
       this.knifeAudio.stopAll();

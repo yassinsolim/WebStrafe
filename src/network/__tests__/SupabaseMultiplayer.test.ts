@@ -204,6 +204,47 @@ describe('SupabaseMultiplayer (p2 protocol)', () => {
     b.disconnect();
   });
 
+  it('resolves a guest knife stab on the host and reports it with weaponId knife', () => {
+    const bus = new FakeBus();
+    const host = makePeer(bus, 'p_a');
+    const guest = makePeer(bus, 'p_b');
+    const guestHits: unknown[] = [];
+    const guestDeaths: unknown[] = [];
+    guest.onHit = (e) => guestHits.push(e);
+    guest.onDeath = (e) => guestDeaths.push(e);
+    for (const p of [host, guest]) {
+      p.join('map1', 'Player', 'terrorist');
+      p.setRoomContext({
+        collisionWorld: new CollisionWorld(),
+        spawn: { position: new Vector3(0, 0, 0), yawDeg: 0 },
+        botCount: 0,
+      });
+      p.setCombatReady(true);
+    }
+    // host stands 1.1 m ahead of the guest, facing away from it
+    const step = 1000 / 128;
+    for (let t = 0; t < 4200; t += step) {
+      vi.advanceTimersByTime(step);
+      const now = Date.now();
+      host.sendState({ position: [0, 0, -1.1], velocity: [0, 0, 0], yaw: 0, pitch: 0, t: now });
+      guest.sendState({ position: [0, 0, 0], velocity: [0, 0, 0], yaw: 0, pitch: 0, t: now });
+    }
+    guest.sendFire([0, 1.6, 0], [0, 0, -1], undefined, 'secondary');
+    vi.advanceTimersByTime(50);
+
+    expect(guestHits).toContainEqual(expect.objectContaining({
+      shooterId: 'p_b',
+      targetId: 'p_a',
+      weaponId: 'knife',
+      melee: 'secondary',
+      backstab: true,
+      killed: true,
+    }));
+    expect(guestDeaths).toContainEqual({ victimId: 'p_a', killerId: 'p_b', weaponId: 'knife', headshot: false });
+    host.disconnect();
+    guest.disconnect();
+  });
+
   it('drops to a 1 Hz keepalive while paused', () => {
     const bus = new FakeBus();
     const a = makePeer(bus, 'p_a');

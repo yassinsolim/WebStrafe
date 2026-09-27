@@ -192,13 +192,17 @@ export function isKnifeId(id: unknown): id is KnifeId {
   return typeof id === 'string' && byId.has(id);
 }
 
-// ---- damage (all knife types share it, as in CS) ----
+// ---- combat (all knife types share it, as in CS) ----
+// damage is the cs:go / cs2 knife table (counterstrike fandom wiki and the
+// tradeit cs2 stats page agree). timings, ranges and the hull come from the
+// source knife code (weapon_knife.cpp, SwingOrStab). 1 unit = 0.0254 m.
 
 export type KnifeAttack = 'primary' | 'secondary';
 
 /**
- * CS-style knife damage: primary slash 40 (25 on a quick follow-up), secondary
- * stab 65; from behind 90 and 180. Armour is not modelled.
+ * CS-style knife damage: primary slash 40 (25 on a follow-up), secondary stab
+ * 65; from behind 90 and 180. A slash backstab is not lethal from full health,
+ * same as CS. Armour is not modelled.
  */
 export const KNIFE_DAMAGE = {
   primary: 40,
@@ -209,16 +213,39 @@ export const KNIFE_DAMAGE = {
 } as const;
 
 export const KNIFE_TIMING_MS = {
+  /** next slash after a slash that missed (cs 0.4 s) */
   primaryInterval: 400,
-  /** a primary within this window of the previous one is a follow-up */
-  followUpWindow: 500,
+  /** next slash after a slash that hit (cs 0.5 s) */
+  primaryIntervalHit: 500,
+  /** stab lockout after any slash (cs 0.5 s) */
+  secondaryAfterPrimary: 500,
+  /** both attacks after a stab that missed (cs 1.0 s) */
   secondaryInterval: 1000,
+  /** both attacks after a stab that hit (cs 1.1 s) */
+  secondaryIntervalHit: 1100,
+  /**
+   * a slash is a follow-up (25 damage) until this long after the slash
+   * cooldown ran out (cs: m_flNextPrimaryAttack + 0.4 s), so steady spam
+   * deals 40 then 25s
+   */
+  followUpWindow: 400,
 } as const;
 
+/**
+ * Reach from the eye to the target capsule surface. CS traces 48 / 32 units
+ * and falls back to a hull sweep, which lands about 1.63 / 1.22 m from the
+ * eye to the target box, so these sit close to it.
+ */
 export const KNIFE_RANGE_M = {
   primary: 1.45,
   secondary: 1.2,
 } as const;
+
+/** radius of the swept sphere; cs head_hull is 16 units (0.41 m) wide each side */
+export const KNIFE_SWEEP_RADIUS_M = 0.41;
+
+/** cs:go backstab: attacker-to-victim direction dot victim forward above 0.475 (cs:s used 0.8) */
+export const BACKSTAB_DOT = 0.475;
 
 export function knifeDamage(attack: KnifeAttack, backstab: boolean, followUp: boolean): number {
   if (attack === 'secondary') {
@@ -230,8 +257,9 @@ export function knifeDamage(attack: KnifeAttack, backstab: boolean, followUp: bo
 
 /**
  * Backstab when the attacker stands behind the victim: the victim's facing and
- * the attacker-to-victim direction point the same way (dot >= 0.45, the same
- * cone BackstabOpportunity uses for the "backstab ready" cue).
+ * the attacker-to-victim direction point the same way (dot above
+ * {@link BACKSTAB_DOT}, the same cone BackstabOpportunity uses for the
+ * "backstab ready" cue).
  * Yaw is the camera yaw in radians where forward is (-sin yaw, 0, -cos yaw).
  */
 export function isBackstab(
@@ -243,7 +271,8 @@ export function isBackstab(
   const dz = victimFeet[2] - attackerFeet[2];
   const len = Math.hypot(dx, dz);
   if (len < 1e-4) return false;
+  if (!Number.isFinite(victimYawRad)) return false;
   const fx = -Math.sin(victimYawRad);
   const fz = -Math.cos(victimYawRad);
-  return (dx / len) * fx + (dz / len) * fz >= 0.45;
+  return (dx / len) * fx + (dz / len) * fz > BACKSTAB_DOT;
 }

@@ -158,6 +158,7 @@ export class BotManager {
           mapId,
           nowMs,
           toTuple(bot.controller.getVelocity()),
+          bot.controller.getYawRad(),
         );
       }
     }

@@ -34,7 +34,16 @@ export class MultiplayerClient implements MultiplayerTransport {
   public onSnapshot: ((snapshot: MultiplayerSnapshot) => void) | null = null;
   public onAttack: ((event: { mapId: string; playerId: string; kind: AttackKind }) => void) | null = null;
   public onHit:
-    | ((event: { shooterId: string; targetId: string; weaponId: string; damage: number; hitbox: string; killed: boolean }) => void)
+    | ((event: {
+      shooterId: string;
+      targetId: string;
+      weaponId: string;
+      damage: number;
+      hitbox: string;
+      killed: boolean;
+      melee?: AttackKind;
+      backstab?: boolean;
+    }) => void)
     | null = null;
   public onDeath:
     | ((event: { victimId: string; killerId: string; weaponId: string; headshot: boolean }) => void)
@@ -137,6 +146,7 @@ export class MultiplayerClient implements MultiplayerTransport {
     origin: [number, number, number],
     dir: [number, number, number],
     view?: FireView | number,
+    melee?: AttackKind,
   ): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return;
@@ -152,6 +162,7 @@ export class MultiplayerClient implements MultiplayerTransport {
       observedAtMs: fireView.observedAtMs ?? this.latestSnapshotServerTimeMs,
       targets: fireView.targets,
       t: Date.now(),
+      ...(melee ? { melee } : {}),
     });
   }
 
@@ -294,6 +305,10 @@ export class MultiplayerClient implements MultiplayerTransport {
               damage: payload.damage,
               hitbox: payload.hitbox,
               killed: payload.killed,
+              ...(payload.melee === 'primary' || payload.melee === 'secondary'
+                ? { melee: payload.melee }
+                : {}),
+              ...(typeof payload.backstab === 'boolean' ? { backstab: payload.backstab } : {}),
             });
           }
           break;

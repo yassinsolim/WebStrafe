@@ -2,13 +2,15 @@ import type { Vector3 } from 'three';
 import type { GunId } from '../cosmetics/WeaponViewmodels';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import type { CombatEffects } from './CombatEffects';
-import { presentFirearmShot } from './FirearmShotFeedback';
+import { presentFirearmShot, type PlayerOcclusion } from './FirearmShotFeedback';
 import type { FireResult, WeaponController } from './WeaponController';
 
 export interface LocalFirearmShotContext {
   weapon: Pick<WeaponController, 'tryFire'>;
   effects: CombatEffects;
   collisionWorld: Pick<CollisionWorld, 'raycastGeometry'>;
+  /** drawn players stop the local visual round before the wall behind them */
+  playerOcclusion?: PlayerOcclusion;
   onPresented(weaponId: GunId): void;
 }
 
@@ -43,6 +45,7 @@ export function fireLocalWeapon(
     {
       effects: context.effects,
       collisionWorld: context.collisionWorld,
+      playerOcclusion: context.playerOcclusion,
     },
     {
       weaponId,

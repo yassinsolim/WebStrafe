@@ -39,7 +39,7 @@ const WEAPON_UI = {
   },
   deagle: {
     key: ['Digit2', '2', 50],
-    text: 'Desert Eagle',
+    text: 'Deagle',
     magazine: 7,
     recoverMs: 700,
     fireReadyMs: 300,
@@ -3295,7 +3295,7 @@ async function verifyWheelAndMenu(browser, results, phase) {
   await equip(browser, 'awp');
   await browser.wheel(120);
   const forward = await browser.waitForUi(
-    (ui) => ui.ammo?.startsWith('Desert Eagle'),
+    (ui) => ui.ammo?.startsWith('Deagle'),
     'native wheel forward AWP-to-Deagle',
     1_000,
   );
@@ -3305,7 +3305,7 @@ async function verifyWheelAndMenu(browser, results, phase) {
     'native wheel reverse Deagle-to-AWP',
     1_000,
   );
-  results.check(`input.${phase}.wheel-forward-reverse-wrap`, forward.ammo.startsWith('Desert Eagle')
+  results.check(`input.${phase}.wheel-forward-reverse-wrap`, forward.ammo.startsWith('Deagle')
     && reverse.ammo.startsWith('AWP'), {
     forward: forward.ammo,
     reverse: reverse.ammo,

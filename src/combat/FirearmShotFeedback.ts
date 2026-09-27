@@ -1,6 +1,6 @@
 import { Vector3 } from 'three';
 import type { GunId } from '../cosmetics/WeaponViewmodels';
-import type { ShotEvent } from '../network/MultiplayerTransport';
+import type { ShotEvent, ShotResult } from '../network/MultiplayerTransport';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import type { CombatEffects } from './CombatEffects';
 import {
@@ -9,8 +9,14 @@ import {
 } from './ShotPresentation';
 import { getWeapon } from './weapons';
 
-type EffectSink = Pick<CombatEffects, 'spawnShot'>;
+type EffectSink = Pick<CombatEffects, 'spawnShot'> & Partial<Pick<CombatEffects, 'spawnBlood'>>;
 type ShotCollisionWorld = Pick<CollisionWorld, 'raycastGeometry'>;
+
+/** distance along a ray to the nearest drawn player, or null */
+export type PlayerOcclusion = (origin: Vector3, direction: Vector3, maxDistance: number) => number | null;
+
+/** a resolved endpoint this close to the client's own wall hit is that wall */
+const SAME_SURFACE_M = 0.1;
 
 export interface FirearmShotPresentation {
   weaponId: GunId;
@@ -22,11 +28,20 @@ export interface FirearmShotPresentation {
   resolvedImpactNormal?: Vector3;
   cameraUp?: Vector3;
   fatal?: boolean;
+  /** authority result, for remote shots */
+  result?: ShotResult;
+  /** false when the confirmed victim is the local player (no blood in our own face) */
+  playerImpact?: boolean;
 }
 
 export interface FirearmShotContext {
   effects: EffectSink | null;
   collisionWorld: ShotCollisionWorld;
+  /**
+   * Local shots only: a drawn player in front of the wall stops the visual
+   * round there and skips the wall decal; blood waits for the server.
+   */
+  playerOcclusion?: PlayerOcclusion;
 }
 
 export interface RemoteShotHandlerContext extends FirearmShotContext {
@@ -71,10 +86,28 @@ export function presentFirearmShot(
   const unresolvedVisualDistance = request.local
     ? maxDistance
     : Math.min(maxDistance, REMOTE_SHOT_VISUAL_DISTANCE);
+  const occludedAt = request.local && context.playerOcclusion
+    ? context.playerOcclusion(request.origin, forward, worldImpact?.distance ?? maxDistance)
+    : null;
+  const stoppedByPlayer = occludedAt !== null
+    && Number.isFinite(occludedAt)
+    && occludedAt >= 0
+    && (!worldImpact || occludedAt < worldImpact.distance);
   const to = useResolvedEndpoint
     ? resolvedEndpoint
-    : worldImpact?.point
-      ?? request.origin.clone().addScaledVector(forward, unresolvedVisualDistance);
+    : stoppedByPlayer
+      ? request.origin.clone().addScaledVector(forward, occludedAt)
+      : worldImpact?.point
+        ?? request.origin.clone().addScaledVector(forward, unresolvedVisualDistance);
+  const confirmedPlayerHit = useResolvedEndpoint
+    && (request.result === 'hit' || request.result === 'kill');
+  const onWorld = worldImpact !== null
+    && !stoppedByPlayer
+    && !confirmedPlayerHit
+    && to.distanceTo(worldImpact.point) <= SAME_SURFACE_M;
+  const impactKind = confirmedPlayerHit
+    ? (request.playerImpact === false ? undefined : 'player' as const)
+    : onWorld ? 'world' as const : undefined;
   const muzzle = computeWorldMuzzlePosition(
     request.weaponId,
     request.origin,
@@ -95,7 +128,10 @@ export function presentFirearmShot(
     from: muzzle,
     to,
     nowMs: request.nowMs,
-    impactNormal: useResolvedEndpoint ? resolvedNormal : worldImpact?.normal,
+    impactNormal: useResolvedEndpoint
+      ? resolvedNormal
+      : stoppedByPlayer ? undefined : worldImpact?.normal,
+    impactKind,
     remote: !request.local,
     fatal: request.fatal === true,
   });
@@ -103,18 +139,43 @@ export function presentFirearmShot(
 }
 
 /**
+ * Blood for hits whose tracer was not drawn from a server endpoint: our own
+ * gun hits (the local tracer was drawn at fire time) and every knife hit.
+ * Never on the local victim.
+ */
+function presentConfirmedHit(context: RemoteShotHandlerContext, event: ShotEvent): void {
+  if (
+    !context.effects?.spawnBlood
+    || (event.result !== 'hit' && event.result !== 'kill')
+    || event.targetId === context.getLocalPlayerId()
+    || !isFiniteTuple(event.endpoint)
+    || !isFiniteTuple(event.dir)
+  ) {
+    return;
+  }
+  context.effects.spawnBlood(new Vector3(...event.endpoint), new Vector3(...event.dir), context.nowMs());
+}
+
+/**
  * Client-facing transport listener. Both dedicated-server bot ids (`bot:*`) and
- * ordinary peer ids are remote; only the transport's exact local id is filtered.
+ * ordinary peer ids are remote; only the transport's exact local id is filtered
+ * from tracer presentation. Our own confirmed hits and all knife hits still get
+ * a blood puff at the server's endpoint.
  */
 export function createRemoteShotHandler(
   context: RemoteShotHandlerContext,
 ): (event: ShotEvent) => void {
   return (event) => {
+    if (!event || typeof event.playerId !== 'string') {
+      return;
+    }
+    const localId = context.getLocalPlayerId();
+    if (event.playerId === localId || event.weaponId === 'knife') {
+      presentConfirmedHit(context, event);
+      return;
+    }
     if (
-      !event
-      || typeof event.playerId !== 'string'
-      || event.playerId === context.getLocalPlayerId()
-      || (event.weaponId !== 'deagle' && event.weaponId !== 'awp')
+      (event.weaponId !== 'deagle' && event.weaponId !== 'awp')
       || !isFiniteTuple(event.origin)
       || !isFiniteTuple(event.dir)
     ) {
@@ -134,6 +195,8 @@ export function createRemoteShotHandler(
         ? new Vector3(...event.impactNormal)
         : undefined,
       fatal: event.result === 'kill',
+      result: event.result,
+      playerImpact: event.targetId === undefined || event.targetId !== localId,
     });
   };
 }

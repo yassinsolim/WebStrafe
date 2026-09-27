@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { Vector3 } from 'three';
+import { BoxGeometry, Group, Mesh, MeshBasicMaterial, Vector3 } from 'three';
 import { CollisionWorld } from '../../world/CollisionWorld';
 import { createMovementTestScene } from '../../movement/MovementTestScene';
 import { HostSimulation, type HostEmitter } from '../HostSimulation';
 import { SPAWN_PROTECTION_MS } from '../../combat/CombatArena';
+import { KNIFE_DAMAGE } from '../../combat/knives';
 
 function makeWorld(): CollisionWorld {
   const { root } = createMovementTestScene();
@@ -388,5 +389,124 @@ describe('HostSimulation', () => {
     expect(sim.tick(16)).toHaveLength(2);
     sim.dispose();
     expect(sim.tick(16)).toHaveLength(0);
+  });
+});
+
+describe('HostSimulation knife combat', () => {
+  function duelWorld(wall: boolean): CollisionWorld {
+    const root = new Group();
+    const floor = new Mesh(new BoxGeometry(40, 0.2, 40), new MeshBasicMaterial());
+    floor.position.y = -0.1;
+    root.add(floor);
+    if (wall) {
+      const panel = new Mesh(new BoxGeometry(4, 3, 0.1), new MeshBasicMaterial());
+      panel.position.set(0, 1.5, -0.45);
+      root.add(panel);
+    }
+    const world = new CollisionWorld();
+    world.setCollisionFromRoot(root);
+    return world;
+  }
+
+  /** attacker at the origin looking -z, victim just ahead facing away */
+  function startDuel(wall: boolean) {
+    vi.setSystemTime(1000);
+    const emit = makeEmitter();
+    const sim = new HostSimulation(duelWorld(wall), makeSpawn(), 0, emit);
+    sim.syncHumans([
+      { id: 'attacker', name: 'A', model: 'terrorist', combatReady: true, position: [0, 0, 0], yaw: 0, pitch: 0 },
+      { id: 'victim', name: 'V', model: 'terrorist', combatReady: true, position: [0, 0, -1.1], yaw: 0, pitch: 0 },
+    ]);
+    vi.advanceTimersByTime(SPAWN_PROTECTION_MS + 100);
+    return { sim, emit };
+  }
+
+  it('kills with a secondary backstab and reports it as a knife kill', () => {
+    vi.useFakeTimers();
+    try {
+      const { sim, emit } = startDuel(false);
+      sim.applyFire('attacker', [0, 1.6, 0], [0, 0, -1], undefined, undefined, 'secondary');
+      expect(emit.hit).toHaveBeenCalledWith(expect.objectContaining({
+        shooterId: 'attacker',
+        targetId: 'victim',
+        weaponId: 'knife',
+        melee: 'secondary',
+        backstab: true,
+        killed: true,
+      }));
+      expect(emit.death).toHaveBeenCalledWith({
+        victimId: 'victim',
+        killerId: 'attacker',
+        weaponId: 'knife',
+        headshot: false,
+      });
+      expect(emit.shot).toHaveBeenCalledWith(expect.objectContaining({
+        result: 'kill',
+        weaponId: 'knife',
+        targetId: 'victim',
+        endpoint: expect.any(Array),
+      }));
+      expect(emit.health).toHaveBeenCalledWith({ playerId: 'victim', health: 0, alive: false });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('blocks a swing through the host collision world', () => {
+    vi.useFakeTimers();
+    try {
+      const { sim, emit } = startDuel(true);
+      sim.applyFire('attacker', [0, 1.6, 0], [0, 0, -1], undefined, undefined, 'secondary');
+      expect(emit.hit).not.toHaveBeenCalled();
+      expect(emit.shot).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('treats a knife fire without a melee kind as a slash and keeps the cooldown', () => {
+    vi.useFakeTimers();
+    try {
+      const { sim, emit } = startDuel(false);
+      sim.syncHumans([
+        { id: 'attacker', name: 'A', model: 'terrorist', combatReady: true, position: [0, 0, 0], yaw: 0, pitch: 0 },
+        { id: 'victim', name: 'V', model: 'terrorist', combatReady: true, position: [0, 0, -1.1], yaw: Math.PI, pitch: 0 },
+      ]);
+      sim.applyFire('attacker', [0, 1.6, 0], [0, 0, -1]);
+      expect(emit.hit).toHaveBeenLastCalledWith(expect.objectContaining({ damage: KNIFE_DAMAGE.primary, melee: 'primary' }));
+      sim.applyFire('attacker', [0, 1.6, 0], [0, 0, -1], undefined, undefined, 'primary');
+      expect(emit.hit).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(500);
+      sim.applyFire('attacker', [0, 1.6, 0], [0, 0, -1], undefined, undefined, 'primary');
+      expect(emit.hit).toHaveBeenLastCalledWith(expect.objectContaining({ damage: KNIFE_DAMAGE.primaryFollowUp }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses bot yaw for backstabs', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1000);
+      const emit = makeEmitter();
+      const sim = new HostSimulation(makeWorld(), makeSpawn(), 1, emit);
+      const bot = sim.tick(16)[0];
+      const behind = 1.05;
+      const forward = [-Math.sin(bot.yaw), -Math.cos(bot.yaw)];
+      const feet: [number, number, number] = [
+        bot.position[0] - forward[0] * behind,
+        bot.position[1],
+        bot.position[2] - forward[1] * behind,
+      ];
+      sim.syncHumans([{ id: 'h1', name: 'H', model: 'terrorist', combatReady: false, position: feet }]);
+      vi.advanceTimersByTime(SPAWN_PROTECTION_MS + 100);
+      const eye: [number, number, number] = [feet[0], feet[1] + 1.6, feet[2]];
+      const aim: [number, number, number] = [bot.position[0], bot.position[1] + 1.2, bot.position[2]];
+      sim.syncHumans([{ id: 'h1', name: 'H', model: 'terrorist', combatReady: true, position: feet }]);
+      sim.applyFire('h1', eye, normalize(eye, aim), undefined, undefined, 'secondary');
+      expect(emit.death).toHaveBeenCalledWith(expect.objectContaining({ victimId: 'bot:0', weaponId: 'knife' }));
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
