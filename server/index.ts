@@ -12,6 +12,8 @@ import { shouldResetCombatEntry } from '../src/combat/CombatEntryPolicy';
 import type { WeaponId } from '../src/combat/weapons';
 import { BotManager, type BotTarget } from './BotManager';
 import { SourceClock } from '../src/netcode/SourceClock';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
+import { clientIp, isOriginAllowed as originAllowed, readOriginPolicy } from './access';
 
 type PlayerModel = 'terrorist' | 'counterterrorist';
 type AttackKind = 'primary' | 'secondary';
@@ -84,12 +86,11 @@ const PLAYER_STALE_TIMEOUT_MS = 12000;
 const MAP_ID_REGEX = /^[a-zA-Z0-9_-]{1,64}$/;
 const PLAYER_NAME_REGEX = /^[A-Za-z0-9 _\-.]{2,24}$/;
 
-const allowedOriginSet = new Set(
-  (process.env.WEBSTRAFE_ALLOWED_ORIGINS ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0),
-);
+const originPolicy = readOriginPolicy(process.env);
+const loopDelay = monitorEventLoopDelay({ resolution: 10 });
+loopDelay.enable();
+/** how late each scheduled tick fired, ms (kept for /api/health) */
+const tickLateness: number[] = [];
 
 let leaderboardStore: LeaderboardStore = {};
 
@@ -633,6 +634,12 @@ async function handleApiRequest(
     respondJson(res, 200, {
       ok: true,
       mode: DEV_MODE ? 'dev' : 'production',
+      region: process.env.FLY_REGION ?? null,
+      clients: clients.size,
+      rssMb: Math.round(process.memoryUsage().rss / 1048576),
+      eventLoopP99Ms: +(loopDelay.percentile(99) / 1e6).toFixed(2),
+      tickLateP99Ms: +percentile(tickLateness, 99).toFixed(2),
+      tickLateMaxMs: +Math.max(0, ...tickLateness).toFixed(2),
     });
     return;
   }
@@ -1043,11 +1050,19 @@ function quantizeRow<T extends {
  * next wait instead of accumulating; if the process stalls longer than a few
  * periods the schedule resets rather than firing a burst of catch-up ticks.
  */
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
+}
+
 function scheduleFixedRate(hz: number, fn: () => void): void {
   const periodMs = 1000 / hz;
   let next = performance.now() + periodMs;
   const run = (): void => {
     const now = performance.now();
+    tickLateness.push(Math.max(0, now - next));
+    if (tickLateness.length > 2000) tickLateness.splice(0, tickLateness.length - 2000);
     if (now - next > periodMs * 4) {
       next = now;
     }
@@ -1066,33 +1081,11 @@ function isObject(value: unknown): value is JsonObject {
 }
 
 function getClientIp(req: IncomingMessage): string {
-  // In production, X-Forwarded-For should only be trusted when the server is behind a
-  // known reverse proxy. Without an IP allowlist, any client can spoof this header and
-  // bypass rate limiting. Only trust it when TRUST_PROXY=1 env var is set.
-  if (process.env.TRUST_PROXY === '1') {
-    const forwarded = req.headers['x-forwarded-for'];
-    if (typeof forwarded === 'string' && forwarded.length > 0) {
-      return forwarded.split(',')[0].trim();
-    }
-  }
-  return req.socket.remoteAddress ?? 'unknown';
+  return clientIp(req.headers, req.socket.remoteAddress, process.env.TRUST_PROXY);
 }
 
 function isOriginAllowed(origin: string | undefined): boolean {
-  if (!origin) {
-    return true;
-  }
-
-  if (allowedOriginSet.has(origin)) {
-    return true;
-  }
-
-  try {
-    const url = new URL(origin);
-    return url.hostname === 'localhost' || url.hostname === '127.0.0.1';
-  } catch {
-    return false;
-  }
+  return originAllowed(origin, originPolicy);
 }
 
 function broadcastToMap(mapId: string, payload: Record<string, unknown>): void {

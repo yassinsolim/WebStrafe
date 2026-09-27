@@ -6,6 +6,7 @@
  *
  *   npx tsx tools/netbench/bench.ts                      # ws server, all link profiles
  *   npx tsx tools/netbench/bench.ts --only rtt60_jitter_loss --secs 30
+ *   npx tsx tools/netbench/bench.ts --target wss://webstrafe-game.fly.dev/ws --secs 30
  *   VITE_SUPABASE_URL=.. VITE_SUPABASE_KEY=.. npx tsx tools/netbench/bench.ts --transport supabase --skew 150
  *
  * the ws path spawns the real server/index.ts on a loopback port with bots off.
@@ -38,6 +39,8 @@ const secs = Number(opt('secs', '25'));
 const skew = Number(opt('skew', '0'));
 const only = opt('only', '');
 const tag = opt('tag', 'run');
+/** wss://host/ws of an already running server: skips the local server and proxy */
+const target = opt('target', '');
 
 function runWorker(cfg: WorkerConfig): Promise<Record<string, unknown>> {
   return new Promise((resolve) => {
@@ -96,7 +99,17 @@ async function main(): Promise<void> {
   const results: Array<Record<string, unknown>> = [];
   const durationMs = secs * 1000;
   const warmupMs = 5000;
-  if (transport === 'ws') {
+  if (transport === 'ws' && target) {
+    const r = await runScenario('internet', {
+      transport: 'ws',
+      wsUrl: target,
+      mapId: `bench_${Math.random().toString(36).slice(2, 8)}`,
+      durationMs,
+      warmupMs,
+      epochMs: 0,
+    }, [0, 0, 0]);
+    results.push({ ...r, target });
+  } else if (transport === 'ws') {
     const serverPort = 18787 + Math.floor(Math.random() * 1000);
     const server = await startServer(serverPort);
     try {

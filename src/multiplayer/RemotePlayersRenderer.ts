@@ -17,6 +17,7 @@ import type { AttackKind, MultiplayerSnapshotPlayer, PlayerModel } from '../netw
 import type { FireView } from '../network/MultiplayerTransport';
 import { InterpolationBuffer } from '../netcode/InterpolationBuffer';
 import { RemoteTimeline } from '../netcode/RemoteTimeline';
+import { createPlayerModel } from './ProceduralPlayer';
 import {
   addPlayerEyeDetails,
   applyKnifeIdlePose,
@@ -53,10 +54,6 @@ const CORRECTION_DECAY_RATE = 10;
 /** errors bigger than this are resets, snap instead of gliding */
 const MAX_CORRECTION_M = 3;
 
-const MODEL_PATHS: Record<PlayerModel, string> = {
-  terrorist: '/playermodels/terrorist.glb',
-  counterterrorist: '/playermodels/counterterrorist.glb',
-};
 
 const MODEL_YAW_OFFSET = Math.PI;
 const SWING_DURATION_SEC = 0.28;
@@ -79,19 +76,15 @@ export class RemotePlayersRenderer {
   }
 
   public async load(): Promise<void> {
-    const [models, knifeTemplate] = await Promise.all([
-      Promise.all([
+    const models = await Promise.all([
       this.loadTemplate('terrorist'),
       this.loadTemplate('counterterrorist'),
-      ]),
-      this.loadKnifeTemplate(),
     ]);
-
     for (const [model, root] of models) {
       this.templateRoots.set(model, root);
     }
-    this.knifeTemplate = knifeTemplate;
-
+    // bodies are generated locally; a failed knife download only costs the knife
+    this.knifeTemplate = await this.loadKnifeTemplate().catch(() => null);
     this.loaded = true;
   }
 
@@ -359,8 +352,7 @@ export class RemotePlayersRenderer {
   }
 
   private async loadTemplate(model: PlayerModel): Promise<[PlayerModel, Object3D]> {
-    const gltf = await gltfLoader.loadAsync(MODEL_PATHS[model]);
-    const root = gltf.scene;
+    const root = createPlayerModel(model);
     root.name = `RemoteModelTemplate:${model}`;
     root.updateWorldMatrix(true, true);
 

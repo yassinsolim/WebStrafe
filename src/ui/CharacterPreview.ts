@@ -17,6 +17,8 @@ import {
   WebGLRenderer,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createPlayerModel } from '../multiplayer/ProceduralPlayer';
+import type { PlayerModel } from '../network/types';
 import {
   addPlayerEyeDetails,
   applyKnifeIdlePose,
@@ -120,16 +122,10 @@ export class CharacterPreview {
     this.scene.add(rim);
   }
 
-  /** Loads and frames a player model GLB, replacing any current one. */
-  async setModel(url: string): Promise<void> {
+  /** Builds and frames a player model, replacing any current one. */
+  async setModel(model: PlayerModel): Promise<void> {
     const token = ++this.loadToken;
-    let root: Object3D;
-    try {
-      const gltf = await loader.loadAsync(url);
-      root = gltf.scene;
-    } catch {
-      return;
-    }
+    const root: Object3D = createPlayerModel(model);
     if (token !== this.loadToken) {
       return; // a newer load superseded this one
     }

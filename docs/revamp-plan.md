@@ -143,19 +143,19 @@ passing). One known gap stands out:
 - Plan: add `sv_air_max_wishspeed` (default 0.76 m/s), move to CS bhop-server
   values (`sv_airaccelerate` 150 for bhop, 100 for surf, both configurable),
   and retune the surf tests against recorded reference runs.
-- **Autobhop:** exists (`sv_autobhop_enabled`, a settings toggle). Recommended
-  defaults are autobhop on for surf and bhop maps and off in combat modes, with
-  a server cvar per room.
+- **Autobhop:** always on by default on every map, including combat (decided
+  2026-09-27). It's `sv_autobhop_enabled: true` plus the settings default, and
+  players can still turn it off in Settings. When movement becomes
+  server-authoritative, the server copies the same default.
 - Keep ramp clip and edge-slide behaviour. Add a strafe sync percentage and a
   gain HUD (the `recommendedStrafe` debug field is already a start).
 
 ## 5. Weapons and knives
 
-Display names are our own. "AWP" is an Accuracy International trademark,
-"Desert Eagle" is a Magnum Research trademark, and "Counter-Strike"/"CS2" are
-Valve's. Internal ids (`awp`, `deagle`) can stay. Suggested UI names:
-**"Longbow .338"** for the bolt-action sniper and **"Hand Cannon .50"** for the
-heavy pistol.
+Display names stay **"AWP"** and **"Deagle"** (decided 2026-09-27). For the
+record, "AWP" is an Accuracy International trademark and "Desert Eagle" is a
+Magnum Research trademark. "Counter-Strike"/"CS2" are Valve's and aren't used
+in game.
 
 ### Sniper (AWP-style), phase 2
 
@@ -262,10 +262,14 @@ added in phase 1 is original code-generated geometry.
 
 Existing assets that need a licence review (not changed in this PR):
 
-- `public/playermodels/*.glb` are "CTM_SAS | CS2 Agent Model" and "PHOENIX |
-  CS2 Agent Model" from Sketchfab, labelled CC-BY. These are almost certainly
-  extracted from CS2. A CC-BY label from an uploader doesn't grant rights to
-  Valve's models. **Highest risk; recommend replacing.**
+- ~~`public/playermodels/*.glb`, the Sketchfab "CS2 Agent Model" uploads~~.
+  **Replaced** with original code-generated models
+  (`src/multiplayer/ProceduralPlayer.ts`) and the GLBs were deleted. The new
+  skeleton reuses only the bone naming and joint-axis convention (25 joint
+  orientations) so the existing stance and swing poses keep working. Mesh,
+  proportions and materials are our own.
+
+  ![procedural player models: bind pose, menu stance, in-game stance](images/player-models.png)
 - `public/viewmodels/knife/*.glb` ("knife animated" by DJMaesen) and the
   Deagle and AWP rigs (1Matzh, Addison Ye) are Sketchfab CC-BY. Their
   provenance is unverified; they may be game rips. The procedural knives
