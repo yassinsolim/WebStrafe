@@ -1,9 +1,10 @@
-# Fly.io config for the WebStrafe multiplayer backend (WebSocket + API + bots).
-# Set `app` and `primary_region` before first deploy (or `fly launch` fills them).
+# Fly.io config for the WebStrafe dedicated game server (WebSocket + bots + API).
+# The static client stays on Vercel; this machine only runs server/index.ts.
 # A persistent WS server must NOT auto-stop, or sockets drop when idle.
 
-app = "webstrafe-server"          # <-- change to your Fly app name
-primary_region = "iad"            # <-- pick a region near you (fly platform regions)
+app = "webstrafe-game"
+# sea (seattle) is no longer offered; this is the lowest measured rtt from calgary
+primary_region = "sjc"
 
 [build]
 
@@ -13,24 +14,35 @@ primary_region = "iad"            # <-- pick a region near you (fly platform reg
   HOST = "0.0.0.0"
   ENABLE_BOTS = "true"
   BOTS_PER_MAP = "2"
-  WEBSTRAFE_DATA_DIR = "/data"
-  # Lock WS/API to the deployed frontend origin(s), comma-separated:
+  SNAPSHOT_RATE_HZ = "30"
+  # behind fly's proxy only Fly-Client-IP is trustworthy for rate limiting
+  TRUST_PROXY = "fly"
+  WEBSTRAFE_DATA_DIR = "/tmp/webstrafe"
+  # production frontend plus this vercel team's preview deployments
   WEBSTRAFE_ALLOWED_ORIGINS = "https://strafe.yassin.app"
+  WEBSTRAFE_ALLOWED_ORIGIN_SUFFIXES = "-yassins-projects-11732a5e.vercel.app"
 
 [http_service]
   internal_port = 8080
   force_https = true
-  # Keep the machine alive so long-lived WebSockets are not dropped.
-  auto_stop_machines = false
+  # keep the machine alive so long-lived websockets are not dropped
+  auto_stop_machines = "off"
   auto_start_machines = true
   min_machines_running = 1
 
-# Durable leaderboard storage. Create with:
-#   fly volumes create webstrafe_data --size 1 --region <region>
-[[mounts]]
-  source = "webstrafe_data"
-  destination = "/data"
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 200
+    hard_limit = 250
 
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/health"
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "30s"
+
+# surf_skyworld_x collision peaks at ~390 MB rss while loading; 1 GB leaves headroom
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "512mb"
+  memory = "1gb"
