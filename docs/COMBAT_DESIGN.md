@@ -126,7 +126,7 @@ New **client -> server** messages:
 
 | type | payload | notes |
 |------|---------|-------|
-| `fire` | `{ weaponId, origin:[x,y,z], dir:[x,y,z], observedAtMs? }` | server validates fire state and resolves the nearest eligible authoritative capsule at a rewind no older than 250 ms |
+| `fire` | `{ weaponId, origin:[x,y,z], dir:[x,y,z], observedAtMs?, targets?, t?, melee? }` | server validates fire state and resolves the nearest eligible authoritative capsule at a rewind no older than 250 ms. `melee: 'primary' \| 'secondary'` marks a knife swing (see section 11); a knife fire without it counts as a slash |
 | `reload` | `{ weaponId }` | server tracks ammo/cooldown |
 | `equip` | `{ weaponId }` | switch active weapon |
 
@@ -213,9 +213,9 @@ presentation and audio path.
 - Bots keep the real `MovementController`, but firing additionally requires
   server-side collision-world line of sight, a reaction delay, imperfect aim,
   finite range, and bounded burst/cooldown windows.
-- Backstab readiness is presentation-only: a close, visible, living target that
-  is facing away raises the knife, but damage and reach still use the ordinary
-  authoritative knife rules with no directional bonus.
+- Backstab readiness is a presentation cue: a close, visible, living target
+  that is facing away raises the knife. It uses the same cone as the
+  authoritative backstab (section 11), which is what actually applies 90 or 180.
 
 ## 10. Risks
 
@@ -225,3 +225,134 @@ presentation and audio path.
 - **Cheating.** The server derives target, hitbox, distance, and damage. Broader
   anti-cheat hardening remains outside the current scope.
 - **Scope creep.** The PR breakdown + feature flag keep each step shippable.
+
+## 11. Weapon mechanics (v2)
+
+Where the numbers come from:
+
+- **CS2 data:** `scripts/weapons.vdata` from the public
+  [SteamTracking/GameTracking-CS2](https://github.com/SteamTracking/GameTracking-CS2)
+  mirror, commit `10f3693` (2026-09-23). Balance references only; no assets.
+- **Source knife code:** `weapon_knife.cpp` (`SwingOrStab`) for ranges, the
+  hull, cooldowns and the follow-up rule. 1 Source unit = 0.0254 m.
+- **CS:GO model:** the documented accuracy model (penalty decay, movement
+  ramp, jump term) and punch convars (`weapon_recoil_*`, `view_recoil_tracking`).
+- **Ours:** values we picked, marked as such.
+
+### Knife (server-authoritative)
+
+Every knife type shares these (`src/combat/knives.ts`). Swings resolve in
+`CombatArena.handleMelee` on the WebSocket server and on the Supabase host.
+
+| Rule | Value | Source |
+|---|---|---|
+| Slash damage | 40, follow-up 25, from behind 90 | CS:GO / CS2 knife table |
+| Stab damage | 65, from behind 180 | same |
+| Slash cooldown | 0.4 s after a miss, 0.5 s after a hit; the stab waits 0.5 s | `SwingOrStab` |
+| Stab cooldown | 1.0 s after a miss, 1.1 s after a hit, both attacks | `SwingOrStab` |
+| Follow-up | a slash less than 0.4 s after the slash cooldown ran out | `m_flNextPrimaryAttack + 0.4` |
+| Reach | 1.45 m slash, 1.2 m stab, eye to capsule surface | ours; CS reaches about 1.63 / 1.22 m to the target box through its hull trace |
+| Sweep | 0.41 m sphere swept along the aim | CS `head_hull`, 16 units |
+| Backstab | attacker-to-victim direction dot victim forward above 0.475 | CS:GO (CS:S used 0.8) |
+
+A slash from behind does 90, which does not kill from full health, same as CS.
+
+- **Hit test** (`MeleeResolver`): the swept sphere must touch the target
+  capsule, the target must be in front of the attacker, and its surface must be
+  within reach of the eye. The nearest target wins. Where the authority has
+  collision (the host's world, or the server's headless map once it has loaded
+  on the first swing), a wall between the eye and the contact point blocks it.
+- **Rewind:** targets are rewound like gun shots. The backstab uses the
+  victim's yaw at the rewound time, which now rides in the position history
+  from WebSocket clients, Supabase peers and bots.
+- **Timing:** the cooldown check uses the client's send time mapped through
+  its `SourceClock`, clamped to at most 150 ms before arrival. Network jitter
+  no longer rejects swings that were spaced correctly, and claims never run
+  ahead of arrival, so swings can't be banked.
+- **Protocol:** `fire` carries optional `melee`. Hits and deaths report
+  `weaponId: 'knife'`, and `hit` adds `melee` and `backstab`. A confirmed hit is
+  also broadcast as a `shot` with `weaponId: 'knife'` and the contact point, so
+  the victim gets the incoming-damage cue and everyone can draw blood. The
+  client keeps sending `attack` for remote swing visuals.
+- **Client:** `LocalKnife` applies the same cooldowns. It predicts hit or miss
+  against the remotes as drawn, so the longer cooldown after a hit lines up
+  with the server.
+
+### Spread (`src/combat/Inaccuracy.ts`)
+
+The cone is spread + inaccuracy. Inaccuracy is a penalty plus a movement term
+plus an air term:
+
+- **Penalty:** sits at the stance floor (stand on the ground, stand + jump in
+  the air). Each shot adds `fire`, and a landing adds `land` x fall speed in
+  units/s. It decays back to the floor, 90% per recovery time. In the air the
+  recovery time is CS's crouch recovery x4.
+- **Movement term:** zero up to 34% of max speed, then `move` x ramp^0.25 up
+  to 95%, measured against `sv_maxspeed`.
+- **Air term:** from `jumpInitial` at take-off speed down to 0 near the apex,
+  using a sqrt of vertical speed, capped at 2x.
+- **Sampling:** each shot draws a random radius in [0, inaccuracy] at a
+  random angle, plus a second circle of radius spread (CS's two-circle draw).
+  The random source is injectable.
+
+| Weapon | spread | stand | jump | fire | move | land / (unit/s) | jump initial | recovery |
+|---|---|---|---|---|---|---|---|---|
+| Deagle | 0.002 | 0.0042 | 0.04055 | 0.07223 | 0.0481 | 0.000043 | 0.54882 | **0.4 s (ours)**, CS2 0.8112 |
+| AWP unscoped | 0.0002 | 0.0808 | 0.13383 | 0.05385 | 0.17648 | 0.000307 | 0.17286 | **0.25 s (ours)**, CS2 0.34539 |
+| AWP scoped | 0.0002 | 0.002 | 0.13383 | 0.05385 | 0.17648 | 0.0001 | 0.17286 | same |
+
+All values are radians and come from CS2 unless marked. The two recovery
+times follow the design targets: the Deagle recovers in about 0.4 s, and the
+scope settles in about 0.3 s (under 0.5 degrees at 0.3 s). CS2's own values
+give about 0.8 s and 0.45 s. CS2's `m_flInaccuracyJumpApex` is not modelled,
+because its formula isn't public.
+
+### Recoil and view punch (`src/combat/Recoil.ts`)
+
+- Each shot adds aim punch velocity at the CS2 recoil angle (up) plus or
+  minus the angle variance. That variance is the horizontal drift.
+- The punch decays by `exp(-8 dt)` and then 18 deg/s linear, and the velocity
+  decays by `exp(-4.5 dt)` (CS:GO `weapon_recoil_decay2_exp`, `_lin`,
+  `weapon_recoil_vel_decay`).
+- Bullets go to punch x 2 (`weapon_recoil_scale`). The camera shows 45% of
+  that (`view_recoil_tracking`) plus a visual-only kick of magnitude x 0.055
+  that decays at 18/s.
+- The camera offset is applied in `GameApp.updateCameras` and never changes
+  the real view angles.
+- Our reading, since the original `Recoil()` isn't public: the magnitude is
+  punch velocity in deg/s, and the extra view kick scales with magnitude.
+
+| Weapon | angle | variance | magnitude | result |
+|---|---|---|---|---|
+| Deagle | 0 | +-60 deg | 48.2 +- 18 | about 2.9 deg peak at 0.11 s, under 5% by 0.37 s |
+| AWP | 0 | +-20 deg | 78 +- 15 (unscoped value for every shot, ours) | about 6.5 deg peak, settled in 0.45 s |
+
+### AWP scope (`src/combat/Scope.ts`, `src/ui/ScopeOverlay.ts`)
+
+- **Zoom:** right click cycles unscoped, zoom 1, zoom 2. CS2 zooms to 40 and
+  10 degrees against a 90 degree base. We keep that magnification (about 2.7x
+  and 11.4x) for any world fov and ease over CS2's 0.05 s zoom time.
+- **Sensitivity:** zoomed fov / base fov x the zoom sensitivity ratio (CS
+  default 1.0). The ratio is read from `settings.zoomSensitivityRatio` when
+  present, otherwise 1.0.
+- **Firing:** a shot unscopes. After the 1.5 s bolt the scope comes back at
+  the same zoom if the AWP is still out, the player is alive and not
+  reloading. The zoom is locked during the bolt, as in CS. Reload, weapon
+  switch, death and pause unscope.
+- **Presentation:** the overlay is original (black mask, one lens, faint
+  vignette, thin cross with heavier outer posts). The crosshair and the
+  first-person gun are hidden while scoped.
+
+### Impact feedback (`src/combat/CombatEffects.ts`, `src/combat/ImpactDecals.ts`)
+
+- **Bullet holes:** pooled oriented quads, at most 64, with the oldest
+  reused. Each holds for 12 s and fades over 3 s. They are cleared on map
+  load and kept across weapon switches and respawns.
+- **World hits:** a dust and spark puff.
+- **Player hits:** a blood puff at server-confirmed endpoints only: remote
+  shots, our own confirmed gun hits and every knife hit. Never on the local
+  victim.
+- **Local rounds:** a local round stops at a drawn player instead of marking
+  the wall behind.
+- **Muzzle flash:** the local flash can follow the real muzzle socket through
+  `getLocalMuzzleWorldPosition`. The fixed anchors remain the fallback.
