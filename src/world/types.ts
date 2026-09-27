@@ -1,4 +1,5 @@
 import type { Object3D, Vector3 } from 'three';
+import type { SourceCvars } from '../movement/types';
 
 export interface MapSpawn {
   position: [number, number, number];
@@ -21,6 +22,11 @@ export interface MapMeta {
   spawns?: MapSpawn[];
   sceneScale?: number;
   notes?: string;
+  /**
+   * movement cvar overrides for this map, e.g. { "sv_airaccelerate": 100 } for
+   * surf. validated by MovementController.applyMapCvars, bad entries are ignored.
+   */
+  cvars?: Partial<SourceCvars>;
 }
 
 export interface MapManifestEntry {

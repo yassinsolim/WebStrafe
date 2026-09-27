@@ -1,5 +1,5 @@
 import { MathUtils, Vector3 } from 'three';
-import { defaultCvars } from './cvars';
+import { defaultCvars, sanitizeMapCvars, type MapCvarResult } from './cvars';
 import { StrafeStatsTracker, type StrafeStats } from './StrafeStats';
 import {
   accelerate,
@@ -81,6 +81,17 @@ export class MovementController {
 
   public setCvars(next: Partial<SourceCvars>): void {
     Object.assign(this.cvars, next);
+  }
+
+  /**
+   * per-map physics: resets every cvar to its default, then applies the map's
+   * overrides that pass validation (known name, right type, inside
+   * mapCvarRules). anything else is skipped and listed in `rejected`.
+   */
+  public applyMapCvars(overrides: Partial<SourceCvars> | undefined): MapCvarResult {
+    const result = sanitizeMapCvars(overrides);
+    Object.assign(this.cvars, defaultCvars, result.applied);
+    return result;
   }
 
   /** Everything tick() reads from the previous tick, for rollback and replay. */
