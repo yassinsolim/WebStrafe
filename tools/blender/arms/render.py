@@ -141,10 +141,25 @@ def _setup(scene, fast, resolution):
     nt.links.new(sep.outputs["Z"], maprange.inputs["Value"])
     nt.links.new(maprange.outputs["Result"], ramp.inputs["Fac"])
     nt.links.new(ramp.outputs["Color"], bg.inputs["Color"])
-    bg.inputs["Strength"].default_value = 0.6
+    bg.inputs["Strength"].default_value = WORLD_STRENGTH
+    # the backdrop the camera sees gets its own strength so it keeps the same
+    # brightness whatever exposure a shot uses (lighting stays unchanged)
+    bg_cam = nt.nodes.new("ShaderNodeBackground")
+    bg_cam.name = "CameraBackground"
+    path = nt.nodes.new("ShaderNodeLightPath")
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(ramp.outputs["Color"], bg_cam.inputs["Color"])
+    nt.links.new(path.outputs["Is Camera Ray"], mix.inputs["Fac"])
+    nt.links.new(bg.outputs["Background"], mix.inputs[1])
+    nt.links.new(bg_cam.outputs["Background"], mix.inputs[2])
+    out = next(n for n in nt.nodes if n.type == "OUTPUT_WORLD")
+    nt.links.new(mix.outputs["Shader"], out.inputs["Surface"])
 
 
 LIGHT_SCALE = 0.4
+WORLD_STRENGTH = 0.6
+# stops per shot: the area lights wash the charcoal glove out to mid grey at 0
+EXPOSURE = {"rest": -2.0, "fist_pose": -1.6, "watch_closeup": -1.2, "wrist_twist": -1.6, "elbow_bend": -1.2}
 
 
 def _light(name, kind, loc, target, energy, size=0.3, color=(1, 1, 1)):
@@ -172,8 +187,12 @@ def _camera(loc, target, lens):
     return cam
 
 
-def _shot(path, cam_loc, target, lens, lights, fast):
+def _shot(path, cam_loc, target, lens, lights, fast, exposure=0.0):
     scene = bpy.context.scene
+    scene.view_settings.exposure = exposure
+    bg_cam = scene.world.node_tree.nodes.get("CameraBackground")
+    if bg_cam is not None:
+        bg_cam.inputs["Strength"].default_value = WORLD_STRENGTH * 2.0 ** -exposure
     cam = _camera(cam_loc, target, lens)
     made = [_light(*l[:5], **(l[5] if len(l) > 5 else {})) for l in lights]
     scene.render.filepath = path
@@ -195,28 +214,33 @@ def render_all(outdir, arm_obj, fast=False, log=print, only=None):
 
     if want("rest"):
         _clear_pose(arm_obj)
-        target = Vector((0.0, 0.5, -0.24))
+        target = Vector((0.0, 0.5, -0.255))
         lights = [
             ("Key", "AREA", (0.35, 0.1, 0.35), (0.1, 0.5, -0.28), 90, {"size": 0.6}),
             ("Fill", "AREA", (-0.5, 0.2, 0.0), (0.0, 0.5, -0.28), 30, {"size": 0.8}),
             ("Rim", "AREA", (0.0, 1.1, 0.2), (0.0, 0.5, -0.28), 60, {"size": 0.5}),
         ]
-        _shot(os.path.join(outdir, "rest.png"), (0.0, 0.0, 0.0), target, 20, lights, fast)
+        # 26 mm is about a 70 degree horizontal fov, close to a usual viewmodel fov
+        _shot(os.path.join(outdir, "rest.png"), (0.0, 0.0, 0.0), target, 26, lights, fast, EXPOSURE["rest"])
         log("rendered rest.png")
 
     if want("fist_pose"):
         _clear_pose(arm_obj)
+        # thumb up like holding a pistol: roll the whole straight arm about its
+        # own axis (rigid, no deformation), then close the hand
+        roll(arm_obj, "upperarm_r", 90.0)
         pose_grip(arm_obj, "r")
         bpy.context.view_layer.update()
         hand = arm_obj.matrix_world @ arm_obj.pose.bones["hand_r"].tail
-        target = hand + Vector((-0.01, -0.035, -0.02))
-        cam = target + Vector((-0.3, -0.12, 0.2))
+        target = hand + Vector((-0.02, -0.02, -0.005))
+        cam = target + Vector((-0.25, 0.225, 0.175))
         lights = [
-            ("Key", "AREA", tuple(target + Vector((-0.2, -0.1, 0.3))), tuple(target), 25, {"size": 0.4}),
-            ("Fill", "AREA", tuple(target + Vector((0.3, -0.2, 0.05))), tuple(target), 10, {"size": 0.5}),
-            ("Rim", "AREA", tuple(target + Vector((0.1, 0.35, 0.15))), tuple(target), 20, {"size": 0.3}),
+            ("Key", "AREA", tuple(target + Vector((-0.15, 0.1, 0.32))), tuple(target), 25, {"size": 0.4}),
+            ("Fill", "AREA", tuple(target + Vector((-0.3, -0.15, -0.05))), tuple(target), 10, {"size": 0.5}),
+            ("Rim", "AREA", tuple(target + Vector((0.2, 0.3, 0.15))), tuple(target), 20, {"size": 0.3}),
         ]
-        _shot(os.path.join(outdir, "fist_pose.png"), tuple(cam), tuple(target), 55, lights, fast)
+        _shot(os.path.join(outdir, "fist_pose.png"), tuple(cam), tuple(target), 50, lights, fast,
+              EXPOSURE["fist_pose"])
         log("rendered fist_pose.png")
 
     if want("watch_closeup"):
@@ -231,7 +255,8 @@ def render_all(outdir, arm_obj, fast=False, log=print, only=None):
             ("Fill", "AREA", tuple(c + Vector((-0.25, -0.1, 0.1))), tuple(c), 5, {"size": 0.5}),
             ("Rim", "AREA", tuple(c + Vector((-0.05, 0.3, 0.12))), tuple(c), 10, {"size": 0.2}),
         ]
-        _shot(os.path.join(outdir, "watch_closeup.png"), tuple(cam), tuple(target), 70, lights, fast)
+        _shot(os.path.join(outdir, "watch_closeup.png"), tuple(cam), tuple(target), 70, lights, fast,
+              EXPOSURE["watch_closeup"])
         log("rendered watch_closeup.png")
 
     if want("wrist_twist"):
@@ -246,7 +271,8 @@ def render_all(outdir, arm_obj, fast=False, log=print, only=None):
             ("Fill", "AREA", tuple(target + Vector((-0.3, -0.1, 0.05))), tuple(target), 10, {"size": 0.6}),
             ("Rim", "AREA", tuple(target + Vector((-0.1, 0.35, 0.2))), tuple(target), 20, {"size": 0.3}),
         ]
-        _shot(os.path.join(outdir, "wrist_twist.png"), tuple(cam), tuple(target), 45, lights, fast)
+        _shot(os.path.join(outdir, "wrist_twist.png"), tuple(cam), tuple(target), 45, lights, fast,
+              EXPOSURE["wrist_twist"])
         log("rendered wrist_twist.png")
 
     if want("elbow_bend"):
@@ -261,7 +287,8 @@ def render_all(outdir, arm_obj, fast=False, log=print, only=None):
             ("Key", "AREA", tuple(target + Vector((0.4, -0.3, 0.4))), tuple(target), 60, {"size": 0.6}),
             ("Fill", "AREA", tuple(target + Vector((0.3, 0.4, -0.1))), tuple(target), 20, {"size": 0.8}),
         ]
-        _shot(os.path.join(outdir, "elbow_bend.png"), tuple(cam), tuple(target), 50, lights, fast)
+        _shot(os.path.join(outdir, "elbow_bend.png"), tuple(cam), tuple(target), 50, lights, fast,
+              EXPOSURE["elbow_bend"])
         log("rendered elbow_bend.png")
 
     _clear_pose(arm_obj)
