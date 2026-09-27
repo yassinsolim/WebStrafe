@@ -85,6 +85,27 @@ export function flatWorld(): CollisionAdapter {
   return new HeightfieldWorld(() => flat(0));
 }
 
+/**
+ * endless floor at y = 0 plus a slab over x in [fromX, toX] whose underside is at
+ * `ceiling`. only overlap tests see the slab (no walls), which is all the crouch
+ * stand-up check needs while you duck-walk under it.
+ */
+export function lowCeilingWorld(ceiling: number, fromX: number, toX: number): CollisionAdapter {
+  const floor = flatWorld();
+  return {
+    queryGround: (feet, capsule, probeDistance) => floor.queryGround(feet, capsule, probeDistance),
+    traceCapsule: (start, end, capsule) => floor.traceCapsule(start, end, capsule),
+    resolveCapsulePosition: (feet, capsule) => {
+      const underSlab = feet.x + capsule.radius > fromX && feet.x - capsule.radius < toX;
+      const top = feet.y + capsule.height;
+      if (underSlab && top > ceiling) {
+        return { collided: true, depth: top - ceiling, normal: new Vector3(0, -1, 0), position: feet.clone() };
+      }
+      return floor.resolveCapsulePosition(feet, capsule);
+    },
+  };
+}
+
 /** floor at y = 0 for x < 0 that drops by `drop` metres at x = 0 */
 export function stepDownWorld(drop: number): CollisionAdapter {
   return new HeightfieldWorld((x) => flat(x < 0 ? 0 : -drop));

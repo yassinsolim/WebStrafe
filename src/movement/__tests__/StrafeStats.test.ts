@@ -193,6 +193,7 @@ describe('strafe stats', () => {
     }
     expect(b.captureState()).toEqual(a.captureState());
     expect(Object.keys(a.captureState()).sort()).toEqual([
+      'duckAmount',
       'pitchRad',
       'position',
       'surfContactGraceTicks',

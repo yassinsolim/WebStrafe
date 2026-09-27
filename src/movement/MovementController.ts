@@ -27,14 +27,27 @@ const SURF_CONTACT_GRACE_TICKS = 20;
 const SURF_EDGE_GROUND_OVERRIDE_MIN_ANGLE_DEG = 1;
 const SURF_EDGE_OVERRIDE_MIN_SPEED = 1.2;
 const SURF_EDGE_LAUNCH_MIN_SPEED = 5;
+const CROUCH_HEIGHT = 1.32;
+const CROUCH_EYE_HEIGHT = 1.12;
+// seconds for a full duck or unduck on the ground
+const DUCK_TIME = 0.12;
+// source's duck speed crop, ground only
+const DUCK_SPEED_SCALE = 0.34;
+// the stand-up check starts this far off the floor so touching it doesn't count
+const UNDUCK_CLEARANCE = 0.01;
 
 export class MovementController {
+  /** standing hull, what spawn checks use. the live hull shrinks while crouched */
   public readonly capsule: CapsuleShape = {
     height: 1.76,
     radius: 0.34,
   };
 
+  /** standing eye height, see getEyeHeight() for the live one */
   public readonly eyeHeight = 1.6;
+
+  private readonly hull: CapsuleShape = { ...this.capsule };
+  private duckAmount = 0;
 
   private readonly cvars: SourceCvars = { ...defaultCvars };
   private readonly position = new Vector3(0, 4, 0); // feet
@@ -103,6 +116,7 @@ export class MovementController {
       surfContactGraceTicks: this.surfContactGraceTicks,
       yawRad: this.yawRad,
       pitchRad: this.pitchRad,
+      duckAmount: this.duckAmount,
     };
   }
 
@@ -113,6 +127,7 @@ export class MovementController {
     this.surfContactGraceTicks = state.surfContactGraceTicks;
     this.yawRad = state.yawRad;
     this.pitchRad = state.pitchRad;
+    this.setDuckAmount(state.duckAmount);
     this.statsYawRad = state.yawRad;
   }
 
@@ -129,6 +144,7 @@ export class MovementController {
     this.surfContactNormal.set(0, 1, 0);
     this.yawRad = MathUtils.degToRad(yawDeg);
     this.pitchRad = 0;
+    this.setDuckAmount(0);
     this.strafeStats.reset();
     this.statsYawRad = this.yawRad;
   }
@@ -144,7 +160,7 @@ export class MovementController {
   public tick(dt: number, input: MoveInput, world: CollisionAdapter): void {
     const speedBefore = horizontalLength(this.velocity);
     const wish = this.computeWish(input);
-    let groundProbe = world.queryGround(this.position, this.capsule, GROUND_PROBE_DIST);
+    let groundProbe = world.queryGround(this.position, this.hull, GROUND_PROBE_DIST);
     let mode = this.pickMode(groundProbe);
     if (mode === 'ground' && groundProbe && this.isOffGround(groundProbe)) {
       mode = 'air';
@@ -197,6 +213,7 @@ export class MovementController {
       jumped = true;
     }
     const accelMode = mode;
+    this.updateDuck(dt, input.crouchHeld === true, mode === 'ground', world);
 
     switch (mode) {
       case 'ground':
@@ -204,7 +221,11 @@ export class MovementController {
           this.applyGroundFriction(dt);
           frictionApplied = true;
         }
-        this.accelerateGround(wish.wishDir, wish.wishSpeed, dt);
+        this.accelerateGround(
+          wish.wishDir,
+          wish.wishSpeed * MathUtils.lerp(1, DUCK_SPEED_SCALE, this.duckAmount),
+          dt,
+        );
         if (this.velocity.y < 0) {
           this.velocity.y = 0;
         }
@@ -245,7 +266,7 @@ export class MovementController {
     const dropWarnRatio = 0.5;
     let collisionDropWarn = collisionSpeedBefore > 0.2 && collisionSpeedAfter < collisionSpeedBefore * dropWarnRatio;
 
-    groundProbe = world.queryGround(this.position, this.capsule, GROUND_PROBE_DIST);
+    groundProbe = world.queryGround(this.position, this.hull, GROUND_PROBE_DIST);
     contactPoint = groundProbe?.position.clone() ?? contactPoint;
     const surfFromProbe = this.getSurfNormalFromProbe(groundProbe);
     const surfFromCollision = slideResult.surfCollisionNormal
@@ -384,8 +405,18 @@ export class MovementController {
     this.position.copy(position);
   }
 
+  /** live eye height above the feet, blends down to 1.12 m while crouched */
+  public getEyeHeight(): number {
+    return MathUtils.lerp(this.eyeHeight, CROUCH_EYE_HEIGHT, this.duckAmount);
+  }
+
+  /** 0 standing, 1 fully crouched */
+  public getDuckAmount(): number {
+    return this.duckAmount;
+  }
+
   public getCameraPosition(): Vector3 {
-    return this.position.clone().addScaledVector(UP, this.eyeHeight);
+    return this.position.clone().addScaledVector(UP, this.getEyeHeight());
   }
 
   public getYawRad(): number {
@@ -439,6 +470,51 @@ export class MovementController {
     this.velocity.copy(
       applyFriction(this.velocity, dt, this.cvars.sv_friction, this.cvars.sv_stopspeed),
     );
+  }
+
+  // source-style ducking. on the ground the hull and eye blend over DUCK_TIME with
+  // the feet planted. off the ground it's instant and the feet move instead so the
+  // head stays put, which is why ducking mid-jump clears higher ledges. standing
+  // back up only happens where the standing hull fits.
+  private updateDuck(dt: number, crouchHeld: boolean, onGround: boolean, world: CollisionAdapter): void {
+    const target = crouchHeld ? 1 : 0;
+    if (this.duckAmount === target) {
+      return;
+    }
+
+    if (!onGround) {
+      const feet = this.position.clone();
+      feet.y += this.hull.height - this.hullHeightAt(target);
+      if (target < this.duckAmount && !this.hullFits(feet, this.hullHeightAt(target), world)) {
+        return;
+      }
+      this.position.copy(feet);
+      this.setDuckAmount(target);
+      return;
+    }
+
+    const step = dt / DUCK_TIME;
+    const next = target > this.duckAmount
+      ? Math.min(target, this.duckAmount + step)
+      : Math.max(target, this.duckAmount - step);
+    if (next < this.duckAmount && !this.hullFits(this.position, this.hullHeightAt(next), world)) {
+      return;
+    }
+    this.setDuckAmount(next);
+  }
+
+  private hullFits(feet: Vector3, height: number, world: CollisionAdapter): boolean {
+    const start = feet.clone().addScaledVector(UP, UNDUCK_CLEARANCE);
+    return !world.resolveCapsulePosition(start, { radius: this.hull.radius, height }).collided;
+  }
+
+  private hullHeightAt(duckAmount: number): number {
+    return MathUtils.lerp(this.capsule.height, CROUCH_HEIGHT, duckAmount);
+  }
+
+  private setDuckAmount(duckAmount: number): void {
+    this.duckAmount = duckAmount;
+    this.hull.height = this.hullHeightAt(duckAmount);
   }
 
   private airAccelerate(wishDir: Vector3, wishSpeed: number, dt: number): Vector3 {
@@ -524,7 +600,7 @@ export class MovementController {
       }
 
       const end = this.position.clone().addScaledVector(this.velocity, remainingTime);
-      const trace = world.traceCapsule(this.position, end, this.capsule);
+      const trace = world.traceCapsule(this.position, end, this.hull);
       this.position.copy(trace.position);
 
       if (!trace.hit) {
@@ -598,7 +674,7 @@ export class MovementController {
           }
 
           // Small depenetration bias away from the lip keeps controller from re-hitting the exact edge.
-          this.position.addScaledVector(hitNormal, this.capsule.radius * 0.06);
+          this.position.addScaledVector(hitNormal, this.hull.radius * 0.06);
         }
 
         const fraction = MathUtils.clamp(trace.fraction, 0, 1);
@@ -685,7 +761,7 @@ export class MovementController {
       }
     }
 
-    const resolved = world.resolveCapsulePosition(this.position, this.capsule);
+    const resolved = world.resolveCapsulePosition(this.position, this.hull);
     this.position.copy(resolved.position);
     if (resolved.collided) {
       lastCollisionNormal = resolved.normal.clone();
@@ -727,7 +803,7 @@ export class MovementController {
 
     this.debugState.speed = horizontalLength(this.velocity);
     this.debugState.feetPosition.copy(this.position);
-    this.debugState.cameraPosition.copy(this.position).addScaledVector(UP, this.eyeHeight);
+    this.debugState.cameraPosition.copy(this.position).addScaledVector(UP, this.getEyeHeight());
     this.debugState.velocity.copy(this.velocity);
     this.debugState.grounded = mode === 'ground';
     this.debugState.surfing = mode === 'surf';

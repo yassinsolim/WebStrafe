@@ -12,6 +12,8 @@ export interface MoveInput {
   sideMove: number;
   jumpPressed: boolean;
   jumpHeld: boolean;
+  /** duck key held (left ctrl or C), missing means standing */
+  crouchHeld?: boolean;
 }
 
 export interface GroundProbe {
@@ -71,4 +73,6 @@ export interface MovementSnapshot {
   surfContactGraceTicks: number;
   yawRad: number;
   pitchRad: number;
+  /** 0 standing, 1 fully crouched. hull and eye height both follow it */
+  duckAmount: number;
 }

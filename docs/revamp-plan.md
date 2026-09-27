@@ -175,6 +175,17 @@ clipping, edge slide and BVH collision. Units are metres (1 u = 0.0254 m).
   Bhop maps ship `{"sv_airaccelerate": 150}`, surf maps
   `{"sv_airaccelerate": 100}`.
 - Strafe stats for the HUD, see below.
+- Crouch on left Ctrl or C (`MoveInput.crouchHeld`). On the ground the hull
+  goes from 1.76 to 1.32 m and the eye from 1.6 to 1.12 m over 0.12 s (16
+  ticks) with the feet planted, and wishspeed scales down to 34% of
+  `sv_maxspeed`, so friction slows you to 3.23 m/s instead of a hard clamp
+  (Source's duck speed crop, ground only). In the air it's instant and the
+  feet come up 0.44 m instead, so a duck jump peaks at 1.19 m of feet height
+  instead of 0.75 m on the training floor. You only stand back up where the
+  standing hull fits, so a low ceiling keeps you down, and standing up in the
+  air right above the floor waits for the landing. `duckAmount` is in
+  `MovementSnapshot`, so rollback replays it. It's local only: the hull and
+  eye aren't sent over the network yet.
 
 ### The math
 
@@ -283,6 +294,16 @@ control (commit `4434747` has the details).
 - Autobhop can't be turned off per map because the settings toggle always
   wins. Autobhop off in combat modes needs a per-room cvar.
 - Ticks replayed after a rollback update the strafe stats a second time.
+- Left Ctrl is crouch, and on Windows and Linux browsers don't let a page
+  block Ctrl+W, so crouch-walking forward with Ctrl closes the tab (macOS
+  uses Cmd+W, so it's fine there). Ctrl+A/S/D are blocked during gameplay.
+  C, or the Keyboard Lock API in fullscreen, avoids it.
+- Crouch isn't networked. `CombatArena` and the bots still use a 1.6 m eye
+  and a 1.76 m hull, so a crouching player's shots are checked from standing
+  eye height on the authority.
+- Under a low ceiling the blended hull can rise until the head touches it
+  (duck amount settles around 0.68 under 1.5 m), where Source's binary duck
+  hull would stay fully crouched.
 
 ## 5. Weapons and knives
 
