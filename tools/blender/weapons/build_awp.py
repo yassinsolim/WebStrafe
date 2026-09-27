@@ -136,7 +136,13 @@ def build_stock(M):
             cuts.append(side("c", [(y0, -30.0, 4.0), (y0 + 50.0, -30.0, 4.0), (y0 + 50.0, -14.0, 4.0), (y0, -14.0, 4.0)],
                              *sx_range(sx, 23.4, 30.0), M["green"]))
     W.boolean(fore, cuts)
+    # stippled support hand zone under the vents, where socket_grip_l sits
+    grip_zone = [side("c", [(SUPPORT_Y - 70.0, FOREND_BOTTOM_Z + 3.0, 4.0), (SUPPORT_Y + 45.0, FOREND_BOTTOM_Z + 3.0, 4.0),
+                            (SUPPORT_Y + 45.0, -32.0, 4.0), (SUPPORT_Y - 70.0, -32.0, 4.0)],
+                      *sx_range(sx, 24.4, 30.0), M["green_grip"]) for sx in (1, -1)]
+    W.boolean(fore, grip_zone, transfer_material=True)
     W.bevel(fore, 3.0 * MM, segs=3, angle=35.0)
+    W.box_uv(fore, 0.024, ["mat_polymer_green_stipple"])
 
     cheek = side("cheek_rest", [(-252.0, 10.0, 3.0), (-166.0, 10.0, 3.0), (-168.0, 26.0, 10.0), (-200.0, 31.0, 14.0),
                                 (-250.0, 29.0, 8.0)], -19.0, 19.0, M["green"], segs=5)
@@ -175,7 +181,7 @@ def build_stock(M):
     W.bevel(well_lip, 0.6 * MM, segs=1)
 
     studs = [lathe_mm("sling_stud", [(4.0, 0.0), (4.0, -5.0), (2.6, -6.0), (2.6, -9.0)], 12, M["steel"], "Z",
-                      (0.0, -225.0, -142.0))]
+                      (0.0, y, z)) for y, z in ((-225.0, -142.0), (426.0, FOREND_BOTTOM_Z))]
     return [rear, fore, cheek, wheel, spacer, pad, chassis, guard, release, well_lip] + posts + screws + studs
 
 
@@ -428,8 +434,9 @@ def bake(meshes):
 
 
 def renders(outdir, sockets, quick=False):
-    W.add_light("key", (-0.5, -0.3, 0.6), (0, 0.3, 0.05), 90.0, size=0.8)
-    W.add_light("rim", (0.7, 0.9, 0.3), (0, 0.3, 0.05), 50.0, size=0.6, color=(0.85, 0.9, 1.0))
+    W.add_light("key", (-0.5, -0.3, 0.6), (0, 0.3, 0.05), 100.0, size=1.0)
+    W.add_light("rim", (0.7, 0.9, 0.3), (0, 0.3, 0.05), 70.0, size=0.8, color=(0.85, 0.9, 1.0))
+    W.add_light("top", (0.1, 0.3, 0.9), (0, 0.3, 0.0), 80.0, size=1.6)
     center = Vector(final(0, 300, -20))
     three_q = (tuple(center + Vector((0.95, -0.95, 0.45))), tuple(center + Vector((0, 0.0, -0.01))), 50)
     eye = Vector(final(-120.0, -250.0, 150.0))
