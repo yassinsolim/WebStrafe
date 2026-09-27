@@ -13,11 +13,19 @@ if (!base || !outDir || jobs.length === 0) {
 }
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright');
 mkdirSync(outDir, { recursive: true });
+// GPU=1 uses a headed window with the real gpu (much faster than swiftshader)
+const gpu = !!process.env.GPU;
 const browser = await chromium.launch({
+  headless: !gpu,
   executablePath: process.env.CHROME || undefined,
-  args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+  args: gpu
+    ? ['--use-angle=metal', '--ignore-gpu-blocklist']
+    : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 });
-const page = await browser.newPage({ viewport: { width: Number(process.env.WIDTH ?? 1600), height: Number(process.env.HEIGHT ?? 900) } });
+const page = await browser.newPage({
+  viewport: { width: Number(process.env.WIDTH ?? 1600), height: Number(process.env.HEIGHT ?? 900) },
+  deviceScaleFactor: 1,
+});
 page.on('console', (msg) => {
   if (msg.type() === 'error' || msg.type() === 'warning') {
     const text = msg.text();

@@ -71,12 +71,18 @@ const DEAGLE_BASE: ItemBase = { position: v(0.14, -0.155, -0.32), rotation: new 
 const AWP_BASE: ItemBase = { position: v(0.13, -0.165, -0.17), rotation: new Quaternion().setFromEuler(new Euler(0.03, 0.085, 0.03, 'YXZ')) };
 // knife bases are given as the blade direction (+x) and the handle's side (+z)
 const KNIFE_BASE: ItemBase = {
-  position: v(0.135, -0.18, -0.35),
-  rotation: frameFromXZ(v(-0.3, 0.5, -0.8), v(0.55, 0.25, 0.8), new Quaternion()),
+  position: v(0.125, -0.13, -0.31),
+  rotation: frameFromXZ(v(-0.5, 0.42, -0.76), v(0.45, 0.35, 0.8), new Quaternion()),
 };
 const KNIFE_REVERSE_BASE: ItemBase = {
-  position: v(0.13, -0.145, -0.36),
-  rotation: frameFromXZ(v(-0.3, -0.7, -0.65), v(-0.8, 0.1, 0.55), new Quaternion()),
+  position: v(0.12, -0.11, -0.32),
+  rotation: frameFromXZ(v(-0.35, -0.65, -0.68), v(-0.8, 0.1, 0.55), new Quaternion()),
+};
+
+// push daggers point forward out of the fist
+const DAGGER_BASE: ItemBase = {
+  position: v(0.15, -0.135, -0.3),
+  rotation: frameFromXZ(v(-0.12, 0.3, -0.95), v(0.3, 0.9, 0.2), new Quaternion()),
 };
 
 // left hand targets that don't hang off an item, camera space
@@ -441,7 +447,9 @@ export class ViewmodelSystem {
   private itemBase(): ItemBase {
     if (this.active === 'deagle') return DEAGLE_BASE;
     if (this.active === 'awp') return AWP_BASE;
-    return knifeUsesReverseGrip(getKnife(this.knifeId)) ? KNIFE_REVERSE_BASE : KNIFE_BASE;
+    const def = getKnife(this.knifeId);
+    if (def.shape.pair) return DAGGER_BASE;
+    return knifeUsesReverseGrip(def) ? KNIFE_REVERSE_BASE : KNIFE_BASE;
   }
 
   private poseGun(arms: ArmsRig, id: 'deagle' | 'awp'): void {
@@ -566,7 +574,12 @@ export class ViewmodelSystem {
     if (rig.handleBite) rig.handleBite.rotation.z = -Math.PI * this.channel('baliBite');
     // spins and rolls happen about the pivot (ring centre or grip) inside the hand
     rig.spin.position.copy(rig.pivotLocal);
-    rig.spin.position.y += this.channel('tossY');
+    const toss = this.channel('tossY');
+    if (toss !== 0) {
+      // the toss goes straight up the screen, whatever way the knife points
+      qC.copy(rig.holder.quaternion).invert();
+      rig.spin.position.addScaledVector(pC.set(0, 1, 0.25).normalize().applyQuaternion(qC), toss);
+    }
     eA.set(this.channel('rollX') * DEG, 0, this.channel('spinZ') * DEG, 'XYZ');
     rig.spin.quaternion.setFromEuler(eA);
     rig.knife.position.copy(rig.pivotLocal).negate();
