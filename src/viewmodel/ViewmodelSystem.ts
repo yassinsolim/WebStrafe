@@ -67,7 +67,7 @@ interface ItemBase {
 }
 
 // where each item's grip socket sits in camera space at idle
-const DEAGLE_BASE: ItemBase = { position: v(0.15, -0.165, -0.35), rotation: new Quaternion().setFromEuler(new Euler(0.05, 0.12, 0.03, 'YXZ')) };
+const DEAGLE_BASE: ItemBase = { position: v(0.14, -0.155, -0.32), rotation: new Quaternion().setFromEuler(new Euler(0.05, 0.12, 0.03, 'YXZ')) };
 const AWP_BASE: ItemBase = { position: v(0.13, -0.165, -0.17), rotation: new Quaternion().setFromEuler(new Euler(0.03, 0.085, 0.03, 'YXZ')) };
 // knife bases are given as the blade direction (+x) and the handle's side (+z)
 const KNIFE_BASE: ItemBase = {
@@ -81,7 +81,7 @@ const KNIFE_REVERSE_BASE: ItemBase = {
 
 // left hand targets that don't hang off an item, camera space
 const LEFT_LOW = { position: v(-0.25, -0.5, -0.12), rotation: frameFromYZ(v(0.3, 0.6, -0.7), v(-0.6, 0.3, 0.2), new Quaternion()) };
-const LEFT_WATCH = { position: v(-0.075, -0.165, -0.3), rotation: frameFromYZ(v(0.88, 0.28, -0.3), v(0.05, 0.45, 1), new Quaternion()) };
+const LEFT_WATCH = { position: v(0.0, -0.085, -0.27), rotation: frameFromYZ(v(0.96, 0.12, -0.25), v(-0.1, 0.5, 0.86), new Quaternion()) };
 
 // the shoulders sit behind the camera; sliding them is invisible and keeps the
 // long rifle reachable
@@ -172,6 +172,7 @@ export class ViewmodelSystem {
   private backstabTarget = 0;
   private backstab = 0;
   private hidden = false;
+  private paused = false;
   private alive = true;
   private readonly channels = new Map<string, number>();
   private readonly fadeFrom = new Map<string, number>();
@@ -324,9 +325,14 @@ export class ViewmodelSystem {
     this.advance(time, false);
   }
 
+  /** holds the current pose (screenshots) */
+  public setPaused(paused: boolean): void {
+    this.paused = paused;
+  }
+
   public update(dt: number): void {
     if (!this.arms) return;
-    this.advance(Math.max(0, Math.min(0.1, dt)), true);
+    this.advance(this.paused ? 0 : Math.max(0, Math.min(0.1, dt)), !this.paused);
   }
 
   private advance(dt: number, fireEvents: boolean): void {

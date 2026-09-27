@@ -30,7 +30,8 @@ import { defaultLoadout, loadCosmeticsManifest } from '../cosmetics/manifest';
 import { ViewmodelRenderer } from '../cosmetics/ViewmodelRenderer';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { FirearmId as GunId } from '../combat/FirearmTiming';
-import { ViewmodelSystem } from '../viewmodel/ViewmodelSystem';
+import { ViewmodelSystem, type ViewAction } from '../viewmodel/ViewmodelSystem';
+import { parseShotRequest, type ShotRequest } from './shotMode';
 import type { LoadoutSelection } from '../cosmetics/types';
 import { HUD } from '../ui/HUD';
 import { MainMenu } from '../ui/MainMenu';
@@ -149,6 +150,7 @@ export class GameApp {
 
   private readonly viewmodel = new ViewmodelSystem();
   private readonly muzzleScratch = new Vector3();
+  private readonly shot: ShotRequest | null = parseShotRequest(window.location.search);
 
   private readonly crosshair: HTMLDivElement;
   private readonly statusLabel: HTMLDivElement;
@@ -363,6 +365,10 @@ export class GameApp {
     this.menu.setVisible(true);
     this.setCrosshairVisible(false);
     this.dismissBootLoader();
+
+    if (this.shot) {
+      void this.runShot(this.shot);
+    }
 
     // Pick the transport: Supabase Realtime when configured (serverless deploy),
     // else the self-hosted WebSocket client (local dev / LAN).
@@ -806,7 +812,7 @@ export class GameApp {
       this.hideLoadingOverlay();
       this.hideRunSubmitOverlay();
       this.startRunTimer();
-      const lockAcquired = await this.input.requestPointerLock();
+      const lockAcquired = this.shot ? true : await this.input.requestPointerLock();
       if (!lockAcquired) {
         this.pauseRunTimer();
         this.playing = false;
@@ -2312,6 +2318,38 @@ export class GameApp {
   private resetMovementFeedback(): void {
     this.movementAudio.reset();
     this.gameHud.resetMovement();
+  }
+
+  private async runShot(shot: ShotRequest): Promise<void> {
+    if (shot.time) this.viewmodel.setClockOverride(shot.time);
+    if (shot.knife) this.viewmodel.setKnife(shot.knife as KnifeId);
+    await this.viewmodel.load();
+    await this.startPlaySession(shot.mapId);
+    if (shot.weapon && this.combatEnabled) {
+      this.equipCombatWeapon(shot.weapon);
+    } else if (shot.weapon) {
+      this.viewmodel.equip(shot.weapon);
+    }
+    if (shot.position || shot.yawDeg !== null) {
+      const pos = shot.position
+        ? new Vector3(...shot.position)
+        : this.movement.getFeetPosition().clone();
+      this.movement.reset(pos, shot.yawDeg ?? 0);
+    }
+    if (shot.yawDeg !== null || shot.pitchDeg !== null) {
+      this.movement.setView(
+        ((shot.yawDeg ?? 0) * Math.PI) / 180,
+        ((shot.pitchDeg ?? 0) * Math.PI) / 180,
+      );
+    }
+    if (!shot.hud) {
+      this.container.classList.add('shot-no-hud');
+    }
+    this.viewmodel.seek(shot.clip as ViewAction, shot.t);
+    this.viewmodel.setPaused(true);
+    // let the map, lightmaps and a few frames settle before the capture
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    (window as unknown as { __shotReady?: boolean }).__shotReady = true;
   }
 
   /** sounds for viewmodel clip events GunAudio doesn't already schedule */

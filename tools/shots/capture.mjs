@@ -21,6 +21,8 @@ const page = await browser.newPage({ viewport: { width: Number(process.env.WIDTH
 page.on('console', (msg) => {
   if (msg.type() === 'error' || msg.type() === 'warning') {
     const text = msg.text();
+    // screenshot runs have no multiplayer server
+    if (process.env.QUIET_WS && text.includes('WebSocket')) return;
     if (!text.includes('GPU stall') && !text.includes('GL Driver')) console.log(`[${msg.type()}] ${text.slice(0, 300)}`);
   }
 });
@@ -32,7 +34,12 @@ for (const job of jobs) {
   const file = job.slice(eq + 1);
   try {
     await page.goto(base + path, { timeout: 60000 });
-    await page.waitForFunction(() => document.title === 'ready' || window.__shotReady === true, null, { timeout: 90000 });
+    if (path.includes('#wait=')) {
+      // pages without a ready flag (the menu): just give them time
+      await page.waitForTimeout(Number(path.split('#wait=')[1]));
+    } else {
+      await page.waitForFunction(() => document.title === 'ready' || window.__shotReady === true, null, { timeout: 90000 });
+    }
     await page.waitForTimeout(Number(process.env.SETTLE_MS ?? 150));
     await page.screenshot({ path: join(outDir, file) });
     console.log(`ok ${file}`);
