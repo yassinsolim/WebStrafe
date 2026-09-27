@@ -8,8 +8,11 @@ import type { SourceCvars } from './types';
 export const defaultCvars: SourceCvars = {
   sv_gravity: 19.0,
   sv_accelerate: 13.0,
-  // Lowered from 120 so air-strafe/surf speed gain takes much more effort.
-  sv_airaccelerate: 24.0,
+  // typical cs bhop/surf server value. the 30 u/s air wishspeed cap below is
+  // what keeps this from being too strong, gain only comes from synced turning.
+  sv_airaccelerate: 150.0,
+  // 30 u/s * 0.0254 m/u
+  sv_air_max_wishspeed: 0.762,
   sv_friction: 5.2,
   sv_stopspeed: 2.4,
   sv_maxspeed: 9.5,

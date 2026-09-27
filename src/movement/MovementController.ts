@@ -3,11 +3,11 @@ import { defaultCvars } from './cvars';
 import { StrafeStatsTracker, type StrafeStats } from './StrafeStats';
 import {
   accelerate,
+  airAccelerate,
   applyFriction,
   clampHorizontalSpeed,
   clipVelocity,
   horizontalLength,
-  projectDirectionOnPlane,
 } from './MovementMath';
 import type { CapsuleShape, GroundProbe, MoveInput, MovementDebugState, MovementMode, MovementSnapshot, SourceCvars } from './types';
 import type { CollisionAdapter } from '../world/CollisionWorld';
@@ -201,11 +201,8 @@ export class MovementController {
           this.velocity.copy(clipVelocity(this.velocity, rampNormal, this.cvars.overbounce));
           this.removeIntoRamp(rampNormal);
 
-          const surfWish = projectDirectionOnPlane(wish.wishDir, rampNormal);
-          if (surfWish.lengthSq() > 0) {
-            this.velocity.copy(
-              accelerate(this.velocity, surfWish, wish.wishSpeed, this.cvars.sv_airaccelerate, dt),
-            );
+          if (wish.wishDir.lengthSq() > 0) {
+            this.velocity.copy(this.airAccelerate(wish.wishDir, wish.wishSpeed, dt));
           }
           this.removeIntoRamp(rampNormal);
 
@@ -218,9 +215,7 @@ export class MovementController {
       case 'air':
       default:
         if (wish.wishDir.lengthSq() > 0) {
-          this.velocity.copy(
-            accelerate(this.velocity, wish.wishDir, wish.wishSpeed, this.cvars.sv_airaccelerate, dt),
-          );
+          this.velocity.copy(this.airAccelerate(wish.wishDir, wish.wishSpeed, dt));
         }
         break;
     }
@@ -426,6 +421,17 @@ export class MovementController {
   private applyGroundFriction(dt: number): void {
     this.velocity.copy(
       applyFriction(this.velocity, dt, this.cvars.sv_friction, this.cvars.sv_stopspeed),
+    );
+  }
+
+  private airAccelerate(wishDir: Vector3, wishSpeed: number, dt: number): Vector3 {
+    return airAccelerate(
+      this.velocity,
+      wishDir,
+      wishSpeed,
+      this.cvars.sv_airaccelerate,
+      dt,
+      this.cvars.sv_air_max_wishspeed,
     );
   }
 

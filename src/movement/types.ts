@@ -48,6 +48,8 @@ export interface SourceCvars {
   sv_gravity: number;
   sv_accelerate: number;
   sv_airaccelerate: number;
+  /** cap on the wishspeed air/surf accel can add along wishdir (source: 30 u/s) */
+  sv_air_max_wishspeed: number;
   sv_friction: number;
   sv_stopspeed: number;
   sv_maxspeed: number;
