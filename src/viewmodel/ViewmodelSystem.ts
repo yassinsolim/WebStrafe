@@ -173,6 +173,7 @@ export class ViewmodelSystem {
   private backstab = 0;
   private hidden = false;
   private paused = false;
+  private loopAction = false;
   private alive = true;
   private readonly channels = new Map<string, number>();
   private readonly fadeFrom = new Map<string, number>();
@@ -325,6 +326,11 @@ export class ViewmodelSystem {
     this.advance(time, false);
   }
 
+  /** replays the current clip forever (perf runs) */
+  public setLoopAction(loop: boolean): void {
+    this.loopAction = loop;
+  }
+
   /** holds the current pose (screenshots) */
   public setPaused(paused: boolean): void {
     this.paused = paused;
@@ -349,7 +355,7 @@ export class ViewmodelSystem {
       }
     }
     if (this.clip && !this.clip.loop && this.time >= this.clip.duration && this.action !== 'idle') {
-      this.play('idle');
+      this.play(this.loopAction ? this.action : 'idle');
     }
     this.sampleChannels();
     this.pose();

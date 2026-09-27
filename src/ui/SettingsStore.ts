@@ -25,6 +25,10 @@ export interface GameSettings {
   worldFov: number;
   viewmodelFov: number;
   viewmodelScale: number;
+  /** fraction of the screen's pixel ratio the game renders at */
+  renderScale: number;
+  /** lower the resolution automatically when frames drop under 55 fps */
+  adaptiveResolution: boolean;
   masterVolume: number;
   effectsVolume: number;
   uiVolume: number;
@@ -57,6 +61,7 @@ export const SETTING_LIMITS = {
   worldFov: { min: 70, max: 130, step: 1 },
   viewmodelFov: { min: 45, max: 110, step: 1 },
   viewmodelScale: { min: 0.25, max: 3, step: 0.05 },
+  renderScale: { min: 0.5, max: 1, step: 0.05 },
   masterVolume: { min: 0, max: 1, step: 0.01 },
   effectsVolume: { min: 0, max: 1, step: 0.01 },
   uiVolume: { min: 0, max: 1, step: 0.01 },
@@ -81,6 +86,8 @@ export const defaultSettings: GameSettings = {
   worldFov: 100,
   viewmodelFov: 68,
   viewmodelScale: 1,
+  renderScale: 1,
+  adaptiveResolution: true,
   masterVolume: 0.8,
   effectsVolume: 1,
   uiVolume: 0.7,
@@ -110,6 +117,8 @@ export function validateSettings(raw: unknown, base: GameSettings = defaultSetti
     worldFov: clampNumber(src.worldFov, limits.worldFov, base.worldFov),
     viewmodelFov: clampNumber(src.viewmodelFov, limits.viewmodelFov, base.viewmodelFov),
     viewmodelScale: clampNumber(src.viewmodelScale, limits.viewmodelScale, base.viewmodelScale),
+    renderScale: clampNumber(src.renderScale, limits.renderScale, base.renderScale),
+    adaptiveResolution: readBoolean(src.adaptiveResolution, base.adaptiveResolution),
     masterVolume: clampNumber(src.masterVolume, limits.masterVolume, base.masterVolume),
     effectsVolume: clampNumber(src.effectsVolume, limits.effectsVolume, base.effectsVolume),
     uiVolume: clampNumber(src.uiVolume, limits.uiVolume, base.uiVolume),

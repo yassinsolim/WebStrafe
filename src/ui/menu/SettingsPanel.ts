@@ -71,6 +71,10 @@ export class SettingsPanel {
     this.range(video, 'viewmodelFov', 'Viewmodel FOV', L.viewmodelFov, { digits: 0, suffix: '°' });
     this.range(video, 'viewmodelScale', 'Viewmodel scale', L.viewmodelScale, { digits: 2 });
 
+    const perf = group(section, 'Performance');
+    this.range(perf, 'renderScale', 'Resolution scale', L.renderScale, { percent: true });
+    this.toggle(perf, 'adaptiveResolution', 'Adaptive resolution', 'Lowers the resolution when the frame rate drops under 55');
+
     const audio = group(section, 'Audio');
     this.range(audio, 'masterVolume', 'Master volume', L.masterVolume, { percent: true });
     this.range(audio, 'effectsVolume', 'Game effects', L.effectsVolume, { percent: true });

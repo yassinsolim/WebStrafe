@@ -1,0 +1,57 @@
+{
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "vsync": false,
+  "viewport": [
+    2560,
+    1440
+  ],
+  "results": [
+    {
+      "label": "dpr3 adaptive target 150",
+      "query": "shot=bhop_emberdrift&weapon=awp&perf=25&dpr=3&adaptive=1&adaptiveLow=150",
+      "frames": 4519,
+      "fpsMedian": 208.33,
+      "fps1Low": 15.17,
+      "frameMsMedian": 4.8,
+      "frameMsP99": 11.6,
+      "cpuMsMedian": 4.3,
+      "cpuMsP99": 11.2,
+      "over16": 8,
+      "over33": 3,
+      "worst": [
+        [
+          1119.9,
+          2484
+        ],
+        [
+          775.2,
+          5273
+        ],
+        [
+          520.5,
+          7800
+        ],
+        [
+          29,
+          3056
+        ],
+        [
+          27.9,
+          3761
+        ],
+        [
+          27.7,
+          3864
+        ]
+      ],
+      "calls": 93,
+      "triangles": 91167,
+      "pixelRatio": 1.6500000000000001,
+      "canvas": [
+        4224,
+        2376
+      ]
+    }
+  ],
+  "errors": []
+}

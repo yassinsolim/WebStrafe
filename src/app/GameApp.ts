@@ -13,6 +13,7 @@ import {
   PerspectiveCamera,
   SRGBColorSpace,
   Scene,
+  Vector2,
   Vector3,
   WebGLRenderer,
 } from 'three';
@@ -32,6 +33,8 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import type { FirearmId as GunId } from '../combat/FirearmTiming';
 import { ViewmodelSystem, type ViewAction } from '../viewmodel/ViewmodelSystem';
 import { parseShotRequest, type ShotRequest } from './shotMode';
+import { FramePerf } from './FramePerf';
+import { AdaptiveResolution } from './AdaptiveResolution';
 import type { LoadoutSelection } from '../cosmetics/types';
 import { HUD } from '../ui/HUD';
 import { MainMenu } from '../ui/MainMenu';
@@ -151,6 +154,8 @@ export class GameApp {
   private readonly viewmodel = new ViewmodelSystem();
   private readonly muzzleScratch = new Vector3();
   private readonly shot: ShotRequest | null = parseShotRequest(window.location.search);
+  private framePerf: FramePerf | null = null;
+  private readonly adaptiveResolution = new AdaptiveResolution();
 
   private readonly crosshair: HTMLDivElement;
   private readonly statusLabel: HTMLDivElement;
@@ -282,6 +287,12 @@ export class GameApp {
 
   public async init(): Promise<void> {
     this.settings = loadSettings();
+    if (this.shot?.adaptive !== null && this.shot?.adaptive !== undefined) {
+      this.settings.adaptiveResolution = this.shot.adaptive;
+    }
+    if (this.shot?.adaptiveLowFps) {
+      this.adaptiveResolution.setThresholds(this.shot.adaptiveLowFps);
+    }
     this.movement.setCvar('sv_autobhop_enabled', this.settings.autoBhop);
     this.audio.installGestureUnlock();
     this.applyUiSettings(this.settings);
@@ -289,6 +300,7 @@ export class GameApp {
     this.worldCamera.updateProjectionMatrix();
     this.viewmodelRenderer.setFov(this.settings.viewmodelFov);
     this.viewmodel.setScale(this.settings.viewmodelScale);
+    this.applyRenderScale();
 
     const [builtinMaps, customRecords, cosmeticsManifest] = await Promise.all([
       loadBuiltinManifest(),
@@ -492,8 +504,19 @@ export class GameApp {
     if (!this.running) {
       return;
     }
+    const perf = this.framePerf;
+    const loopStart = perf ? performance.now() : 0;
+    if (perf) {
+      perf.frame(time);
+      this.renderer.info.reset();
+    }
 
-    const frameDt = Math.min(0.1, (time - this.lastFrameTime) / 1000);
+    const rawFrameMs = time - this.lastFrameTime;
+    const frameDt = Math.min(0.1, rawFrameMs / 1000);
+    if (this.playing && this.settings.adaptiveResolution && !this.shot?.pixelRatio
+      && this.adaptiveResolution.sample(rawFrameMs)) {
+      this.applyRenderScale();
+    }
     this.lastFrameTime = time;
     this.accumulator += frameDt;
 
@@ -694,6 +717,9 @@ export class GameApp {
     if (this.playing && this.debugCameraMode === 'firstPerson') {
       this.renderer.clearDepth();
       this.renderer.render(this.viewmodelRenderer.scene, this.viewmodelRenderer.camera);
+    }
+    if (perf) {
+      perf.cpu(performance.now() - loopStart, this.renderer.info.render.calls, this.renderer.info.render.triangles);
     }
 
     requestAnimationFrame(this.loop);
@@ -1665,6 +1691,10 @@ export class GameApp {
     this.worldCamera.updateProjectionMatrix();
     this.viewmodelRenderer.setFov(next.viewmodelFov);
     this.viewmodel.setScale(next.viewmodelScale);
+    if (!next.adaptiveResolution) {
+      this.adaptiveResolution.reset();
+    }
+    this.applyRenderScale();
     this.applyUiSettings(next);
   }
 
@@ -2320,6 +2350,18 @@ export class GameApp {
     this.gameHud.resetMovement();
   }
 
+  /** screen pixel ratio x the resolution scale setting x the adaptive scale */
+  private applyRenderScale(): void {
+    const adaptive = this.settings.adaptiveResolution ? this.adaptiveResolution.getScale() : 1;
+    const screen = this.shot?.dpr ?? Math.min(window.devicePixelRatio || 1, 2);
+    const ratio = this.shot?.pixelRatio ?? Math.round(screen * this.settings.renderScale * adaptive * 100) / 100;
+    if (Math.abs(ratio - this.renderer.getPixelRatio()) < 1e-3) {
+      return;
+    }
+    this.renderer.setPixelRatio(ratio);
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
   private async runShot(shot: ShotRequest): Promise<void> {
     if (shot.time) this.viewmodel.setClockOverride(shot.time);
     if (shot.knife) this.viewmodel.setKnife(shot.knife as KnifeId);
@@ -2345,8 +2387,30 @@ export class GameApp {
     if (!shot.hud) {
       this.container.classList.add('shot-no-hud');
     }
+    if (shot.pixelRatio) {
+      this.applyRenderScale();
+    }
+    if (shot.scope > 0 && this.combatEnabled) {
+      for (let i = 0; i < shot.scope; i += 1) {
+        this.combatAim.toggleScope(performance.now() + i * 100, { reloading: false, alive: true });
+      }
+    }
     this.viewmodel.seek(shot.clip as ViewAction, shot.t);
-    this.viewmodel.setPaused(true);
+    if (shot.perfSeconds > 0) {
+      this.renderer.info.autoReset = false;
+      this.viewmodel.setLoopAction(shot.clip !== 'idle');
+      const perf = new FramePerf(shot.perfSeconds * 1000);
+      this.framePerf = perf;
+      while (!perf.done) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      this.framePerf = null;
+      this.renderer.info.autoReset = true;
+      const size = this.renderer.getDrawingBufferSize(new Vector2());
+      (window as unknown as { __perfResult?: unknown }).__perfResult = perf.result(this.renderer.getPixelRatio(), [size.x, size.y]);
+    } else {
+      this.viewmodel.setPaused(true);
+    }
     // let the map, lightmaps and a few frames settle before the capture
     await new Promise((resolve) => setTimeout(resolve, 1500));
     const info = this.renderer.info.render;

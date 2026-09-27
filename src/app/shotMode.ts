@@ -4,6 +4,8 @@ import type { WeaponId } from '../combat/weapons';
  * dev and preview screenshot mode, from the query string:
  * ?shot=<mapId>&weapon=knife|deagle|awp&knife=<id>&clip=idle|draw|inspect|fire|reload&t=<s>
  * &yaw=<deg>&pitch=<deg>&pos=x,y,z&time=HH:MM:SS&hud=0
+ * &perf=<s> (frame timing, clip keeps looping)&scope=1|2&pr=<pixel ratio>
+ * &dpr=<screen ratio to emulate>&adaptive=0|1
  * it drops straight into the map without pointer lock, poses the viewmodel,
  * freezes it and sets window.__shotReady once a few frames have drawn.
  */
@@ -18,6 +20,18 @@ export interface ShotRequest {
   position: [number, number, number] | null;
   time: Date | null;
   hud: boolean;
+  /** seconds of frame timing to collect, 0 = off */
+  perfSeconds: number;
+  /** awp zoom level to hold, 0 = unscoped */
+  scope: number;
+  /** override the renderer pixel ratio */
+  pixelRatio: number | null;
+  /** pretend the screen has this device pixel ratio (adaptive resolution stays on) */
+  dpr: number | null;
+  /** adaptive resolution on or off for this run (default: the saved setting) */
+  adaptive: boolean | null;
+  /** adaptive step-down threshold for testing the low-power path */
+  adaptiveLowFps: number | null;
 }
 
 export function parseShotRequest(search: string): ShotRequest | null {
@@ -50,5 +64,11 @@ export function parseShotRequest(search: string): ShotRequest | null {
     position: pos && pos.length === 3 && pos.every(Number.isFinite) ? [pos[0], pos[1], pos[2]] : null,
     time,
     hud: params.get('hud') !== '0',
+    perfSeconds: num('perf') ?? 0,
+    scope: num('scope') ?? 0,
+    pixelRatio: num('pr'),
+    dpr: num('dpr'),
+    adaptiveLowFps: num('adaptiveLow'),
+    adaptive: params.has('adaptive') ? params.get('adaptive') !== '0' : null,
   };
 }
