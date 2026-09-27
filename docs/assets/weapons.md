@@ -197,6 +197,21 @@ Animation hints:
 ![AWP 3/4 and first person](../screenshots/weapons/awp.png)
 ![AWP sockets](../screenshots/weapons/awp_sockets.png)
 
+### In three.js
+
+`tools/weapon-preview.html` loads the optimized GLBs through
+`createGltfLoader()` (meshopt), with the viewmodel lights, fov and room
+environment. Params:
+
+- `?weapon=deagle|awp&view=fp|side&sockets=1` picks the weapon and view and
+  shows axes on every socket.
+- Pose params from 0 to 1 apply the animation hints above: `slide`,
+  `hammer`, `trigger`, `mag`, `lift` and `back` (the last two are the bolt).
+- `center=x,y,z&dist=m` zooms the side view in on a part.
+
+![Deagle in the three.js viewmodel lighting](../screenshots/weapons/threejs_deagle.png)
+![AWP with the bolt lifted and pulled back](../screenshots/weapons/threejs_awp_bolt.png)
+
 ## Knives (runtime, `src/cosmetics/ProceduralKnife.ts`)
 
 `src/combat/knives.ts` is still the catalog (ids, names, shape parameters,
