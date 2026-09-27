@@ -1,0 +1,164 @@
+{
+  "id": "aim_ochrecut",
+  "name": "Ochre Cut",
+  "author": "WebStrafe Team",
+  "source": "Original map built in Blender by tools/blender/maps/build_aim_ochrecut.py",
+  "license": "Original work (MIT, same as the project)",
+  "attribution": "Original layout and procedural textures made for WebStrafe.",
+  "spawns": [
+    {
+      "position": [
+        -19.0,
+        0.05,
+        55.0
+      ],
+      "yawDeg": 0.0,
+      "side": "a"
+    },
+    {
+      "position": [
+        -11.0,
+        0.05,
+        51.5
+      ],
+      "yawDeg": 0.0,
+      "side": "a"
+    },
+    {
+      "position": [
+        -3.2,
+        0.05,
+        48.5
+      ],
+      "yawDeg": 0.0,
+      "side": "a"
+    },
+    {
+      "position": [
+        3.2,
+        0.05,
+        48.5
+      ],
+      "yawDeg": 0.0,
+      "side": "a"
+    },
+    {
+      "position": [
+        11.0,
+        0.05,
+        51.5
+      ],
+      "yawDeg": 0.0,
+      "side": "a"
+    },
+    {
+      "position": [
+        19.0,
+        0.05,
+        55.0
+      ],
+      "yawDeg": 0.0,
+      "side": "a"
+    },
+    {
+      "position": [
+        19.0,
+        0.05,
+        -55.0
+      ],
+      "yawDeg": -180.0,
+      "side": "b"
+    },
+    {
+      "position": [
+        11.0,
+        0.05,
+        -51.5
+      ],
+      "yawDeg": -180.0,
+      "side": "b"
+    },
+    {
+      "position": [
+        3.2,
+        0.05,
+        -48.5
+      ],
+      "yawDeg": -180.0,
+      "side": "b"
+    },
+    {
+      "position": [
+        -3.2,
+        0.05,
+        -48.5
+      ],
+      "yawDeg": -180.0,
+      "side": "b"
+    },
+    {
+      "position": [
+        -11.0,
+        0.05,
+        -51.5
+      ],
+      "yawDeg": -180.0,
+      "side": "b"
+    },
+    {
+      "position": [
+        -19.0,
+        0.05,
+        -55.0
+      ],
+      "yawDeg": -180.0,
+      "side": "b"
+    }
+  ],
+  "notes": "AWP and Deagle duel arena. Sniper nests at both ends, six spawns per side, bots start on side B.",
+  "environment": {
+    "sky": {
+      "zenith": "#3f7fc6",
+      "horizon": "#ead9bb",
+      "ground": "#b88c5c",
+      "exponent": 0.55,
+      "sunSizeDeg": 1.7,
+      "sunGlow": 0.38,
+      "sunHaze": 0.2,
+      "clouds": {
+        "color": "#fffaf0",
+        "shadow": "#b9aa94",
+        "coverage": 0.3,
+        "scale": 0.8,
+        "speed": 0.004,
+        "height": 0.25
+      }
+    },
+    "sun": {
+      "direction": [
+        0.5,
+        0.866,
+        0.0
+      ],
+      "color": "#fff0d8",
+      "intensity": 4.3
+    },
+    "hemi": {
+      "sky": "#c4d6ea",
+      "ground": "#c49a68",
+      "intensity": 3.2
+    },
+    "fog": {
+      "color": "#e4d3b4",
+      "near": 90.0,
+      "far": 620.0
+    },
+    "exposure": 1.0,
+    "lightmaps": [
+      {
+        "path": "/maps/aim_ochrecut/lightmap.webp"
+      }
+    ],
+    "lightMapIntensity": 7.0686
+  }
+}
