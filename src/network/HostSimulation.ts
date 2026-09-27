@@ -27,6 +27,16 @@ export interface HostHuman {
   combatReady: boolean;
   yaw?: number;
   pitch?: number;
+  velocity?: [number, number, number];
+  /** sample time in this human's own clock (their Date.now at the tick) */
+  t?: number;
+}
+
+export interface HostFireLag {
+  /** per-target source-clock times the shooter had on screen */
+  targetTimes?: Record<string, number>;
+  /** shooter's own clock time at the shot */
+  shooterTimeMs?: number;
 }
 
 export interface HostBotRow {
@@ -139,7 +149,7 @@ export class HostSimulation {
           this.humanPausedAtMs.set(h.id, now);
         }
       }
-      this.arena.setPosition(h.id, h.position, MAP_ID, now);
+      this.arena.setPosition(h.id, h.position, MAP_ID, h.t ?? now, h.velocity);
       this.humanPositions.set(h.id, new Vector3(h.position[0], h.position[1], h.position[2]));
       this.humanCombatReady.set(h.id, h.combatReady);
       if (Number.isFinite(h.yaw) && Number.isFinite(h.pitch)) {
@@ -185,6 +195,18 @@ export class HostSimulation {
     }
   }
 
+  /** Records a movement sample the moment it arrives (between host steps). */
+  recordHumanSample(
+    id: string,
+    position: [number, number, number],
+    t: number,
+    velocity?: [number, number, number],
+  ): void {
+    if (!this.humanPositions.has(id)) return;
+    this.arena.setPosition(id, position, MAP_ID, t, velocity);
+    this.humanPositions.get(id)?.set(position[0], position[1], position[2]);
+  }
+
   private resetBotEngagement(): void {
     for (const bot of this.bots) {
       bot.targetMemory.clear();
@@ -208,6 +230,7 @@ export class HostSimulation {
     origin: [number, number, number],
     dir: [number, number, number],
     observedAtMs?: number,
+    lag?: HostFireLag,
   ): void {
     if (this.humanCombatReady.has(shooterId) && !this.humanCombatReady.get(shooterId)) {
       return;
@@ -230,6 +253,7 @@ export class HostSimulation {
       now,
       worldImpact?.distance,
       observedAtMs,
+      lag,
     );
     if (outcome.fired && this.humanPositions.has(shooterId)) {
       this.humanLastCombatAtMs.set(shooterId, now);
@@ -303,7 +327,13 @@ export class HostSimulation {
           isBotWithinTargetView(candidate, bot.controller.getFeet()),
       });
       bot.controller.tick(dt, this.world, perception);
-      this.arena.setPosition(bot.id, tuple(bot.controller.getFeet()), MAP_ID, now);
+      this.arena.setPosition(
+        bot.id,
+        tuple(bot.controller.getFeet()),
+        MAP_ID,
+        now,
+        tuple(bot.controller.getVelocity()),
+      );
 
       if (bot.controller.wantsToFire()) {
         const aim = bot.controller.getAimTarget();
