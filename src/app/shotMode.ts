@@ -1,4 +1,5 @@
 import type { WeaponId } from '../combat/weapons';
+import { devToolsEnabled } from './devTools';
 
 /**
  * dev and preview screenshot mode, from the query string:
@@ -8,6 +9,8 @@ import type { WeaponId } from '../combat/weapons';
  * &dpr=<screen ratio to emulate>&adaptive=0|1&qa=1 (window.__qa test hooks)
  * it drops straight into the map without pointer lock, poses the viewmodel,
  * freezes it and sets window.__shotReady once a few frames have drawn.
+ * dev server and preview builds only. without qa=1 it plays offline; qa=1
+ * joins the build's lobby (the isolated preview lobby on vercel previews).
  */
 export interface ShotRequest {
   mapId: string;
@@ -36,7 +39,8 @@ export interface ShotRequest {
   qa: boolean;
 }
 
-export function parseShotRequest(search: string): ShotRequest | null {
+export function parseShotRequest(search: string, enabled = devToolsEnabled()): ShotRequest | null {
+  if (!enabled) return null;
   const params = new URLSearchParams(search);
   const mapId = params.get('shot');
   if (!mapId) return null;

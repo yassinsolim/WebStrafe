@@ -42,6 +42,7 @@ import { defaultSettings, loadSettings, saveSettings, type GameSettings } from '
 import { LeaderboardService, sanitizeLeaderboardName } from '../network/LeaderboardService';
 import { MultiplayerClient } from '../network/MultiplayerClient';
 import { createMultiplayer } from '../network/createMultiplayer';
+import { OfflineMultiplayer } from '../network/OfflineMultiplayer';
 import type { MultiplayerTransport } from '../network/MultiplayerTransport';
 import type { AttackKind, LeaderboardEntry, PlayerModel } from '../network/types';
 import {
@@ -385,7 +386,7 @@ export class GameApp {
 
     // Pick the transport: Supabase Realtime when configured (serverless deploy),
     // else the self-hosted WebSocket client (local dev / LAN).
-    this.multiplayer = await createMultiplayer();
+    this.multiplayer = this.shot && !this.shot.qa ? new OfflineMultiplayer() : await createMultiplayer();
 
     this.multiplayer.onSnapshot = (snapshot) => {
       if (snapshot.mapId !== this.selectedMapId) {

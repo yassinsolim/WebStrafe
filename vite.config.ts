@@ -4,6 +4,11 @@ import { defineConfig } from 'vitest/config';
 const serverPort = Number(process.env.WEBSTRAFE_SERVER_PORT ?? 8787);
 const vitePort = process.env.WEBSTRAFE_VITE_PORT ? Number(process.env.WEBSTRAFE_VITE_PORT) : undefined;
 
+// capture and qa hooks (?shot=, ?qa=1) ship in vercel preview builds, never in production
+if (process.env.VERCEL_ENV === 'preview' && process.env.VITE_DEV_TOOLS === undefined) {
+  process.env.VITE_DEV_TOOLS = 'true';
+}
+
 export default defineConfig({
   server: {
     port: vitePort,
