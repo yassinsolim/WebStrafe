@@ -17,7 +17,8 @@
     "ci": "npm run typecheck && npm run test && npm run build",
     "verify:combat-browser": "node tools/verify-combat-browser.mjs",
     "verify:combat-runtime": "node tools/verify-combat-runtime.mjs",
-    "convert-map": "tsx tools/convert-map.ts"
+    "convert-map": "tsx tools/convert-map.ts",
+    "bench:net": "tsx tools/netbench/bench.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.0",
