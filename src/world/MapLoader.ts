@@ -9,7 +9,8 @@ import {
   Object3D,
   Vector3,
 } from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { createGltfLoader } from '../assets/gltfLoader';
 import type { CustomMapRecord, LoadedMap, MapManifestEntry, MapMeta } from './types';
 import { resolveSpawn } from './SpawnResolver';
 import { createMovementTestScene } from '../movement/MovementTestScene';
@@ -118,7 +119,7 @@ export class MapLoader {
     manager.onError = (url) => {
       reporter?.onLog?.(`[MapLoader] LoadingManager error: ${url}`);
     };
-    return new GLTFLoader(manager);
+    return createGltfLoader(manager);
   }
 
   private async loadMeta(metaPath: string, reporter?: MapLoadReporter): Promise<MapMeta> {
