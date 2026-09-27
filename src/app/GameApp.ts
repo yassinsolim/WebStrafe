@@ -795,6 +795,13 @@ export class GameApp {
     // the same grounded position as initial entry.
     map.spawnPosition.copy(spawn.position);
     map.spawnYawDeg = spawn.yawDeg;
+    const mapCvars = this.movement.applyMapCvars(map.meta.cvars);
+    if (mapCvars.rejected.length > 0) {
+      // eslint-disable-next-line no-console
+      console.warn(`[MapLoader] ${map.entry.id} ignored cvars: ${mapCvars.rejected.join(', ')}`);
+    }
+    // the player's autobhop setting wins over the map
+    this.movement.setCvar('sv_autobhop_enabled', this.settings.autoBhop);
     this.movement.reset(spawn.position, spawn.yawDeg);
 
     // In Supabase mode the elected host runs the bot/combat sim; give it this

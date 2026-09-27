@@ -130,25 +130,185 @@ resume describes. Supabase stays as a free fallback for casual rooms.
 
 ## 4. Movement: Source-accurate bhop and surf (phase 2)
 
-Current state: a 128 Hz fixed-step kinematic controller with ground, air and
-surf modes, ramp clipping, BVH collision and a movement test suite (all
-passing). One known gap stands out:
+Status: air strafing done on `v2/movement`. The controller is a 128 Hz
+fixed-step kinematic controller with ground, air and surf modes, ramp
+clipping, edge slide and BVH collision. Units are metres (1 u = 0.0254 m).
 
-- **No 30 u/s air wishspeed cap.** Source's `AirAccelerate` clamps the
-  wishspeed used for `addspeed` to 30 u/s (0.76 m/s in our metre units) while
-  `accelspeed` still uses the full wishspeed. That cap is what makes speed gain
-  depend on turning in sync with your strafe. `accelerate()` here uses the full
-  9.5 m/s in the air, so air control is too strong. `sv_airaccelerate` was
-  lowered to 24 to compensate.
-- Plan: add `sv_air_max_wishspeed` (default 0.76 m/s), move to CS bhop-server
-  values (`sv_airaccelerate` 150 for bhop, 100 for surf, both configurable),
-  and retune the surf tests against recorded reference runs.
+### What was wrong
+
+- **No 30 u/s air wishspeed cap.** Air and surf used the ground `accelerate()`,
+  so `addspeed` compared against the full 9.5 m/s wishspeed. Holding a strafe
+  key with the mouse still pushed the velocity along that key up to 9.5 m/s:
+  9.5 to 13.44 m/s in one jump without turning. `sv_airaccelerate` had been
+  lowered to 24 to hide it.
+- **Takeoff and landing inside the ground probe band.** The probe reaches
+  0.18 m under the feet and everything inside it counted as ground. The first
+  4 ticks after a jump ran friction and the ground speed clamp (8.74 to
+  7.41 m/s), a held jump re-applied the impulse on each of them, and a landing
+  stopped where the probe first saw the floor: the player hovered 0.154 m up
+  with gravity off until the next jump. Walking off a 15 cm step did the same.
+- **Holding jump on a surf ramp re-fired every tick** while the probe or the
+  surf grace ticks still saw the ramp: 20 impulses and 2.77 m of climb from
+  one held press on a 55° ramp.
+
+### What changed
+
+- `airAccelerate()` in `MovementMath.ts` is Source's
+  `CGameMovement::AirAccelerate`: `wishspd = min(wishspeed,
+  sv_air_max_wishspeed)`, `addspeed = wishspd - dot(vel, wishdir)`, return if
+  `addspeed <= 0`, `accelspeed = min(sv_airaccelerate * wishspeed * dt,
+  addspeed)` with the full wishspeed. Air and surf both use it. Surf now
+  accelerates along the horizontal wishdir and lets the ramp clip remove the
+  part into the face (Source's `AirMove` then `TryPlayerMove`) instead of
+  projecting wishdir onto the ramp. Ground accelerate is unchanged.
+- Defaults: `sv_airaccelerate` 150 and the new `sv_air_max_wishspeed`
+  0.762 m/s (30 u/s). Nothing else changed, autobhop stays on by default.
+- A player rising off the floor (vy > 0 with the feet more than 1 cm up) or
+  still falling from past the 0.08 m snap distance is in the air. A grounded
+  player with a gap under the feet is put on the floor. Autobhop now takes off
+  from the floor every 70 ticks. On a surf ramp only a fresh jump press jumps.
+- Per-map cvars: `MapMeta.cvars` (`Partial<SourceCvars>`) is applied by
+  `MovementController.applyMapCvars()`. It resets every cvar to its default
+  and applies only known names with the right type inside the `mapCvarRules`
+  ranges, and returns what it rejected. `GameApp.activateLoadedMap` applies it
+  before the movement reset, then re-applies the player's autobhop setting.
+  Bhop maps ship `{"sv_airaccelerate": 150}`, surf maps
+  `{"sv_airaccelerate": 100}`.
+- Strafe stats for the HUD, see below.
+- Crouch on left Ctrl or C (`MoveInput.crouchHeld`). On the ground the hull
+  goes from 1.76 to 1.32 m and the eye from 1.6 to 1.12 m over 0.12 s (16
+  ticks) with the feet planted, and wishspeed scales down to 34% of
+  `sv_maxspeed`, so friction slows you to 3.23 m/s instead of a hard clamp
+  (Source's duck speed crop, ground only). In the air it's instant and the
+  feet come up 0.44 m instead, so a duck jump peaks at 1.19 m of feet height
+  instead of 0.75 m on the training floor. You only stand back up where the
+  standing hull fits, so a low ceiling keeps you down, and standing up in the
+  air right above the floor waits for the landing. `duckAmount` is in
+  `MovementSnapshot`, so rollback replays it. It's local only: the hull and
+  eye aren't sent over the network yet.
+
+### The math
+
+With wishdir perpendicular to the horizontal velocity, `addspeed = W` (W =
+0.762 m/s) and `accelspeed = 150 * 9.5 / 128 = 11.1 m/s` gets clamped to it,
+so every air tick does v² → v² + W². The gain per tick is sqrt(v² + W²) - v,
+about W²/2v: 0.03 m/s at 9.5 m/s and 0.013 m/s at 22 m/s. The velocity turns
+atan(W/v) per tick toward the key (4.6° at 9.5 m/s), and the view has to keep
+turning at that rate to stay perpendicular. With the view still, one tick
+sets the speed along wishdir to W and every tick after that adds nothing.
+
+A jump (5.4 m/s up, g = 19 m/s²) lasts 70 air ticks counting the takeoff tick,
+and autobhop has no ground ticks, so a perfect jump adds 70 W² = 40.6 m²/s² to
+v². Once `sv_airaccelerate * wishspeed * dt` is above the cap (airaccelerate
+above about 10.3 here) the airaccelerate value doesn't change perfect-strafe
+gain at all. It sets how hard wrong inputs hit instead: S in the air at
+9.5 m/s reverses you to 0.76 m/s backwards in 1 tick at 150, in 2 ticks at
+100 and in 6 ticks at the old 24.
+
+### Measured
+
+Flat ground, 128 Hz, autobhop, starting at 9.5 m/s, speeds in m/s. "Perfect"
+means the view is put on the velocity heading before every tick. The old
+controller column is the same input run for 70 and 700 ticks (one and ten
+jumps' worth).
+
+| Input | 1 jump | 5 jumps | 10 jumps | Old controller, 70 / 700 ticks |
+|---|---|---|---|---|
+| Strafe key held, view still | 9.53 | 9.53 | 9.53 | 13.44 / not measured |
+| Perfect, one key the whole time | 11.44 | 17.13 | 22.29 | 17.67 / 48.08 |
+| Perfect zigzag, 2 strafes a jump (100% sync) | 11.42 | 16.98 | 22.04 | not measured |
+
+The 10-jump perfect value matches sqrt(9.5² + 700 × 0.762²) = 22.29 m/s to
+float precision.
+
+Gain against HUD sync, 2 strafes a jump. The desync comes from letting go of
+the key a few ticks before each switch while the mouse keeps turning, the
+most common real mistake:
+
+| HUD sync | Jump 1 | Average per jump over 10 | After 10 jumps |
+|---|---|---|---|
+| 100% | +1.92 m/s | +1.25 m/s | 22.04 m/s |
+| 79% | +1.55 m/s | +1.06 m/s | 20.11 m/s |
+| 50% | +1.02 m/s | +0.75 m/s | 16.98 m/s |
+
+The gain per jump in m/s shrinks as you speed up because the v² gain per jump
+is fixed.
+
+Surf, 8 m/s along a ramp holding the key into it for 1 s, in surf mode on
+every tick:
+
+| View | 55° ramp | 60° ramp |
+|---|---|---|
+| Straight along the ramp | 8.06 m/s, climbs 0.77 m | 8.06 m/s, climbs 0.85 m |
+| 10° down the ramp | 12.26 m/s, drops 1.60 m | 13.06 m/s, drops 2.07 m |
+| 20° down the ramp | 15.12 m/s, drops 3.87 m | 16.18 m/s, drops 4.73 m |
+
+Holding into the ramp while looking along it holds your height, which Source
+does too: after the ramp clip, what's left of the push beats gravity's
+g sin θ dt every tick. You pick up speed by looking down the ramp and letting
+gravity work.
+
+### Strafe stats API
+
+`MovementController.getStrafeStats()` returns `{ chain, current, last }`.
+`chain` is the jump count of the current chain, 0 once you stand on the
+ground for 3 ticks without jumping. `current` is the jump in progress and
+`last` the last finished one, both `{ jump, takeoffSpeed, gain, sync,
+strafes, maxSpeed, airTicks }` in m/s with sync from 0 to 100. A jump runs
+from its takeoff tick to the first ground tick or the next takeoff, and
+`gain` is the takeoff speed minus the previous takeoff's. Sync only measures
+air ticks where the view yaw changed, so running under 128 fps doesn't read
+as desync. A measured tick is in sync when a strafe key is held, the yaw
+turned toward it and horizontal speed went up. Strafes count sideMove side
+switches (A, D, A is 3). It's presentation only and not in
+`MovementSnapshot`. The live speed stays `getDebugState().speed`.
+
+### Tests
+
+In `src/movement/__tests__/`:
+
+- `AirStrafe`: the cap with the view still, per-tick gain equal to
+  sqrt(v² + W²) - v, steady turns never beating it, desync gaining nothing,
+  W only never passing the takeoff speed, and the 10-jump chain against the
+  derivation.
+- `SurfRamp`, `GroundContact`, `MapCvars` and `StrafeStats`, plus
+  `airAccelerate` unit tests.
+
+Two old tests were retuned because they depended on the uncapped air
+control (commit `4434747` has the details).
+
+### Known gaps
+
+- `GameApp` applies mouse look once per rendered frame. Under 128 fps some
+  ticks see no turn and the next one sees two ticks' worth, which costs real
+  strafe gain. The HUD sync skips those ticks but the physics doesn't.
+  Spreading each frame's look delta over its ticks would fix it.
+- Walking up a slope leaves an upward vy on the flat ground at the top, so
+  walking off that ledge pops you up (0.58 m after a 26° slope at full
+  speed). This was already there.
+  Zeroing it Source-style would also slow walking up slopes, so it needs its
+  own tuning pass.
+- Jumping off a surf ramp is still allowed on a fresh press. Source doesn't
+  allow it at all.
+- Bots and the server bot sim use the default cvars, not the map's.
+- Autobhop can't be turned off per map because the settings toggle always
+  wins. Autobhop off in combat modes needs a per-room cvar.
+- Ticks replayed after a rollback update the strafe stats a second time.
+- Left Ctrl is crouch, and on Windows and Linux browsers don't let a page
+  block Ctrl+W, so crouch-walking forward with Ctrl closes the tab (macOS
+  uses Cmd+W, so it's fine there). Ctrl+A/S/D are blocked during gameplay.
+  C, or the Keyboard Lock API in fullscreen, avoids it.
+- Crouch isn't networked. `CombatArena` and the bots still use a 1.6 m eye
+  and a 1.76 m hull, so a crouching player's shots are checked from standing
+  eye height on the authority.
+- Under a low ceiling the blended hull can rise until the head touches it
+  (duck amount settles around 0.68 under 1.5 m), where Source's binary duck
+  hull would stay fully crouched.
+
 - **Autobhop:** always on by default on every map, including combat (decided
   2026-09-27). It's `sv_autobhop_enabled: true` plus the settings default, and
   players can still turn it off in Settings. When movement becomes
   server-authoritative, the server copies the same default.
-- Keep ramp clip and edge-slide behaviour. Add a strafe sync percentage and a
-  gain HUD (the `recommendedStrafe` debug field is already a start).
 
 ## 5. Weapons and knives
 

@@ -197,10 +197,13 @@ describe('Movement behavior acceptance', () => {
     const noInput = new MovementController();
     const withStrafe = new MovementController();
 
+    // moving along the view (-z at yaw 0) so D pushes sideways, and turning right with it.
+    // D along the velocity, or turning against it, gains nothing under the 30 u/s air cap
+    // (see AirStrafe.test.ts).
     noInput.reset(new Vector3(0, 12, 0), 0);
     withStrafe.reset(new Vector3(0, 12, 0), 0);
-    noInput.setVelocity(new Vector3(6, 0, 0));
-    withStrafe.setVelocity(new Vector3(6, 0, 0));
+    noInput.setVelocity(new Vector3(0, 0, -6));
+    withStrafe.setVelocity(new Vector3(0, 0, -6));
 
     for (let i = 0; i < 160; i += 1) {
       noInput.tick(
@@ -214,7 +217,7 @@ describe('Movement behavior acceptance', () => {
         world,
       );
 
-      withStrafe.applyLookDelta(-3, 0, 1);
+      withStrafe.applyLookDelta(3, 0, 1);
       withStrafe.tick(
         dt,
         {

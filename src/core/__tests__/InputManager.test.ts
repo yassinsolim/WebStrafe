@@ -102,6 +102,37 @@ describe('InputManager weapon actions', () => {
   });
 });
 
+describe('InputManager crouch', () => {
+  it('holds crouch on left ctrl or C', () => {
+    const { input } = setupInput();
+    expect(input.sampleMoveInput().crouchHeld).toBe(false);
+
+    window.dispatchEvent(inputEvent('keydown', 'ControlLeft', 'Control'));
+    expect(input.sampleMoveInput().crouchHeld).toBe(true);
+    window.dispatchEvent(inputEvent('keyup', 'ControlLeft', 'Control'));
+    expect(input.sampleMoveInput().crouchHeld).toBe(false);
+
+    window.dispatchEvent(inputEvent('keydown', 'KeyC', 'c'));
+    expect(input.sampleMoveInput().crouchHeld).toBe(true);
+    window.dispatchEvent(inputEvent('keyup', 'KeyC', 'c'));
+    expect(input.sampleMoveInput().crouchHeld).toBe(false);
+    input.dispose();
+  });
+
+  it('keeps ctrl + movement keys away from the browser only during gameplay', () => {
+    const { input, documentTarget } = setupInput();
+    const ctrlD = Object.assign(inputEvent('keydown', 'KeyD', 'd'), { ctrlKey: true });
+    window.dispatchEvent(ctrlD);
+    expect(ctrlD.defaultPrevented).toBe(true);
+
+    documentTarget.pointerLockElement = null;
+    const menuCtrlD = Object.assign(inputEvent('keydown', 'KeyD', 'd'), { ctrlKey: true });
+    window.dispatchEvent(menuCtrlD);
+    expect(menuCtrlD.defaultPrevented).toBe(false);
+    input.dispose();
+  });
+});
+
 describe('InputManager pointer-lock look input', () => {
   it('drops the stale transition event and accumulates normal mouse motion exactly', () => {
     const { input } = setupInput();
