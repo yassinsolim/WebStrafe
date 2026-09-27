@@ -115,6 +115,7 @@ def _setup(scene, fast, resolution):
     scene.render.film_transparent = False
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGB"
+    scene.render.image_settings.compression = 100
     scene.view_settings.view_transform = "AgX"
     try:
         scene.view_settings.look = "AgX - Medium High Contrast"
