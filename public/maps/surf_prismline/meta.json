@@ -1,0 +1,296 @@
+{
+  "id": "surf_prismline",
+  "name": "Prismline",
+  "author": "WebStrafe Team",
+  "source": "Original map built in Blender by tools/blender/maps/build_surf_prismline.py",
+  "license": "Original work (MIT, same as the project)",
+  "attribution": "Original layout and procedural textures made for WebStrafe.",
+  "spawns": [
+    {
+      "position": [
+        0.0,
+        0.05,
+        6.0
+      ],
+      "yawDeg": 0.0
+    },
+    {
+      "position": [
+        -4.0,
+        0.05,
+        6.0
+      ],
+      "yawDeg": 0.0
+    },
+    {
+      "position": [
+        4.0,
+        0.05,
+        6.0
+      ],
+      "yawDeg": 0.0
+    }
+  ],
+  "triggers": [
+    {
+      "id": "start",
+      "type": "start",
+      "min": [
+        -11.2,
+        -0.5,
+        -9.2
+      ],
+      "max": [
+        11.2,
+        3.0,
+        9.2
+      ],
+      "target": {
+        "position": [
+          0.0,
+          0.05,
+          6.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "stage2",
+      "type": "checkpoint",
+      "stage": 2,
+      "min": [
+        -14.2,
+        -32.5,
+        -222.7
+      ],
+      "max": [
+        14.2,
+        -26.0,
+        -183.5
+      ],
+      "target": {
+        "position": [
+          -4.0,
+          -31.95,
+          -203.5
+        ],
+        "yawDeg": -90.0
+      }
+    },
+    {
+      "id": "stage3",
+      "type": "checkpoint",
+      "stage": 3,
+      "min": [
+        216.0,
+        -76.0,
+        -217.7
+      ],
+      "max": [
+        255.2,
+        -69.5,
+        -189.3
+      ],
+      "target": {
+        "position": [
+          236.0,
+          -75.45,
+          -207.5
+        ],
+        "yawDeg": -180.0
+      }
+    },
+    {
+      "id": "stage4",
+      "type": "checkpoint",
+      "stage": 4,
+      "min": [
+        221.8,
+        -116.5,
+        -18.5
+      ],
+      "max": [
+        250.2,
+        -110.0,
+        20.7
+      ],
+      "target": {
+        "position": [
+          240.0,
+          -115.95,
+          1.5
+        ],
+        "yawDeg": 90.0
+      }
+    },
+    {
+      "id": "finish",
+      "type": "finish",
+      "min": [
+        -42.2,
+        -165.0,
+        -12.7
+      ],
+      "max": [
+        -3.5,
+        -156.5,
+        15.7
+      ]
+    },
+    {
+      "id": "fall1",
+      "type": "teleport",
+      "stage": 1,
+      "min": [
+        -33.04,
+        -92.0,
+        -188.5
+      ],
+      "max": [
+        33.04,
+        -36.0,
+        0.0
+      ],
+      "target": {
+        "position": [
+          0.0,
+          0.05,
+          6.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "fall2",
+      "type": "teleport",
+      "stage": 2,
+      "min": [
+        5.0,
+        -135.5,
+        -236.916
+      ],
+      "max": [
+        221.0,
+        -79.5,
+        -170.084
+      ],
+      "target": {
+        "position": [
+          -4.0,
+          -31.95,
+          -203.5
+        ],
+        "yawDeg": -90.0
+      }
+    },
+    {
+      "id": "fall3",
+      "type": "teleport",
+      "stage": 3,
+      "min": [
+        203.03,
+        -176.0,
+        -198.5
+      ],
+      "max": [
+        268.97,
+        -120.0,
+        -13.5
+      ],
+      "target": {
+        "position": [
+          236.0,
+          -75.45,
+          -207.5
+        ],
+        "yawDeg": -180.0
+      }
+    },
+    {
+      "id": "fall4",
+      "type": "teleport",
+      "stage": 4,
+      "min": [
+        -8.0,
+        -224.5,
+        -31.134
+      ],
+      "max": [
+        231.0,
+        -168.5,
+        34.134
+      ],
+      "target": {
+        "position": [
+          240.0,
+          -115.95,
+          1.5
+        ],
+        "yawDeg": 90.0
+      }
+    },
+    {
+      "id": "void",
+      "type": "teleport",
+      "min": [
+        -443.0,
+        -566.1,
+        -623.5
+      ],
+      "max": [
+        656.0,
+        -226.1,
+        421.5
+      ]
+    }
+  ],
+  "cvars": {
+    "sv_airaccelerate": 100
+  },
+  "notes": "Four surf stages, 10 ramps from 55 to 62 degrees. Falling under a stage teleports you to its start.",
+  "environment": {
+    "sky": {
+      "zenith": "#2f78d8",
+      "horizon": "#cfe6fb",
+      "ground": "#eaf4fc",
+      "exponent": 0.5,
+      "sunSizeDeg": 1.8,
+      "sunGlow": 0.4,
+      "sunHaze": 0.14,
+      "clouds": {
+        "color": "#ffffff",
+        "shadow": "#aebdd1",
+        "coverage": 0.38,
+        "scale": 0.7,
+        "speed": 0.006,
+        "height": 0.22
+      }
+    },
+    "sun": {
+      "direction": [
+        0.3687,
+        0.8192,
+        0.4394
+      ],
+      "color": "#fff1dc",
+      "intensity": 4.4
+    },
+    "hemi": {
+      "sky": "#bcd8f5",
+      "ground": "#d9dfe6",
+      "intensity": 2.2
+    },
+    "fog": {
+      "color": "#d3e8fb",
+      "near": 140.0,
+      "far": 950.0
+    },
+    "exposure": 1.0,
+    "lightmaps": [
+      {
+        "path": "/maps/surf_prismline/lightmap.webp"
+      }
+    ],
+    "lightMapIntensity": 8.6394
+  }
+}

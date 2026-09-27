@@ -3,12 +3,8 @@ import {
   AxesHelper,
   Box3,
   BufferGeometry,
-  Color,
-  DirectionalLight,
-  Fog,
   GridHelper,
   Group,
-  HemisphereLight,
   Line,
   LineBasicMaterial,
   Mesh,
@@ -68,8 +64,11 @@ import { deleteCustomMap, listCustomMaps } from '../world/CustomMapStore';
 import { MapLoader, type MapLoadReporter } from '../world/MapLoader';
 import { loadBuiltinManifest } from '../world/MapManifestService';
 import { loadSelectedMapId, saveSelectedMapId } from '../world/MapSelectionStore';
-import { groundResolvedSpawn } from '../world/SpawnResolver';
+import { groundResolvedSpawn, type ResolvedSpawn } from '../world/SpawnResolver';
 import { resolveRunGoal, type GoalPad } from '../world/RunGoal';
+import { MapEnvironment } from '../world/MapEnvironment';
+import { MapTriggers } from '../world/MapTriggers';
+import { listMetaSpawns, pickSpawnAwayFrom, resolveBotAnchor } from '../world/SpawnPoints';
 import type { CustomMapRecord, LoadedMap, MapManifestEntry } from '../world/types';
 
 type MapSource =
@@ -89,6 +88,9 @@ const FIXED_TICK_DT = 1 / 128;
 /** Gives the slowest remote round several rendered arrival frames before UI cover. */
 const FATAL_CUE_LEAD_MS = 320;
 const RESPAWN_DELAY_MS = 3000;
+/** built-in maps the menu opens on when nothing is stored */
+const DEFAULT_RUN_MAP_ID = 'surf_prismline';
+const DEFAULT_COMBAT_MAP_ID = 'aim_ochrecut';
 
 export class GameApp {
   private readonly container: HTMLElement;
@@ -168,6 +170,10 @@ export class GameApp {
   private selectedMapId = '';
   private loadedMap: LoadedMap | null = null;
   private loadedMapRoot: Group | null = null;
+  private readonly mapEnvironment: MapEnvironment;
+  private mapTriggers: MapTriggers | null = null;
+  /** every authored spawn seated on the collision, spawns[0] first */
+  private spawnPoints: ResolvedSpawn[] = [];
 
   private accumulator = 0;
   private lastFrameTime = 0;
@@ -233,7 +239,7 @@ export class GameApp {
     this.runSubmitInput = submitOverlay.input;
     this.runSubmitStatus = submitOverlay.status;
 
-    this.setupWorldLighting();
+    this.mapEnvironment = new MapEnvironment(this.worldScene, this.renderer);
     this.setupWorldDebugHelpers();
     this.worldScene.add(this.remotePlayers.root);
     window.addEventListener('resize', this.onResize);
@@ -275,9 +281,7 @@ export class GameApp {
     }
     this.rebuildMapSources(builtinMaps, customRecords);
     const fallbackMapId =
-      (this.combatEnabled
-        ? builtinMaps.find((map) => map.id === 'movement_test_scene')?.id
-        : builtinMaps.find((map) => map.id === 'surf_skyworld_x')?.id)
+      builtinMaps.find((map) => map.id === (this.combatEnabled ? DEFAULT_COMBAT_MAP_ID : DEFAULT_RUN_MAP_ID))?.id
       ?? builtinMaps.find((map) => map.id === 'movement_test_scene')?.id
       ?? builtinMaps[0]?.id
       ?? Array.from(this.mapSources.keys())[0]
@@ -554,13 +558,22 @@ export class GameApp {
         const sampledMove = this.input.sampleMoveInput();
         const moveInput = dead ? this.deadMoveInput : sampledMove;
         this.movement.tick(FIXED_TICK_DT, moveInput, this.collisionWorld);
+        this.updateMapTriggers();
         // the tick ends where the leftover accumulator begins
         this.sendMultiplayerState(Date.now() - this.accumulator * 1000);
         this.tryCompleteRun();
         if (this.loadedMap && this.movement.getFeetPosition().y < this.voidResetY) {
           const now = performance.now();
           const showMessage = now - this.lastVoidResetAtMs > 900;
-          this.resetToSpawn(showMessage ? 'Out of world reset' : null, true);
+          if (this.mapTriggers?.hasTriggers()) {
+            // trigger maps keep the run going from the last checkpoint
+            this.teleportTo(this.mapTriggers.getRespawn());
+            if (showMessage) {
+              this.showStatus('Back to checkpoint');
+            }
+          } else {
+            this.resetToSpawn(showMessage ? 'Out of world reset' : null, true);
+          }
           this.lastVoidResetAtMs = now;
           inspectQueued = false;
           attackQueued = false;
@@ -614,6 +627,7 @@ export class GameApp {
     this.updateSurfNormalLine(debug);
     this.updateStatusVisibility(time);
 
+    this.mapEnvironment.update(frameDt, this.worldCamera);
     this.renderer.clear();
     this.renderer.render(this.worldScene, this.worldCamera);
     if (this.playing && this.debugCameraMode === 'firstPerson') {
@@ -780,6 +794,8 @@ export class GameApp {
     root.add(map.sceneRoot);
     this.loadedMapRoot = root;
     this.worldScene.add(root);
+    // sky, fog, exposure, lights and lightmaps from meta.environment (or the old defaults)
+    this.mapEnvironment.apply(map);
 
     this.collisionWorld.setCollisionFromRoot(map.collisionRoot);
 
@@ -803,6 +819,20 @@ export class GameApp {
     // the player's autobhop setting wins over the map
     this.movement.setCvar('sv_autobhop_enabled', this.settings.autoBhop);
     this.movement.reset(spawn.position, spawn.yawDeg);
+    // runs always start at spawns[0]; the rest are combat respawn points
+    const spawnBounds = new Box3().setFromObject(map.collisionRoot);
+    const extraSpawns = listMetaSpawns(map.meta).slice(1).map((s) =>
+      groundResolvedSpawn(s, spawnBounds, this.collisionWorld, this.movement.capsule));
+    this.spawnPoints = [{ position: spawn.position.clone(), yawDeg: spawn.yawDeg }, ...extraSpawns];
+    this.mapTriggers = new MapTriggers(map.meta.triggers, {
+      position: [spawn.position.x, spawn.position.y, spawn.position.z],
+      yawDeg: spawn.yawDeg,
+    });
+    // arena maps stage bots on the far side (first spawn with another `side`)
+    const botAnchor = resolveBotAnchor(map.meta);
+    const hostBotSpawn = botAnchor && map.meta.spawns?.[0]?.side !== undefined
+      ? groundResolvedSpawn(botAnchor, spawnBounds, this.collisionWorld, this.movement.capsule)
+      : { position: spawn.position.clone(), yawDeg: spawn.yawDeg };
 
     // In Supabase mode the elected host runs the bot/combat sim; give it this
     // map's collision + spawn. (The WebSocket transport ignores this.)
@@ -810,7 +840,7 @@ export class GameApp {
       this.combatEnabled
         ? {
             collisionWorld: this.collisionWorld,
-            spawn: { position: spawn.position.clone(), yawDeg: spawn.yawDeg },
+            spawn: { position: hostBotSpawn.position.clone(), yawDeg: hostBotSpawn.yawDeg },
             botCount: 1,
           }
         : null,
@@ -928,9 +958,11 @@ export class GameApp {
   }
 
   private updateRunInfoWithLeaderboard(entries: LeaderboardEntry[]): void {
-    const goalText = this.goalPad
-      ? `Pad (${this.goalPad.center.x.toFixed(1)}, ${this.goalPad.center.z.toFixed(1)}) r=${this.goalPad.radius.toFixed(1)}`
-      : (Number.isFinite(this.finishTargetY) ? `Y <= ${this.finishTargetY.toFixed(2)}` : '--');
+    const goalText = this.mapTriggers?.hasFinish()
+      ? 'Finish zone'
+      : this.goalPad
+        ? `Pad (${this.goalPad.center.x.toFixed(1)}, ${this.goalPad.center.z.toFixed(1)}) r=${this.goalPad.radius.toFixed(1)}`
+        : (Number.isFinite(this.finishTargetY) ? `Y <= ${this.finishTargetY.toFixed(2)}` : '--');
     if (entries.length === 0) {
       this.runInfoLabel.textContent = `Goal: ${goalText} | Best: --`;
       return;
@@ -1325,6 +1357,14 @@ export class GameApp {
       }
     }
 
+    this.completeRun();
+  }
+
+  /** stops the timer and opens the leaderboard prompt, shared by goal pads and finish triggers */
+  private completeRun(): void {
+    if (!this.playing || this.runComplete || !this.loadedMap) {
+      return;
+    }
     this.runComplete = true;
     this.finishedRunTimeMs = this.getCurrentRunTimeMs();
     this.runPauseStartedAtMs = null;
@@ -1532,23 +1572,6 @@ export class GameApp {
     this.surfNormalGeometry.setFromPoints([start, end]);
   }
 
-  private setupWorldLighting(): void {
-    this.worldScene.background = new Color('#9ab9d5');
-    this.worldScene.fog = new Fog('#9ab9d5', 140, 1400);
-
-    const hemi = new HemisphereLight(0xdaf0ff, 0x4c6a81, 1.05);
-    this.worldScene.add(hemi);
-
-    const sun = new DirectionalLight(0xffffff, 1.35);
-    sun.position.set(80, 140, 40);
-    sun.castShadow = false;
-    this.worldScene.add(sun);
-
-    const fill = new DirectionalLight(0xc7e8ff, 0.45);
-    fill.position.set(-70, 40, -80);
-    this.worldScene.add(fill);
-  }
-
   private setupWorldDebugHelpers(): void {
     this.debugGrid.position.y = 0.03;
     this.debugGrid.visible = false;
@@ -1565,12 +1588,53 @@ export class GameApp {
     this.crosshair.style.display = visible ? 'block' : 'none';
   }
 
-  /** Teleports the local player back to the map spawn after a combat death. */
+  /**
+   * teleports the local player to a spawn after a combat death. maps with several
+   * spawns pick one away from living enemies, others use the map spawn.
+   */
   private respawnLocalPlayer(): void {
     if (!this.loadedMap) {
       return;
     }
-    this.movement.reset(this.loadedMap.spawnPosition, this.loadedMap.spawnYawDeg);
+    const pick = this.spawnPoints.length > 1
+      ? pickSpawnAwayFrom(this.spawnPoints, this.backstabTargets)
+      : null;
+    if (pick) {
+      this.movement.reset(pick.position, pick.yawDeg);
+    } else {
+      this.movement.reset(this.loadedMap.spawnPosition, this.loadedMap.spawnYawDeg);
+    }
+    this.mapTriggers?.reset();
+  }
+
+  /**
+   * feeds the feet position to the map's trigger volumes after each movement
+   * tick. the start zone holds the timer at zero, checkpoints store the respawn,
+   * teleports move the player (velocity zeroed) and the finish ends the run.
+   */
+  private updateMapTriggers(): void {
+    if (!this.loadedMap || !this.mapTriggers?.hasTriggers()) {
+      return;
+    }
+    const update = this.mapTriggers.update(this.movement.getFeetPosition());
+    if (update.inStartZone && !this.runComplete) {
+      this.startRunTimer();
+    }
+    for (const event of update.events) {
+      if (event.type === 'checkpoint') {
+        if (event.changed) {
+          this.showStatus(`Checkpoint ${event.stage}`, 1200);
+        }
+      } else if (event.type === 'teleport') {
+        this.teleportTo(event.respawn);
+      } else if (event.type === 'finish') {
+        this.completeRun();
+      }
+    }
+  }
+
+  private teleportTo(target: { position: [number, number, number]; yawDeg: number }): void {
+    this.movement.reset(new Vector3(target.position[0], target.position[1], target.position[2]), target.yawDeg);
   }
 
   private resetToSpawn(message: string | null, restartTimer = false): void {
@@ -1578,6 +1642,7 @@ export class GameApp {
       return;
     }
     this.movement.reset(this.loadedMap.spawnPosition, this.loadedMap.spawnYawDeg);
+    this.mapTriggers?.reset();
     this.runComplete = false;
     this.finishedRunTimeMs = null;
     if (restartTimer) {

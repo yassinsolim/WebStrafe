@@ -9,6 +9,7 @@ import {
   type ResolvedSpawn,
 } from '../src/world/SpawnResolver';
 import type { MapMeta } from '../src/world/types';
+import { listMetaSpawns, resolveBotAnchor } from '../src/world/SpawnPoints';
 import { createMovementTestScene } from '../src/movement/MovementTestScene';
 import { stripMaterialsFromGlb } from './glb';
 
@@ -24,6 +25,10 @@ const SERVER_PLAYER_CAPSULE = { radius: 0.42, height: 1.8 };
 export interface HeadlessMap {
   world: CollisionWorld;
   spawn: ResolvedSpawn;
+  /** where bots are staged: arena maps use the first spawn on the far side, others the spawn */
+  botAnchor?: ResolvedSpawn;
+  /** every authored spawn seated on the ground, spawns[0] first */
+  spawns?: ResolvedSpawn[];
 }
 
 const cache = new Map<string, Promise<HeadlessMap | null>>();
@@ -88,7 +93,13 @@ async function loadUncached(mapId: string): Promise<HeadlessMap | null> {
     world,
     SERVER_PLAYER_CAPSULE,
   );
-  return { world, spawn };
+  const spawns = [
+    spawn,
+    ...listMetaSpawns(meta).slice(1).map((s) => groundResolvedSpawn(s, bounds, world, SERVER_PLAYER_CAPSULE)),
+  ];
+  const anchor = meta.spawns?.[0]?.side !== undefined ? resolveBotAnchor(meta) : null;
+  const botAnchor = anchor ? groundResolvedSpawn(anchor, bounds, world, SERVER_PLAYER_CAPSULE) : spawn;
+  return { world, spawn, botAnchor, spawns };
 }
 
 async function parseCollisionGlb(glb: Buffer): Promise<Object3D> {

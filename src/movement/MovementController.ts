@@ -233,7 +233,7 @@ export class MovementController {
       case 'surf':
         if (activeSurfNormal) {
           const rampNormal = activeSurfNormal.clone().normalize();
-          this.velocity.copy(clipVelocity(this.velocity, rampNormal, this.cvars.overbounce));
+          this.clipIntoPlane(rampNormal);
           this.removeIntoRamp(rampNormal);
 
           if (wish.wishDir.lengthSq() > 0) {
@@ -283,7 +283,7 @@ export class MovementController {
     if (surfNormal) {
       this.surfContactNormal.copy(surfNormal);
       this.surfContactGraceTicks = SURF_CONTACT_GRACE_TICKS;
-      this.velocity.copy(clipVelocity(this.velocity, surfNormal, this.cvars.overbounce));
+      this.clipIntoPlane(surfNormal);
       this.removeIntoRamp(surfNormal);
       this.recoverSurfEdgeSpeed(preSlideVelocity, surfNormal, collisionSpeedBefore);
       collisionSpeedAfter = this.velocity.length();
@@ -769,7 +769,7 @@ export class MovementController {
 
     if (surfingTick) {
       const normal = surfNormal ?? resolved.normal;
-      this.velocity.copy(clipVelocity(this.velocity, normal, this.cvars.overbounce));
+      this.clipIntoPlane(normal);
       this.removeIntoRamp(normal);
     }
 
@@ -823,6 +823,17 @@ export class MovementController {
       Math.acos(MathUtils.clamp(lastCollisionNormal.dot(UP), -1, 1)),
     );
     this.debugState.recommendedStrafe = recommendedStrafe;
+  }
+
+  /**
+   * only clip against a surf plane when moving into it. rolling off a convex ramp
+   * end reports contact normals that lean forward, and clipping against those
+   * while moving away eats forward speed.
+   */
+  private clipIntoPlane(normal: Vector3): void {
+    if (this.velocity.dot(normal) < 0) {
+      this.velocity.copy(clipVelocity(this.velocity, normal, this.cvars.overbounce));
+    }
   }
 
   private removeIntoRamp(normal: Vector3): void {

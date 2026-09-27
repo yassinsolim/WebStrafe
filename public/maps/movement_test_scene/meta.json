@@ -2,8 +2,8 @@
   "id": "movement_test_scene",
   "name": "Movement Test Scene",
   "author": "WebStrafe Team",
-  "source": "https://github.com/OuiSURF/Surf_Maps",
-  "license": "Original placeholder training geometry",
+  "source": "Original WebStrafe practice range",
+  "license": "MIT",
   "attribution": "Original movement and firearm practice geometry shipped with WebStrafe.",
   "spawns": [
     {
