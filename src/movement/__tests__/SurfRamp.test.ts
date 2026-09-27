@@ -42,6 +42,26 @@ describe.each([55, 60])('surfing a %i degree ramp with the capped air accel', (a
     expect(run.speed ** 2 - 8 ** 2).toBeLessThanOrEqual(2 * G * run.drop + 128 * W * W);
   });
 
+  it('holding jump on the ramp jumps once, it does not re-fire every tick', () => {
+    const world = rampWorld(angle);
+    const run = (jump: 'none' | 'tap' | 'hold') => {
+      const mc = new MovementController();
+      mc.reset(new Vector3(1.5, rampHeight(angle, 1.5) + 0.01, 0), 0);
+      mc.setVelocity(new Vector3(0, 0, -8));
+      for (let i = 0; i < 8; i += 1) {
+        mc.tick(DT, { forwardMove: 0, sideMove: -1, jumpPressed: false, jumpHeld: false }, world);
+      }
+      for (let i = 0; i < 60; i += 1) {
+        const pressed = jump !== 'none' && i === 0;
+        mc.tick(DT, { forwardMove: 0, sideMove: -1, jumpPressed: pressed, jumpHeld: pressed || jump === 'hold' }, world);
+      }
+      return mc.captureState();
+    };
+    // the press still jumps, but with autobhop on (the default) holding it changes nothing
+    expect(run('tap')).not.toEqual(run('none'));
+    expect(run('hold')).toEqual(run('tap'));
+  });
+
   it('holding into the ramp while looking straight along it holds your height (source does this too)', () => {
     // wishdir points straight into the face; after the ramp clip what's left pushes up the
     // face, and with sv_airaccelerate that beats gravity's g sin(angle) dt every tick

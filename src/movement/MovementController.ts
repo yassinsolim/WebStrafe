@@ -186,9 +186,12 @@ export class MovementController {
 
     const jumpRequested =
       this.cvars.sv_bhop_enabled && (input.jumpPressed || (this.cvars.sv_autobhop_enabled && input.jumpHeld));
+    // autobhop is for landing hops. on a surf ramp only a fresh press jumps, holding
+    // it would re-apply the impulse on every tick the ramp is still under you
+    const surfJump = mode === 'surf' && this.cvars.sv_bhop_enabled && input.jumpPressed;
     let jumped = false;
 
-    if ((mode === 'ground' || mode === 'surf') && jumpRequested) {
+    if ((mode === 'ground' && jumpRequested) || surfJump) {
       this.velocity.y = this.cvars.sv_jump_impulse;
       mode = 'air';
       jumped = true;
