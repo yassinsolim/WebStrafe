@@ -1,5 +1,6 @@
 import { MathUtils, Vector3 } from 'three';
 import { defaultCvars } from './cvars';
+import { StrafeStatsTracker, type StrafeStats } from './StrafeStats';
 import {
   accelerate,
   applyFriction,
@@ -42,6 +43,10 @@ export class MovementController {
   private surfContactGraceTicks = 0;
   private yawRad = 0;
   private pitchRad = 0;
+
+  // hud only, tick() never reads these for the simulation
+  private readonly strafeStats = new StrafeStatsTracker();
+  private statsYawRad = 0;
 
   private readonly debugState: MovementDebugState = {
     speed: 0,
@@ -97,6 +102,7 @@ export class MovementController {
     this.surfContactGraceTicks = state.surfContactGraceTicks;
     this.yawRad = state.yawRad;
     this.pitchRad = state.pitchRad;
+    this.statsYawRad = state.yawRad;
   }
 
   /** Sets view angles directly (replaying a recorded input). */
@@ -112,6 +118,8 @@ export class MovementController {
     this.surfContactNormal.set(0, 1, 0);
     this.yawRad = MathUtils.degToRad(yawDeg);
     this.pitchRad = 0;
+    this.strafeStats.reset();
+    this.statsYawRad = this.yawRad;
   }
 
   public applyLookDelta(deltaX: number, deltaY: number, sensitivity: number): void {
@@ -123,6 +131,7 @@ export class MovementController {
   }
 
   public tick(dt: number, input: MoveInput, world: CollisionAdapter): void {
+    const speedBefore = horizontalLength(this.velocity);
     const wish = this.computeWish(input);
     let groundProbe = world.queryGround(this.position, this.capsule, GROUND_PROBE_DIST);
     let mode = this.pickMode(groundProbe);
@@ -173,6 +182,7 @@ export class MovementController {
       mode = 'air';
       jumped = true;
     }
+    const accelMode = mode;
 
     switch (mode) {
       case 'ground':
@@ -322,6 +332,28 @@ export class MovementController {
       collisionDropWarn,
       lastNormal,
     );
+
+    // yaw can come from applyLookDelta or setView, so diff against last tick's yaw
+    const yawDelta = this.yawRad - this.statsYawRad;
+    this.statsYawRad = this.yawRad;
+    this.strafeStats.record({
+      mode: accelMode,
+      jumped,
+      speedBefore,
+      speedAfter: horizontalLength(this.velocity),
+      yawDelta: Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta)),
+      sideMove: input.sideMove,
+    });
+  }
+
+  /**
+   * per-jump strafe stats for the hud, see StrafeStats / JumpStats for the
+   * exact shape and definitions. returns a fresh plain object every call.
+   * presentation only: nothing here feeds back into the simulation, and ticks
+   * replayed after a rollback get counted again.
+   */
+  public getStrafeStats(): StrafeStats {
+    return this.strafeStats.getStats();
   }
 
   public getFeetPosition(): Vector3 {
