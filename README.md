@@ -113,7 +113,7 @@ npm run build
 
 - All 20 selectable knives are original procedural models generated in code (`src/cosmetics/ProceduralKnife.ts`); no external assets
 
-- `surf_skyworld_x` by EVAI (Creative Commons Attribution)
+- All maps (Prismline, Emberdrift, Ochre Cut and the Movement Test Scene) are original, built by scripts in `tools/blender/maps/` and `tools/generate-sample-assets.ts` with procedural textures; see `docs/assets/maps.md`
 - Knife animations by DJMaesen (Creative Commons Attribution)
 - `CTM_SAS | CS2 Agent Model` by Alex (Creative Commons Attribution)
 - `PHOENIX | CS2 Agent Model` by Alex (Creative Commons Attribution)

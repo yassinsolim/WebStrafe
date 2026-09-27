@@ -244,9 +244,9 @@ players show your knife; finishes (the existing `WearMaterial` shader).
 - **Hit feedback:** server-confirmed hitmarkers and damage numbers exist.
   Add a headshot ding, kill confirm, directional damage indicator, and blood or
   impact decals from the server-resolved endpoint.
-- **Maps:** keep `surf_skyworld_x` (CC-BY) and the training maps. Add original
-  bhop maps (block-out style, easy to author procedurally) and a small aim arena
-  for AWP and Deagle duels.
+- **Maps:** done in v2: three original Blender-built maps (Prismline surf,
+  Emberdrift bhop, Ochre Cut aim arena) replace `surf_skyworld_x` and the
+  training blockouts, see `docs/assets/maps.md`.
 - **UI:** loadout screen (primary, secondary, knife, gloves), a scoreboard on
   Tab (kills, deaths, ping, speed record), the existing killfeed, a net graph
   (ping, loss, interp delay; `getPresentationDelayMs` is exposed), and a speed
@@ -270,8 +270,8 @@ Existing assets that need a licence review (not changed in this PR):
   Deagle and AWP rigs (1Matzh, Addison Ye) are Sketchfab CC-BY. Their
   provenance is unverified; they may be game rips. The procedural knives
   already remove the knife blade from the visible default.
-- `surf_skyworld_x` (EVAI, CC-BY): confirm EVAI is the original map author and
-  not a re-upload of a community CS map.
+- `surf_skyworld_x` (EVAI, CC-BY): retired in v2 because its provenance could not
+  be confirmed; replaced by the original Prismline map.
 
 ## 8. Reproducing the measurements
 

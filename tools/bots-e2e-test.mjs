@@ -6,7 +6,7 @@ import WebSocket from 'ws';
 
 const PORT = process.env.PORT ?? '8790';
 const URL = `ws://localhost:${PORT}/ws`;
-const MAP = 'surf_skyworld_x'; // real surf map with collision.glb
+const MAP = 'aim_ochrecut'; // arena map with collision.glb, bots start on side B
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function connect(name) {

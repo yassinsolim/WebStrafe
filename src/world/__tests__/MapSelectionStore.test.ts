@@ -10,8 +10,8 @@ describe('MapSelectionStore', () => {
     expect(
       resolveSelectedMapId(
         'movement_test_scene',
-        ['surf_skyworld_x', 'movement_test_scene'],
-        'surf_skyworld_x',
+        ['surf_prismline', 'movement_test_scene'],
+        'surf_prismline',
       ),
     ).toBe('movement_test_scene');
   });
@@ -22,10 +22,10 @@ describe('MapSelectionStore', () => {
       expect(
         resolveSelectedMapId(
           storedMapId,
-          ['surf_skyworld_x', 'movement_test_scene'],
-          'surf_skyworld_x',
+          ['surf_prismline', 'movement_test_scene'],
+          'surf_prismline',
         ),
-      ).toBe('surf_skyworld_x');
+      ).toBe('surf_prismline');
     },
   );
 

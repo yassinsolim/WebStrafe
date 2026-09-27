@@ -1,44 +1,47 @@
 {
   "maps": [
     {
-      "id": "surf_skyworld_x",
-      "name": "surf_skyworld_x",
-      "author": "EVAI",
-      "source": "surf_skyworld_x by EVAI",
-      "license": "Creative Commons Attribution",
-      "scenePath": "/maps/surf_skyworld_x/scene.glb",
-      "collisionPath": "/maps/surf_skyworld_x/collision.glb",
-      "metaPath": "/maps/surf_skyworld_x/meta.json"
+      "id": "surf_prismline",
+      "name": "Prismline",
+      "author": "WebStrafe Team",
+      "source": "Original WebStrafe map",
+      "license": "MIT",
+      "scenePath": "/maps/surf_prismline/scene.glb",
+      "collisionPath": "/maps/surf_prismline/collision.glb",
+      "metaPath": "/maps/surf_prismline/meta.json",
+      "thumbnailPath": "/maps/surf_prismline/thumbnail.webp"
+    },
+    {
+      "id": "bhop_emberdrift",
+      "name": "Emberdrift",
+      "author": "WebStrafe Team",
+      "source": "Original WebStrafe map",
+      "license": "MIT",
+      "scenePath": "/maps/bhop_emberdrift/scene.glb",
+      "collisionPath": "/maps/bhop_emberdrift/collision.glb",
+      "metaPath": "/maps/bhop_emberdrift/meta.json",
+      "thumbnailPath": "/maps/bhop_emberdrift/thumbnail.webp"
+    },
+    {
+      "id": "aim_ochrecut",
+      "name": "Ochre Cut",
+      "author": "WebStrafe Team",
+      "source": "Original WebStrafe map",
+      "license": "MIT",
+      "scenePath": "/maps/aim_ochrecut/scene.glb",
+      "collisionPath": "/maps/aim_ochrecut/collision.glb",
+      "metaPath": "/maps/aim_ochrecut/meta.json",
+      "thumbnailPath": "/maps/aim_ochrecut/thumbnail.webp"
     },
     {
       "id": "movement_test_scene",
       "name": "Movement Test Scene",
       "author": "WebStrafe Team",
-      "source": "https://github.com/OuiSURF/Surf_Maps",
-      "license": "Original placeholder training geometry",
+      "source": "Original WebStrafe practice range",
+      "license": "MIT",
       "scenePath": "/maps/movement_test_scene/scene.glb",
       "collisionPath": "/maps/movement_test_scene/collision.glb",
       "metaPath": "/maps/movement_test_scene/meta.json"
-    },
-    {
-      "id": "training_straight",
-      "name": "Training Straight",
-      "author": "WebStrafe Team",
-      "source": "https://github.com/OuiSURF/Surf_Maps",
-      "license": "Original placeholder training geometry",
-      "scenePath": "/maps/training_straight/scene.glb",
-      "collisionPath": "/maps/training_straight/collision.glb",
-      "metaPath": "/maps/training_straight/meta.json"
-    },
-    {
-      "id": "training_switchback",
-      "name": "Training Switchback",
-      "author": "WebStrafe Team",
-      "source": "https://github.com/OuiSURF/Surf_Maps",
-      "license": "Original placeholder training geometry",
-      "scenePath": "/maps/training_switchback/scene.glb",
-      "collisionPath": "/maps/training_switchback/collision.glb",
-      "metaPath": "/maps/training_switchback/meta.json"
     }
   ]
 }
