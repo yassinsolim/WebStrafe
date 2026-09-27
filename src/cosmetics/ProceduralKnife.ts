@@ -7,6 +7,7 @@ import {
   Texture,
   Vector3,
 } from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { KnifeDef, KnifeShape } from '../combat/knives';
 import { buildBlade } from './knife/blade';
 import { createKnifeMaterials, type KnifeMaterials } from './knife/materials';
@@ -93,6 +94,13 @@ export function buildProceduralKnife(def: KnifeDef): Group {
   const grip = addHandle(ctx, mechanism);
   addSocket(group, KNIFE_NODES.grip, grip);
 
+  // one draw call per material per moving part
+  const parents: Object3D[] = [group];
+  group.traverse((o) => {
+    if (o !== group && o instanceof Group) parents.push(o);
+  });
+  for (const parent of parents) mergeByMaterial(parent);
+
   group.userData.knifeId = def.id;
   group.userData.mechanism = mechanism;
   group.userData.pair = s.pair === true;
@@ -161,6 +169,45 @@ function mesh(name: string, geometry: BufferGeometry, material: Material | Mater
  * pin sits where the closed edge ends up just under the backspacer and the
  * spine rides at the bottom of the handle.
  */
+/**
+ * merges sibling meshes that share a single material into one mesh. the blade
+ * meshes keep their own names, merged parts are named "a+b" so they stay
+ * findable. only direct children, so articulated groups keep their parts.
+ */
+function mergeByMaterial(parent: Object3D): void {
+  const buckets = new Map<Material, Mesh[]>();
+  for (const child of parent.children) {
+    if (!(child instanceof Mesh) || Array.isArray(child.material)) continue;
+    if (child.name === 'blade' || child.name === 'blade_teeth') continue;
+    const list = buckets.get(child.material) ?? [];
+    list.push(child);
+    buckets.set(child.material, list);
+  }
+  for (const [material, list] of buckets) {
+    if (list.length < 2) continue;
+    const indexed = (list[0].geometry as BufferGeometry).index !== null;
+    if (list.some((m) => ((m.geometry as BufferGeometry).index !== null) !== indexed)) continue;
+    const parts = list.map((m) => {
+      const g = (m.geometry as BufferGeometry).clone().applyMatrix4(m.matrix);
+      g.clearGroups();
+      return g;
+    });
+    const merged = mergeGeometries(parts, false);
+    for (const g of parts) g.dispose();
+    if (!merged) continue;
+    merged.computeBoundingBox();
+    merged.computeBoundingSphere();
+    const names = [...new Set(list.map((m) => m.name))];
+    const combined = new Mesh(merged, material);
+    combined.name = names.join('+');
+    for (const m of list) {
+      parent.remove(m);
+      (m.geometry as BufferGeometry).dispose();
+    }
+    parent.add(combined);
+  }
+}
+
 function folderPivot(ctx: BuildContext): Vector3 {
   const h = ctx.s.bladeHeight;
   return new Vector3(-ctx.g * 0.5, (h + ctx.handleHeight) / 4 - 0.0022, 0);
