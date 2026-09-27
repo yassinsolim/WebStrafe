@@ -136,8 +136,11 @@ def _emission(nt, color_socket):
     return em.outputs["Emission"]
 
 
-def _bake(objs, mat, bake_type, samples=1, **kw):
+def _bake(objs, mat, bake_type, samples=1, device=None, **kw):
     scene = bpy.context.scene
+    prev_device = scene.cycles.device
+    if device is not None:
+        scene.cycles.device = device
     saved = {o.name: list(o.data.materials) for o in objs}
     for o in objs:
         o.data.materials.clear()
@@ -150,6 +153,7 @@ def _bake(objs, mat, bake_type, samples=1, **kw):
     scene.render.bake.margin = 0
     scene.render.bake.use_clear = True
     bpy.ops.object.bake(type=bake_type, margin=0, use_clear=True, **kw)
+    scene.cycles.device = prev_device
     for o in objs:
         o.data.materials.clear()
         for m in saved[o.name]:
@@ -771,7 +775,9 @@ def build_arm_textures(glove, skin, sleeve, shape, size, log):
     bpy.context.scene.world = world
     world.light_settings.distance = 0.035
     mat = _bake_material("bake_ao_mat", aimg, lambda nt: nt.nodes.new("ShaderNodeBsdfDiffuse").outputs["BSDF"])
-    _bake(objs, mat, "AO", samples=96)
+    # cpu: the metal ao bake is not bit exact from run to run, this keeps
+    # rebuilds byte identical
+    _bake(objs, mat, "AO", samples=96, device="CPU")
     ao = _read(aimg)[..., 0]
     bpy.data.materials.remove(mat)
     log("baked ambient occlusion")
