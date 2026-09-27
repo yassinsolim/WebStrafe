@@ -17,6 +17,8 @@ const WALKABLE_MAX_ANGLE_DEG = 40;
 const GROUND_PROBE_DIST = 0.18;
 const SURF_PROBE_DIST = 0.55;
 const GROUND_SNAP_DIST = 0.08;
+// feet closer than this to the probed floor are touching it
+const GROUND_CONTACT_EPS = 0.01;
 const MAX_BUMPS = 4;
 const MAX_PLANES = 4;
 const PLANE_SIMILARITY_EPS = 0.99;
@@ -124,6 +126,9 @@ export class MovementController {
     const wish = this.computeWish(input);
     let groundProbe = world.queryGround(this.position, this.capsule, GROUND_PROBE_DIST);
     let mode = this.pickMode(groundProbe);
+    if (mode === 'ground' && groundProbe && this.isOffGround(groundProbe)) {
+      mode = 'air';
+    }
     let activeSurfNormal = this.getSurfNormalFromProbe(groundProbe);
     const walkableAngle = this.getWalkableAngleDeg();
     const hasWalkableProbe = groundProbe !== null && groundProbe.slopeAngleDeg <= walkableAngle;
@@ -150,6 +155,11 @@ export class MovementController {
       && this.velocity.y <= 0.9;
     if (preserveLaunchFromSurf) {
       mode = 'air';
+    }
+    if (mode === 'ground' && groundProbe && groundProbe.distance > GROUND_CONTACT_EPS) {
+      // ground mode skips gravity, so the feet go onto the floor the probe found
+      // or they'd hover there (walking off a step)
+      this.position.copy(groundProbe.position);
     }
     let frictionApplied = false;
     let contactPoint = groundProbe?.position.clone() ?? null;
@@ -274,7 +284,15 @@ export class MovementController {
       && this.velocity.y <= 0.9;
 
     const walkable = this.isWalkable(groundProbe);
-    if (!preserveRampLaunch && !jumped && walkable && groundProbe && groundProbe.distance <= GROUND_SNAP_DIST) {
+    const risingInAir = mode === 'air' && this.velocity.y > 0;
+    if (
+      !preserveRampLaunch
+      && !jumped
+      && !risingInAir
+      && walkable
+      && groundProbe
+      && groundProbe.distance <= GROUND_SNAP_DIST
+    ) {
       this.position.copy(groundProbe.position);
       if (this.velocity.y < 0) {
         this.velocity.y = 0;
@@ -282,6 +300,9 @@ export class MovementController {
     }
 
     mode = this.pickMode(groundProbe);
+    if (mode === 'ground' && groundProbe && this.isOffGround(groundProbe)) {
+      mode = 'air';
+    }
     if (preserveRampLaunch && mode === 'ground') {
       mode = 'air';
     }
@@ -403,6 +424,19 @@ export class MovementController {
       groundProbe.distance <= GROUND_PROBE_DIST &&
       groundProbe.slopeAngleDeg <= walkableAngle
     );
+  }
+
+  // the probe reaches GROUND_PROBE_DIST under the feet so walking stays glued to
+  // slopes, but someone rising off the floor (a jump, a launch) or still falling
+  // toward it from further than the snap distance hasn't landed yet
+  private isOffGround(groundProbe: GroundProbe): boolean {
+    if (groundProbe.distance <= GROUND_CONTACT_EPS) {
+      return false;
+    }
+    if (this.velocity.y > 0) {
+      return true;
+    }
+    return this.velocity.y < 0 && groundProbe.distance > GROUND_SNAP_DIST;
   }
 
   private isSurfSlope(groundProbe: GroundProbe | null): boolean {
