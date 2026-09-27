@@ -1,0 +1,297 @@
+{
+  "id": "bhop_emberdrift",
+  "name": "Emberdrift",
+  "author": "WebStrafe Team",
+  "source": "Original map built in Blender by tools/blender/maps/build_bhop_emberdrift.py",
+  "license": "Original work (MIT, same as the project)",
+  "attribution": "Original layout and procedural textures made for WebStrafe.",
+  "spawns": [
+    {
+      "position": [
+        0.0,
+        0.05,
+        3.0
+      ],
+      "yawDeg": 0.0
+    },
+    {
+      "position": [
+        -2.0,
+        0.05,
+        3.5
+      ],
+      "yawDeg": 0.0
+    },
+    {
+      "position": [
+        2.0,
+        0.05,
+        3.5
+      ],
+      "yawDeg": 0.0
+    }
+  ],
+  "triggers": [
+    {
+      "id": "start",
+      "type": "start",
+      "min": [
+        -4.8,
+        -0.5,
+        -5.8
+      ],
+      "max": [
+        4.8,
+        3.0,
+        5.8
+      ],
+      "target": {
+        "position": [
+          0.0,
+          0.05,
+          3.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "cp1",
+      "type": "checkpoint",
+      "stage": 1,
+      "min": [
+        -2.8,
+        -0.5,
+        -42.5
+      ],
+      "max": [
+        2.8,
+        3.0,
+        -36.9
+      ],
+      "target": {
+        "position": [
+          0.0,
+          0.05,
+          -38.1
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "cp2",
+      "type": "checkpoint",
+      "stage": 2,
+      "min": [
+        -3.0,
+        -3.7,
+        -81.3
+      ],
+      "max": [
+        3.0,
+        -0.2,
+        -75.3
+      ],
+      "target": {
+        "position": [
+          0.0,
+          -3.15,
+          -76.5
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "cp3",
+      "type": "checkpoint",
+      "stage": 3,
+      "min": [
+        24.105,
+        -3.4,
+        -97.005
+      ],
+      "max": [
+        30.105,
+        0.1,
+        -91.005
+      ],
+      "target": {
+        "position": [
+          25.305,
+          -2.85,
+          -94.005
+        ],
+        "yawDeg": -90.0
+      }
+    },
+    {
+      "id": "cp4",
+      "type": "checkpoint",
+      "stage": 4,
+      "min": [
+        67.505,
+        -5.8,
+        -97.005
+      ],
+      "max": [
+        73.505,
+        -2.3,
+        -91.005
+      ],
+      "target": {
+        "position": [
+          68.705,
+          -5.25,
+          -94.005
+        ],
+        "yawDeg": -90.0
+      }
+    },
+    {
+      "id": "finish",
+      "type": "finish",
+      "min": [
+        86.764,
+        -6.5,
+        -136.664
+      ],
+      "max": [
+        97.164,
+        -3.0,
+        -128.264
+      ]
+    },
+    {
+      "id": "lava_s0",
+      "type": "teleport",
+      "min": [
+        -12.0,
+        -41.0,
+        -49.5
+      ],
+      "max": [
+        12.0,
+        -3.5,
+        13.0
+      ]
+    },
+    {
+      "id": "lava_s1",
+      "type": "teleport",
+      "min": [
+        -10.0,
+        -41.0,
+        -88.3
+      ],
+      "max": [
+        10.0,
+        -6.7,
+        -39.1
+      ]
+    },
+    {
+      "id": "lava_s2",
+      "type": "teleport",
+      "min": [
+        -7.879,
+        -41.0,
+        -104.005
+      ],
+      "max": [
+        37.105,
+        -6.7,
+        -76.276
+      ]
+    },
+    {
+      "id": "lava_s3",
+      "type": "teleport",
+      "min": [
+        26.305,
+        -41.0,
+        -104.005
+      ],
+      "max": [
+        80.505,
+        -8.8,
+        -84.005
+      ]
+    },
+    {
+      "id": "lava_s4",
+      "type": "teleport",
+      "min": [
+        69.305,
+        -41.0,
+        -143.964
+      ],
+      "max": [
+        104.464,
+        -9.5,
+        -84.905
+      ]
+    },
+    {
+      "id": "lava",
+      "type": "teleport",
+      "min": [
+        -125.0,
+        -71.0,
+        -256.964
+      ],
+      "max": [
+        217.464,
+        -9.5,
+        126.0
+      ]
+    }
+  ],
+  "cvars": {
+    "sv_airaccelerate": 150
+  },
+  "notes": "33 jumps, checkpoints every six, lava teleports to the last checkpoint.",
+  "environment": {
+    "sky": {
+      "zenith": "#28305f",
+      "horizon": "#f2a36e",
+      "ground": "#7a3326",
+      "exponent": 0.55,
+      "sunSizeDeg": 2.2,
+      "sunGlow": 0.45,
+      "sunHaze": 0.3,
+      "clouds": {
+        "color": "#ffb48a",
+        "shadow": "#6a4a78",
+        "coverage": 0.46,
+        "scale": 0.9,
+        "speed": 0.004,
+        "height": 0.35
+      }
+    },
+    "sun": {
+      "direction": [
+        -0.3504,
+        0.5592,
+        0.7514
+      ],
+      "color": "#ffc893",
+      "intensity": 5.4
+    },
+    "hemi": {
+      "sky": "#9a9ed8",
+      "ground": "#c0583a",
+      "intensity": 2.4
+    },
+    "fog": {
+      "color": "#e9946a",
+      "near": 55.0,
+      "far": 460.0
+    },
+    "exposure": 1.12,
+    "lightmaps": [
+      {
+        "path": "/maps/bhop_emberdrift/lightmap.webp"
+      }
+    ],
+    "lightMapIntensity": 10.9956
+  }
+}
