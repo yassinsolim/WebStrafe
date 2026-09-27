@@ -99,6 +99,8 @@ const ARMS_OFFSET: Readonly<Record<ViewItem, Vector3>> = {
 // the awp support hand holds the forend this far behind socket_grip_l
 const AWP_SUPPORT_BACK_M = 0.12;
 
+const SCALE_PIVOT = v(0.12, -0.15, -0.32);
+
 const POLE_R = v(0.55, -0.7, 0.05);
 const POLE_L = v(-0.55, -0.7, 0.05);
 
@@ -166,6 +168,8 @@ export class ViewmodelSystem {
   private knifeLeft: KnifeRig | null = null;
   private knifeId: KnifeId = DEFAULT_KNIFE_ID;
   private readonly itemPivot = new Group();
+  /** everything drawn; scaled about a point in front of the eye so the scale setting is visible */
+  private readonly content = new Group();
 
   private active: ViewItem = 'knife';
   private action: ViewAction = 'idle';
@@ -193,7 +197,8 @@ export class ViewmodelSystem {
   constructor() {
     this.root.name = 'ViewmodelSystem';
     this.itemPivot.name = 'ViewmodelItem';
-    this.root.add(this.itemPivot);
+    this.root.add(this.content);
+    this.content.add(this.itemPivot);
   }
 
   /** loads the arms and both guns; knives build on demand */
@@ -299,7 +304,10 @@ export class ViewmodelSystem {
   }
 
   public setScale(scale: number): void {
-    this.root.scale.setScalar(Math.max(0.5, Math.min(1.5, scale)));
+    const s = Math.max(0.5, Math.min(1.5, scale));
+    // scaling about the eye would look identical, so grow and shrink about the hands
+    this.content.scale.setScalar(s);
+    this.content.position.copy(SCALE_PIVOT).multiplyScalar(1 - s);
   }
 
   public isHidden(): boolean {
@@ -415,7 +423,7 @@ export class ViewmodelSystem {
   private pose(): void {
     const arms = this.arms;
     if (!arms) return;
-    this.root.updateWorldMatrix(true, false);
+    this.content.updateWorldMatrix(true, false);
 
     // idle breathing and the backstab stance ride on top of every clip
     const breathe = Math.sin(this.idleTime * 1.6);
@@ -525,12 +533,12 @@ export class ViewmodelSystem {
       this.applyKnifeParts(left);
       left.holder.updateMatrixWorld(true);
       // the left hand is the right hand's target mirrored in camera space
-      this.root.worldToLocal(pA);
-      this.root.getWorldQuaternion(qB);
+      this.content.worldToLocal(pA);
+      this.content.getWorldQuaternion(qB);
       qA.premultiply(qB.invert());
       mirrorRootPose(pA, qA, pA, qA, MIRROR_HAND);
-      this.root.localToWorld(pA);
-      qA.premultiply(this.root.getWorldQuaternion(qB));
+      this.content.localToWorld(pA);
+      qA.premultiply(this.content.getWorldQuaternion(qB));
       blendHandPose(HAND_POSES[rightGrip.pose], HAND_POSES.open, open, this.poseL);
       arms.setArmVisible('l', true);
       arms.solveArm('l', pA, qA, this.pole(POLE_L));
@@ -639,12 +647,12 @@ export class ViewmodelSystem {
 
   private cameraTarget(target: { position: Vector3; rotation: Quaternion }, outPos: Vector3, outRot: Quaternion): void {
     outPos.copy(target.position);
-    this.root.localToWorld(outPos);
-    this.root.getWorldQuaternion(outRot).multiply(target.rotation);
+    this.content.localToWorld(outPos);
+    this.content.getWorldQuaternion(outRot).multiply(target.rotation);
   }
 
   private pole(local: Vector3): Vector3 {
-    return this.root.localToWorld(poleWorld.copy(local));
+    return this.content.localToWorld(poleWorld.copy(local));
   }
 
   private async loadAll(): Promise<void> {
@@ -654,7 +662,7 @@ export class ViewmodelSystem {
       sharedGltfLoader().loadAsync(GUN_URLS.awp),
     ]);
     this.arms = arms;
-    this.root.add(arms.root);
+    this.content.add(arms.root);
     this.guns.deagle = this.setupGun(deagle.scene);
     this.guns.awp = this.setupGun(awp.scene);
     this.rebuildKnife();
@@ -724,7 +732,7 @@ export class ViewmodelSystem {
     const gripLocal = gripNode ? gripNode.getWorldPosition(new Vector3()) : new Vector3(-0.05, 0, 0);
     const pivotLocal = ringNode && def.shape.fingerRing ? ringNode.getWorldPosition(new Vector3()) : gripLocal.clone();
     // the knife group sits at its origin inside the holder, so world = local here
-    this.root.add(holder);
+    this.content.add(holder);
     return {
       id: def.id,
       holder,

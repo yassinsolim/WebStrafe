@@ -11,7 +11,7 @@
   </head>
   <body>
     <!-- dev tool: /tools/viewmodel-preview.html?item=deagle|awp|knife&knife=<id>&clip=idle|draw|fire|reload|inspect|slashA|slashB|stab
-         &t=<seconds into the clip>&time=HH:MM:SS (freezes the watch)&view=fp|side|top|left&width=1600&bg=map
+         &t=<seconds into the clip>&time=HH:MM:SS (freezes the watch)&view=fp|side|top|left&width=1600&bg=map&scale=0.5..1.5
          sets window.__viewmodelReady and document.title = 'ready' once the frame is drawn -->
     <div id="ids"></div>
     <script type="module">
@@ -52,6 +52,7 @@
       document.getElementById('ids').textContent = 'knives: ' + KNIVES.map((k) => k.id).join(', ');
 
       await system.load();
+      if (params.get('scale')) system.setScale(Number(params.get('scale')));
       if (params.get('knife')) system.setKnife(params.get('knife'));
       system.equip(item);
       system.seek(clip, t);
