@@ -251,7 +251,9 @@ The code lives in `src/cosmetics/knife/`:
   - crossguards with swept quillons, the muzzle ring, finger rings
   - the skeleton frame, extruded with two cut-outs and bevelled
   - the push dagger tee bar with finger grooves
-- `materials.ts`: every knife gets its own `MeshStandardMaterial` set:
+- `materials.ts`: every knife gets its own `MeshStandardMaterial` set. Parts
+  that share a material are merged per moving part, so a knife is 2 to 8
+  meshes, or 3 to 9 draw calls counting the blade's polished edge group:
   - satin steel with a brushed roughness and colour map; blades the catalog
     colours dark get a matte coated finish and still show a bright
     sharpened edge
