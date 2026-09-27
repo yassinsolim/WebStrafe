@@ -3,7 +3,8 @@
 # A persistent WS server must NOT auto-stop, or sockets drop when idle.
 
 app = "webstrafe-game"
-# sea (seattle) is no longer offered; this is the lowest measured rtt from calgary
+# sea (seattle) is no longer offered; sjc is the nearest west coast region.
+# confirm with the region rtt check in docs/DEPLOY.md after the first deploy
 primary_region = "sjc"
 
 [build]

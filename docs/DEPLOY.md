@@ -69,3 +69,45 @@ docker build -t webstrafe-server .
 docker run --rm -p 8080:8080 -e ENABLE_BOTS=true webstrafe-server
 # http://localhost:8080  (server serves the client + runs bots)
 ```
+
+## Dedicated game server on Fly.io (PR #44 netcode)
+
+`fly.toml` defines `webstrafe-game`: backend only, `shared-cpu-1x` with 1 GB,
+health checks on `/api/health`, no volume (the leaderboard stays on Supabase).
+Fly no longer offers `sea`, so it defaults to `sjc`.
+
+```bash
+fly auth login                        # once
+fly apps create webstrafe-game --org personal
+fly deploy --remote-only              # builds on fly, no local docker needed
+curl https://webstrafe-game.fly.dev/api/health
+```
+
+Pick the region by rtt from where players are. Clone into candidates, probe
+each with `fly-prefer-region`, keep the best, destroy the rest:
+
+```bash
+fly machine clone <id> --region ord   # repeat for lax, yyz, ...
+for r in sjc lax ord yyz; do
+  curl -s -o /dev/null -H "fly-prefer-region: $r" \
+    -w "$r %{time_starttransfer}\n" https://webstrafe-game.fly.dev/api/health
+done
+```
+
+Bench the deployed server with bot clients (no proxy, real internet path):
+
+```bash
+npx tsx tools/netbench/bench.ts --target wss://webstrafe-game.fly.dev/ws --secs 30
+```
+
+Preview only: point the PR preview at the server without touching production.
+Both variables are scoped to the Preview environment and the PR branch:
+
+```bash
+vercel env add VITE_MULTIPLAYER_TRANSPORT preview revamp/netcode-phase1   # value: ws
+vercel env add VITE_WS_URL preview revamp/netcode-phase1                  # value: wss://webstrafe-game.fly.dev/ws
+```
+
+Then redeploy the preview (push to the branch, or "Redeploy" on the preview in
+the Vercel dashboard). Production keeps Supabase until the PR is merged and
+the same two variables are set for Production.
