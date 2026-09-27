@@ -213,6 +213,18 @@ export class RemotePlayersRenderer {
     return { targets, observedAtMs };
   }
 
+  /**
+   * Where each remote is drawn this frame (feet and body yaw). The local knife
+   * predicts hits against exactly this, the same poses getFireView() reports.
+   */
+  public getDisplayedPlayers(): Array<{ id: string; position: Vector3; yaw: number }> {
+    const out: Array<{ id: string; position: Vector3; yaw: number }> = [];
+    for (const actor of this.actors.values()) {
+      out.push({ id: actor.id, position: actor.displayPosition.clone(), yaw: actor.displayYaw });
+    }
+    return out;
+  }
+
   /** Presentation delay currently applied to a remote, in ms (for the debug hud). */
   public getPresentationDelayMs(playerId: string): number | null {
     const actor = this.actors.get(playerId);
