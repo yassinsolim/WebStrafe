@@ -2384,6 +2384,8 @@ export class GameApp {
         else this.fireCombatWeapon(now);
       },
       stab: () => this.attackCombatKnife('secondary', performance.now()),
+      scope: () => this.combatAim.toggleScope(performance.now(), { reloading: this.weapon.isReloading(performance.now()), alive: this.localAlive }),
+      scoped: () => this.combatAim.isScoped(),
       scoreboardText: () => document.querySelector('.hud-scoreboard')?.textContent ?? null,
       killfeedLines: () => Array.from(document.querySelectorAll('.combat-killfeed-line')).map((el) => el.textContent ?? ''),
     };
