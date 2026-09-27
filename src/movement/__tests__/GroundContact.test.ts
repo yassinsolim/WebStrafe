@@ -3,7 +3,7 @@ import { Vector3 } from 'three';
 import { MovementController } from '../MovementController';
 import { defaultCvars } from '../cvars';
 import type { MoveInput } from '../types';
-import { flatWorld, horizontalSpeed, stepDownWorld } from './testWorlds';
+import { flatWorld, horizontalSpeed, slopeUpWorld, stepDownWorld } from './testWorlds';
 
 const DT = 1 / 128;
 const idle: MoveInput = { forwardMove: 0, sideMove: 0, jumpPressed: false, jumpHeld: false };
@@ -87,5 +87,19 @@ describe('ground contact around jumps', () => {
     expect(mc.getFeetPosition().x).toBeGreaterThan(5);
     expect(mc.getFeetPosition().y).toBe(-0.15);
     expect(mc.getDebugState().grounded).toBe(true);
+  });
+
+  it('walking up a slope onto a flat top stays grounded the whole way', () => {
+    // the slope leaves an upward vy behind on the flat top, the snap still keeps you on it
+    const world = slopeUpWorld(26, 4);
+    const top = Math.tan((26 * Math.PI) / 180) * 4;
+    const mc = new MovementController();
+    mc.reset(new Vector3(-2, 0, 0), -90);
+    for (let i = 0; i < 160; i += 1) {
+      mc.tick(DT, { ...idle, forwardMove: 1 }, world);
+      expect(mc.getDebugState().grounded).toBe(true);
+    }
+    expect(mc.getFeetPosition().x).toBeGreaterThan(6);
+    expect(mc.getFeetPosition().y).toBeCloseTo(top, 9);
   });
 });

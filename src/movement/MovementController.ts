@@ -301,6 +301,7 @@ export class MovementController {
 
     const walkable = this.isWalkable(groundProbe);
     const risingInAir = mode === 'air' && this.velocity.y > 0;
+    let snappedToGround = false;
     if (
       !preserveRampLaunch
       && !jumped
@@ -313,10 +314,12 @@ export class MovementController {
       if (this.velocity.y < 0) {
         this.velocity.y = 0;
       }
+      snappedToGround = true;
     }
 
     mode = this.pickMode(groundProbe);
-    if (mode === 'ground' && groundProbe && this.isOffGround(groundProbe)) {
+    // the probe ran before the snap, so after one the feet are on the floor whatever vy says
+    if (mode === 'ground' && groundProbe && !snappedToGround && this.isOffGround(groundProbe)) {
       mode = 'air';
     }
     if (preserveRampLaunch && mode === 'ground') {

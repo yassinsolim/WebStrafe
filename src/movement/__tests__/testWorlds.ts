@@ -90,6 +90,18 @@ export function stepDownWorld(drop: number): CollisionAdapter {
   return new HeightfieldWorld((x) => flat(x < 0 ? 0 : -drop));
 }
 
+/** floor at y = 0 for x < 0, a slope rising toward +x until x = length, then a flat top */
+export function slopeUpWorld(angleDeg: number, length: number): CollisionAdapter {
+  const tan = Math.tan(MathUtils.degToRad(angleDeg));
+  const normal = new Vector3(-tan, 1, 0).normalize();
+  return new HeightfieldWorld((x) => {
+    if (x < 0) {
+      return flat(0);
+    }
+    return x < length ? { height: tan * x, normal, slopeAngleDeg: angleDeg } : flat(tan * length);
+  });
+}
+
 /**
  * one surf ramp, endless along z: y = top - tan(angle) * x for x in [0, length].
  * the face points +x, so it rises toward -x and "into the ramp" is -x.
