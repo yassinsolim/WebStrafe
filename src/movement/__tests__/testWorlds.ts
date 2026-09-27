@@ -51,8 +51,12 @@ class HeightfieldWorld implements CollisionAdapter {
     const raw = d0 / (d0 - d1);
     const fraction = MathUtils.clamp(Number.isFinite(raw) ? raw : 0, 0, 1);
     const position = start.clone().lerp(end, fraction);
-    position.y = endSurface.height;
-    return { hit: true, fraction, normal: endSurface.normal.clone(), position };
+    const hitSurface = this.surfaceAt(position.x, position.z);
+    if (!hitSurface) {
+      return miss;
+    }
+    position.y = hitSurface.height;
+    return { hit: true, fraction, normal: hitSurface.normal.clone(), position };
   }
 
   public resolveCapsulePosition(feet: Vector3, _capsule: CapsuleShape): OverlapResult {
