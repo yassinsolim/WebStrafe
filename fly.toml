@@ -1,4 +1,5 @@
-# Fly.io config for the WebStrafe dedicated game server (WebSocket + bots + API).
+# OPTIONAL, PAID: Fly.io config for the WebStrafe dedicated game server.
+# the free path is the homelab + cloudflare tunnel in docs/DEPLOY.md.
 # The static client stays on Vercel; this machine only runs server/index.ts.
 # A persistent WS server must NOT auto-stop, or sockets drop when idle.
 

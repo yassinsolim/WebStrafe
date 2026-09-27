@@ -1,0 +1,27 @@
+# systemd unit for the WebStrafe game server on a Debian VM.
+# install: see docs/DEPLOY.md ("Free: homelab + Cloudflare Tunnel")
+[Unit]
+Description=WebStrafe game server (websocket + bots)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=webstrafe
+Group=webstrafe
+WorkingDirectory=/opt/webstrafe
+EnvironmentFile=/etc/webstrafe/game.env
+ExecStart=/opt/webstrafe/node_modules/.bin/tsx server/index.ts
+Restart=always
+RestartSec=3
+# the surf map collision peaks around 400 MB while loading
+MemoryMax=1500M
+# hardening, the server only needs its checkout and /tmp
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/webstrafe
+
+[Install]
+WantedBy=multi-user.target

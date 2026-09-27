@@ -121,10 +121,12 @@ resume describes. Supabase stays as a free fallback for casual rooms.
    what cause the remaining 150 ms-RTT misses. Add WebTransport datagrams
    (unreliable, unordered) for snapshots and inputs where supported, with the
    WebSocket as fallback.
-6. **Hosting.** Fly.io `sea` (Seattle), not `iad`. Measured from Calgary: 30 ms
-   RTT to AWS us-west-2 versus 61 ms to us-east-1. One shared-cpu-1x machine
-   handles a few rooms. Add a second region if players aren't in western
-   North America.
+6. **Hosting (free only, decided 2026-09-27).** Run the dedicated server on
+   the Proxmox homelab behind a Cloudflare Tunnel at `game.yassin.app`.
+   `yassin.app` DNS is already on Cloudflare, and tunnels and proxied
+   WebSockets are free with no card. Setup is in `docs/DEPLOY.md`. Render's free
+   web service (`render.yaml`) is the fallback. Fly.io is kept only as an
+   optional paid path: it needs a card and no longer offers `sea`.
 7. **Anti-cheat basics.** Server movement authority removes speed and teleport
    hacks. Keep the fire-rate and origin checks, and rate-limit inputs.
 
@@ -297,7 +299,7 @@ project's message quota.
 1. **This PR:** root-cause netcode fixes, bench, prediction foundation, knife
    data model and all 20 procedural knives with a selector.
 2. **Authoritative server:** inputs, server movement, reconciliation wired
-   end-to-end, Fly.io `sea` deploy (needs approval), air wishspeed cap + bhop
+   end-to-end, homelab + Cloudflare Tunnel deploy, air wishspeed cap + bhop
    cvars, net graph.
 3. **Weapons:** sniper scope, inaccuracy, bolt; pistol recoil and accuracy;
    server-side knife primary, secondary and backstab; hitboxes.
