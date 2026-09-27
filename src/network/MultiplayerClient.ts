@@ -10,6 +10,8 @@ import { SendCadence } from '../netcode/SendCadence';
 
 /** server rate limit is 70/s; 30 Hz leaves headroom and matches the snapshot rate */
 export const WS_STATE_SEND_HZ = 30;
+/** the keepalive ping doubles as the ping measurement, so keep it fairly fresh */
+const HEARTBEAT_MS = 2000;
 
 interface DesiredJoin {
   mapId: string;
@@ -30,6 +32,8 @@ export class MultiplayerClient implements MultiplayerTransport {
   private combatReady = false;
   private latestSnapshotServerTimeMs: number | null = null;
   private readonly sendCadence = new SendCadence(WS_STATE_SEND_HZ);
+  private pingSentAtMs: number | null = null;
+  private pingMs: number | null = null;
 
   public onSnapshot: ((snapshot: MultiplayerSnapshot) => void) | null = null;
   public onAttack: ((event: { mapId: string; playerId: string; kind: AttackKind }) => void) | null = null;
@@ -82,6 +86,10 @@ export class MultiplayerClient implements MultiplayerTransport {
 
   public getActiveMapId(): string {
     return this.activeMapId;
+  }
+
+  public getPingMs(): number | null {
+    return this.pingMs === null ? null : Math.round(this.pingMs);
   }
 
   public join(mapId: string, name: string, model: PlayerModel): void {
@@ -202,6 +210,8 @@ export class MultiplayerClient implements MultiplayerTransport {
       this.clearHeartbeat();
       this.localId = null;
       this.activeMapId = '';
+      this.pingSentAtMs = null;
+      this.pingMs = null;
 
       if (this.ws === ws) {
         this.ws = null;
@@ -378,6 +388,14 @@ export class MultiplayerClient implements MultiplayerTransport {
           }
           break;
         }
+        case 'pong': {
+          if (this.pingSentAtMs !== null) {
+            const rtt = performance.now() - this.pingSentAtMs;
+            this.pingSentAtMs = null;
+            this.pingMs = this.pingMs === null ? rtt : this.pingMs * 0.7 + rtt * 0.3;
+          }
+          break;
+        }
         case 'error': {
           // eslint-disable-next-line no-console
           console.warn('[Multiplayer] server error:', payload.reason ?? 'unknown');
@@ -447,9 +465,12 @@ export class MultiplayerClient implements MultiplayerTransport {
 
   private startHeartbeat(): void {
     this.clearHeartbeat();
-    this.heartbeatHandle = window.setInterval(() => {
+    const ping = (): void => {
+      this.pingSentAtMs = performance.now();
       this.send({ type: 'ping' });
-    }, 5000);
+    };
+    ping();
+    this.heartbeatHandle = window.setInterval(ping, HEARTBEAT_MS);
   }
 
   private clearHeartbeat(): void {

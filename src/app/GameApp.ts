@@ -77,6 +77,14 @@ import { MapEnvironment } from '../world/MapEnvironment';
 import { MapTriggers } from '../world/MapTriggers';
 import { listMetaSpawns, pickSpawnAwayFrom, resolveBotAnchor } from '../world/SpawnPoints';
 import type { CustomMapRecord, LoadedMap, MapManifestEntry } from '../world/types';
+// v2 ui + audio
+import { getAudioEngine } from '../audio/AudioEngine';
+import { MovementAudioTracker } from '../audio/MovementAudio';
+import { KNIFE_DAMAGE, KNIFE_RANGE_M } from '../combat/knives';
+import type { DeathEvent, HitEvent, ShotEvent } from '../network/MultiplayerTransport';
+import { GameHud } from '../ui/hud/GameHud';
+import { damageDirection } from '../ui/hud/hudMath';
+import { showsRunTimer } from '../ui/menu/menuInfo';
 
 type MapSource =
   | {
@@ -210,6 +218,16 @@ export class GameApp {
   private readonly tmpDesiredCameraPos = new Vector3();
   private readonly tmpLookAt = new Vector3();
 
+  // --- v2 ui + audio state ---
+  private readonly audio = getAudioEngine();
+  private readonly gameHud: GameHud;
+  private readonly movementAudio = new MovementAudioTracker();
+  private runTimerAllowed = false;
+  private lastShotDirectionAtMs = 0;
+  private lastDryFireAtMs = 0;
+  private readonly listenerForward = new Vector3();
+  private readonly listenerUp = new Vector3();
+
   constructor(rootElement: HTMLElement) {
     this.container = rootElement;
     this.worldCamera = new PerspectiveCamera(100, window.innerWidth / window.innerHeight, 0.1, 6000);
@@ -226,7 +244,11 @@ export class GameApp {
 
     this.input = new InputManager(this.renderer.domElement);
     this.hud = new HUD(this.container);
-    this.hud.setVisible(true);
+    this.hud.setVisible(false);
+    this.gameHud = new GameHud(this.container, {
+      isActive: () => this.playing,
+      onToggleMovementDebug: () => this.toggleMovementDebug(),
+    });
 
     this.viewmodelRenderer = new ViewmodelRenderer(68, window.innerWidth / window.innerHeight);
     this.viewmodelRenderer.root.add(this.cosmeticsGroup);
@@ -265,7 +287,8 @@ export class GameApp {
   public async init(): Promise<void> {
     this.settings = loadSettings();
     this.movement.setCvar('sv_autobhop_enabled', this.settings.autoBhop);
-    this.hud.setVisible(this.settings.showHud);
+    this.audio.installGestureUnlock();
+    this.applyUiSettings(this.settings);
     this.worldCamera.fov = this.settings.worldFov;
     this.worldCamera.updateProjectionMatrix();
     this.viewmodelRenderer.setFov(this.settings.viewmodelFov);
@@ -335,6 +358,7 @@ export class GameApp {
         this.cosmeticsManager.setKnifeStyle(knifeId);
         saveKnifeStyle(knifeId);
         this.showStatus(`Knife: ${knifeId ? getKnife(knifeId).name : 'Legacy Knife'}`);
+        this.syncHudKnifeName();
       },
     });
     this.menu.setSelectedKnife(this.cosmeticsManager.getKnifeStyle());
@@ -419,11 +443,12 @@ export class GameApp {
         const remoteProfile = remoteModel
           ? this.getKnifeSoundProfileFromModel(remoteModel)
           : this.activeKnifeSoundProfile;
-        this.remoteKnifeAudio.play(kind, 0.48, remoteProfile);
+        this.remoteKnifeAudio.play(kind, 0.48, remoteProfile, this.remoteChestPosition(playerId) ?? undefined);
       }
     };
     this.multiplayer.connect();
     this.setupCombat();
+    this.wireUiEvents();
     this.syncMultiplayerIdentity();
     void this.refreshLeaderboard(this.selectedMapId);
 
@@ -462,6 +487,8 @@ export class GameApp {
     this.cosmeticsManager.resetKnifePresentation();
     this.viewmodelRenderer.clearPresentationTransient();
     this.menu?.dispose();
+    this.gameHud.dispose();
+    this.audio.dispose();
   }
 
   private readonly loop = (time: number): void => {
@@ -648,6 +675,7 @@ export class GameApp {
     const startedKnifeAttack = this.cosmeticsManager.consumeStartedAttack();
     if (startedKnifeAttack) {
       this.knifeAudio.play(startedKnifeAttack);
+      this.playKnifeWallHit(startedKnifeAttack);
     }
     this.weaponViewmodels.update(frameDt);
     // Guns hang off the camera directly, so apply the same CS2-style sway/bob/
@@ -661,6 +689,7 @@ export class GameApp {
     }
     const debug = this.movement.getDebugState();
     this.hud.update(debug);
+    this.updateUiFrame(frameDt, time, debug);
     this.updateTimerHud();
     this.updateSurfNormalLine(debug);
     this.updateStatusVisibility(time);
@@ -690,6 +719,8 @@ export class GameApp {
     if (!this.menu) {
       return;
     }
+    // every mode has sound now; unlock inside the Play gesture
+    this.audio.unlock();
     if (this.combatEnabled) {
       // Begin Web Audio while the Play gesture is still active, before any map
       // or model await can consume browser user activation.
@@ -907,6 +938,7 @@ export class GameApp {
     }
     this.combatHud?.setPracticeGuide(map.entry.id === 'movement_test_scene');
     this.updateRunInfoWithLeaderboard([]);
+    this.onUiMapActivated(map);
   }
 
   private rebuildMapSources(builtinEntries: MapManifestEntry[], customRecords: CustomMapRecord[]): void {
@@ -997,18 +1029,12 @@ export class GameApp {
   }
 
   private updateRunInfoWithLeaderboard(entries: LeaderboardEntry[]): void {
-    const goalText = this.mapTriggers?.hasFinish()
-      ? 'Finish zone'
-      : this.goalPad
-        ? `Pad (${this.goalPad.center.x.toFixed(1)}, ${this.goalPad.center.z.toFixed(1)}) r=${this.goalPad.radius.toFixed(1)}`
-        : (Number.isFinite(this.finishTargetY) ? `Y <= ${this.finishTargetY.toFixed(2)}` : '--');
     if (entries.length === 0) {
-      this.runInfoLabel.textContent = `Goal: ${goalText} | Best: --`;
+      this.runInfoLabel.textContent = 'No best time yet';
       return;
     }
     const best = entries[0];
-    const bestText = `${best.name} ${formatRunTime(best.timeMs)}`;
-    this.runInfoLabel.textContent = `Goal: ${goalText} | Best: ${bestText}`;
+    this.runInfoLabel.textContent = `Best ${formatRunTime(best.timeMs)} · ${best.name}`;
   }
 
   private resolveGoalPad(map: LoadedMap): GoalPad | null {
@@ -1094,6 +1120,8 @@ export class GameApp {
           victim: nameOf(victimId),
           weaponId,
           headshot,
+          killerIsLocal: killerId === this.multiplayer.getLocalId(),
+          victimIsLocal: victimId === this.multiplayer.getLocalId(),
         },
         performance.now(),
       );
@@ -1145,7 +1173,7 @@ export class GameApp {
         if (!this.localAlive) {
           this.combatHud?.setDeathVisible(true);
           this.showStatus(
-            'You died — respawning…',
+            'You died, respawning…',
             RESPAWN_DELAY_MS - FATAL_CUE_LEAD_MS,
           );
         }
@@ -1182,6 +1210,7 @@ export class GameApp {
   private restoreLocalAfterRespawn(): void {
     this.resetLocalCombatState();
     this.showStatus('Respawned', 1200);
+    this.audio.play('respawn');
   }
 
   private pulseCrosshair(weaponId: GunId): void {
@@ -1223,6 +1252,7 @@ export class GameApp {
     );
     this.combatHud?.setWeapon(this.weapon.getActive(), this.weapon.getAmmo());
     if (!result.fired) {
+      this.maybeDryFire(result.weapon.id, result.ammoRemaining, nowMs);
       return;
     }
     this.multiplayer.sendFire(
@@ -1311,7 +1341,6 @@ export class GameApp {
       this.setViewmodelHiddenForScope(scoped);
     }
     this.crosshairSpreadRad = this.combatAim.getInaccuracyRadians();
-    // todo(ui): hand crosshairSpreadRad to the crosshair's setSpread(radians)
     // once it exists; the value is spread + inaccuracy of the held gun, 0 for the knife
   }
 
@@ -1343,6 +1372,7 @@ export class GameApp {
     this.weapon.equip(id);
     this.combatAim.setWeapon(id, performance.now());
     this.multiplayer.sendEquip(id);
+    this.audio.play('weaponDraw');
     this.combatEffects?.clear();
     this.combatHud?.clearTransient();
     this.crosshair.classList.remove('shot-deagle', 'shot-awp');
@@ -1475,12 +1505,12 @@ export class GameApp {
 
   private updateTimerHud(): void {
     if (this.runStartTimeMs <= 0) {
-      this.timerLabel.textContent = 'Run: --';
+      this.timerLabel.textContent = '';
       return;
     }
 
     const elapsedMs = this.getCurrentRunTimeMs();
-    this.timerLabel.textContent = `Run: ${formatRunTime(elapsedMs)}`;
+    this.timerLabel.textContent = formatRunTime(elapsedMs);
   }
 
   private tryCompleteRun(): void {
@@ -1645,7 +1675,7 @@ export class GameApp {
     this.worldCamera.updateProjectionMatrix();
     this.viewmodelRenderer.setFov(next.viewmodelFov);
     this.cosmeticsManager.setViewmodelScale(next.viewmodelScale);
-    this.hud.setVisible(next.showHud);
+    this.applyUiSettings(next);
   }
 
   private async applyLoadout(selection: LoadoutSelection): Promise<void> {
@@ -1770,6 +1800,7 @@ export class GameApp {
       this.movement.reset(this.loadedMap.spawnPosition, this.loadedMap.spawnYawDeg);
     }
     this.mapTriggers?.reset();
+    this.resetMovementFeedback();
   }
 
   /**
@@ -1808,6 +1839,7 @@ export class GameApp {
     }
     this.movement.reset(this.loadedMap.spawnPosition, this.loadedMap.spawnYawDeg);
     this.mapTriggers?.reset();
+    this.resetMovementFeedback();
     this.runComplete = false;
     this.finishedRunTimeMs = null;
     if (restartTimer) {
@@ -1891,10 +1923,8 @@ export class GameApp {
   }
 
   private createCrosshair(): HTMLDivElement {
-    const el = document.createElement('div');
-    el.className = 'crosshair';
-    this.container.appendChild(el);
-    return el;
+    // the settings driven crosshair keeps the .crosshair root and kick classes
+    return this.gameHud.crosshair.root;
   }
 
   private createStatusLabel(): HTMLDivElement {
@@ -1952,11 +1982,11 @@ export class GameApp {
   private createRunHud(): { timer: HTMLDivElement; info: HTMLDivElement } {
     const timer = document.createElement('div');
     timer.className = 'run-timer';
-    timer.textContent = 'Run: --';
+    timer.style.display = 'none';
 
     const info = document.createElement('div');
     info.className = 'run-info';
-    info.textContent = 'Goal Y: -- | Best: --';
+    info.style.display = 'none';
 
     this.container.append(timer, info);
     return { timer, info };
@@ -2191,6 +2221,229 @@ export class GameApp {
     }
     const nowMs = this.runPauseStartedAtMs ?? performance.now();
     return Math.max(0, nowMs - this.runStartTimeMs);
+  }
+
+  // --- v2 ui + audio wiring ------------------------------------------------
+
+  /** everything the hud, crosshair and sound engine take from settings */
+  private applyUiSettings(settings: GameSettings): void {
+    this.hud.setVisible(settings.showMovementDebug);
+    this.gameHud.applySettings(settings);
+    this.gameHud.setVerticalFov(settings.worldFov);
+    this.combatHud?.setHudEnabled(settings.showHud);
+    this.audio.setVolumes({
+      master: settings.masterVolume,
+      effects: settings.effectsVolume,
+      ui: settings.uiVolume,
+    });
+  }
+
+  private toggleMovementDebug(): void {
+    const next = { ...this.settings, showMovementDebug: !this.settings.showMovementDebug };
+    this.applySettings(next);
+    this.menu?.updateSettings(next);
+    this.showStatus(next.showMovementDebug ? 'Movement debug on (F3)' : 'Movement debug off (F3)', 1200);
+  }
+
+  /**
+   * Layers hud and audio feedback on top of the transport handlers that init
+   * and setupCombat installed. Call once, after setupCombat.
+   */
+  private wireUiEvents(): void {
+    const onSnapshot = this.multiplayer.onSnapshot;
+    this.multiplayer.onSnapshot = (snapshot) => {
+      onSnapshot?.(snapshot);
+      if (snapshot.mapId === this.selectedMapId) {
+        this.gameHud.setPlayers(snapshot.players, this.multiplayer.getLocalId());
+      }
+    };
+    const onDeath = this.multiplayer.onDeath;
+    this.multiplayer.onDeath = (event) => {
+      onDeath?.(event);
+      this.handleDeathFeedback(event);
+    };
+    const onHit = this.multiplayer.onHit;
+    this.multiplayer.onHit = (event) => {
+      onHit?.(event);
+      this.handleHitFeedback(event);
+    };
+    const onShot = this.multiplayer.onShot;
+    this.multiplayer.onShot = (event) => {
+      onShot?.(event);
+      this.handleShotFeedback(event);
+    };
+    this.syncHudKnifeName();
+  }
+
+  private updateUiFrame(frameDt: number, nowMs: number, debug: MovementDebugState): void {
+    const live = this.playing && (!this.combatEnabled || this.localAlive);
+    let jumped = false;
+    if (live) {
+      const events = this.movementAudio.update(
+        { grounded: debug.grounded, surfing: debug.surfing, velocity: debug.velocity, position: debug.feetPosition },
+        frameDt,
+      );
+      for (const event of events) {
+        if (event.kind === 'footstep') {
+          this.audio.play('footstep', { intensity: event.intensity, variant: event.foot });
+        } else if (event.kind === 'jump') {
+          jumped = true;
+          this.audio.play('jump');
+        } else {
+          this.audio.play('land', { intensity: event.intensity, volume: event.withJump ? 0.7 : 1 });
+        }
+      }
+    } else {
+      this.movementAudio.reset();
+    }
+
+    this.gameHud.setPlaying(this.playing);
+    this.gameHud.setSpread(this.crosshairSpreadRad);
+    this.gameHud.update({
+      nowMs,
+      frameMs: frameDt * 1000,
+      speed: debug.speed,
+      grounded: debug.grounded,
+      jumped,
+      strafeStats: this.readStrafeStats(),
+      pingMs: this.multiplayer.getPingMs?.() ?? null,
+    });
+    const showTimer = this.playing && this.runTimerAllowed && this.settings.showHud;
+    this.timerLabel.style.display = showTimer ? 'block' : 'none';
+    this.runInfoLabel.style.display = showTimer ? 'block' : 'none';
+
+    this.worldCamera.getWorldDirection(this.listenerForward);
+    this.listenerUp.set(0, 1, 0).applyQuaternion(this.worldCamera.quaternion);
+    this.audio.setListener(this.worldCamera.position, this.listenerForward, this.listenerUp);
+  }
+
+  /** movement.getStrafeStats() once the movement side ships it */
+  private readStrafeStats(): unknown {
+    const source = this.movement as unknown as { getStrafeStats?: () => unknown };
+    return typeof source.getStrafeStats === 'function' ? source.getStrafeStats() : null;
+  }
+
+  private onUiMapActivated(map: LoadedMap): void {
+    const hasFinish = this.goalPad !== null || Number.isFinite(this.finishTargetY);
+    this.runTimerAllowed = showsRunTimer(map.entry.id, hasFinish);
+    this.gameHud.setMap(map.entry.id, map.entry.name);
+    this.gameHud.resetScores();
+    this.resetMovementFeedback();
+  }
+
+  /** after teleports: no landing thud, no stale jump chain */
+  private resetMovementFeedback(): void {
+    this.movementAudio.reset();
+    this.gameHud.resetMovement();
+  }
+
+  private syncHudKnifeName(): void {
+    const knifeId = this.cosmeticsManager.getKnifeStyle();
+    this.combatHud?.setKnifeName(knifeId ? getKnife(knifeId).name : 'Knife');
+  }
+
+  private handleDeathFeedback(event: DeathEvent): void {
+    this.gameHud.recordDeath(event);
+    const localId = this.multiplayer.getLocalId();
+    if (!localId || event.victimId !== localId) {
+      return;
+    }
+    const bySelf = event.killerId === localId || !event.killerId;
+    this.combatHud?.setDeathInfo(
+      {
+        killerName: this.remotePlayerNames.get(event.killerId) ?? 'Player',
+        weaponId: event.weaponId,
+        headshot: event.headshot,
+        bySelf,
+      },
+      performance.now() + RESPAWN_DELAY_MS,
+    );
+  }
+
+  private handleHitFeedback(event: HitEvent): void {
+    const localId = this.multiplayer.getLocalId();
+    if (event.weaponId === 'knife') {
+      const heavy = event.damage >= KNIFE_DAMAGE.primaryBackstab;
+      if (event.shooterId === localId) {
+        this.audio.play(heavy ? 'backstab' : 'knifeHitFlesh');
+      } else if (event.targetId === localId) {
+        this.audio.play(heavy ? 'backstab' : 'knifeHitFlesh', { volume: 0.8 });
+      } else {
+        const at = this.remoteChestPosition(event.targetId);
+        if (at) {
+          this.audio.playAt(heavy ? 'backstab' : 'knifeHitFlesh', at);
+        }
+      }
+    }
+    if (!localId || event.targetId !== localId || event.shooterId === localId) {
+      return;
+    }
+    // firearm hits already got a precise arc from the shot event just before
+    if (event.weaponId !== 'knife' && performance.now() - this.lastShotDirectionAtMs < 150) {
+      return;
+    }
+    const attacker = this.remoteChestPosition(event.shooterId);
+    this.combatHud?.flashDamageDirection(
+      attacker ? damageDirection(this.movement.getFeetPosition(), this.movement.getYawRad(), attacker) : null,
+    );
+  }
+
+  private handleShotFeedback(event: ShotEvent): void {
+    const localId = this.multiplayer.getLocalId();
+    if (event.playerId === localId) {
+      return;
+    }
+    if (event.weaponId === 'deagle' || event.weaponId === 'awp') {
+      this.gunAudio.shotAt(event.weaponId, event.origin);
+    }
+    if (localId && event.targetId === localId && (event.result === 'hit' || event.result === 'kill')) {
+      this.lastShotDirectionAtMs = performance.now();
+      this.combatHud?.flashDamageDirection(
+        damageDirection(this.movement.getFeetPosition(), this.movement.getYawRad(), event.origin),
+      );
+    }
+  }
+
+  private remoteChestPosition(playerId: string): [number, number, number] | null {
+    const target = this.backstabTargets.find((candidate) => candidate.id === playerId);
+    if (!target) {
+      return null;
+    }
+    return [target.position[0], target.position[1] + 1.2, target.position[2]];
+  }
+
+  /** clink when a local swing reaches world geometry and no player is in the way */
+  private playKnifeWallHit(kind: 'primary' | 'secondary'): void {
+    if (!this.playing || !this.loadedMap || (this.combatEnabled && !this.localAlive)) {
+      return;
+    }
+    const origin = this.movement.getCameraPosition();
+    const forward = this.movement.getForwardVector();
+    const reach = KNIFE_RANGE_M[kind] + 0.35;
+    const hit = this.collisionWorld.raycastGeometry(origin, forward, reach);
+    if (!hit) {
+      return;
+    }
+    const playerInWay = this.backstabTargets.some((target) => {
+      if (!target.alive) {
+        return false;
+      }
+      const dx = target.position[0] - origin.x;
+      const dz = target.position[2] - origin.z;
+      const distance = Math.hypot(dx, dz);
+      return distance < hit.distance + 0.5 && (dx * forward.x + dz * forward.z) / Math.max(distance, 1e-3) > 0.7;
+    });
+    if (!playerInWay) {
+      this.audio.playAt('knifeHitWall', hit.point, { delay: kind === 'primary' ? 0.09 : 0.16 });
+    }
+  }
+
+  private maybeDryFire(weaponId: WeaponId, ammoRemaining: number, nowMs: number): void {
+    if (weaponId === 'knife' || ammoRemaining > 0 || nowMs - this.lastDryFireAtMs < 250) {
+      return;
+    }
+    this.lastDryFireAtMs = nowMs;
+    this.gunAudio.dryFire();
   }
 }
 

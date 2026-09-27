@@ -118,8 +118,8 @@ npm run build
 - Both player models (T and CT) are original low-poly models generated in code (`src/multiplayer/ProceduralPlayer.ts`); no external assets
 - `Desert Eagle | First Person Animations` by 1Matzh — https://sketchfab.com/3d-models/desert-eagle-first-person-animations-09a213d8510a42d1b747135e85712eff (Creative Commons Attribution) — the production GLB preserves the authored textured two-hand rig, magazines, and reload clip
 - `AWP with Anims` by Addison Ye — https://sketchfab.com/3d-models/awp-with-anims-d45669ad333d4885a854fcf899628a39 (Creative Commons Attribution) — the production GLB preserves the authored textured two-hand rig, magazine, and reload clip
-- Knife swing sound effects by Joseph SARDIN from BigSoundBank (`Sword through the air 2`, `Sword that cuts 3`, plus two additional swipe variants)
-- Deagle/AWP shots and reloads use the CC0 Freesound recordings documented in `public/audio/README.md`; hit confirmations use project-owned procedural Web Audio. Valve/CS2 proprietary firearm audio is not bundled.
+- Deagle/AWP shots and reloads use the CC0 Freesound recordings documented in `public/audio/README.md`. Every other sound (footsteps, knife, bolt and slide, confirms, UI) is original procedural Web Audio synthesized at runtime. Valve/CS2 proprietary audio is not bundled.
+- The full attribution list lives in `CREDITS.md` and the in-game Credits tab.
 
 ## Deployment Notes
 

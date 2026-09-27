@@ -125,4 +125,6 @@ export interface MultiplayerTransport {
   sendEquip(weaponId: string): void;
   /** Provides (or clears) the host-simulation context for the active map. */
   setRoomContext(context: RoomContext | null): void;
+  /** Smoothed round trip to the authority in ms, null when not measured. */
+  getPingMs?(): number | null;
 }
