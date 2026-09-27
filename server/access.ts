@@ -51,18 +51,19 @@ export function isOriginAllowed(origin: string | undefined, policy: OriginPolicy
 /**
  * Client ip for rate limiting. X-Forwarded-For keeps whatever the client sent
  * in front of the proxy's own entry, so its first value is spoofable. Behind
- * Fly (TRUST_PROXY=fly) the edge sets Fly-Client-IP itself, which is the only
- * header worth trusting there.
+ * Fly (TRUST_PROXY=fly) the edge sets Fly-Client-IP itself, and behind a
+ * Cloudflare Tunnel (TRUST_PROXY=cloudflare) it sets CF-Connecting-IP; those
+ * are the only headers worth trusting there.
  */
 export function clientIp(
   headers: IncomingHttpHeaders,
   socketAddress: string | undefined,
   trustProxy: string | undefined,
 ): string {
-  if (trustProxy === 'fly') {
-    const fly = headers['fly-client-ip'];
-    if (typeof fly === 'string' && fly.length > 0) {
-      return fly.trim();
+  if (trustProxy === 'fly' || trustProxy === 'cloudflare') {
+    const edge = headers[trustProxy === 'fly' ? 'fly-client-ip' : 'cf-connecting-ip'];
+    if (typeof edge === 'string' && edge.length > 0) {
+      return edge.trim();
     }
   } else if (trustProxy === '1') {
     const forwarded = headers['x-forwarded-for'];

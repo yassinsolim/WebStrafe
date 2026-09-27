@@ -70,7 +70,70 @@ docker run --rm -p 8080:8080 -e ENABLE_BOTS=true webstrafe-server
 # http://localhost:8080  (server serves the client + runs bots)
 ```
 
-## Dedicated game server on Fly.io (PR #44 netcode)
+## Free, recommended: dedicated server on the homelab + Cloudflare Tunnel
+
+No card, no new service: `yassin.app` DNS is already on Cloudflare, and
+Cloudflare Tunnel plus proxied WebSockets are free on every plan. The tunnel
+connects outbound from the VM, so no router ports are opened.
+
+On a Debian VM on Proxmox (2 vCPU and 2 GB is plenty):
+
+```bash
+# node + the repo
+sudo apt install -y nodejs npm git
+sudo useradd --system --home /var/lib/webstrafe --create-home webstrafe
+sudo git clone -b revamp/netcode-phase1 https://github.com/yassinsolim/WebStrafe.git /opt/webstrafe
+cd /opt/webstrafe && sudo npm ci --no-audit --no-fund && sudo chown -R webstrafe: /opt/webstrafe
+sudo mkdir -p /etc/webstrafe && sudo cp deploy/homelab/game.env.example /etc/webstrafe/game.env
+
+# game server as a service
+sudo cp deploy/homelab/webstrafe-game.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now webstrafe-game
+curl -s http://127.0.0.1:8080/api/health
+```
+
+Tunnel (Cloudflare dashboard → Networking → Tunnels → Create tunnel):
+
+1. Name it `webstrafe`, pick Debian, and run the `cloudflared service install <token>`
+   command it shows on the VM.
+2. Add a route → Published application: hostname `game.yassin.app`,
+   service `http://127.0.0.1:8080`.
+3. Check from anywhere: `curl https://game.yassin.app/api/health`.
+
+Keep the VM's clock synced (`timedatectl`, on by default on Debian). Updating
+is `git pull && npm ci && sudo systemctl restart webstrafe-game`.
+
+### Point only the PR preview at it
+
+Scoped to the Preview environment and the PR branch, so production keeps Supabase:
+
+```bash
+vercel env add VITE_MULTIPLAYER_TRANSPORT preview revamp/netcode-phase1   # value: ws
+vercel env add VITE_WS_URL preview revamp/netcode-phase1                  # value: wss://game.yassin.app/ws
+```
+
+Then redeploy the preview (push to the branch, or Redeploy in the Vercel
+dashboard) and bench it from anywhere:
+
+```bash
+npx tsx tools/netbench/bench.ts --target wss://game.yassin.app/ws --secs 30
+```
+
+Production only moves after the PR is merged and the same two variables are
+set for Production.
+
+## Free fallback: Render
+
+`render.yaml` is a blueprint for Render's free web service (Oregon, no card
+needed). It sleeps after 15 minutes without traffic (about a minute to wake),
+has 0.1 CPU / 512 MB and 5 GB of egress a month (roughly 60 player-hours at
+~75 MB per player-hour), so bots are off there. Use it only if the homelab is down.
+
+## Optional, paid: Fly.io
+
+Not required. Fly has no free tier for new apps (the account needs a card),
+so this is kept only as an option. Everything above and the homelab path
+below are free.
 
 `fly.toml` defines `webstrafe-game`: backend only, `shared-cpu-1x` with 1 GB,
 health checks on `/api/health`, no volume (the leaderboard stays on Supabase).
@@ -100,14 +163,5 @@ Bench the deployed server with bot clients (no proxy, real internet path):
 npx tsx tools/netbench/bench.ts --target wss://webstrafe-game.fly.dev/ws --secs 30
 ```
 
-Preview only: point the PR preview at the server without touching production.
-Both variables are scoped to the Preview environment and the PR branch:
-
-```bash
-vercel env add VITE_MULTIPLAYER_TRANSPORT preview revamp/netcode-phase1   # value: ws
-vercel env add VITE_WS_URL preview revamp/netcode-phase1                  # value: wss://webstrafe-game.fly.dev/ws
-```
-
-Then redeploy the preview (push to the branch, or "Redeploy" on the preview in
-the Vercel dashboard). Production keeps Supabase until the PR is merged and
-the same two variables are set for Production.
+Point the preview at it with the same preview-scoped variables as the
+homelab section, using `wss://webstrafe-game.fly.dev/ws`.

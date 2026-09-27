@@ -30,4 +30,10 @@ describe('client ip', () => {
     expect(clientIp(headers, '10.0.0.1', undefined)).toBe('10.0.0.1');
     expect(clientIp(headers, '10.0.0.1', '1')).toBe('1.2.3.4');
   });
+
+  it('trusts only CF-Connecting-IP behind a cloudflare tunnel', () => {
+    const headers = { 'cf-connecting-ip': '198.51.100.7', 'x-forwarded-for': '1.2.3.4' };
+    expect(clientIp(headers, '127.0.0.1', 'cloudflare')).toBe('198.51.100.7');
+    expect(clientIp({ 'fly-client-ip': '203.0.113.9' }, '127.0.0.1', 'cloudflare')).toBe('127.0.0.1');
+  });
 });
