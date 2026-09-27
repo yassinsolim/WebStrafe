@@ -155,6 +155,7 @@ export class GameApp {
   private readonly muzzleScratch = new Vector3();
   private readonly shot: ShotRequest | null = parseShotRequest(window.location.search);
   private framePerf: FramePerf | null = null;
+  private qaMove: { forwardMove: number; sideMove: number; jumpHeld: boolean; jumpPressed: boolean } | null = null;
   private readonly adaptiveResolution = new AdaptiveResolution();
 
   private readonly crosshair: HTMLDivElement;
@@ -638,7 +639,7 @@ export class GameApp {
         // but freeze movement while dead so a killed player can't keep running
         // around as a "ghost" until they respawn.
         const sampledMove = this.input.sampleMoveInput();
-        const moveInput = dead ? this.deadMoveInput : sampledMove;
+        const moveInput = dead ? this.deadMoveInput : this.qaMove ? { ...sampledMove, ...this.qaMove } : sampledMove;
         this.movement.tick(FIXED_TICK_DT, moveInput, this.collisionWorld);
         this.updateMapTriggers();
         if (this.combatEnabled) {
@@ -2350,6 +2351,45 @@ export class GameApp {
     this.gameHud.resetMovement();
   }
 
+  /** test hooks for the multiplayer smoke test, only with ?shot=...&qa=1 */
+  private installQaHooks(): void {
+    const qa = {
+      state: () => ({
+        localId: this.multiplayer.getLocalId(),
+        hosting: this.multiplayer.isHosting?.() ?? null,
+        alive: this.localAlive,
+        weapon: this.weapon.getActive(),
+        ammo: this.weapon.getAmmo(),
+        feet: this.movement.getFeetPosition().toArray(),
+        players: this.remotePlayers.getDisplayedPlayers().map((p) => ({ id: p.id, pos: p.position.toArray() })),
+      }),
+      equip: (id: WeaponId) => this.equipCombatWeapon(id),
+      teleport: (x: number, y: number, z: number, yawDeg: number) => this.movement.reset(new Vector3(x, y, z), yawDeg),
+      move: (forwardMove: number, sideMove: number, jump = false) => {
+        this.qaMove = forwardMove === 0 && sideMove === 0 && !jump ? null : { forwardMove, sideMove, jumpHeld: jump, jumpPressed: jump };
+      },
+      aimAt: (id: string) => {
+        const target = this.remotePlayers.getDisplayedPlayers().find((p) => p.id === id);
+        if (!target) return false;
+        const eye = this.movement.getCameraPosition();
+        const d = target.position.clone().add(new Vector3(0, 1.3, 0)).sub(eye);
+        const yaw = Math.atan2(-d.x, -d.z);
+        const pitch = Math.atan2(d.y, Math.hypot(d.x, d.z));
+        this.movement.setView(yaw, pitch);
+        return true;
+      },
+      fire: () => {
+        const now = performance.now();
+        if (this.weapon.getActive() === 'knife') this.attackCombatKnife('primary', now);
+        else this.fireCombatWeapon(now);
+      },
+      stab: () => this.attackCombatKnife('secondary', performance.now()),
+      scoreboardText: () => document.querySelector('.hud-scoreboard')?.textContent ?? null,
+      killfeedLines: () => Array.from(document.querySelectorAll('.combat-killfeed-line')).map((el) => el.textContent ?? ''),
+    };
+    (window as unknown as { __qa?: unknown }).__qa = qa;
+  }
+
   /** screen pixel ratio x the resolution scale setting x the adaptive scale */
   private applyRenderScale(): void {
     const adaptive = this.settings.adaptiveResolution ? this.adaptiveResolution.getScale() : 1;
@@ -2396,6 +2436,12 @@ export class GameApp {
       }
     }
     this.viewmodel.seek(shot.clip as ViewAction, shot.t);
+    if (shot.qa) {
+      this.installQaHooks();
+      this.viewmodel.setPaused(false);
+      (window as unknown as { __shotReady?: boolean }).__shotReady = true;
+      return;
+    }
     if (shot.perfSeconds > 0) {
       this.renderer.info.autoReset = false;
       this.viewmodel.setLoopAction(shot.clip !== 'idle');

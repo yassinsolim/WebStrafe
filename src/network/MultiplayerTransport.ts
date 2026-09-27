@@ -127,4 +127,6 @@ export interface MultiplayerTransport {
   setRoomContext(context: RoomContext | null): void;
   /** Smoothed round trip to the authority in ms, null when not measured. */
   getPingMs?(): number | null;
+  /** peer-hosted transports: whether this client runs the host simulation */
+  isHosting?(): boolean;
 }

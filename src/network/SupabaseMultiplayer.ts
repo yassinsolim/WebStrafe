@@ -178,6 +178,11 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   }
 
   /** Current per-client state broadcast rate for this room size. */
+  /** true while this tab runs the room's host simulation */
+  isHosting(): boolean {
+    return this.hostSim !== null;
+  }
+
   getBroadcastHz(): number {
     return broadcastRateHz(this.remotes.size + 1, this.budget);
   }

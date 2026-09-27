@@ -5,7 +5,7 @@ import type { WeaponId } from '../combat/weapons';
  * ?shot=<mapId>&weapon=knife|deagle|awp&knife=<id>&clip=idle|draw|inspect|fire|reload&t=<s>
  * &yaw=<deg>&pitch=<deg>&pos=x,y,z&time=HH:MM:SS&hud=0
  * &perf=<s> (frame timing, clip keeps looping)&scope=1|2&pr=<pixel ratio>
- * &dpr=<screen ratio to emulate>&adaptive=0|1
+ * &dpr=<screen ratio to emulate>&adaptive=0|1&qa=1 (window.__qa test hooks)
  * it drops straight into the map without pointer lock, poses the viewmodel,
  * freezes it and sets window.__shotReady once a few frames have drawn.
  */
@@ -32,6 +32,8 @@ export interface ShotRequest {
   adaptive: boolean | null;
   /** adaptive step-down threshold for testing the low-power path */
   adaptiveLowFps: number | null;
+  /** exposes window.__qa for automated multiplayer tests */
+  qa: boolean;
 }
 
 export function parseShotRequest(search: string): ShotRequest | null {
@@ -69,6 +71,7 @@ export function parseShotRequest(search: string): ShotRequest | null {
     pixelRatio: num('pr'),
     dpr: num('dpr'),
     adaptiveLowFps: num('adaptiveLow'),
+    qa: params.get('qa') === '1',
     adaptive: params.has('adaptive') ? params.get('adaptive') !== '0' : null,
   };
 }
