@@ -502,6 +502,7 @@ export class MainMenu {
   private attachSettingsListeners(): void {
     const emit = () => {
       this.settings = {
+        ...this.settings,
         mouseSensitivity: Number(this.mouseSensitivityInput.value),
         worldFov: Number(this.worldFovInput.value),
         viewmodelFov: Number(this.viewmodelFovInput.value),
