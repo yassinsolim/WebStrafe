@@ -62,6 +62,7 @@ import {
 import { WeaponController } from '../combat/WeaponController';
 import { CombatAim } from '../combat/CombatAim';
 import { PLAYER_CAPSULE_HEIGHT, PLAYER_CAPSULE_RADIUS } from '../combat/CombatArena';
+import { resolveHit } from '../combat/HitResolver';
 import { LocalKnife } from '../combat/LocalKnife';
 import type { MeleeTarget } from '../combat/MeleeResolver';
 import { DEFAULT_ZOOM_SENSITIVITY_RATIO } from '../combat/Scope';
@@ -819,6 +820,7 @@ export class GameApp {
     this.worldScene.add(root);
 
     this.collisionWorld.setCollisionFromRoot(map.collisionRoot);
+    this.combatEffects?.clearDecals();
 
     const bounds = new Box3().setFromObject(map.sceneRoot);
     const triCount = this.countTriangles(map.sceneRoot);
@@ -1013,7 +1015,9 @@ export class GameApp {
       return;
     }
     this.combatHud = new CombatHud(document.body);
-    this.combatEffects = new CombatEffects(this.worldScene, this.weaponViewmodels.root);
+    this.combatEffects = new CombatEffects(this.worldScene, this.weaponViewmodels.root, {
+      impactEffects: true,
+    });
     this.scopeOverlay = new ScopeOverlay(this.container);
     this.combatHud.setWeapon(this.weapon.getActive(), this.weapon.getAmmo());
 
@@ -1162,6 +1166,8 @@ export class GameApp {
         weapon: this.weapon,
         effects: this.combatEffects,
         collisionWorld: this.collisionWorld,
+        playerOcclusion: (from, direction, maxDistance) =>
+          resolveHit(from, direction, maxDistance, this.getDrawnPlayerCapsules())?.distance ?? null,
         onPresented: (weaponId) => {
           this.weaponViewmodels.triggerFire();
           this.viewmodelRenderer.addFireKick(weaponId);
@@ -1205,7 +1211,7 @@ export class GameApp {
     const swing = this.localKnife.tryAttack(kind, nowMs, {
       origin,
       direction,
-      targets: this.getLocalKnifeTargets(),
+      targets: this.getDrawnPlayerCapsules(),
       isBlocked: (from, to) => this.collisionWorld.segmentIntersectsGeometry(from, to),
     });
     if (!swing.accepted) {
@@ -1225,8 +1231,8 @@ export class GameApp {
     );
   }
 
-  /** living remotes where they are drawn, as knife capsules */
-  private getLocalKnifeTargets(): MeleeTarget[] {
+  /** living remotes where they are drawn, as hit capsules (knife prediction, local tracer stops) */
+  private getDrawnPlayerCapsules(): MeleeTarget[] {
     const alive = new Map(this.backstabTargets.map((target) => [target.id, target.alive]));
     return this.remotePlayers.getDisplayedPlayers()
       .filter((player) => alive.get(player.id) !== false)
