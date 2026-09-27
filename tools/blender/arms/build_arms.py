@@ -249,6 +249,32 @@ def pack_atlas(objs, weights, margin=0.004, island_scale=None):
     bpy.ops.object.mode_set(mode="OBJECT")
 
 
+def uv_overlap_texels(objs, size):
+    """texel centres covered by more than one triangle across the atlas"""
+    count = np.zeros((size, size), dtype=np.int32)
+    for obj in objs:
+        me = obj.data
+        me.calc_loop_triangles()
+        uv = np.zeros(len(me.loops) * 2)
+        me.uv_layers.active.data.foreach_get("uv", uv)
+        uv = uv.reshape(-1, 2) * size
+        loops = np.zeros(len(me.loop_triangles) * 3, dtype=np.int64)
+        me.loop_triangles.foreach_get("loops", loops)
+        for a, b, c in uv[loops].reshape(-1, 3, 2):
+            lo = np.clip(np.floor(np.minimum(np.minimum(a, b), c)).astype(int), 0, size - 1)
+            hi = np.clip(np.ceil(np.maximum(np.maximum(a, b), c)).astype(int), 0, size)
+            px, py = np.meshgrid(np.arange(lo[0], hi[0]) + 0.5, np.arange(lo[1], hi[1]) + 0.5)
+            d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+            if abs(d) < 1e-12:
+                continue
+            l1 = ((b[1] - c[1]) * (px - c[0]) + (c[0] - b[0]) * (py - c[1])) / d
+            l2 = ((c[1] - a[1]) * (px - c[0]) + (a[0] - c[0]) * (py - c[1])) / d
+            # strictly inside, so texels on a shared edge are not counted twice
+            inside = (l1 > 1e-4) & (l2 > 1e-4) & (1.0 - l1 - l2 > 1e-4)
+            count[py[inside].astype(int), px[inside].astype(int)] += 1
+    return int((count > 1).sum())
+
+
 # ---------------------------------------------------------------- left side
 def mirror_object(src, name):
     me = src.data.copy()
@@ -398,12 +424,18 @@ def main():
     sleeve_r = mesh_object("sleeve_r", hand_cm_to_world(v), f, uv)
     log(f"skin {tri_count(skin_r)} tris, sleeve {tri_count(sleeve_r)} tris")
 
-    smart_uv(glove_r, angle=70.0)
+    # smart project flattens each island along one direction. above ~50 deg the
+    # thumb tip and the index finger it rests under share an island and get
+    # stacked on the same texels (checked below)
+    smart_uv(glove_r, angle=45.0)
     # texel density: glove first, the upper arm part of the sleeve is almost never on screen
     island = np.array(islands)
     pack_weights = {"glove_r": 1.0, "skin_r": 0.72, "sleeve_r": 0.6}
     pack_atlas([glove_r, skin_r, sleeve_r], pack_weights, island_scale={sleeve_r: (island > 0, 0.35)})
-    log("uv atlas packed")
+    overlap = uv_overlap_texels([glove_r, skin_r, sleeve_r], args.bake_size)
+    log(f"uv atlas packed, {overlap} texels shared by two triangles")
+    if overlap > 0:
+        raise RuntimeError(f"uv atlas has {overlap} overlapping texels")
 
     mats = MAT.watch_materials()
     if args.no_textures:
