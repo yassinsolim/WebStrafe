@@ -249,14 +249,34 @@ describe('bhop_emberdrift course', () => {
     const targets = layout.platforms.slice(1, 6).map((p) => top(p));
     let next = 0;
     let landed = 0;
+    let side = 1;
     for (let t = 0; t < 128 * 8 && next < targets.length; t += 1) {
       const feet = player.getFeetPosition();
       const goal = targets[next];
       const to = goal.clone().sub(feet).setY(0);
-      // face the next platform and hold forward + jump, autobhop does the rest
-      const yaw = Math.atan2(-to.x, -to.z);
+      // run up facing the platform, then hop holding W and steer the wish direction like a mouse strafe.
+      // with the 30 u/s air cap that's the only way to turn, gain or lose speed in the air, so the bot
+      // turns toward the platform and gains or bleeds speed so it lands on the centre
+      let yaw = Math.atan2(-to.x, -to.z);
+      const vel = player.captureState().velocity;
+      const speed = Math.hypot(vel[0], vel[2]);
+      const hopping = t >= 40;
+      if (hopping && speed > 1 && !player.getDebugState().grounded && feet.y > goal.y - 1) {
+        const velYaw = Math.atan2(-vel[0], -vel[2]);
+        const err = Math.atan2(Math.sin(yaw - velYaw), Math.cos(yaw - velYaw));
+        // speed that lands on the platform centre in the air time left
+        const g = player.getCvars().sv_gravity;
+        const drop = Math.max(0, vel[1] * vel[1] + 2 * g * (feet.y - goal.y));
+        const airLeft = (vel[1] + Math.sqrt(drop)) / g;
+        const want = to.length() / Math.max(airLeft, 0.05);
+        // just past perpendicular bleeds a little speed per tick, straight back would stop dead
+        side = Math.abs(err) > 0.02 ? Math.sign(err) : -side;
+        if (speed < want - 0.2) yaw = velYaw + side * Math.acos(Math.min(1, 0.5 / speed));
+        else if (speed > want + 0.2) yaw = velYaw + side * Math.acos(Math.max(-1, -1 / speed));
+        else yaw = Math.abs(err) > 0.02 ? velYaw + side * Math.PI / 2 : velYaw;
+      }
       player.setView(yaw, 0);
-      player.tick(DT, { forwardMove: 1, sideMove: 0, jumpPressed: false, jumpHeld: true }, w);
+      player.tick(DT, { forwardMove: 1, sideMove: 0, jumpPressed: false, jumpHeld: hopping }, w);
       const d = player.getDebugState();
       if (d.grounded && Math.abs(player.getFeetPosition().y - goal.y) < 0.2 && player.getFeetPosition().clone().setY(0).distanceTo(goal.clone().setY(0)) < 2.2) {
         landed += 1;
