@@ -60,3 +60,13 @@ export interface SourceCvars {
   sv_surf_edge_slip: number;
   overbounce: number;
 }
+
+/** Complete carried-over state of a MovementController between ticks. */
+export interface MovementSnapshot {
+  position: [number, number, number];
+  velocity: [number, number, number];
+  surfContactNormal: [number, number, number];
+  surfContactGraceTicks: number;
+  yawRad: number;
+  pitchRad: number;
+}
