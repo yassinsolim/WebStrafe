@@ -4,6 +4,9 @@ export interface KillFeedEntry {
   weaponId: string;
   headshot: boolean;
   createdAtMs: number;
+  /** lets the hud highlight lines the local player is part of */
+  killerIsLocal?: boolean;
+  victimIsLocal?: boolean;
 }
 
 /**
