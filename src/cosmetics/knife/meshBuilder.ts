@@ -1,8 +1,8 @@
 import { BufferGeometry, Float32BufferAttribute, Uint16BufferAttribute, Uint32BufferAttribute } from 'three';
 
 /**
- * Small indexed mesh writer for the procedural knives. Triangles are kept per
- * material slot and written out as geometry groups. Parts that need a crisp
+ * small indexed mesh writer for the procedural knives. triangles are kept per
+ * material slot and written out as geometry groups. parts that need a crisp
  * crease (grind lines, bevels) just add their own vertices, since normals are
  * only averaged over shared vertices.
  */

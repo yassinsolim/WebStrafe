@@ -1,5 +1,5 @@
 /**
- * Dumps the runtime procedural knives to json so render_knives.py can preview
+ * dumps the runtime procedural knives to json so render_knives.py can preview
  * them in blender (headless chrome can't run the game on this machine).
  *
  *   npx tsx tools/blender/weapons/dump_knives.ts <out.json> [id,id,...] [open|folded]

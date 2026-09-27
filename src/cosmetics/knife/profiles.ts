@@ -3,7 +3,7 @@ import type { BladeProfile } from '../../combat/knives';
 import { lineTo, quadTo, type Vec2 } from './meshBuilder';
 
 /**
- * Blade outlines as two curves that meet at the tip: the edge (from the heel of
+ * blade outlines as two curves that meet at the tip: the edge (from the heel of
  * the edge at the guard, y = 0) and the spine (from the spine at the guard,
  * y = h). x runs from the guard (0) to the tip (about L).
  */

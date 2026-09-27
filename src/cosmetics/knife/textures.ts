@@ -11,10 +11,10 @@ import {
 } from 'three';
 
 /**
- * Tiny generated textures shared by every procedural knife (no downloads).
- * They are module singletons on purpose: materials are per knife and get
+ * tiny generated textures shared by every procedural knife (no downloads).
+ * they are module singletons on purpose: materials are per knife and get
  * disposed with it, the textures stay alive so disposing one knife never
- * breaks another. All of them together are well under 200 KB of texels.
+ * breaks another. all of them together are well under 200 KB of texels.
  */
 
 function hash(x: number, y: number, seed: number): number {

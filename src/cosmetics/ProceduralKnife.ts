@@ -42,13 +42,13 @@ export const KNIFE_NODES = {
 } as const;
 
 /**
- * Builds an original procedural knife from a {@link KnifeDef}. Frame: +X runs from
+ * builds an original procedural knife from a {@link KnifeDef}. frame: +X runs from
  * the guard to the blade tip, +Y is the spine side, the edge faces -Y, Z is
- * thickness. The grip centre sits on -X, so the origin is the point where the
- * hand meets the guard. Units are metres.
+ * thickness. the grip centre sits on -X, so the origin is the point where the
+ * hand meets the guard. units are metres.
  *
- * Blades have a real cross section (edge bevel, flat or hollow grind, flats,
- * fuller, swedge, sawback teeth). Moving parts are named groups whose origin
+ * blades have a real cross section (edge bevel, flat or hollow grind, flats,
+ * fuller, swedge, sawback teeth). moving parts are named groups whose origin
  * is the pivot pin, and every knife carries socket_* children, see
  * {@link KNIFE_NODES}:
  * - folders: `blade_pivot`, rotation.z = -PI folds the blade into the handle
@@ -101,8 +101,8 @@ export function buildProceduralKnife(def: KnifeDef): Group {
 }
 
 /**
- * Disposes geometries and materials created by {@link buildProceduralKnife}.
- * The small generated textures are shared between knives and stay alive.
+ * disposes geometries and materials created by {@link buildProceduralKnife}.
+ * the small generated textures are shared between knives and stay alive.
  */
 export function disposeProceduralKnife(root: Group): void {
   const materials = new Set<Material>();
@@ -157,7 +157,7 @@ function mesh(name: string, geometry: BufferGeometry, material: Material | Mater
 }
 
 /**
- * Pivot pin of a folder. Folding by -PI mirrors the blade about the pin, so the
+ * pivot pin of a folder. folding by -PI mirrors the blade about the pin, so the
  * pin sits where the closed edge ends up just under the backspacer and the
  * spine rides at the bottom of the handle.
  */

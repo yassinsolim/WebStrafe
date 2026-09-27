@@ -32,7 +32,7 @@ export function isDarkFinish(shape: KnifeShape): boolean {
 }
 
 /**
- * One set of materials per knife (disposed with it). Textures are shared
+ * one set of materials per knife (disposed with it). textures are shared
  * singletons, see textures.ts.
  */
 export function createKnifeMaterials(shape: KnifeShape): KnifeMaterials {

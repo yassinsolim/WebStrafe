@@ -50,10 +50,10 @@ interface Station {
 }
 
 /**
- * Builds a blade with a real cross section: sharp edge with a secondary
+ * builds a blade with a real cross section: sharp edge with a secondary
  * bevel, flat or hollow primary grind, full thickness flat up to the spine,
  * distal taper, optional fuller groove, swedge on clip points, and a second
- * edge for daggers. Every facet band has its own vertices so the grind line
+ * edge for daggers. every facet band has its own vertices so the grind line
  * and edge bevel stay crisp.
  */
 export function buildBlade(opts: BladeOptions): BladeResult {

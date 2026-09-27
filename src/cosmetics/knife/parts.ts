@@ -17,7 +17,7 @@ export function ring(x: number, cy: number, halfTop: number, halfBottom: number,
 }
 
 /**
- * Skins closed rings (all with the same point count) into a solid with
+ * skins closed rings (all with the same point count) into a solid with
  * optional end caps. u runs along the rings, v around them.
  */
 export function loft(rings: Vector3[][], texScale = 0.03, caps: [boolean, boolean] = [true, true],
@@ -112,8 +112,8 @@ export function handleOutline(x0: number, len: number, cy: number, height: numbe
 }
 
 /**
- * Domed slab on one side of the knife (scales, liners, tang, balisong halves).
- * Inner face flat at |z| = z0, outer face rises by `thickness` with rounded
+ * domed slab on one side of the knife (scales, liners, tang, balisong halves).
+ * inner face flat at |z| = z0, outer face rises by `thickness` with rounded
  * shoulders. side = +1 builds on +z, -1 on -z.
  */
 export function slab(outline: Outline, z0: number, thickness: number, side: 1 | -1, opts: { dome?: number; rows?: number;
