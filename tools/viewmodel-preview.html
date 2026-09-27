@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WebStrafe viewmodel preview (dev only)</title>
+    <style>html, body { margin: 0; background: #20242b; } canvas { display: block; }</style>
+  </head>
+  <body>
+    <!-- dev tool: /tools/viewmodel-preview.html?knife=karambit&t=1.2 renders the first-person
+         knife with the real ViewmodelRenderer + CosmeticsManager, no pointer lock needed -->
+    <script type="module">
+      import { Group, PMREMGenerator, WebGLRenderer } from 'three';
+      import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+      import { ViewmodelRenderer } from '/src/cosmetics/ViewmodelRenderer.ts';
+      import { CosmeticsManager } from '/src/cosmetics/CosmeticsManager.ts';
+
+      const params = new URLSearchParams(location.search);
+      const knife = params.get('knife');
+      const seconds = Number(params.get('t') ?? '2.5');
+      const width = 960;
+      const height = 540;
+      const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setSize(width, height);
+      renderer.setClearColor(0x20242b);
+      document.body.appendChild(renderer.domElement);
+
+      const vm = new ViewmodelRenderer(68, width / height);
+      const group = new Group();
+      vm.root.add(group);
+      const pmrem = new PMREMGenerator(renderer);
+      vm.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      const cosmetics = new CosmeticsManager(group);
+      await cosmetics.loadManifest();
+      if (knife) cosmetics.setKnifeStyle(knife);
+      await cosmetics.applyLoadout(cosmetics.getDefaultLoadout());
+
+      // advance the draw/idle animation deterministically
+      const step = 1 / 60;
+      for (let t = 0; t < seconds; t += step) cosmetics.update(step);
+      renderer.render(vm.scene, vm.camera);
+      window.__previewReady = true;
+    </script>
+  </body>
+</html>

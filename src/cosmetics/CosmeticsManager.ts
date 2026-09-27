@@ -19,6 +19,8 @@ import type { AnimationAction, AnimationClip } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { applyWearShader } from './WearMaterial';
+import { applyKnifeStyle } from './KnifeStyleSwap';
+import type { KnifeId } from '../combat/knives';
 import {
   KNIFE_EQUIP_DURATION_SEC,
   KnifePresentationMotion,
@@ -208,6 +210,8 @@ export class CosmeticsManager {
   private readonly knifeBaseRotation = new Vector3(0.06, Math.PI, 0.02);
   private readonly knifePresentation = new KnifePresentationMotion();
   private knifeInspectAlpha = 0;
+  /** procedural knife shown in the integrated-hands viewmodel; null keeps the authored one */
+  private knifeStyleId: KnifeId | null = null;
   private backstabReady = false;
   private backstabReadyAlpha = 0;
 
@@ -272,6 +276,18 @@ export class CosmeticsManager {
     this.applyViewmodelScale();
   }
 
+  /** Swaps the blade in the current viewmodel; persists across loadouts. */
+  public setKnifeStyle(id: KnifeId | null): void {
+    this.knifeStyleId = id;
+    if (this.currentKnife && this.usingIntegratedHands) {
+      applyKnifeStyle(this.currentKnife, id);
+    }
+  }
+
+  public getKnifeStyle(): KnifeId | null {
+    return this.knifeStyleId;
+  }
+
   public usesIntegratedHands(): boolean {
     return this.usingIntegratedHands;
   }
@@ -307,6 +323,9 @@ export class CosmeticsManager {
 
     this.currentGloves = gloveResult.root;
     this.currentKnife = knifeResult.root;
+    if (knife.includesHands) {
+      applyKnifeStyle(knifeResult.root, this.knifeStyleId);
+    }
     this.backstabSupportArm = knife.includesHands
       ? findViewmodelNode(knifeResult.root, 'L_arm_01')
       : null;

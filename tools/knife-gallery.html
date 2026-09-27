@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WebStrafe knife gallery (dev only)</title>
+    <style>
+      html, body { margin: 0; background: #0a0d12; color: #f2f4f8; font-family: system-ui, sans-serif; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <!-- dev tool: npm run dev, then open /tools/knife-gallery.html -->
+    <script type="module">
+      import {
+        AmbientLight, CanvasTexture, DirectionalLight, Mesh, OrthographicCamera, PlaneGeometry,
+        MeshBasicMaterial, Scene, WebGLRenderer,
+      } from 'three';
+      import { KNIVES } from '/src/combat/knives.ts';
+      import { buildProceduralKnife } from '/src/cosmetics/ProceduralKnife.ts';
+
+      const cols = 5;
+      const rows = Math.ceil(KNIVES.length / cols);
+      const cell = 0.34;
+      const width = 1500;
+      const height = Math.round((width * rows) / cols);
+      const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setSize(width, height);
+      renderer.setClearColor(0x0a0d12);
+      document.body.appendChild(renderer.domElement);
+      const scene = new Scene();
+      scene.add(new AmbientLight(0xffffff, 0.8));
+      const key = new DirectionalLight(0xffffff, 2.2);
+      key.position.set(0.3, 1, 1.2);
+      scene.add(key);
+      const halfW = (cols * cell) / 2;
+      const halfH = (rows * cell) / 2;
+      const camera = new OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 10);
+      camera.position.set(0, 0, 3);
+
+      KNIVES.forEach((def, i) => {
+        const cx = -halfW + cell * (i % cols) + cell / 2;
+        const cy = halfH - cell * Math.floor(i / cols) - cell / 2;
+        const knife = buildProceduralKnife(def);
+        const len = knife.userData.overallLength;
+        // centre the knife in its cell: tip at +x, handle at -x
+        knife.position.set(cx - (def.shape.bladeLength - def.shape.handleLength) / 2, cy + 0.02, 0);
+        knife.rotation.x = -0.35;
+        const scale = Math.min(1.25, 0.3 / len);
+        knife.scale.setScalar(scale);
+        scene.add(knife);
+
+        const c = document.createElement('canvas');
+        c.width = 512; c.height = 64;
+        const g = c.getContext('2d');
+        g.fillStyle = '#f2f4f8'; g.font = '600 30px system-ui'; g.textAlign = 'center';
+        g.fillText(def.name, 256, 30);
+        g.fillStyle = '#7d8794'; g.font = '22px system-ui';
+        g.fillText(`plays like: ${def.referenceType}`, 256, 58);
+        const label = new Mesh(new PlaneGeometry(cell * 0.95, cell * 0.12), new MeshBasicMaterial({ map: new CanvasTexture(c), transparent: true }));
+        label.position.set(cx, cy - cell * 0.36, 0.5);
+        scene.add(label);
+      });
+      renderer.render(scene, camera);
+      window.__galleryReady = true;
+    </script>
+  </body>
+</html>
