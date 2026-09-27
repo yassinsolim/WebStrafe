@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { Box3, Mesh, Vector3 } from 'three';
 import {
+  BACKSTAB_DOT,
   getKnife,
   isBackstab,
   isKnifeId,
   knifeDamage,
   KNIFE_DAMAGE,
+  KNIFE_TIMING_MS,
   KNIVES,
 } from '../knives';
 import { buildProceduralKnife, disposeProceduralKnife } from '../../cosmetics/ProceduralKnife';
@@ -82,5 +84,28 @@ describe('knife damage', () => {
     expect(isBackstab([0, 0, 1], [0, 0, 0], 0)).toBe(true);
     expect(isBackstab([0, 0, -1], [0, 0, 0], 0)).toBe(false);
     expect(isBackstab([1, 0, 0], [0, 0, 0], 0)).toBe(false);
+  });
+
+  it('uses the cs:go backstab cone (dot above 0.475)', () => {
+    expect(BACKSTAB_DOT).toBe(0.475);
+    const behindAt = (deg: number): [number, number, number] => {
+      const rad = (deg * Math.PI) / 180;
+      return [Math.sin(rad), 0, Math.cos(rad)];
+    };
+    // acos(0.475) is about 61.6 degrees off the victim's back
+    expect(isBackstab(behindAt(60), [0, 0, 0], 0)).toBe(true);
+    expect(isBackstab(behindAt(63), [0, 0, 0], 0)).toBe(false);
+    expect(isBackstab([0, 0, 1], [0, 0, 0], Number.NaN)).toBe(false);
+  });
+
+  it('keeps cs knife timings', () => {
+    expect(KNIFE_TIMING_MS).toMatchObject({
+      primaryInterval: 400,
+      primaryIntervalHit: 500,
+      secondaryAfterPrimary: 500,
+      secondaryInterval: 1000,
+      secondaryIntervalHit: 1100,
+      followUpWindow: 400,
+    });
   });
 });

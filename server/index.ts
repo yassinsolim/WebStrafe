@@ -6,11 +6,15 @@ import { fileURLToPath } from 'node:url';
 import { WebSocket, WebSocketServer } from 'ws';
 import { Vector3 } from 'three';
 import { REMOTE_SHOT_VISUAL_DISTANCE } from '../src/combat/ShotPresentation';
-import { CombatArena } from '../src/combat/CombatArena';
+import { CombatArena, SPAWN_PROTECTION_MS } from '../src/combat/CombatArena';
 import type { FireOutcome } from '../src/combat/CombatArena';
 import { shouldResetCombatEntry } from '../src/combat/CombatEntryPolicy';
+import type { KnifeAttack } from '../src/combat/knives';
+import type { SegmentBlocked } from '../src/combat/MeleeResolver';
 import type { WeaponId } from '../src/combat/weapons';
+import type { CollisionWorld } from '../src/world/CollisionWorld';
 import { BotManager, type BotTarget } from './BotManager';
+import { loadHeadlessMap } from './mapCollision';
 import { SourceClock } from '../src/netcode/SourceClock';
 
 type PlayerModel = 'terrorist' | 'counterterrorist';
@@ -105,9 +109,14 @@ let persistQueue = Promise.resolve();
 
 const requestRate = new Map<string, { count: number; resetAt: number }>();
 const clients = new Map<WebSocket, ClientState>();
-const arena = new CombatArena();
+const arena = new CombatArena({
+  spawnProtectionMs: clampInt(process.env.SPAWN_PROTECTION_MS, SPAWN_PROTECTION_MS, 0, 10000),
+});
 const botManager = new BotManager(arena, BOTS_PER_MAP);
 let nextShotSequence = 1;
+/** map collision for knife wall checks, loaded on the first swing per map */
+const meleeWorlds = new Map<string, CollisionWorld | null>();
+const MAX_MELEE_WORLDS = 16;
 
 function clampInt(raw: string | undefined, fallback: number, min: number, max: number): number {
   const parsed = Number.parseInt(raw ?? '', 10);
@@ -349,7 +358,7 @@ wss.on('connection', (ws, req) => {
         client.yaw = yaw;
         client.pitch = pitch;
         client.sampleT = sampleT;
-        arena.setPosition(client.id, position, client.mapId, sampleT, velocity);
+        arena.setPosition(client.id, position, client.mapId, sampleT, velocity, yaw);
         break;
       }
       case 'attack': {
@@ -385,6 +394,11 @@ wss.on('connection', (ws, req) => {
         if (!origin || !dir) {
           return;
         }
+        // optional knife swing kind; anything but a valid kind drops the fire
+        const melee = payload.melee === undefined ? undefined : parseAttackKind(payload.melee);
+        if (melee === null) {
+          return;
+        }
         const now = Date.now();
         if (now - client.attackWindowStart >= 1000) {
           client.attackWindowStart = now;
@@ -397,11 +411,29 @@ wss.on('connection', (ws, req) => {
         }
         const observedAtMs = parseNumber(payload.observedAtMs, 0, now + 1000) ?? undefined;
         const targetTimes = parseTargetTimes(payload.targets, now);
+        const mappedSendTime = typeof payload.t === 'number' && Number.isFinite(payload.t) && client.clock.hasOffset()
+          ? Math.min(now, client.clock.toLocal(payload.t))
+          : undefined;
+        const shooterTimeMs = mappedSendTime ?? client.sampleT;
+        if (melee !== undefined || arena.getActiveWeapon(client.id) === 'knife') {
+          const kind: KnifeAttack = melee ?? 'primary';
+          const meleeOutcome = arena.handleMelee(client.id, kind, origin, dir, now, {
+            observedAtMs,
+            targetTimes,
+            shooterTimeMs,
+            attackTimeMs: mappedSendTime,
+            isBlocked: meleeBlockerFor(client.mapId),
+          });
+          if (meleeOutcome.fired) {
+            client.lastCombatAtMs = now;
+            broadcastMeleeHit(client.mapId, client.id, origin, dir, meleeOutcome);
+          }
+          broadcastFireOutcome(client.mapId, meleeOutcome);
+          break;
+        }
         const outcome = arena.handleFire(client.id, origin, dir, now, undefined, observedAtMs, {
           targetTimes,
-          shooterTimeMs: typeof payload.t === 'number' && Number.isFinite(payload.t) && client.clock.hasOffset()
-            ? Math.min(now, client.clock.toLocal(payload.t))
-            : client.sampleT,
+          shooterTimeMs,
         });
         if (outcome.fired) {
           client.lastCombatAtMs = now;
@@ -1175,6 +1207,60 @@ function broadcastShot(
     payload.impactNormal = [-direction.x, -direction.y, -direction.z];
   }
   broadcastToMap(mapId, payload);
+}
+
+/**
+ * Confirmed knife hits go out as a 'shot' with weaponId 'knife' and the contact
+ * point, so the victim gets the incoming-damage cue and everyone can draw a
+ * blood puff. Misses need nothing beyond the client's 'attack' broadcast.
+ */
+function broadcastMeleeHit(
+  mapId: string,
+  playerId: string,
+  origin: [number, number, number],
+  dir: [number, number, number],
+  outcome: FireOutcome,
+): void {
+  if (!outcome.hit || !outcome.impactPoint) {
+    return;
+  }
+  const direction = new Vector3(dir[0], dir[1], dir[2]);
+  if (direction.lengthSq() > 1e-8) direction.normalize();
+  broadcastToMap(mapId, {
+    type: 'shot',
+    sequence: nextShotSequence++,
+    result: outcome.death ? 'kill' : 'hit',
+    playerId,
+    targetId: outcome.hit.targetId,
+    origin,
+    dir,
+    weaponId: 'knife',
+    endpoint: outcome.impactPoint,
+    impactNormal: [-direction.x, -direction.y, -direction.z],
+  });
+}
+
+/**
+ * Wall test for knife swings on maps whose collision the server has loaded.
+ * Loading starts on the first swing and is shared with the bot loader's cache;
+ * until it lands (or for maps without collision) swings are unblocked, the
+ * same residual gun shots already have here.
+ */
+function meleeBlockerFor(mapId: string): SegmentBlocked | undefined {
+  if (!meleeWorlds.has(mapId)) {
+    if (meleeWorlds.size >= MAX_MELEE_WORLDS) {
+      const oldest = meleeWorlds.keys().next().value;
+      if (oldest !== undefined) meleeWorlds.delete(oldest);
+    }
+    meleeWorlds.set(mapId, null);
+    void loadHeadlessMap(mapId).then((map) => {
+      if (map && meleeWorlds.has(mapId)) {
+        meleeWorlds.set(mapId, map.world);
+      }
+    });
+  }
+  const world = meleeWorlds.get(mapId);
+  return world ? (from, to) => world.segmentIntersectsGeometry(from, to) : undefined;
 }
 
 function broadcastAttack(mapId: string, playerId: string, kind: AttackKind): void {

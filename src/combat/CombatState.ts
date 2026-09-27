@@ -59,10 +59,22 @@ export function applyDamage(
   distance: number,
   nowMs: number,
 ): ApplyDamageResult {
+  return applyFlatDamage(target, computeDamage({ weapon, hitbox, distance }), nowMs);
+}
+
+/**
+ * Applies a fixed amount of damage (knife hits), with the same clamping,
+ * death and respawn scheduling as {@link applyDamage}.
+ */
+export function applyFlatDamage(
+  target: PlayerCombat,
+  amount: number,
+  nowMs: number,
+): ApplyDamageResult {
   if (!target.alive) {
     return { applied: 0, killed: false, health: target.health };
   }
-  const raw = computeDamage({ weapon, hitbox, distance });
+  const raw = Math.max(0, Math.round(amount));
   const before = target.health;
   const health = Math.max(0, before - raw);
   target.health = health;

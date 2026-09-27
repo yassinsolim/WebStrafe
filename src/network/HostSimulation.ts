@@ -6,10 +6,12 @@ import {
   type BotTargetCandidate,
 } from '../combat/BotPerception';
 import { computeBotSpawnCandidate, groundBotSpawn } from '../combat/BotSpawn';
-import { CombatArena } from '../combat/CombatArena';
+import { CombatArena, type FireOutcome } from '../combat/CombatArena';
 import { shouldResetCombatEntry } from '../combat/CombatEntryPolicy';
+import type { KnifeAttack } from '../combat/knives';
 import { REMOTE_SHOT_VISUAL_DISTANCE } from '../combat/ShotPresentation';
 import { getWeapon } from '../combat/weapons';
+import { SourceClock } from '../netcode/SourceClock';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import type { PlayerModel } from './types';
 import type { DeathEvent, HealthEvent, HitEvent, RespawnEvent, ShotEvent } from './MultiplayerTransport';
@@ -37,6 +39,11 @@ export interface HostFireLag {
   targetTimes?: Record<string, number>;
   /** shooter's own clock time at the shot */
   shooterTimeMs?: number;
+  /**
+   * When the swing happened in the host's clock, if the caller knows it (the
+   * host's own attacks). Remote swings are mapped from `shooterTimeMs`.
+   */
+  attackTimeMs?: number;
 }
 
 export interface HostBotRow {
@@ -92,6 +99,8 @@ export class HostSimulation {
   private readonly humanPausedAtMs = new Map<string, number>();
   private readonly humanLastCombatAtMs = new Map<string, number>();
   private readonly humanViews = new Map<string, { yaw: number; pitch: number }>();
+  /** maps each remote human's clock onto host time, for knife cooldowns */
+  private readonly humanClocks = new Map<string, SourceClock>();
   private shotSequence = 1;
 
   constructor(
@@ -149,7 +158,7 @@ export class HostSimulation {
           this.humanPausedAtMs.set(h.id, now);
         }
       }
-      this.arena.setPosition(h.id, h.position, MAP_ID, h.t ?? now, h.velocity);
+      this.arena.setPosition(h.id, h.position, MAP_ID, h.t ?? now, h.velocity, h.yaw);
       this.humanPositions.set(h.id, new Vector3(h.position[0], h.position[1], h.position[2]));
       this.humanCombatReady.set(h.id, h.combatReady);
       if (Number.isFinite(h.yaw) && Number.isFinite(h.pitch)) {
@@ -190,6 +199,7 @@ export class HostSimulation {
         this.humanPausedAtMs.delete(id);
         this.humanLastCombatAtMs.delete(id);
         this.humanViews.delete(id);
+        this.humanClocks.delete(id);
         this.resetBotEngagement();
       }
     }
@@ -201,10 +211,17 @@ export class HostSimulation {
     position: [number, number, number],
     t: number,
     velocity?: [number, number, number],
+    yaw?: number,
   ): void {
     if (!this.humanPositions.has(id)) return;
-    this.arena.setPosition(id, position, MAP_ID, t, velocity);
+    this.arena.setPosition(id, position, MAP_ID, t, velocity, yaw);
     this.humanPositions.get(id)?.set(position[0], position[1], position[2]);
+    let clock = this.humanClocks.get(id);
+    if (!clock) {
+      clock = new SourceClock();
+      this.humanClocks.set(id, clock);
+    }
+    clock.observe(t, Date.now());
   }
 
   private resetBotEngagement(): void {
@@ -224,15 +241,24 @@ export class HostSimulation {
     this.arena.reload(id, Date.now());
   }
 
-  /** Resolves a fire from a human (or the host itself) and emits the outcome. */
+  /**
+   * Resolves a fire from a human (or the host itself) and emits the outcome.
+   * `melee` marks a knife swing; a knife fire without it is a primary slash,
+   * which keeps peers that predate the field working.
+   */
   applyFire(
     shooterId: string,
     origin: [number, number, number],
     dir: [number, number, number],
     observedAtMs?: number,
     lag?: HostFireLag,
+    melee?: KnifeAttack,
   ): void {
     if (this.humanCombatReady.has(shooterId) && !this.humanCombatReady.get(shooterId)) {
+      return;
+    }
+    if (melee !== undefined || this.arena.getActiveWeapon(shooterId) === 'knife') {
+      this.applyMelee(shooterId, melee ?? 'primary', origin, dir, observedAtMs, lag);
       return;
     }
     const now = Date.now();
@@ -293,6 +319,76 @@ export class HostSimulation {
     this.emitOutcome(outcome);
   }
 
+  /**
+   * Knife swing against the host's collision world: walls between the eye and
+   * the contact point block it. Hits also go out as a 'shot' with weaponId
+   * 'knife' so victims get the incoming-damage cue and clients can draw blood
+   * at the confirmed contact point.
+   */
+  private applyMelee(
+    shooterId: string,
+    kind: KnifeAttack,
+    origin: [number, number, number],
+    dir: [number, number, number],
+    observedAtMs?: number,
+    lag?: HostFireLag,
+  ): void {
+    const now = Date.now();
+    const outcome = this.arena.handleMelee(shooterId, kind, origin, dir, now, {
+      observedAtMs,
+      targetTimes: lag?.targetTimes,
+      shooterTimeMs: lag?.shooterTimeMs,
+      attackTimeMs: this.attackTimeFor(shooterId, lag),
+      isBlocked: (from, to) => this.world.segmentIntersectsGeometry(from, to),
+    });
+    if (outcome.fired && this.humanPositions.has(shooterId)) {
+      this.humanLastCombatAtMs.set(shooterId, now);
+    }
+    if (outcome.hit && this.humanPositions.has(outcome.hit.targetId)) {
+      this.humanLastCombatAtMs.set(outcome.hit.targetId, now);
+    }
+    this.emitMeleeShot(shooterId, origin, dir, outcome);
+    this.emitOutcome(outcome);
+  }
+
+  private emitMeleeShot(
+    shooterId: string,
+    origin: [number, number, number],
+    dir: [number, number, number],
+    outcome: FireOutcome,
+  ): void {
+    if (!outcome.hit || !outcome.impactPoint) {
+      return;
+    }
+    const direction = new Vector3(dir[0], dir[1], dir[2]);
+    if (direction.lengthSq() > 1e-8) direction.normalize();
+    this.emit.shot({
+      sequence: this.shotSequence++,
+      result: outcome.death ? 'kill' : 'hit',
+      playerId: shooterId,
+      targetId: outcome.hit.targetId,
+      origin,
+      dir,
+      weaponId: 'knife',
+      endpoint: outcome.impactPoint,
+      impactNormal: [-direction.x, -direction.y, -direction.z],
+    });
+  }
+
+  /** host-clock swing time: given directly, or a remote stamp mapped through its clock */
+  private attackTimeFor(shooterId: string, lag?: HostFireLag): number | undefined {
+    const direct = lag?.attackTimeMs;
+    if (typeof direct === 'number' && Number.isFinite(direct)) {
+      return direct;
+    }
+    const stamp = lag?.shooterTimeMs;
+    const clock = this.humanClocks.get(shooterId);
+    if (clock?.hasOffset() && typeof stamp === 'number' && Number.isFinite(stamp)) {
+      return clock.toLocal(stamp);
+    }
+    return undefined;
+  }
+
   /** Advances bots (movement + combat) and returns the current bot rows. */
   tick(dtMs: number): HostBotRow[] {
     const now = Date.now();
@@ -333,6 +429,7 @@ export class HostSimulation {
         MAP_ID,
         now,
         tuple(bot.controller.getVelocity()),
+        bot.controller.getYawRad(),
       );
 
       if (bot.controller.wantsToFire()) {
@@ -376,9 +473,10 @@ export class HostSimulation {
     this.humanPositions.clear();
     this.humanCombatReady.clear();
     this.humanViews.clear();
+    this.humanClocks.clear();
   }
 
-  private emitOutcome(outcome: ReturnType<CombatArena['handleFire']>): void {
+  private emitOutcome(outcome: FireOutcome): void {
     if (outcome.hit) {
       this.emit.hit(outcome.hit);
       const victim = outcome.hit.targetId;
