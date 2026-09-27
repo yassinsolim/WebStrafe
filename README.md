@@ -64,6 +64,12 @@ owned children. Set `CHROME_PATH` when Chrome/Chromium is not in a standard
 location; `COMBAT_BROWSER_TIMEOUT_MS`, `COMBAT_BROWSER_HEADED=1`, and
 `COMBAT_BROWSER_OUTPUT=.artifacts/combat-browser` are optional.
 
+### Netcode bench
+
+`npm run bench:net` runs bot clients against the real server through a
+latency/jitter/loss proxy and reports visual error, stutter, bandwidth and hit
+rate. See `docs/revamp-plan.md` for the measured before/after numbers.
+
 ### Test + Build
 
 ```bash
@@ -80,6 +86,7 @@ npm run build
 - Run timer resets on `R`
 - `Y`: inspect
 - `LMB` / `RMB`: knife attacks
+- Menu → **Knives**: pick any of the 20 knife types (procedural, original models)
 - `Esc`: unlock pointer / return to menu
 
 ## Project Structure
@@ -103,6 +110,8 @@ npm run build
   - `tools/README.md`
 
 ## Attribution
+
+- All 20 selectable knives are original procedural models generated in code (`src/cosmetics/ProceduralKnife.ts`); no external assets
 
 - `surf_skyworld_x` by EVAI (Creative Commons Attribution)
 - Knife animations by DJMaesen (Creative Commons Attribution)
