@@ -62,6 +62,7 @@ import {
 import { WeaponController } from '../combat/WeaponController';
 import { isCombatEnabled } from '../combat/combatConfig';
 import { getWeapon, type WeaponId } from '../combat/weapons';
+import { DEFAULT_KNIFE_ID, getKnife, isKnifeId, type KnifeId } from '../combat/knives';
 import { CollisionWorld } from '../world/CollisionWorld';
 import { deleteCustomMap, listCustomMaps } from '../world/CustomMapStore';
 import { MapLoader, type MapLoadReporter } from '../world/MapLoader';
@@ -284,6 +285,7 @@ export class GameApp {
     this.selectedMapId = loadSelectedMapId(this.mapSources.keys(), fallbackMapId);
 
     this.loadout = this.cosmeticsManager.getDefaultLoadout();
+    this.cosmeticsManager.setKnifeStyle(loadKnifeStyle());
     await this.cosmeticsManager.applyLoadout(this.loadout);
     this.activeKnifeSoundProfile = this.getKnifeSoundProfileFromLoadout(this.loadout);
     this.knifeAudio.setProfile(this.activeKnifeSoundProfile);
@@ -311,7 +313,13 @@ export class GameApp {
         this.syncMultiplayerIdentity();
       },
       onNameChanged: (name) => this.applyPlayerName(name),
+      onKnifeSelected: (knifeId) => {
+        this.cosmeticsManager.setKnifeStyle(knifeId);
+        saveKnifeStyle(knifeId);
+        this.showStatus(`Knife: ${knifeId ? getKnife(knifeId).name : 'Legacy Knife'}`);
+      },
     });
+    this.menu.setSelectedKnife(this.cosmeticsManager.getKnifeStyle());
     this.menu.setMaps(this.getMapEntries(), this.selectedMapId);
     this.menu.setCosmetics(cosmeticsManifest, this.loadout);
     this.menu.setLeaderboard([], this.getMapNameById(this.selectedMapId));
@@ -1981,4 +1989,26 @@ function formatRunTime(totalMs: number): string {
   const minutePrefix = minutes > 0 ? `${minutes}:` : '';
   const secondText = minutes > 0 ? seconds.toString().padStart(2, '0') : seconds.toString();
   return `${minutePrefix}${secondText}.${ms.toString().padStart(3, '0')}`;
+}
+
+const KNIFE_STYLE_KEY = 'webstrafe:knife-style:v1';
+const LEGACY_KNIFE = 'legacy';
+
+/** Stored knife choice; defaults to the procedural karambit. */
+function loadKnifeStyle(): KnifeId | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(KNIFE_STYLE_KEY);
+    if (raw === LEGACY_KNIFE) return null;
+    return isKnifeId(raw) ? raw : DEFAULT_KNIFE_ID;
+  } catch {
+    return DEFAULT_KNIFE_ID;
+  }
+}
+
+function saveKnifeStyle(id: KnifeId | null): void {
+  try {
+    globalThis.localStorage?.setItem(KNIFE_STYLE_KEY, id ?? LEGACY_KNIFE);
+  } catch {
+    // storage blocked, the choice just won't persist
+  }
 }
