@@ -4,7 +4,7 @@ import {
   FIREARM_RECOIL_PROFILES,
   ViewmodelRenderer,
 } from '../ViewmodelRenderer';
-import type { GunId } from '../WeaponViewmodels';
+import type { FirearmId as GunId } from '../../combat/FirearmTiming';
 
 const worldCamera = new PerspectiveCamera();
 const still = new Vector3();

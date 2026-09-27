@@ -81,3 +81,10 @@ Barrel along Blender `+Y`, top of the weapon `+Z`. Required names:
 | `bolt` | | yes | origin on the bore axis; rotates about Y to lift, then slides back along -Y |
 | `mag` | yes | yes | origin at the top of the magazine, drops along the magazine axis |
 | `trigger` | yes | yes | rotates about X at its pivot |
+
+## Watch hands at runtime
+
+The watch objects export Y up, so in three.js the dial normal is the watch's
+local +Y and 12 o'clock is local -Z. The hand pivots spin about local Y and
+clockwise is negative: `hand.rotation.y = -2 * Math.PI * fraction`.
+`src/viewmodel/ArmsRig.ts` drives them from the local clock every frame.

@@ -8,7 +8,7 @@ import {
   Vector3,
 } from 'three';
 import type { Camera } from 'three';
-import type { GunId } from './WeaponViewmodels';
+import type { FirearmId as GunId } from '../combat/FirearmTiming';
 
 /**
  * Drives the first-person viewmodel camera and computes the CS2-inspired

@@ -26,11 +26,11 @@ import type { MovementDebugState } from '../movement/types';
 import { KnifeAudio, type KnifeSoundProfile } from '../audio/KnifeAudio';
 import { GunAudio, type GunAudioStatus } from '../audio/GunAudio';
 import { AttackSoundThrottle } from '../audio/AttackSoundThrottle';
-import { CosmeticsManager } from '../cosmetics/CosmeticsManager';
+import { defaultLoadout, loadCosmeticsManifest } from '../cosmetics/manifest';
 import { ViewmodelRenderer } from '../cosmetics/ViewmodelRenderer';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { WeaponViewmodels, type GunId } from '../cosmetics/WeaponViewmodels';
-import { ViewmodelPresentation } from '../cosmetics/ViewmodelPresentation';
+import type { FirearmId as GunId } from '../combat/FirearmTiming';
+import { ViewmodelSystem } from '../viewmodel/ViewmodelSystem';
 import type { LoadoutSelection } from '../cosmetics/types';
 import { HUD } from '../ui/HUD';
 import { MainMenu } from '../ui/MainMenu';
@@ -147,13 +147,8 @@ export class GameApp {
   /** current cone radius for the crosshair, radians */
   private crosshairSpreadRad = 0;
 
-  private readonly cosmeticsGroup = new Group();
-  private readonly weaponViewmodels = new WeaponViewmodels();
-  private readonly viewmodelPresentation = new ViewmodelPresentation(
-    this.cosmeticsGroup,
-    this.weaponViewmodels,
-  );
-  private readonly cosmeticsManager: CosmeticsManager;
+  private readonly viewmodel = new ViewmodelSystem();
+  private readonly muzzleScratch = new Vector3();
 
   private readonly crosshair: HTMLDivElement;
   private readonly statusLabel: HTMLDivElement;
@@ -251,14 +246,13 @@ export class GameApp {
     });
 
     this.viewmodelRenderer = new ViewmodelRenderer(68, window.innerWidth / window.innerHeight);
-    this.viewmodelRenderer.root.add(this.cosmeticsGroup);
-    this.viewmodelRenderer.camera.add(this.weaponViewmodels.root);
+    this.viewmodelRenderer.camera.add(this.viewmodel.root);
+    this.viewmodel.onEvent = (name) => this.playViewmodelEvent(name);
     // Soft studio environment so metallic weapon materials (Deagle/AWP) read as
     // lit gunmetal instead of near-black, and the knife/gloves gain gentle IBL.
     const pmrem = new PMREMGenerator(this.renderer);
     this.viewmodelRenderer.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
     pmrem.dispose();
-    this.cosmeticsManager = new CosmeticsManager(this.cosmeticsGroup);
 
     this.crosshair = this.createCrosshair();
     this.statusLabel = this.createStatusLabel();
@@ -292,12 +286,12 @@ export class GameApp {
     this.worldCamera.fov = this.settings.worldFov;
     this.worldCamera.updateProjectionMatrix();
     this.viewmodelRenderer.setFov(this.settings.viewmodelFov);
-    this.cosmeticsManager.setViewmodelScale(this.settings.viewmodelScale);
+    this.viewmodel.setScale(this.settings.viewmodelScale);
 
     const [builtinMaps, customRecords, cosmeticsManifest] = await Promise.all([
       loadBuiltinManifest(),
       listCustomMaps(),
-      this.cosmeticsManager.loadManifest(),
+      loadCosmeticsManifest(),
     ]);
     // The remote player models (~75 MB of GLBs) are only needed once a match
     // starts — not for the menu or its character preview, which loads its own
@@ -308,14 +302,13 @@ export class GameApp {
       // eslint-disable-next-line no-console
       console.warn('[Multiplayer] Failed to load remote player models:', error);
     });
-    // Gun viewmodels (~9 MB) are only needed once combat play starts; load them
-    // in the background so they don't block the menu paint.
-    if (this.combatEnabled) {
-      void this.weaponViewmodels.load().catch((error) => {
-        // eslint-disable-next-line no-console
-        console.warn('[Combat] Failed to load gun viewmodels:', error);
-      });
-    }
+    // arms, deagle and awp are about 1.4 MB; load them behind the menu
+    void this.viewmodel.load().then(() => {
+      this.viewmodel.equip(this.combatEnabled ? this.weapon.getActive() : 'knife');
+    }).catch((error) => {
+      // eslint-disable-next-line no-console
+      console.warn('[Viewmodel] Failed to load the first-person arms and weapons:', error);
+    });
     this.rebuildMapSources(builtinMaps, customRecords);
     const fallbackMapId =
       builtinMaps.find((map) => map.id === (this.combatEnabled ? DEFAULT_COMBAT_MAP_ID : DEFAULT_RUN_MAP_ID))?.id
@@ -325,9 +318,8 @@ export class GameApp {
       ?? '';
     this.selectedMapId = loadSelectedMapId(this.mapSources.keys(), fallbackMapId);
 
-    this.loadout = this.cosmeticsManager.getDefaultLoadout();
-    this.cosmeticsManager.setKnifeStyle(loadKnifeStyle());
-    await this.cosmeticsManager.applyLoadout(this.loadout);
+    this.loadout = defaultLoadout(cosmeticsManifest);
+    this.viewmodel.setKnife(loadKnifeStyle());
     this.activeKnifeSoundProfile = this.getKnifeSoundProfileFromLoadout(this.loadout);
     this.knifeAudio.setProfile(this.activeKnifeSoundProfile);
     this.syncViewmodelMotionStyle();
@@ -355,13 +347,13 @@ export class GameApp {
       },
       onNameChanged: (name) => this.applyPlayerName(name),
       onKnifeSelected: (knifeId) => {
-        this.cosmeticsManager.setKnifeStyle(knifeId);
+        this.viewmodel.setKnife(knifeId);
         saveKnifeStyle(knifeId);
         this.showStatus(`Knife: ${knifeId ? getKnife(knifeId).name : 'Legacy Knife'}`);
         this.syncHudKnifeName();
       },
     });
-    this.menu.setSelectedKnife(this.cosmeticsManager.getKnifeStyle());
+    this.menu.setSelectedKnife(this.viewmodel.getKnife());
     this.menu.setMaps(this.getMapEntries(), this.selectedMapId);
     this.menu.setCosmetics(cosmeticsManifest, this.loadout);
     this.menu.setLeaderboard([], this.getMapNameById(this.selectedMapId));
@@ -484,7 +476,6 @@ export class GameApp {
     this.gunAudio.dispose();
     this.knifeAudio.dispose();
     this.remoteKnifeAudio.dispose();
-    this.cosmeticsManager.resetKnifePresentation();
     this.viewmodelRenderer.clearPresentationTransient();
     this.menu?.dispose();
     this.gameHud.dispose();
@@ -574,20 +565,20 @@ export class GameApp {
         const dead = this.combatEnabled && !this.localAlive;
         if (inspectQueued) {
           if (!dead && this.canInspectActiveWeapon(time)) {
-            this.viewmodelRenderer.triggerInspect();
+            this.viewmodel.inspect();
           }
           inspectQueued = false;
         }
         if (attackQueued) {
           if (!dead) {
-            this.viewmodelRenderer.cancelInspect();
+            this.viewmodel.cancelInspect();
             const activeWeapon = this.weapon.getActive();
             if (this.combatEnabled && activeWeapon !== 'knife') {
               this.fireCombatWeapon(time);
             } else if (this.combatEnabled) {
               this.attackCombatKnife('primary', time);
             } else {
-              this.cosmeticsManager.triggerAttackPrimary();
+              this.viewmodel.knifeAttack('primary');
               this.multiplayer.sendAttack('primary');
             }
           }
@@ -597,11 +588,11 @@ export class GameApp {
           if (!dead) {
             const activeWeapon = this.weapon.getActive();
             if (!this.combatEnabled) {
-              this.viewmodelRenderer.cancelInspect();
-              this.cosmeticsManager.triggerAttackSecondary();
+              this.viewmodel.cancelInspect();
+              this.viewmodel.knifeAttack('secondary');
               this.multiplayer.sendAttack('secondary');
             } else if (activeWeapon === 'knife') {
-              this.viewmodelRenderer.cancelInspect();
+              this.viewmodel.cancelInspect();
               this.attackCombatKnife('secondary', time);
             } else if (activeWeapon === 'awp') {
               this.combatAim.toggleScope(time, {
@@ -652,7 +643,7 @@ export class GameApp {
 
     this.updateCameras(frameDt, look);
     const cameraPosition = this.movement.getCameraPosition();
-    this.cosmeticsManager.setBackstabReady(
+    this.viewmodel.setBackstabReady(
       this.playing
       && this.combatEnabled
       && this.localAlive
@@ -671,18 +662,15 @@ export class GameApp {
         ),
       }) !== null,
     );
-    this.cosmeticsManager.update(frameDt);
-    const startedKnifeAttack = this.cosmeticsManager.consumeStartedAttack();
+    const startedKnifeAttack = this.viewmodel.consumeStartedAttack();
     if (startedKnifeAttack) {
       this.knifeAudio.play(startedKnifeAttack);
       this.playKnifeWallHit(startedKnifeAttack);
     }
-    this.weaponViewmodels.update(frameDt);
-    // Guns hang off the camera directly, so apply the same CS2-style sway/bob/
-    // dip/kick delta the ViewmodelRenderer computed for the knife — otherwise
-    // they'd be rigidly pinned to the view and feel dead.
-    this.weaponViewmodels.root.position.copy(this.viewmodelRenderer.motionPos);
-    this.weaponViewmodels.root.rotation.copy(this.viewmodelRenderer.motionRot);
+    // sway, bob, landing dip and recoil kick from ViewmodelRenderer on top of the clips
+    this.viewmodel.root.position.copy(this.viewmodelRenderer.motionPos);
+    this.viewmodel.root.rotation.copy(this.viewmodelRenderer.motionRot);
+    this.viewmodel.update(frameDt);
     this.remotePlayers.update(frameDt);
     if (this.combatEnabled) {
       this.updateCombat(time);
@@ -832,7 +820,7 @@ export class GameApp {
       this.multiplayer.setCombatReady(true);
       this.syncMultiplayerIdentity();
       if (!this.didPlayInitialEquip) {
-        this.cosmeticsManager.triggerEquip();
+        this.viewmodel.equip(this.combatEnabled ? this.weapon.getActive() : 'knife');
         this.didPlayInitialEquip = true;
       }
       if (this.combatEnabled) {
@@ -1080,8 +1068,9 @@ export class GameApp {
       return;
     }
     this.combatHud = new CombatHud(document.body);
-    this.combatEffects = new CombatEffects(this.worldScene, this.weaponViewmodels.root, {
+    this.combatEffects = new CombatEffects(this.worldScene, this.viewmodel.root, {
       impactEffects: true,
+      getLocalMuzzleWorldPosition: () => this.viewmodel.getMuzzleWorldPosition(this.muzzleScratch),
     });
     this.scopeOverlay = new ScopeOverlay(this.container);
     this.combatHud.setWeapon(this.weapon.getActive(), this.weapon.getAmmo());
@@ -1159,11 +1148,11 @@ export class GameApp {
     }
     if (wasAlive && !alive) {
       this.combatAim.cancelScope(performance.now());
-      this.viewmodelPresentation.setAlive(false);
+      this.viewmodel.setAlive(false);
       this.combatEffects?.clearForDeath(performance.now());
       this.combatHud?.clearTransient(true);
       this.viewmodelRenderer.clearPresentationTransient();
-      this.cosmeticsManager.resetKnifePresentation();
+      this.viewmodel.cancelInspect();
       this.knifeAudio.stopAll();
       if (this.deathPresentationTimer !== null) {
         clearTimeout(this.deathPresentationTimer);
@@ -1190,11 +1179,11 @@ export class GameApp {
       clearTimeout(this.deathPresentationTimer);
       this.deathPresentationTimer = null;
     }
-    this.viewmodelPresentation.setAlive(true);
+    this.viewmodel.setAlive(true);
     this.combatEffects?.clear();
     this.combatHud?.clearTransient();
     this.viewmodelRenderer.clearPresentationTransient();
-    this.cosmeticsManager.resetKnifePresentation();
+    this.viewmodel.cancelInspect();
     this.knifeAudio.stopAll();
     this.crosshair.classList.remove('shot-deagle', 'shot-awp');
     this.weapon.reset();
@@ -1237,7 +1226,7 @@ export class GameApp {
         playerOcclusion: (from, direction, maxDistance) =>
           resolveHit(from, direction, maxDistance, this.getDrawnPlayerCapsules())?.distance ?? null,
         onPresented: (weaponId) => {
-          this.weaponViewmodels.triggerFire();
+          this.viewmodel.fire();
           this.viewmodelRenderer.addFireKick(weaponId);
           this.gunAudio.shot(weaponId);
           this.pulseCrosshair(weaponId);
@@ -1287,9 +1276,9 @@ export class GameApp {
       return;
     }
     if (kind === 'primary') {
-      this.cosmeticsManager.triggerAttackPrimary();
+      this.viewmodel.knifeAttack('primary');
     } else {
-      this.cosmeticsManager.triggerAttackSecondary();
+      this.viewmodel.knifeAttack('secondary');
     }
     this.multiplayer.sendAttack(kind);
     this.multiplayer.sendFire(
@@ -1350,7 +1339,7 @@ export class GameApp {
    */
   private setViewmodelHiddenForScope(hidden: boolean): void {
     this.viewmodelHiddenForScope = hidden;
-    this.weaponViewmodels.root.visible = !hidden;
+    this.viewmodel.setHidden(hidden);
   }
 
   /** zoom sensitivity: fov ratio x zoom ratio (settings.zoomSensitivityRatio if present) */
@@ -1387,12 +1376,9 @@ export class GameApp {
   private updateWeaponViewmodel(id: WeaponId): void {
     this.gunAudio.stopReload();
     const gun: GunId | null = id === 'deagle' || id === 'awp' ? id : null;
-    this.viewmodelPresentation.setWeapon(id);
     this.viewmodelRenderer.setFirearm(gun);
-    if (id === 'knife') {
-      this.cosmeticsManager.triggerEquip();
-    } else {
-      this.cosmeticsManager.resetKnifePresentation();
+    this.viewmodel.equip(id);
+    if (id !== 'knife') {
       this.knifeAudio.stopAll();
     }
   }
@@ -1404,9 +1390,8 @@ export class GameApp {
     }
     this.combatAim.cancelScope(nowMs);
     this.multiplayer.sendReload();
-    this.weaponViewmodels.triggerReload();
     if (active === 'deagle' || active === 'awp') {
-      this.viewmodelRenderer.triggerReload(getWeapon(active).reloadMs);
+      this.viewmodel.reload(getWeapon(active).reloadMs);
       this.gunAudio.reload(active);
     }
   }
@@ -1414,12 +1399,11 @@ export class GameApp {
   private canInspectActiveWeapon(nowMs: number): boolean {
     const active = this.weapon.getActive();
     if (active === 'knife') {
-      return this.cosmeticsManager.canInspect();
+      return this.viewmodel.canInspect();
     }
-    const presentation = this.weaponViewmodels.getPresentationState();
     return !this.weapon.isReloading(nowMs)
-      && presentation.active === active
-      && presentation.action === 'idle';
+      && this.viewmodel.getActiveItem() === active
+      && this.viewmodel.canInspect();
   }
 
   private async prepareCombatAudio(announce: boolean): Promise<void> {
@@ -1674,21 +1658,19 @@ export class GameApp {
     this.worldCamera.fov = next.worldFov;
     this.worldCamera.updateProjectionMatrix();
     this.viewmodelRenderer.setFov(next.viewmodelFov);
-    this.cosmeticsManager.setViewmodelScale(next.viewmodelScale);
+    this.viewmodel.setScale(next.viewmodelScale);
     this.applyUiSettings(next);
   }
 
   private async applyLoadout(selection: LoadoutSelection): Promise<void> {
-    await this.cosmeticsManager.applyLoadout(selection);
     this.activeKnifeSoundProfile = this.getKnifeSoundProfileFromLoadout(selection);
     this.knifeAudio.setProfile(this.activeKnifeSoundProfile);
     this.syncViewmodelMotionStyle();
   }
 
   private syncViewmodelMotionStyle(): void {
-    const integratedHands = this.cosmeticsManager.usesIntegratedHands();
-    this.viewmodelRenderer.setIntegratedMode(integratedHands);
-    this.viewmodelRenderer.setMotionScale(integratedHands ? 0.08 : 1);
+    this.viewmodelRenderer.setIntegratedMode(false);
+    this.viewmodelRenderer.setMotionScale(1);
   }
 
   private updateCameras(dt: number, look: { x: number; y: number }): void {
@@ -1744,12 +1726,7 @@ export class GameApp {
       this.worldCamera.rotation.set(this.movement.getPitchRad(), this.movement.getYawRad(), 0, 'YXZ');
     }
 
-    const inspectWeight = this.viewmodelRenderer.update(dt, this.worldCamera, this.movement.getVelocity(), look);
-    this.weaponViewmodels.setInspectPose(
-      this.viewmodelRenderer.getInspectProgress(),
-      inspectWeight,
-    );
-    this.cosmeticsManager.setInspectAlpha(inspectWeight);
+    this.viewmodelRenderer.update(dt, this.worldCamera, this.movement.getVelocity(), look);
     this.setCrosshairVisible(
       this.playing && this.debugCameraMode === 'firstPerson' && !this.combatAim.isScoped(),
     );
@@ -2080,7 +2057,7 @@ export class GameApp {
       this.multiplayer.setCombatReady(false);
       this.combatAim.cancelScope(performance.now());
       this.viewmodelRenderer.clearPresentationTransient();
-      this.cosmeticsManager.resetKnifePresentation();
+      this.viewmodel.cancelInspect();
       this.knifeAudio.stopAll();
       this.menu?.setVisible(true);
       this.setCrosshairVisible(false);
@@ -2093,7 +2070,7 @@ export class GameApp {
     this.multiplayer.setCombatReady(this.playing);
     void this.prepareCombatAudio(true);
     if (this.combatEnabled && this.localAlive && this.weapon.getActive() === 'knife') {
-      this.cosmeticsManager.triggerEquip();
+      this.viewmodel.equip('knife');
     }
     this.menu?.setVisible(false);
     this.setCrosshairVisible(this.playing && this.debugCameraMode === 'firstPerson');
@@ -2337,9 +2314,38 @@ export class GameApp {
     this.gameHud.resetMovement();
   }
 
+  /** sounds for viewmodel clip events GunAudio doesn't already schedule */
+  private playViewmodelEvent(name: string): void {
+    switch (name) {
+      case 'sound:slide':
+        this.audio.play('deagleSlideRelease');
+        break;
+      case 'sound:bolt_back':
+        this.audio.play('awpBoltUp');
+        this.audio.play('awpBoltBack', { volume: 0.9 });
+        break;
+      case 'sound:bolt_forward':
+        this.audio.play('awpBoltForward');
+        this.audio.play('awpBoltDown', { volume: 0.8 });
+        break;
+      case 'sound:knife_open':
+      case 'sound:knife_draw':
+        this.audio.play('weaponDraw', { volume: 0.7 });
+        break;
+      case 'sound:knife_spin':
+      case 'sound:knife_toss':
+        this.audio.play('knifeSwing', { volume: 0.35 });
+        break;
+      case 'sound:knife_catch':
+        this.audio.play('weaponDraw', { volume: 0.5 });
+        break;
+      default:
+        break;
+    }
+  }
+
   private syncHudKnifeName(): void {
-    const knifeId = this.cosmeticsManager.getKnifeStyle();
-    this.combatHud?.setKnifeName(knifeId ? getKnife(knifeId).name : 'Knife');
+    this.combatHud?.setKnifeName(getKnife(this.viewmodel.getKnife()).name);
   }
 
   private handleDeathFeedback(event: DeathEvent): void {

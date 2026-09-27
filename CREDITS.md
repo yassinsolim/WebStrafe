@@ -7,20 +7,6 @@ without an entry here are still credited in-game from their manifest fields.
 WebStrafe does not ship Valve or Counter-Strike assets. Anything not listed
 below is original WebStrafe work.
 
-## Weapon models and animation
-
-- [Desert Eagle | First Person Animations](https://sketchfab.com/3d-models/desert-eagle-first-person-animations-09a213d8510a42d1b747135e85712eff) by 1Matzh. License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-  Files: `public/viewmodels/deagle/deagle.glb`, `public/viewmodels/shared/deagle-watch.glb`.
-  The uploader credits the pistol model to ELIZION and the arms to "Division Agent (Rigged)" by Blue-Spirit, edited by 1Matzh. The watch is cut from this rig.
-- [AWP with Anims](https://sketchfab.com/3d-models/awp-with-anims-d45669ad333d4885a854fcf899628a39) by Addison Ye (redethox). License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-  Files: `public/viewmodels/awp/awp.glb`.
-
-## Knives
-
-- [knife animated (legacy arms and knife rig)](https://sketchfab.com/bumstrum) by DJMaesen. License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-  Files: `public/viewmodels/knife/knife.glb`, `public/viewmodels/knife/knife_animated.glb`.
-  DJMaesen has several "knife animated" uploads, all CC Attribution. Which one was imported was not recorded.
-
 ## Audio
 
 - [Magnum Research Desert Eagle](https://freesound.org/people/areniporgen/sounds/712310/) by areniporgen. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).

@@ -8,10 +8,11 @@ import {
   MeshStandardMaterial,
   Object3D,
   Quaternion,
-  SRGBColorSpace,
   Vector3,
 } from 'three';
 import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { getKnife } from '../combat/knives';
+import { buildProceduralKnife, KNIFE_NODES } from '../cosmetics/ProceduralKnife';
 
 /**
  * Shared player-model rigging: locating the arm bones, attaching a knife to the
@@ -57,7 +58,7 @@ export interface ArmRig {
   rightThumbBases: Quaternion[];
 }
 
-const KNIFE_MODEL_PATH = '/viewmodels/knife/knife.glb';
+const THIRD_PERSON_KNIFE = 'classic';
 
 /**
  * Knife child-offset (relative to the right weapon-hand bone) for the static
@@ -410,52 +411,30 @@ export function normalizeKnifeTemplate(root: Object3D): void {
 }
 
 /**
- * Loads the knife GLB and extracts a normalised knife mesh template ready to
- * clone onto a hand bone. Returns null if the model or its knife mesh is missing.
+ * builds the third-person knife: the same procedural knife the first-person
+ * view uses (a classic fixed blade), wrapped so its grip socket is the origin.
+ * the loader argument is kept so callers don't change.
  */
-export async function loadKnifeMesh(loader: GLTFLoader): Promise<Object3D | null> {
-  try {
-    const gltf = await loader.loadAsync(KNIFE_MODEL_PATH);
-    let knifeMesh: Mesh | null = null;
-    gltf.scene.traverse((child) => {
-      if (knifeMesh || !(child instanceof Mesh)) {
-        return;
-      }
-      const name = child.name.toLowerCase();
-      if (!name.includes('knife') || name.includes('arm') || name.includes('hand')) {
-        return;
-      }
-      knifeMesh = child;
-    });
-
-    if (!knifeMesh) {
-      return null;
-    }
-
-    const knife = (knifeMesh as Object3D).clone(true);
-    knife.name = 'RemoteKnifeTemplate';
-    normalizeKnifeTemplate(knife);
-    knife.traverse((child: Object3D) => {
-      if (!(child instanceof Mesh)) {
-        return;
-      }
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      for (const material of materials) {
-        const withMap = material as MeshStandardMaterial;
-        if (withMap.map) {
-          withMap.map.colorSpace = SRGBColorSpace;
-        }
-        material.depthWrite = true;
-        material.depthTest = true;
-        material.needsUpdate = true;
-      }
+export async function loadKnifeMesh(_loader?: GLTFLoader): Promise<Object3D | null> {
+  const knife = buildProceduralKnife(getKnife(THIRD_PERSON_KNIFE));
+  const grip = knife.getObjectByName(KNIFE_NODES.grip);
+  knife.updateMatrixWorld(true);
+  if (grip) {
+    knife.position.sub(grip.getWorldPosition(new Vector3()));
+  }
+  const wrapper = new Group();
+  wrapper.name = 'RemoteKnifeTemplate';
+  // blade along the hand bone's pointing axis, the same hold the old mesh had
+  wrapper.rotation.set(0, 0, Math.PI / 2);
+  wrapper.add(knife);
+  wrapper.traverse((child) => {
+    child.frustumCulled = false;
+    if (child instanceof Mesh) {
       child.castShadow = false;
       child.receiveShadow = false;
-      child.frustumCulled = false;
-    });
-
-    return knife;
-  } catch {
-    return null;
-  }
+    }
+  });
+  const holder = new Group();
+  holder.add(wrapper);
+  return holder;
 }

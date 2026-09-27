@@ -1,5 +1,5 @@
 import type { Vector3 } from 'three';
-import type { GunId } from '../cosmetics/WeaponViewmodels';
+import type { FirearmId as GunId } from './FirearmTiming';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import type { CombatEffects } from './CombatEffects';
 import { presentFirearmShot, type PlayerOcclusion } from './FirearmShotFeedback';

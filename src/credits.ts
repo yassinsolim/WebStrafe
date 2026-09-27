@@ -51,44 +51,11 @@ export const CREDIT_CATEGORY_ORDER: readonly CreditCategory[] = [
   'original',
 ];
 
-const CC_BY_4 = 'https://creativecommons.org/licenses/by/4.0/';
 const CC0 = 'https://creativecommons.org/publicdomain/zero/1.0/';
 const OFL = 'https://openfontlicense.org/open-font-license-official-text/';
 const MIT = 'https://opensource.org/license/mit';
 
 export const CREDITS: readonly CreditEntry[] = [
-  {
-    id: 'weapon-deagle',
-    category: 'weapons',
-    title: 'Desert Eagle | First Person Animations',
-    author: '1Matzh',
-    license: 'CC BY 4.0',
-    licenseUrl: CC_BY_4,
-    sourceUrl: 'https://sketchfab.com/3d-models/desert-eagle-first-person-animations-09a213d8510a42d1b747135e85712eff',
-    files: ['public/viewmodels/deagle/deagle.glb', 'public/viewmodels/shared/deagle-watch.glb'],
-    notes: 'The uploader credits the pistol model to ELIZION and the arms to "Division Agent (Rigged)" by Blue-Spirit, edited by 1Matzh. The watch is cut from this rig.',
-  },
-  {
-    id: 'weapon-awp',
-    category: 'weapons',
-    title: 'AWP with Anims',
-    author: 'Addison Ye (redethox)',
-    license: 'CC BY 4.0',
-    licenseUrl: CC_BY_4,
-    sourceUrl: 'https://sketchfab.com/3d-models/awp-with-anims-d45669ad333d4885a854fcf899628a39',
-    files: ['public/viewmodels/awp/awp.glb'],
-  },
-  {
-    id: 'knife-djmaesen',
-    category: 'knives',
-    title: 'knife animated (legacy arms and knife rig)',
-    author: 'DJMaesen',
-    license: 'CC BY 4.0',
-    licenseUrl: CC_BY_4,
-    sourceUrl: 'https://sketchfab.com/bumstrum',
-    files: ['public/viewmodels/knife/knife.glb', 'public/viewmodels/knife/knife_animated.glb'],
-    notes: 'DJMaesen has several "knife animated" uploads, all CC Attribution. Which one was imported was not recorded.',
-  },
   {
     id: 'audio-deagle-shot',
     category: 'audio',

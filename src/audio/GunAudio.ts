@@ -1,4 +1,4 @@
-import type { GunId } from '../cosmetics/WeaponViewmodels';
+import type { FirearmId as GunId } from '../combat/FirearmTiming';
 import type { HitmarkerKind } from '../ui/HitmarkerFeedback';
 import { vary, type Vec3Like } from './audioMath';
 import { getAudioEngine, type AudioEngine, type SfxName, type SoundHandle } from './AudioEngine';
