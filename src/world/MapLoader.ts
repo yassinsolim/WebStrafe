@@ -13,6 +13,7 @@ import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createGltfLoader } from '../assets/gltfLoader';
 import type { CustomMapRecord, LoadedMap, MapManifestEntry, MapMeta } from './types';
 import { resolveSpawn } from './SpawnResolver';
+import { loadMapLightmaps } from './MapEnvironment';
 import { createMovementTestScene } from '../movement/MovementTestScene';
 
 export interface MapLoadReporter {
@@ -57,12 +58,21 @@ export class MapLoader {
     reporter?.onStage?.(`Loading scene: ${entry.scenePath}`);
     reporter?.onStage?.(`Loading collision: ${entry.collisionPath ?? entry.scenePath}`);
     reporter?.onStage?.(`Loading metadata: ${entry.metaPath}`);
-    const [sceneRoot, collisionRoot, meta] = await Promise.all([
+    const metaPromise = this.loadMeta(entry.metaPath, reporter);
+    // lightmaps are listed in the meta, so they start as soon as it arrives
+    const lightmapPromise = metaPromise.then((meta) => {
+      if ((meta.environment?.lightmaps?.length ?? 0) > 0) {
+        reporter?.onStage?.('Loading lightmaps');
+      }
+      return loadMapLightmaps(meta, entry.metaPath, loader.manager, reporter?.onLog);
+    });
+    const [sceneRoot, collisionRoot, meta, lightmaps] = await Promise.all([
       this.loadGlbFromPath(loader, entry.scenePath, reporter),
       entry.collisionPath
         ? this.loadGlbFromPath(loader, entry.collisionPath, reporter)
         : this.loadGlbFromPath(loader, entry.scenePath, reporter),
-      this.loadMeta(entry.metaPath, reporter),
+      metaPromise,
+      lightmapPromise,
     ]);
     this.normalizeRenderRoot(sceneRoot);
     this.normalizeCollisionRoot(collisionRoot);
@@ -76,6 +86,7 @@ export class MapLoader {
       collisionRoot,
       spawnPosition: spawn.position,
       spawnYawDeg: spawn.yawDeg,
+      lightmaps,
     };
   }
 
