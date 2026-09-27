@@ -371,11 +371,12 @@ def bake(meshes):
 
 
 def renders(outdir, sockets, quick=False):
-    W.add_light("key", (-0.3, -0.2, 0.42), (0, 0.05, 0.02), 38.0, size=0.5)
-    W.add_light("rim", (0.42, 0.45, 0.22), (0, 0.05, 0.02), 22.0, size=0.4, color=(0.85, 0.9, 1.0))
+    W.add_light("key", (-0.3, -0.2, 0.42), (0, 0.05, 0.02), 55.0, size=0.6)
+    W.add_light("rim", (0.42, 0.45, 0.22), (0, 0.05, 0.02), 30.0, size=0.5, color=(0.85, 0.9, 1.0))
+    W.add_light("top", (0.05, 0.1, 0.6), (0, 0.05, 0.0), 30.0, size=0.9)
     center = Vector(final(0, 120, -58))
     eye = Vector((-0.05, -0.13, 0.115))
-    three_q = (tuple(center + Vector((0.36, -0.37, 0.19))), tuple(center + Vector((0, 0.0, -0.004))), 56)
+    three_q = (tuple(center + Vector((0.4, -0.41, 0.2))), tuple(center + Vector((0, 0.0, -0.012))), 56)
     fp = (tuple(eye), tuple(eye + Vector((0.07, 1.0, -0.2))), 30)
     dbg = (tuple(center + Vector((-0.42, -0.27, 0.2))), tuple(center + Vector((0, -0.01, -0.004))), 55, 0.013)
     if not quick:

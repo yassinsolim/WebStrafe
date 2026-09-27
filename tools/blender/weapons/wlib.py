@@ -784,7 +784,7 @@ def setup_studio(strength=0.9, background=(0.035, 0.038, 0.045), exposure=0.0):
     links.new(bg_cam.outputs["Background"], mix.inputs[2])
     links.new(mix.outputs["Shader"], out.inputs["Surface"])
     scene.view_settings.view_transform = "AgX"
-    scene.view_settings.look = "AgX - Medium High Contrast"
+    scene.view_settings.look = "AgX - Punchy"
     scene.view_settings.exposure = exposure
     return world
 
@@ -910,7 +910,9 @@ def preview_set(name, outdir, three_q, fp, dbg, sockets, samples=192, resolution
     first-person view) and <name>_sockets.png (see-through with socket axes).
     each view is (camera_location, target, lens)."""
     preview_materials_with_ao()
-    setup_studio(strength=0.28)
+    # a dim environment keeps dark rubber and polymer dark (the studio hdri
+    # irradiance washes them out), area lights in the scripts give the highlights
+    setup_studio(strength=0.1)
     tmp = TMP
     a = os.path.join(tmp, f"{name}_34.png")
     b = os.path.join(tmp, f"{name}_fp.png")
