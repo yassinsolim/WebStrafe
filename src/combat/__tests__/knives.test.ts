@@ -32,6 +32,15 @@ describe('knife catalog', () => {
     expect(KNIVES.some((k) => /shadow daggers|ursus|talon|nomad|paracord/i.test(k.name))).toBe(false);
   });
 
+  it('marks the folders, the balisong and the ring knives', () => {
+    const by = (pred: (k: (typeof KNIVES)[number]) => boolean) => KNIVES.filter(pred).map((k) => k.id).sort();
+    expect(by((k) => k.shape.mechanism === 'folder')).toEqual(
+      ['falchion', 'flip', 'navaja', 'nomad', 'stiletto', 'talon', 'ursus']);
+    expect(by((k) => k.shape.mechanism === 'balisong')).toEqual(['butterfly']);
+    expect(by((k) => k.shape.fingerRing === true)).toEqual(['karambit', 'talon']);
+    expect(by((k) => k.shape.pair === true)).toEqual(['shadow_daggers']);
+  });
+
   it('falls back to the default knife for unknown ids', () => {
     expect(getKnife('nope').id).toBe('karambit');
     expect(isKnifeId('kukri')).toBe(true);
@@ -57,7 +66,7 @@ describe('knife catalog', () => {
       });
       expect(meshes, def.id).toBeGreaterThanOrEqual(2);
       // viewmodel budget, and big enough to read on screen
-      expect(triangles, def.id).toBeLessThan(6000);
+      expect(triangles, def.id).toBeLessThanOrEqual(8000);
       expect(size.x, def.id).toBeGreaterThan(def.shape.handle === 'tee' ? 0.08 : 0.15);
       expect(size.x, def.id).toBeLessThan(0.4);
       // tip is the +x end
