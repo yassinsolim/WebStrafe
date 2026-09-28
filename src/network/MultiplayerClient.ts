@@ -7,16 +7,20 @@ import type {
   ShotEvent,
 } from './MultiplayerTransport';
 import { SendCadence } from '../netcode/SendCadence';
+import { isPlausibleLookWire } from '../characters/look';
 
 /** server rate limit is 70/s; 30 Hz leaves headroom and matches the snapshot rate */
 export const WS_STATE_SEND_HZ = 30;
 /** the keepalive ping doubles as the ping measurement, so keep it fairly fresh */
 const HEARTBEAT_MS = 2000;
+/** looks we remember for other players, oldest dropped first past this */
+export const MAX_REMOTE_LOOKS = 64;
 
 interface DesiredJoin {
   mapId: string;
   name: string;
   model: PlayerModel;
+  cosmetics?: string;
 }
 
 export class MultiplayerClient implements MultiplayerTransport {
@@ -34,6 +38,8 @@ export class MultiplayerClient implements MultiplayerTransport {
   private readonly sendCadence = new SendCadence(WS_STATE_SEND_HZ);
   private pingSentAtMs: number | null = null;
   private pingMs: number | null = null;
+  /** other players' looks by id, from profile/profiles messages on the joined map */
+  private readonly remoteLooks = new Map<string, string>();
 
   public onSnapshot: ((snapshot: MultiplayerSnapshot) => void) | null = null;
   public onAttack: ((event: { mapId: string; playerId: string; kind: AttackKind }) => void) | null = null;
@@ -92,14 +98,28 @@ export class MultiplayerClient implements MultiplayerTransport {
     return this.pingMs === null ? null : Math.round(this.pingMs);
   }
 
-  public join(mapId: string, name: string, model: PlayerModel): void {
+  public join(mapId: string, name: string, model: PlayerModel, cosmetics?: string): void {
+    const previous = this.desiredJoin;
+    const look = isPlausibleLookWire(cosmetics) ? cosmetics : undefined;
     this.desiredJoin = {
       mapId,
       name,
       model,
+      cosmetics: look,
     };
 
     if (this.ws?.readyState === WebSocket.OPEN) {
+      // a re-join resets our combat state on the server, a new look alone doesn't need one
+      if (
+        previous
+        && previous.mapId === mapId
+        && previous.name === name
+        && previous.model === model
+        && previous.cosmetics !== look
+      ) {
+        this.send({ type: 'cosmetics', cosmetics: look });
+        return;
+      }
       this.sendJoin();
       return;
     }
@@ -212,6 +232,7 @@ export class MultiplayerClient implements MultiplayerTransport {
       this.activeMapId = '';
       this.pingSentAtMs = null;
       this.pingMs = null;
+      this.remoteLooks.clear();
 
       if (this.ws === ws) {
         this.ws = null;
@@ -241,8 +262,35 @@ export class MultiplayerClient implements MultiplayerTransport {
         }
         case 'joined': {
           if (typeof payload.mapId === 'string') {
+            // the new map's looks arrive right after this in a 'profiles'
+            if (payload.mapId !== this.activeMapId) {
+              this.remoteLooks.clear();
+            }
             this.activeMapId = payload.mapId;
             this.send({ type: 'combat-ready', ready: this.combatReady });
+          }
+          break;
+        }
+        case 'profile': {
+          if (typeof payload.id !== 'string') {
+            return;
+          }
+          if (payload.cosmetics === undefined || payload.cosmetics === null || payload.cosmetics === '') {
+            this.remoteLooks.delete(payload.id);
+          } else if (isPlausibleLookWire(payload.cosmetics)) {
+            this.rememberLook(payload.id, payload.cosmetics);
+          }
+          break;
+        }
+        case 'profiles': {
+          if (!Array.isArray(payload.players)) {
+            return;
+          }
+          for (const entry of payload.players as unknown[]) {
+            const casted = entry as Record<string, unknown> | null;
+            if (casted && typeof casted.id === 'string' && isPlausibleLookWire(casted.cosmetics)) {
+              this.rememberLook(casted.id, casted.cosmetics);
+            }
           }
           break;
         }
@@ -272,7 +320,16 @@ export class MultiplayerClient implements MultiplayerTransport {
               return false;
             }
             return true;
-          }).map((entry) => (typeof entry.t === 'number' ? { ...entry, clock: 'server' } : entry));
+          }).map((entry) => {
+            const row = typeof entry.t === 'number' ? { ...entry, clock: 'server' } : { ...entry };
+            // looks only come from join and profile messages, never from snapshot rows
+            delete row.cosmetics;
+            const look = entry.id === this.localId ? this.desiredJoin?.cosmetics : this.remoteLooks.get(entry.id);
+            if (look) {
+              row.cosmetics = look;
+            }
+            return row;
+          });
 
           const serverTimeMs = typeof payload.serverTimeMs === 'number'
             ? payload.serverTimeMs
@@ -417,7 +474,18 @@ export class MultiplayerClient implements MultiplayerTransport {
       mapId: this.desiredJoin.mapId,
       name: this.desiredJoin.name,
       model: this.desiredJoin.model,
+      ...(this.desiredJoin.cosmetics ? { cosmetics: this.desiredJoin.cosmetics } : {}),
     });
+  }
+
+  private rememberLook(id: string, cosmetics: string): void {
+    // re-insert so the one dropped past the cap is the longest unchanged
+    this.remoteLooks.delete(id);
+    this.remoteLooks.set(id, cosmetics);
+    if (this.remoteLooks.size > MAX_REMOTE_LOOKS) {
+      const oldest = this.remoteLooks.keys().next().value;
+      if (oldest !== undefined) this.remoteLooks.delete(oldest);
+    }
   }
 
   private send(payload: unknown): void {
