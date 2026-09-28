@@ -28,15 +28,21 @@ export class ArmorMaterial extends MeshStandardMaterial {
   /** r ao, g roughness detail around 0.5, b edge wear; neutral until an atlas is set */
   public readonly orm = { value: NEUTRAL_ORM as Texture };
 
-  constructor() {
+  /**
+   * simple: no fine procedural noise (chips, scuffs, weave, camo's second octave).
+   * for far lods and the low preset, where that detail is sub pixel and the noise
+   * is most of the fragment cost on weak and software gl
+   */
+  constructor(readonly simple = false) {
     super({ color: 0xffffff, roughness: 1, metalness: 0 });
     this.name = 'ArmorMaterial';
+    if (simple) this.defines = { ARMOR_SIMPLE: '' };
     this.onBeforeCompile = (shader) => this.patch(shader);
   }
 
   // one program for every character, the look lives in uniforms
   override customProgramCacheKey(): string {
-    return this.normalMap ? 'armor-v2-atlas' : 'armor-v2';
+    return `armor-v2${this.normalMap ? '-atlas' : ''}${this.simple ? '-simple' : ''}`;
   }
 
   /** the library's baked atlas; only for geometry that carries atlas uvs */
@@ -166,32 +172,44 @@ bool armorFabric = armorSlot == 3 || armorSlot >= 8;
 armorRough = clamp(armorRough + (armorOrm.g - 0.5) * (armorPaint ? 0.55 : 0.8), 0.04, 1.0);
 if (armorPaint && uCamo > 0.5) {
   // disruptive pattern in bind space (moves with the body), three paint colours
+#ifdef ARMOR_SIMPLE
+  float c = armorNoise(vBindPos * vec3(7.0, 5.0, 7.0)) * 0.65 + 0.175;
+#else
   float c = armorNoise(vBindPos * vec3(7.0, 5.0, 7.0)) * 0.65 + armorNoise(vBindPos * 17.0) * 0.35;
+#endif
   vec3 p0 = uSlotColor[0];
   vec3 p1 = uSlotColor[1];
   vec3 p2 = mix(uSlotColor[2], uSlotColor[1], 0.45);
   armorColor = c < 0.44 ? p0 : (c < 0.58 ? p1 : p2);
 }
 if (armorPaint) {
+  // worn finish: paint chips off along the sharp edges, a few scratches elsewhere
+  float edge = smoothstep(0.35, 0.8, armorEdge);
+#ifdef ARMOR_SIMPLE
+  // the chips' average coverage, without the noise
+  float bare = edge * 0.45 * max(uWear, 0.14);
+#else
   float n1 = armorNoise(vBindPos * 60.0);
   float n2 = armorNoise(vBindPos * 210.0);
   armorRough = clamp(armorRough + (n1 - 0.5) * 0.05, 0.04, 1.0);
-  // worn finish: paint chips off along the sharp edges, a few scratches elsewhere
-  float edge = smoothstep(0.35, 0.8, armorEdge);
   // every finish chips a little on its sharpest edges; worn goes much further
   float chip = edge * smoothstep(0.35, 0.6, armorNoise(vBindPos * 150.0) + (n1 - 0.5) * 0.3) * max(uWear, 0.14);
   float scuff = smoothstep(0.86, 0.95, n2) * 0.3 * uWear;
   float bare = max(chip, scuff);
+#endif
   armorColor = mix(armorColor, vec3(0.5, 0.49, 0.47), bare);
   armorMetal = mix(armorMetal, 0.85, bare);
   armorRough = mix(armorRough, 0.34, bare);
   armorColor *= mix(1.0, 0.72 + 0.28 * armorAo, uWear);
   // every finish: a faint lighter rim on the bevels catches light like real edge wear
   armorColor *= 1.0 + 0.12 * smoothstep(0.4, 0.9, armorEdge);
-} else if (armorFabric) {
+}
+#ifndef ARMOR_SIMPLE
+else if (armorFabric) {
   float weave = armorNoise(vBindPos * 380.0);
   armorColor *= 0.9 + 0.2 * weave;
 }
+#endif
 // baked grime: cavity dirt and run-off streaks (stronger on worn paint)
 if (armorSlot != 5 && armorSlot != 6) {
   float grime = mix(0.42, 1.0, smoothstep(0.62, 0.98, armorOrmA.a));

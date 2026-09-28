@@ -7,7 +7,8 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PLAYER_CAPSULE_HEIGHT } from '../../combat/CombatArena';
 import { applyKnifeIdlePose } from '../../multiplayer/playerRig';
-import { ArmorCharacter } from '../ArmorCharacter';
+import { ArmorCharacter, setCharacterDetail } from '../ArmorCharacter';
+import type { ArmorMaterial } from '../armorMaterial';
 import { ARMOR_SETS, ARMOR_SLOTS } from '../catalog';
 import { CharacterLibrary, LOD_LEVELS, MATERIAL_SLOTS } from '../library';
 import { defaultLook, randomLook } from '../look';
@@ -149,5 +150,22 @@ describe('armored characters', () => {
     expect(box.max.y).toBeLessThan(1.95);
     void Quaternion;
     character.dispose();
+  });
+
+  it('far lods and the low preset draw the simple material, low without the atlas', () => {
+    const character = new ArmorCharacter(library, defaultLook(), 'terrorist', { pose: 'none' });
+    const lods = character.root.getObjectByName('ArmorLod') as unknown as { levels: { object: SkinnedMesh }[] };
+    const mats = () => lods.levels.map((l) => l.object.material as ArmorMaterial);
+    try {
+      setCharacterDetail('high');
+      expect(mats().map((m) => m.simple)).toEqual([false, true, true]);
+      expect(mats().map((m) => m.normalMap)).toEqual(Array(3).fill(library.atlas?.normal ?? null));
+      setCharacterDetail('low');
+      expect(mats().map((m) => m.simple)).toEqual([true, true, true]);
+      expect(mats().map((m) => m.normalMap)).toEqual([null, null, null]);
+    } finally {
+      setCharacterDetail('high');
+      character.dispose();
+    }
   });
 });

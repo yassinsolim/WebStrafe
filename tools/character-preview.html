@@ -21,6 +21,7 @@
       import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
       import { createCharacter, provideCharacterLibrary } from '/src/characters/CharacterFactory.ts';
       import { CharacterLibrary } from '/src/characters/library.ts';
+      import { setCharacterDetail } from '/src/characters/ArmorCharacter.ts';
       import { BUILTIN_PRESETS } from '/src/characters/presets.ts';
       import { decodeLook, defaultLook } from '/src/characters/look.ts';
       import { attachKnifeModel, loadKnifeMesh } from '/src/multiplayer/playerRig.ts';
@@ -62,6 +63,8 @@
       floor.rotation.x = -Math.PI / 2;
       scene.add(floor);
 
+      // ?detail=low draws without the baked atlas (lod stays pinned by ?lod=)
+      if (params.get('detail')) setCharacterDetail(params.get('detail'));
       if (params.get('lib')) provideCharacterLibrary(await CharacterLibrary.load(params.get('lib')));
       const knife = await loadKnifeMesh();
       const spacing = 1.05;

@@ -94,6 +94,7 @@ export class ArmorCharacter {
   private readonly lod = new LOD();
   private readonly meshes: SkinnedMesh[] = [];
   private readonly material = new ArmorMaterial();
+  private readonly farMaterial = new ArmorMaterial(true);
   private readonly cloth: ClothBone[] = [];
   private readonly caps: { name: string; helper: Bone; lower: Bone; child: Bone; bindInv: Quaternion; radius: number; give: number }[] = [];
   private disposeDecals: (() => void) | null = null;
@@ -108,6 +109,7 @@ export class ArmorCharacter {
     this.team = team;
     this.root.name = 'ArmorCharacter';
     this.material.setAtlas(library.atlas);
+    this.farMaterial.setAtlas(library.atlas);
     this.bones = buildSkeleton(ALL_JOINTS);
     const pelvis = this.bones.get('pelvis')!;
     this.root.add(pelvis);
@@ -117,7 +119,7 @@ export class ArmorCharacter {
     this.lod.name = 'ArmorLod';
     this.root.add(this.lod);
     for (let level = 0; level < LOD_LEVELS; level += 1) {
-      const mesh = new SkinnedMesh(undefined, this.material);
+      const mesh = new SkinnedMesh(undefined, level === 0 ? this.material : this.farMaterial);
       mesh.name = `ArmorMesh:lod${level}`;
       mesh.frustumCulled = true;
       // a live sun shadow on the lightmapped maps, where the renderer has shadows on
@@ -152,6 +154,7 @@ export class ArmorCharacter {
     this.look = look;
     this.team = team;
     this.material.applyLook(look, team);
+    this.farMaterial.applyLook(look, team);
     const key = [look.helmet, look.arms, look.chest, look.legs, look.classItem].join('|');
     if (key !== this.piecesKey) {
       this.piecesKey = key;
@@ -215,7 +218,11 @@ export class ArmorCharacter {
     // low draws plain shading without the baked atlas (like the low preset's world, no normal maps):
     // on weak and software gl the per pixel atlas fetches cost more than the triangles
     const atlas = detail === 'low' ? null : this.library.atlas;
-    if ((this.material.normalMap ?? null) !== (atlas?.normal ?? null)) this.material.setAtlas(atlas);
+    for (const material of [this.material, this.farMaterial]) {
+      if ((material.normalMap ?? null) !== (atlas?.normal ?? null)) material.setAtlas(atlas);
+    }
+    // far lods always skip the fine noise; low skips it up close too
+    this.meshes[0].material = detail === 'low' ? this.farMaterial : this.material;
     const pinned = this.options.lod;
     this.lod.levels.length = 0;
     for (const mesh of this.meshes) mesh.removeFromParent();
@@ -234,6 +241,7 @@ export class ArmorCharacter {
     this.disposeDecals?.();
     this.disposeDecals = null;
     this.material.dispose();
+    this.farMaterial.dispose();
     this.root.removeFromParent();
   }
 

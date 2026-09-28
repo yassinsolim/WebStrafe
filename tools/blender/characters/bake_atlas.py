@@ -121,6 +121,11 @@ def setup(mat, slot, mode, target):
     shading = None
     if mode == "normal":
         nvec = None
+        # thin bands (armorkit.band_plate) skip the panel seams and the bevel shader: the seams
+        # cross a few cm of plate like a crease, and the bevel shader rounds the small angles
+        # between the band's grid rows into visible lines (its rim has real bevels anyway)
+        band = nt.nodes.new("ShaderNodeAttribute")
+        band.attribute_name = "thin_band"
         if nrm_file and strength > 0:
             nm = nt.nodes.new("ShaderNodeNormalMap")
             nm.inputs["Strength"].default_value = strength
@@ -129,7 +134,12 @@ def setup(mat, slot, mode, target):
         if panel > 0:
             # large painted panels with seams and fasteners over the micro detail
             pm = nt.nodes.new("ShaderNodeNormalMap")
-            pm.inputs["Strength"].default_value = panel
+            keep = nt.nodes.new("ShaderNodeMath")
+            keep.operation = "MULTIPLY_ADD"
+            keep.inputs[1].default_value = -panel
+            keep.inputs[2].default_value = panel
+            nt.links.new(band.outputs["Fac"], keep.inputs[0])
+            nt.links.new(keep.outputs["Value"], pm.inputs["Strength"])
             nt.links.new(_tex(nt, "metalplates017a_n.jpg", 0.42).outputs["Color"], pm.inputs["Color"])
             if nvec is not None:
                 mix = nt.nodes.new("ShaderNodeVectorMath")
@@ -146,9 +156,14 @@ def setup(mat, slot, mode, target):
             bev = nt.nodes.new("ShaderNodeBevel")
             bev.samples = 8
             bev.inputs["Radius"].default_value = bevel_r
-            if nvec is not None:
-                nt.links.new(nvec, bev.inputs["Normal"])
-            nvec = bev.outputs["Normal"]
+            plain = nvec if nvec is not None else nt.nodes.new("ShaderNodeNewGeometry").outputs["Normal"]
+            nt.links.new(plain, bev.inputs["Normal"])
+            pick = nt.nodes.new("ShaderNodeMix")
+            pick.data_type = "VECTOR"
+            nt.links.new(band.outputs["Fac"], pick.inputs["Factor"])
+            nt.links.new(bev.outputs["Normal"], pick.inputs["A"])
+            nt.links.new(plain, pick.inputs["B"])
+            nvec = pick.outputs["Result"]
         if nvec is not None:
             nt.links.new(nvec, bsdf.inputs["Normal"])
     elif mode == "rough":
@@ -326,7 +341,13 @@ def run(lod0, groups, size, out_dir, samples_ao=24):
     for o in bpy.data.objects:
         o.hide_render = True
     everything = joined(lod0, "bake_all")
-    log(f"baking normal {size}px, {len(lod0)} pieces")
+    band = everything.data.attributes.get("thin_band")
+    flagged = 0
+    if band:
+        vals = np.empty(len(band.data), dtype=np.float32)
+        band.data.foreach_get("value", vals)
+        flagged = int((vals > 0.5).sum())
+    log(f"baking normal {size}px, {len(lod0)} pieces, {flagged} thin band vertices")
     bake("normal", [everything], nrm, 4, margin)
     log("baking roughness detail")
     bake("rough", [everything], rough, 1, margin)

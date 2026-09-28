@@ -489,9 +489,14 @@ def band_plate(name, tree, proj, lower, upper, *, cols=96, rows=8, thickness=0.0
             a = r * cols + c
             faces.append((a, a + 1, a + cols + 1, a + cols))
     ob = mesh_object(name, pts, faces, coll)
-    return _finish_plate(ob, proj, uvs[len(uvs) // 2], miss, thickness=thickness, bevel=bevel,
-                         bevel_segments=bevel_segments, material=material, extrude_dir_flip=False,
-                         smooth_iters=smooth_iters, sharp_deg=sharp_deg, inner=inner)
+    ob = _finish_plate(ob, proj, uvs[len(uvs) // 2], miss, thickness=thickness, bevel=bevel,
+                       bevel_segments=bevel_segments, material=material, extrude_dir_flip=False,
+                       smooth_iters=smooth_iters, sharp_deg=sharp_deg, inner=inner)
+    # the atlas bake keeps panel seams and its bevel shader off bands (bake_atlas.py);
+    # joins fill it with 0 on every other piece
+    attr = ob.data.attributes.new("thin_band", "FLOAT", "POINT")
+    attr.data.foreach_set("value", [1.0] * len(ob.data.vertices))
+    return ob
 
 
 def strip(name, tree, proj, path_uv, width, *, n=48, thickness=0.004, bevel=0.0012,
