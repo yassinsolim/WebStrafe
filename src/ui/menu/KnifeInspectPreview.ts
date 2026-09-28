@@ -19,6 +19,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { getKnife, type KnifeId } from '../../combat/knives';
 import { applyKnifeFinish, type KnifeFinishSelection } from '../../cosmetics/finishes/applyFinish';
 import { buildProceduralKnife, disposeProceduralKnife } from '../../cosmetics/ProceduralKnife';
+import { disposeKnifeModel, isKnifeModel, loadKnifeModel } from '../../cosmetics/knifeAssets';
 
 /** swatches show the blade of this knife, a plain drop point */
 const SWATCH_KNIFE: KnifeId = 'classic';
@@ -48,6 +49,8 @@ export class KnifeInspectPreview {
   private knifeId: KnifeId;
   private finish: KnifeFinishSelection;
   private radius = 0.15;
+  private halfLength = 0.12;
+  private halfHeight = 0.02;
 
   private readonly swatchScene = new Scene();
   private readonly swatchCamera = new OrthographicCamera(-1, 1, 1, -1, 0.01, 10);
@@ -125,7 +128,8 @@ export class KnifeInspectPreview {
     for (const knife of [this.knife, this.swatchKnife]) {
       if (knife) {
         knife.removeFromParent();
-        disposeProceduralKnife(knife);
+        if (isKnifeModel(knife)) disposeKnifeModel(knife);
+        else disposeProceduralKnife(knife);
       }
     }
     this.knife = null;
@@ -174,16 +178,34 @@ export class KnifeInspectPreview {
   }
 
   private rebuildKnife(): void {
+    const id = this.knifeId;
+    this.showKnife(buildProceduralKnife(getKnife(id)));
+    // the blender model replaces the procedural stand-in once it's loaded
+    void loadKnifeModel(id).then((model) => {
+      if (!model) return;
+      if (this.knifeId !== id || !this.renderer) {
+        disposeKnifeModel(model);
+        return;
+      }
+      this.showKnife(model);
+    });
+  }
+
+  private showKnife(knife: Group): void {
     if (this.knife) {
       this.knife.removeFromParent();
-      disposeProceduralKnife(this.knife);
+      if (isKnifeModel(this.knife)) disposeKnifeModel(this.knife);
+      else disposeProceduralKnife(this.knife);
     }
-    const knife = buildProceduralKnife(getKnife(this.knifeId));
     applyKnifeFinish(knife, this.finish);
-    // centre the knife on the turntable and frame its bounding sphere so turning never clips
-    const sphere = new Box3().setFromObject(knife).getBoundingSphere(new Sphere());
+    // centre the knife on the turntable; frame its length across and its height up
+    const box = new Box3().setFromObject(knife);
+    const sphere = box.getBoundingSphere(new Sphere());
+    const size = box.getSize(new Vector3());
     knife.position.copy(sphere.center).negate();
     this.radius = sphere.radius;
+    this.halfLength = size.x / 2;
+    this.halfHeight = Math.max(size.y, size.z) / 2;
     this.tilt.add(knife);
     this.knife = knife;
     this.frame();
@@ -214,10 +236,11 @@ export class KnifeInspectPreview {
   private frame(): void {
     const fov = (this.camera.fov * Math.PI) / 180;
     const aspect = Math.max(0.5, this.camera.aspect);
-    const fitV = this.radius / Math.sin(fov / 2);
-    const fitH = this.radius / Math.sin(Math.atan(Math.tan(fov / 2) * aspect));
-    // a knife is long and thin, so fitting its length is enough on a wide canvas
-    this.camera.position.set(0, 0, Math.min(fitV, fitH) * 1.04);
+    const hfov = 2 * Math.atan(Math.tan(fov / 2) * aspect);
+    // the turntable spins about y: the length has to fit across, the height up
+    const fitH = this.halfLength / Math.tan(hfov / 2);
+    const fitV = this.halfHeight / Math.tan(fov / 2);
+    this.camera.position.set(0, 0, Math.max(fitH, fitV, this.radius * 0.6) * 1.15 + this.halfHeight);
     this.camera.near = 0.01;
     this.camera.far = 10;
     this.camera.updateProjectionMatrix();
@@ -249,7 +272,12 @@ export class KnifeInspectPreview {
     this.raf = requestAnimationFrame(this.tick);
     const dt = Math.min(0.1, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
-    if (!this.dragging && now - this.lastInteraction > RESUME_AFTER_MS) this.yaw += dt * AUTO_SPIN;
+    if (!this.dragging && now - this.lastInteraction > RESUME_AFTER_MS) {
+      // sway around the nearest side-on view instead of spinning end-on to the camera
+      const side = Math.round(this.yaw / Math.PI) * Math.PI;
+      const target = side + 0.55 * Math.sin(now * 0.001 * AUTO_SPIN);
+      this.yaw += (target - this.yaw) * Math.min(1, dt * 2);
+    }
     this.drawSwatches(2);
     this.draw();
   };

@@ -22,6 +22,16 @@ if (process.env.BYPASS_FILE) {
 const width = Number(process.env.WIDTH ?? 2560);
 const height = Number(process.env.HEIGHT ?? 1440);
 const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, extraHTTPHeaders: headers });
+if (process.env.STORAGE) {
+  // localStorage entries set before the page loads, e.g. a knife finish selection
+  await context.addInitScript((entries) => {
+    try {
+      for (const [k, v] of Object.entries(entries)) localStorage.setItem(k, v);
+    } catch {
+      // about:blank has no storage
+    }
+  }, JSON.parse(process.env.STORAGE));
+}
 const page = await context.newPage();
 if (process.env.CPU_THROTTLE) {
   // slows the page's main thread like a weaker machine
