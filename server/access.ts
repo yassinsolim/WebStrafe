@@ -65,6 +65,14 @@ export function clientIp(
     if (typeof edge === 'string' && edge.length > 0) {
       return edge.trim();
     }
+  } else if (trustProxy === 'xff-last') {
+    // one trusted proxy in front (render): it appends the address it saw, so the
+    // rightmost entry is the only one the client can't write
+    const forwarded = headers['x-forwarded-for'];
+    if (typeof forwarded === 'string' && forwarded.length > 0) {
+      const parts = forwarded.split(',').map((v) => v.trim()).filter(Boolean);
+      if (parts.length > 0) return parts[parts.length - 1];
+    }
   } else if (trustProxy === '1') {
     const forwarded = headers['x-forwarded-for'];
     if (typeof forwarded === 'string' && forwarded.length > 0) {

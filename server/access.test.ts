@@ -31,6 +31,11 @@ describe('client ip', () => {
     expect(clientIp(headers, '10.0.0.1', '1')).toBe('1.2.3.4');
   });
 
+  it('xff-last takes the entry the proxy appended, not the client-supplied one', () => {
+    expect(clientIp({ 'x-forwarded-for': '6.6.6.6, 198.51.100.4' }, '10.0.0.1', 'xff-last')).toBe('198.51.100.4');
+    expect(clientIp({}, '10.0.0.1', 'xff-last')).toBe('10.0.0.1');
+  });
+
   it('trusts only CF-Connecting-IP behind a cloudflare tunnel', () => {
     const headers = { 'cf-connecting-ip': '198.51.100.7', 'x-forwarded-for': '1.2.3.4' };
     expect(clientIp(headers, '127.0.0.1', 'cloudflare')).toBe('198.51.100.7');
