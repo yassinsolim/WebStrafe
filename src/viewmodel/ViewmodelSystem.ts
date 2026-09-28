@@ -3,6 +3,7 @@ import { sharedGltfLoader } from '../assets/gltfLoader';
 import { DEFAULT_KNIFE_ID, getKnife, isKnifeId, type KnifeId } from '../combat/knives';
 import { buildProceduralKnife, disposeProceduralKnife, KNIFE_NODES } from '../cosmetics/ProceduralKnife';
 import { disposeKnifeModel, isKnifeModel, loadKnifeModel } from '../cosmetics/knifeAssets';
+import { applyKnifeFinish, type KnifeFinishSelection } from '../cosmetics/finishes/applyFinish';
 import { ArmsRig } from './ArmsRig';
 import { sampleClip, retime, type Clip } from './clips';
 import { blendHandPose, createHandPose, HAND_POSES, type HandPoseName } from './handPoses';
@@ -195,6 +196,7 @@ export class ViewmodelSystem {
   private knife: KnifeRig | null = null;
   private knifeLeft: KnifeRig | null = null;
   private knifeId: KnifeId = DEFAULT_KNIFE_ID;
+  private knifeFinish: KnifeFinishSelection | null = null;
   private readonly itemPivot = new Group();
   /** everything drawn; scaled about a point in front of the eye so the scale setting is visible */
   private readonly content = new Group();
@@ -255,6 +257,14 @@ export class ViewmodelSystem {
 
   public getKnife(): KnifeId {
     return this.knifeId;
+  }
+
+  /** finish for the knife in hand; kept and reapplied whenever the knife rig is rebuilt */
+  public setKnifeFinish(selection: KnifeFinishSelection | null): void {
+    this.knifeFinish = selection ? { finishId: selection.finishId, wear: selection.wear, seed: selection.seed } : null;
+    for (const rig of [this.knife, this.knifeLeft]) {
+      if (rig) applyKnifeFinish(rig.knife, this.knifeFinish ?? { finishId: 'vanilla', wear: 0, seed: 0 });
+    }
   }
 
   public equip(item: ViewItem): void {
@@ -776,6 +786,7 @@ export class ViewmodelSystem {
   private makeKnifeRig(model: Group | null = null): KnifeRig {
     const def = getKnife(this.knifeId);
     const knife = model ?? buildProceduralKnife(def);
+    if (this.knifeFinish) applyKnifeFinish(knife, this.knifeFinish);
     knife.traverse((node) => {
       node.frustumCulled = false;
     });

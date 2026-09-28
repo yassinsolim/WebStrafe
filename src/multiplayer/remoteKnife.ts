@@ -1,6 +1,7 @@
 import { Group, Mesh, Vector3, type Object3D } from 'three';
 import { getKnife, type KnifeId } from '../combat/knives';
 import { buildProceduralKnife, KNIFE_NODES } from '../cosmetics/ProceduralKnife';
+import { applyKnifeFinish } from '../cosmetics/finishes/applyFinish';
 import type { KnifeCosmetic } from '../network/cosmetics';
 import { attachKnifeModel } from './playerRig';
 
@@ -28,7 +29,9 @@ export function remoteKnifeTemplate(cosmetic: KnifeCosmetic | undefined): Group 
   knife.updateMatrixWorld(true);
   const grip = knife.getObjectByName(KNIFE_NODES.grip);
   if (grip) knife.position.sub(grip.getWorldPosition(new Vector3()));
-  remoteFinishHook?.(knife, cosmetic);
+  if (cosmetic?.finish && cosmetic.finish !== 'vanilla') {
+    applyKnifeFinish(knife, { finishId: cosmetic.finish, wear: cosmetic.wear ?? 0.05, seed: cosmetic.seed ?? 0 });
+  }
   const wrapper = new Group();
   wrapper.name = 'RemoteKnifeTemplate';
   wrapper.rotation.set(0, 0, Math.PI / 2);
@@ -55,13 +58,4 @@ export function setRemoteKnife(handBone: Object3D, cosmetic: KnifeCosmetic | und
   const old = handBone.getObjectByName('RemoteKnifeModel');
   old?.removeFromParent();
   attachKnifeModel(handBone as Parameters<typeof attachKnifeModel>[0], remoteKnifeTemplate(cosmetic));
-}
-
-type FinishHook = (knife: Object3D, cosmetic: KnifeCosmetic | undefined) => void;
-let remoteFinishHook: FinishHook | null = null;
-
-/** lets the finish system paint remote knives without this module importing it */
-export function setRemoteKnifeFinishHook(hook: FinishHook | null): void {
-  remoteFinishHook = hook;
-  templates.clear();
 }
