@@ -1,5 +1,7 @@
 import type { CosmeticsManifest, LoadoutSelection } from '../cosmetics/types';
 import type { KnifeId } from '../combat/knives';
+import type { KnifeFinishSelection } from '../cosmetics/finishes/catalog';
+import type { KnifeLoadoutSelection } from '../cosmetics/finishes/selection';
 import type { MapManifestEntry } from '../world/types';
 import type { GameSettings } from './SettingsStore';
 import { CharacterPreview } from './CharacterPreview';
@@ -20,6 +22,8 @@ interface MainMenuCallbacks {
   onNameChanged: (name: string) => void;
   /** null = the authored (legacy) viewmodel knife */
   onKnifeSelected?: (knifeId: KnifeId | null) => void;
+  /** finish, wear or pattern seed of the equipped knife changed */
+  onKnifeFinishChanged?: (selection: KnifeLoadoutSelection) => void;
 }
 
 interface LoadoutPreset {
@@ -71,6 +75,8 @@ export class MainMenu {
   private loadoutPresets: LoadoutPreset[] = [];
   private activeTeam: TeamId = 'terrorist';
   private preview: CharacterPreview | null = null;
+  private visible = false;
+  private activeTab: TabId = 'play';
 
   constructor(parent: HTMLElement, settings: GameSettings, private readonly callbacks: MainMenuCallbacks) {
     this.settings = { ...settings };
@@ -180,6 +186,7 @@ export class MainMenu {
     const loadoutSection = this.makeSection('loadout');
     this.loadoutPanel = new LoadoutPanel(loadoutSection, {
       onKnifeSelected: (knifeId) => this.callbacks.onKnifeSelected?.(knifeId),
+      onKnifeFinishChanged: (selection) => this.callbacks.onKnifeFinishChanged?.(selection),
     });
     panels.appendChild(loadoutSection);
 
@@ -268,6 +275,8 @@ export class MainMenu {
     } else {
       this.preview?.stop();
     }
+    this.visible = visible;
+    this.loadoutPanel.setActive(visible && this.activeTab === 'loadout');
   }
 
   /** Reflects the authoritative (already-sanitized) player name into the field. */
@@ -331,6 +340,7 @@ export class MainMenu {
   public dispose(): void {
     this.detachSounds();
     this.settingsPanel.dispose();
+    this.loadoutPanel.dispose();
     this.preview?.dispose();
     this.preview = null;
   }
@@ -358,11 +368,18 @@ export class MainMenu {
       section.classList.toggle('is-active', sectionId === id);
     }
     this.root.dataset.tab = id;
+    this.activeTab = id;
+    this.loadoutPanel.setActive(this.visible && id === 'loadout');
   }
 
   /** Reflects the stored knife choice without firing the callback. */
   public setSelectedKnife(knifeId: KnifeId | null): void {
     this.loadoutPanel.setSelectedKnife(knifeId);
+  }
+
+  /** Reflects the stored knife finish without firing the callback. */
+  public setKnifeFinish(selection: KnifeFinishSelection): void {
+    this.loadoutPanel.setKnifeFinish(selection);
   }
 
   private refreshPlayLabel(): void {

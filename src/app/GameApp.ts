@@ -386,8 +386,14 @@ export class GameApp {
         this.showStatus(`Knife: ${getKnife(knifeId ?? DEFAULT_KNIFE_ID).name}`);
         this.syncHudKnifeName();
       },
+      onKnifeFinishChanged: (selection) => {
+        this.knifeSelection = { ...selection, knifeId: this.viewmodel.getKnife() };
+        this.viewmodel.setKnifeFinish(this.knifeSelection);
+        saveKnifeSelection(this.knifeSelection);
+      },
     });
     this.menu.setSelectedKnife(this.viewmodel.getKnife());
+    this.menu.setKnifeFinish(this.knifeSelection);
     this.menu.setMaps(this.getMapEntries(), this.selectedMapId);
     this.menu.setCosmetics(cosmeticsManifest, this.loadout);
     this.menu.setLeaderboard([], this.getMapNameById(this.selectedMapId));
