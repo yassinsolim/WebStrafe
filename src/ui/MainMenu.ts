@@ -1,4 +1,5 @@
 import type { CosmeticsManifest, LoadoutSelection } from '../cosmetics/types';
+import type { CharacterLook } from '../characters/look';
 import type { KnifeId } from '../combat/knives';
 import type { MapManifestEntry } from '../world/types';
 import type { GameSettings } from './SettingsStore';
@@ -371,6 +372,11 @@ export class MainMenu {
       section.classList.toggle('is-active', sectionId === id);
     }
     this.root.dataset.tab = id;
+  }
+
+  /** Dresses the menu character in the player's look. */
+  public setCharacterLook(look: CharacterLook): void {
+    void this.preview?.setLook(look, this.activeTeam);
   }
 
   /** Reflects the stored knife choice without firing the callback. */

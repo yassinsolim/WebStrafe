@@ -90,6 +90,9 @@ import type { DeathEvent, HitEvent, ShotEvent } from '../network/MultiplayerTran
 import { GameHud } from '../ui/hud/GameHud';
 import { damageDirection } from '../ui/hud/hudMath';
 import { showsRunTimer } from '../ui/menu/menuInfo';
+import { PlayerCharacter } from '../characters/PlayerCharacter';
+import { loadCharacterLibrary } from '../characters/CharacterFactory';
+import { devCharacterRows, parseDevCharacters } from '../characters/devCharacters';
 
 type MapSource =
   | {
@@ -196,6 +199,7 @@ export class GameApp {
   private readonly freecamPosition = new Vector3();
 
   private menu: MainMenu | null = null;
+  private playerCharacter: PlayerCharacter | null = null;
   private settings: GameSettings = { ...defaultSettings };
   private loadout: LoadoutSelection | null = null;
 
@@ -342,6 +346,12 @@ export class GameApp {
     this.selectedMapId = loadSelectedMapId(this.mapSources.keys(), fallbackMapId);
 
     this.loadout = defaultLoadout(cosmeticsManifest);
+    this.playerCharacter = new PlayerCharacter({
+      container: this.container,
+      worldScene: this.worldScene,
+      team: this.getPlayerModelFromLoadout(this.loadout),
+      onLookChanged: () => this.syncMultiplayerIdentity(),
+    });
     this.viewmodel.setKnife(loadKnifeStyle());
     this.activeKnifeSoundProfile = this.getKnifeSoundProfileFromLoadout(this.loadout);
     this.knifeAudio.setProfile(this.activeKnifeSoundProfile);
@@ -366,8 +376,10 @@ export class GameApp {
       onLoadoutChanged: (next) => {
         this.loadout = next;
         void this.applyLoadout(next);
+        this.playerCharacter?.setTeam(this.getPlayerModelFromLoadout(next));
         this.syncMultiplayerIdentity();
       },
+      onCustomize: () => this.playerCharacter?.openCustomize(),
       onNameChanged: (name) => this.applyPlayerName(name),
       onKnifeSelected: (knifeId) => {
         this.viewmodel.setKnife(knifeId);
@@ -379,6 +391,7 @@ export class GameApp {
     this.menu.setSelectedKnife(this.viewmodel.getKnife());
     this.menu.setMaps(this.getMapEntries(), this.selectedMapId);
     this.menu.setCosmetics(cosmeticsManifest, this.loadout);
+    this.playerCharacter.attachMenu(this.menu);
     this.menu.setLeaderboard([], this.getMapNameById(this.selectedMapId));
     this.menu.setPlayerName(this.localPlayerName);
     // Persist the (possibly auto-generated) name so identity is stable across reloads.
@@ -710,6 +723,13 @@ export class GameApp {
     this.viewmodel.root.rotation.copy(this.viewmodelRenderer.motionRot);
     this.viewmodel.update(frameDt);
     this.remotePlayers.update(frameDt);
+    this.playerCharacter?.update(
+      frameDt,
+      time / 1000,
+      this.movement.getFeetPosition(),
+      this.movement.getYawRad(),
+      this.playing && this.debugCameraMode === 'thirdPerson',
+    );
     if (this.combatEnabled) {
       this.updateCombat(time);
     }
@@ -1086,6 +1106,7 @@ export class GameApp {
       this.selectedMapId,
       this.localPlayerName,
       this.getPlayerModelFromLoadout(this.loadout),
+      this.playerCharacter?.wire(),
     );
   }
 
@@ -2473,6 +2494,7 @@ export class GameApp {
         this.combatAim.toggleScope(performance.now() + i * 100, { reloading: false, alive: true });
       }
     }
+    await this.spawnDevCharacters();
     this.viewmodel.seek(shot.clip as ViewAction, shot.t);
     if (shot.qa) {
       this.installQaHooks();
@@ -2500,6 +2522,18 @@ export class GameApp {
     const info = this.renderer.info.render;
     (window as unknown as { __shotInfo?: unknown }).__shotInfo = { calls: info.calls, triangles: info.triangles };
     (window as unknown as { __shotReady?: boolean }).__shotReady = true;
+  }
+
+  /** dev/preview only: ?chars=n lines up armored characters for perf and screenshots */
+  private async spawnDevCharacters(): Promise<void> {
+    const request = parseDevCharacters(window.location.search);
+    if (!request) return;
+    const library = await loadCharacterLibrary();
+    await this.remotePlayersReady;
+    const eye = this.movement.getCameraPosition();
+    const rows = devCharacterRows(request, eye, this.movement.getFeetPosition().y, this.movement.getYawRad(), library);
+    this.remotePlayers.applySnapshot(rows, null);
+    if (request.thirdPerson) this.debugCameraMode = 'thirdPerson';
   }
 
   /** sounds for viewmodel clip events GunAudio doesn't already schedule */
