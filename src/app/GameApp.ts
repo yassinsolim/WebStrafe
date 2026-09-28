@@ -94,6 +94,7 @@ import { PlayerCharacter } from '../characters/PlayerCharacter';
 import { loadCharacterLibrary } from '../characters/CharacterFactory';
 import { devCharacterRows, parseDevCharacters } from '../characters/devCharacters';
 import { setCharacterDetail } from '../characters/ArmorCharacter';
+import { decodeLook, encodeLook } from '../characters/look';
 
 type MapSource =
   | {
@@ -2419,9 +2420,18 @@ export class GameApp {
         weapon: this.weapon.getActive(),
         ammo: this.weapon.getAmmo(),
         feet: this.movement.getFeetPosition().toArray(),
-        players: this.remotePlayers.getDisplayedPlayers().map((p) => ({ id: p.id, pos: p.position.toArray() })),
+        players: this.remotePlayers.getDisplayedPlayers().map((p) => {
+          const look = this.remotePlayers.getPlayerLook(p.id);
+          return { id: p.id, pos: p.position.toArray(), look: look ? encodeLook(look) : null };
+        }),
+        look: this.playerCharacter?.wire() ?? null,
       }),
       equip: (id: WeaponId) => this.equipCombatWeapon(id),
+      setLook: (wire: string) => {
+        const look = decodeLook(wire);
+        if (look) this.playerCharacter?.wearForTest(look);
+        return look !== null;
+      },
       teleport: (x: number, y: number, z: number, yawDeg: number) => this.movement.reset(new Vector3(x, y, z), yawDeg),
       move: (forwardMove: number, sideMove: number, jump = false) => {
         this.qaMove = forwardMove === 0 && sideMove === 0 && !jump ? null : { forwardMove, sideMove, jumpHeld: jump, jumpPressed: jump };

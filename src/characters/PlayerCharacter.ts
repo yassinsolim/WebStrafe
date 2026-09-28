@@ -61,6 +61,11 @@ export class PlayerCharacter {
     this.apply(next, !looksEqual(next, this.lookValue));
   }
 
+  /** qa and tooling: wear a look now (not saved) and share it like Done would */
+  wearForTest(look: CharacterLook): void {
+    this.apply(look, true);
+  }
+
   openCustomize(): void {
     this.screen ??= new CustomizeScreen(this.options.container, {
       onClose: (look, saved) => {
