@@ -1,6 +1,6 @@
 // dev screenshots of the character pages through headed chromium on the real gpu.
 //   node tools/characters/shoot.mjs <base url> <out dir> <path>=<file.png> [...]
-// env: PLAYWRIGHT_MODULE, CHROME, WIDTH, HEIGHT
+// env: PLAYWRIGHT_MODULE, CHROME, WIDTH, HEIGHT, STORAGE (json of localStorage entries set before load)
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -16,6 +16,15 @@ const page = await browser.newPage({
   viewport: { width: Number(process.env.WIDTH ?? 1920), height: Number(process.env.HEIGHT ?? 1080) },
   deviceScaleFactor: 1,
 });
+if (process.env.STORAGE) {
+  await page.addInitScript((entries) => {
+    try {
+      for (const [k, v] of Object.entries(entries)) localStorage.setItem(k, v);
+    } catch {
+      // about:blank has no storage
+    }
+  }, JSON.parse(process.env.STORAGE));
+}
 page.on('console', (msg) => {
   if (msg.type() === 'error' || msg.type() === 'warning') console.log(`[${msg.type()}] ${msg.text().slice(0, 400)}`);
 });

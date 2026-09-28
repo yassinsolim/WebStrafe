@@ -62,3 +62,15 @@ at 50k. Download: GLB about 4.7 MB plus about 2.3 MB of atlas.
 ## Credits
 
 MakeHuman CC0 assets, ambientCG and Poly Haven CC0 materials: see `CREDITS.md`.
+
+## First person
+
+There is no separate first-person armor asset. `FirstPersonArmor` (`fpArmor.ts`)
+takes the chosen kit's own forearm, elbow and hand plates from the library and
+`fpTransplant.ts` moves them onto the first-person arms rig: each vertex is
+carried from the body's upper arm, forearm and hand frames into the rig's
+matching frames, the forearm radius is rescaled slice by slice to the sleeve,
+and every vertex takes the skin weights of the nearest glove or sleeve vertex
+(small pieces ride rigidly on their averaged weights) and is pushed out of it.
+The plates share the atlas, finish and colours other players see. The bare
+forearm is tinted to the dark undersuit while armor is worn.

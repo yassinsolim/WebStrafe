@@ -303,7 +303,7 @@ export const CREDITS: readonly CreditEntry[] = [
     title: 'Strafe, Anvil, Vector and Quill armor sets (built by our Blender scripts in tools/blender/characters)',
     author: 'WebStrafe',
     license: 'Original work',
-    files: ['public/characters/armor.glb', 'public/characters/fp_armor.glb', 'tools/blender/characters/armor_sets.py'],
+    files: ['public/characters/armor.glb', 'tools/blender/characters/armor_sets.py'],
   },
   {
     id: 'original-cosmetics',

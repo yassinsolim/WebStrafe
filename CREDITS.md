@@ -72,6 +72,6 @@ below is original WebStrafe work.
 - Procedural player models by WebStrafe. License: Original work.
   Files: `src/multiplayer/ProceduralPlayer.ts`.
 - Strafe, Anvil, Vector and Quill armor sets (built by our Blender scripts in tools/blender/characters) by WebStrafe. License: Original work.
-  Files: `public/characters/armor.glb`, `public/characters/fp_armor.glb`, `tools/blender/characters/armor_sets.py`.
+  Files: `public/characters/armor.glb`, `tools/blender/characters/armor_sets.py`.
 - Placeholder gloves, knife and textures by WebStrafe. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
   Files: `public/cosmetics/models/gloves_placeholder.glb`, `public/cosmetics/models/knife_placeholder.glb`.
