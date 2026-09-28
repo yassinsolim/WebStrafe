@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WebStrafe customize screen (dev only)</title>
+    <link rel="icon" href="data:," />
+    <style>
+      .dev-reopen {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        padding: 12px 20px;
+        color: #120600;
+        background: #ff6a2b;
+        border: none;
+        font: 700 16px system-ui, sans-serif;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- dev tool: npm run dev, then open /tools/customize-preview.html
+         ?look=<wire> starts from an encoded look (see encodeLook), ?team=ct opens as the ct side,
+         ?slot=helmet|arms|chest|legs|classItem starts on that slot's camera.
+         sets window.__shotReady once the preview has drawn a few frames with the camera at rest -->
+    <div id="app"></div>
+    <script type="module">
+      import '/src/style.css';
+      import { CustomizeScreen } from '/src/ui/customize/CustomizeScreen.ts';
+      import { decodeLook, defaultLook, encodeLook } from '/src/characters/look.ts';
+      import { loadLook } from '/src/characters/lookStore.ts';
+
+      const params = new URLSearchParams(location.search);
+      const team = params.get('team') === 'ct' ? 'counterterrorist' : 'terrorist';
+      const wire = params.get('look');
+      let current = (wire && decodeLook(wire, defaultLook(team))) || loadLook(team);
+
+      const reopen = document.createElement('button');
+      reopen.className = 'dev-reopen';
+      reopen.textContent = 'Open the customize screen';
+      reopen.hidden = true;
+      document.body.appendChild(reopen);
+
+      const screen = new CustomizeScreen(document.getElementById('app'), {
+        onChange: (look) => {
+          window.__lastChange = encodeLook(look);
+        },
+        onClose: (look, saved) => {
+          current = look;
+          window.__lastClose = { saved, look: encodeLook(look) };
+          console.info(`[customize-preview] closed, saved=${saved}, look=${encodeLook(look)}`);
+          reopen.hidden = false;
+        },
+      });
+      reopen.addEventListener('click', () => {
+        reopen.hidden = true;
+        screen.open(current, team);
+      });
+      screen.open(current, team);
+      window.__customize = screen;
+
+      const slot = params.get('slot');
+      if (slot) {
+        document.querySelector(`.cz-slot-tab[data-slot="${slot}"]`)?.click();
+      }
+
+      // screenshots wait for the fonts and for the stage to say it has drawn and settled
+      const waitReady = () => {
+        if (document.querySelector('.cz-stage-mount')?.dataset.ready === 'true') {
+          window.__shotReady = true;
+          return;
+        }
+        requestAnimationFrame(waitReady);
+      };
+      document.fonts.ready.then(() => requestAnimationFrame(waitReady));
+    </script>
+  </body>
+</html>
