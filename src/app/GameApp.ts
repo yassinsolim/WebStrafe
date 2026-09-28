@@ -1319,7 +1319,7 @@ export class GameApp {
     this.multiplayer.sendFire(
       [origin.x, origin.y, origin.z],
       [forward.x, forward.y, forward.z],
-      this.remotePlayers.getFireView(),
+      { ...this.remotePlayers.getFireView(), ammo: result.ammoRemaining + 1 },
     );
     this.combatAim.onShotFired(nowMs);
     if (result.magazineEmptied) {
@@ -1430,7 +1430,7 @@ export class GameApp {
     if (!this.combatEnabled) {
       return;
     }
-    this.weapon.equip(id);
+    this.weapon.equip(id, performance.now());
     this.combatAim.setWeapon(id, performance.now());
     this.multiplayer.sendEquip(id);
     this.audio.play('weaponDraw');

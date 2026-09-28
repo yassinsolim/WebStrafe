@@ -40,8 +40,10 @@ export class WeaponController {
     return this.reloadingUntilMs !== null;
   }
 
-  equip(id: WeaponId): void {
+  equip(id: WeaponId, nowMs?: number): void {
     if (id === this.active) return;
+    // a reload whose timer already ran out is done, even if nobody ticked us since
+    if (nowMs !== undefined) this.completeReloadIfDue(nowMs);
     this.active = id;
     // Switching weapons cancels an in-progress reload.
     this.reloadingUntilMs = null;
@@ -95,6 +97,26 @@ export class WeaponController {
     if (this.getAmmo() >= weapon.magazine) return false;
     this.reloadingUntilMs = nowMs + weapon.reloadMs;
     this.reloadingWeapon = this.active;
+    return true;
+  }
+
+  /**
+   * Accepts the shooter's own magazine count for the active weapon when it's
+   * higher than ours (a reload we missed or cancelled, or a handoff), capped at
+   * a full magazine. Returns true when our copy changed. Fire interval stays
+   * ours, so this can't speed up shooting.
+   */
+  reconcileAmmo(reported: number, nowMs: number): boolean {
+    this.completeReloadIfDue(nowMs);
+    const weapon = getWeapon(this.active);
+    if (isMelee(weapon) || !Number.isFinite(reported)) return false;
+    const claimed = Math.min(weapon.magazine, Math.max(0, Math.floor(reported)));
+    if (claimed <= this.getAmmo()) return false;
+    if (this.reloadingWeapon === this.active) {
+      this.reloadingUntilMs = null;
+      this.reloadingWeapon = null;
+    }
+    this.ammo.set(this.active, claimed);
     return true;
   }
 
