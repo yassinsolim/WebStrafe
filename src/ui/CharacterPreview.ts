@@ -2,33 +2,29 @@ import {
   ACESFilmicToneMapping,
   AmbientLight,
   Box3,
+  CanvasTexture,
+  CircleGeometry,
   Color,
   DirectionalLight,
   Group,
   HemisphereLight,
   Mesh,
-  MeshStandardMaterial,
+  MeshBasicMaterial,
   Object3D,
   PerspectiveCamera,
+  PMREMGenerator,
   PointLight,
   Scene,
   SRGBColorSpace,
   Vector3,
   WebGLRenderer,
 } from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { createPlayerModel } from '../multiplayer/ProceduralPlayer';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { PlayerModel } from '../network/types';
-import {
-  addPlayerEyeDetails,
-  applyKnifeIdlePose,
-  attachKnifeModel,
-  buildArmRig,
-  loadKnifeMesh,
-  type ArmRig,
-} from '../multiplayer/playerRig';
+import { createCharacter, type CharacterHandle } from '../characters/CharacterFactory';
+import { defaultLook, type CharacterLook } from '../characters/look';
+import { attachKnifeModel, loadKnifeMesh } from '../multiplayer/playerRig';
 
-const TARGET_HEIGHT = 1.85;
 const TAU = Math.PI * 2;
 const FRAME_PADDING = 1.18;
 
@@ -54,26 +50,27 @@ export function previewCameraDistance(
   return Math.max(verticalDistance, horizontalDistance) + depth * 0.5;
 }
 
-const loader = new GLTFLoader();
+// the armored characters are authored at real scale; the stage frames this box
+const STAGE_BOUNDS = new Box3(new Vector3(-0.42, 0, -0.3), new Vector3(0.42, 1.86, 0.3));
 
 /**
- * Self-contained 3D character stage for the main menu. Owns its own transparent
- * WebGL renderer + scene, loads a player model GLB, and animates a restrained
- * breathing pose with a soft rim light. Paused while hidden to save the GPU.
- * Completely independent of the game's renderer.
+ * Self-contained 3D character stage for the main menu: its own transparent
+ * renderer and scene with the player's armored character in the knife stance,
+ * lit by a studio environment so paint finishes read. Paused while hidden.
  */
 export class CharacterPreview {
   private readonly renderer: WebGLRenderer;
   private readonly scene = new Scene();
   private readonly camera: PerspectiveCamera;
   private readonly pivot = new Group();
-  private current: Object3D | null = null;
-  private currentBounds: Box3 | null = null;
-  private currentRig: ArmRig | null = null;
+  private character: CharacterHandle | null = null;
+  private look: CharacterLook = defaultLook('terrorist');
+  private team: PlayerModel = 'terrorist';
   private loadToken = 0;
   private knifePromise: Promise<Object3D | null> | null = null;
   private rafHandle: number | null = null;
   private startTime = 0;
+  private lastFrame = 0;
   private baseYaw = 0;
   private running = false;
   private readonly resizeObserver: ResizeObserver;
@@ -83,16 +80,22 @@ export class CharacterPreview {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.1;
     this.renderer.domElement.className = 'character-preview-canvas';
     container.appendChild(this.renderer.domElement);
 
-    this.camera = new PerspectiveCamera(32, 1, 0.1, 100);
+    this.camera = new PerspectiveCamera(30, 1, 0.1, 100);
     this.camera.position.set(0, 1.12, 4.2);
     this.camera.lookAt(0, 1.0, 0);
 
+    const pmrem = new PMREMGenerator(this.renderer);
+    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environmentIntensity = 0.5;
+    pmrem.dispose();
+
     this.scene.add(this.pivot);
     this.setupLights();
+    this.setupFloor();
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
@@ -100,79 +103,83 @@ export class CharacterPreview {
   }
 
   private setupLights(): void {
-    const hemi = new HemisphereLight(0xdfeaff, 0x0a0c12, 1.1);
-    this.scene.add(hemi);
-
-    const ambient = new AmbientLight(0xffffff, 0.35);
-    this.scene.add(ambient);
-
-    // Warm key light from the front-upper-left.
-    const key = new DirectionalLight(0xfff2e6, 2.2);
+    this.scene.add(new HemisphereLight(0xdfeaff, 0x0a0c12, 0.7));
+    this.scene.add(new AmbientLight(0xffffff, 0.08));
+    // warm key from the front-upper-left
+    const key = new DirectionalLight(0xfff2e6, 2.3);
     key.position.set(-2.4, 3.4, 3.2);
     this.scene.add(key);
-
-    // Cool fill from the right to shape the form.
-    const fill = new DirectionalLight(0xaecbff, 0.7);
+    // cool fill from the right
+    const fill = new DirectionalLight(0xaecbff, 0.6);
     fill.position.set(3.0, 1.6, 1.4);
     this.scene.add(fill);
-
-    // Hot rim/back light for a gamey edge glow.
+    // hot rim from behind for the silhouette
     const rim = new PointLight(0xff7a2c, 3.2, 12, 2);
     rim.position.set(0.6, 2.6, -2.6);
     this.scene.add(rim);
+    const rimCool = new DirectionalLight(0x8fb8ff, 1.2);
+    rimCool.position.set(-2.5, 2.2, -3.5);
+    this.scene.add(rimCool);
   }
 
-  /** Builds and frames a player model, replacing any current one. */
+  private setupFloor(): void {
+    // a soft contact shadow under the feet
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 64);
+    g.addColorStop(0, 'rgba(0,0,0,0.55)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 128, 128);
+    const mat = new MeshBasicMaterial({ map: new CanvasTexture(canvas), transparent: true, depthWrite: false });
+    const shadow = new Mesh(new CircleGeometry(0.55, 32), mat);
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = 0.002;
+    this.scene.add(shadow);
+  }
+
+  /** Shows the team's side (keeps the current look). */
   async setModel(model: PlayerModel): Promise<void> {
+    this.team = model;
+    await this.rebuild();
+  }
+
+  /** Shows a look, for the given team when passed. */
+  async setLook(look: CharacterLook, team: PlayerModel = this.team): Promise<void> {
+    this.look = look;
+    const teamChanged = team !== this.team;
+    this.team = team;
+    if (this.character && !teamChanged) {
+      this.character.setLook(look, team);
+      return;
+    }
+    await this.rebuild();
+  }
+
+  private async rebuild(): Promise<void> {
     const token = ++this.loadToken;
-    const root: Object3D = createPlayerModel(model);
+    if (this.character) {
+      this.character.setLook(this.look, this.team);
+      return;
+    }
+    const [character, knife] = await Promise.all([
+      createCharacter(this.look, this.team, { pose: 'stance', lod: 0 }),
+      this.getKnife(),
+    ]);
     if (token !== this.loadToken) {
-      return; // a newer load superseded this one
+      character.dispose();
+      return;
     }
-
-    this.clearModel();
-    normalizeToHeight(root, TARGET_HEIGHT);
-    addPlayerEyeDetails(root);
-    root.traverse((child) => {
-      if (child instanceof Mesh) {
-        child.castShadow = false;
-        child.receiveShadow = false;
-        child.frustumCulled = false;
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        for (const material of materials) {
-          const std = material as MeshStandardMaterial;
-          if (std.map) {
-            std.map.colorSpace = SRGBColorSpace;
-          }
-          std.needsUpdate = true;
-        }
-      }
-    });
-
-    // Pose the arms into the combat knife-hold stance and put a knife in hand,
-    // so the menu character matches the in-game models instead of T-posing.
-    const rig = buildArmRig(root);
-    if (rig) {
-      const knife = await this.getKnife();
-      if (token !== this.loadToken) {
-        return; // superseded while the knife loaded
-      }
-      attachKnifeModel(rig.rightWeaponHand, knife);
-      applyKnifeIdlePose(rig);
-      this.currentRig = rig;
-    }
-
-    this.current = root;
-    this.pivot.add(root);
-    root.updateWorldMatrix(true, true);
-    this.currentBounds = new Box3().setFromObject(root);
-    this.frameCurrentModel();
+    if (character.rig) attachKnifeModel(character.rig.rightWeaponHand, knife);
+    this.character = character;
+    this.pivot.add(character.root);
+    this.frameCharacter();
   }
 
   private getKnife(): Promise<Object3D | null> {
-    if (!this.knifePromise) {
-      this.knifePromise = loadKnifeMesh(loader);
-    }
+    this.knifePromise ??= loadKnifeMesh().catch(() => null);
     return this.knifePromise;
   }
 
@@ -187,16 +194,16 @@ export class CharacterPreview {
     }
     this.running = true;
     this.startTime = performance.now();
+    this.lastFrame = this.startTime;
     const loop = () => {
       if (!this.running) {
         return;
       }
-      const elapsed = performance.now() - this.startTime;
+      const now = performance.now();
+      const dt = Math.min(0.05, (now - this.lastFrame) / 1000);
+      this.lastFrame = now;
       this.pivot.rotation.y = this.baseYaw;
-      this.pivot.position.y = 0;
-      if (this.currentRig) {
-        applyKnifeIdlePose(this.currentRig, previewBreath(elapsed));
-      }
+      this.character?.update(dt, (now - this.startTime) / 1000);
       this.renderer.render(this.scene, this.camera);
       this.rafHandle = requestAnimationFrame(loop);
     };
@@ -214,33 +221,11 @@ export class CharacterPreview {
   dispose(): void {
     this.stop();
     this.resizeObserver.disconnect();
-    this.clearModel();
+    this.character?.dispose();
+    this.character = null;
+    this.scene.environment?.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
-  }
-
-  private clearModel(): void {
-    if (!this.current) {
-      return;
-    }
-    this.pivot.remove(this.current);
-    this.currentBounds = null;
-    this.currentRig = null;
-    // The attached knife is a clone that SHARES geometry/materials with the
-    // cached knife template — detach it so we don't dispose those shared
-    // resources (which would break the knife on the next model load).
-    const knife = this.current.getObjectByName('RemoteKnifeModel');
-    knife?.parent?.remove(knife);
-    this.current.traverse((child) => {
-      if (child instanceof Mesh) {
-        child.geometry.dispose();
-        const materials = Array.isArray(child.material) ? child.material : [child.material];
-        for (const material of materials) {
-          material.dispose();
-        }
-      }
-    });
-    this.current = null;
   }
 
   private resize(): void {
@@ -249,42 +234,17 @@ export class CharacterPreview {
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
-    this.frameCurrentModel();
+    this.frameCharacter();
   }
 
-  private frameCurrentModel(): void {
-    if (!this.currentBounds) {
-      return;
-    }
-    const size = this.currentBounds.getSize(new Vector3());
-    const center = this.currentBounds.getCenter(new Vector3());
-    const distance = previewCameraDistance(
-      size.x,
-      size.y,
-      size.z,
-      this.camera.aspect,
-      this.camera.fov,
-    );
+  private frameCharacter(): void {
+    const size = STAGE_BOUNDS.getSize(new Vector3());
+    const center = STAGE_BOUNDS.getCenter(new Vector3());
+    const distance = previewCameraDistance(size.x, size.y, size.z, this.camera.aspect, this.camera.fov);
     const targetY = center.y - size.y * 0.025;
-    this.camera.position.set(center.x, targetY, center.z + distance);
+    this.camera.position.set(center.x, targetY + 0.08, center.z + distance);
     this.camera.lookAt(center.x, targetY, center.z);
   }
-}
-
-/** Scales a model to a target height and re-centres it with feet at y=0. */
-function normalizeToHeight(root: Object3D, targetHeight: number): void {
-  root.updateWorldMatrix(true, true);
-  const box = new Box3().setFromObject(root);
-  const size = box.getSize(new Vector3());
-  if (size.y > 1e-4) {
-    root.scale.multiplyScalar(targetHeight / size.y);
-  }
-  root.updateWorldMatrix(true, true);
-  const scaled = new Box3().setFromObject(root);
-  const center = scaled.getCenter(new Vector3());
-  root.position.x -= center.x;
-  root.position.z -= center.z;
-  root.position.y -= scaled.min.y;
 }
 
 export const PREVIEW_BG = new Color(0x0a0c12);

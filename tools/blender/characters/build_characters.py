@@ -45,12 +45,15 @@ def parse_args():
     ap.add_argument("--fast", action="store_true", help="coarser voxels for quick looks")
     ap.add_argument("--only", default="", help="comma list of slots to build (debug)")
     ap.add_argument("--save-blend", default=None)
+    ap.add_argument("--no-body", action="store_true", help="skip the undersuit (per-set parallel builds)")
+    ap.add_argument("--lod0-scale", type=float, default=1.0, help="multiplies every lod0 budget")
+    ap.add_argument("--adaptivity", type=float, default=0.0, help="openvdb adaptivity before decimation")
     return ap.parse_args(common.script_args())
 
 
 def body_part(rig, body):
     weights = lambda co: body_weights(rig, co)  # noqa: E731
-    return Part("body", "core", "suit", body, "suit", weights=weights, voxel=0.0042, tris=(7000, 2600, 850), symmetric=True)
+    return Part("body", "core", "suit", body, "suit", weights=weights, voxel=0.0042, tris=(5200, 2000, 700), symmetric=True)
 
 
 def mirror_object(src, name, normals):
@@ -82,24 +85,28 @@ def tag(obj, part, lod, name):
     obj["mat"] = part.material
 
 
-def process(part, arm, scene_fn, fast):
+def process(part, arm, scene_fn, fast, lod0_scale=1.0, adaptivity=0.0):
     voxel = part.voxel * (1.8 if fast else 1.0)
-    verts, faces = S.mesh(part.sdf, voxel)
+    verts, faces = S.mesh(part.sdf, voxel, adaptivity=adaptivity)
     if len(faces) == 0:
         B.log(f"WARNING {part.slot}.{part.set}.{part.name} is empty")
         return []
     hi = B.mesh_object(f"{part.slot}.{part.set}.{part.name}.hi", verts, faces)
     made = []
     for lod in part.lods:
-        target = part.tris[lod]
+        target = int(part.tris[lod] * (lod0_scale if lod == 0 else 1.0))
         if target <= 0:
             continue
         name = f"{part.slot}.{part.set}.{part.name}.lod{lod}"
         obj = B.copy_object(hi, name)
         B.decimate(obj, target, symmetric=part.symmetric)
+        if B.tri_count(obj) > target * 1.5:
+            # symmetric collapse can stall on thin shells, finish without it
+            B.decimate(obj, target, symmetric=False)
+        obj.data.validate(clean_customdata=False)
         co = S.project(part.sdf, B.get_co(obj))
         B.set_co(obj, co)
-        if lod == 0:
+        if lod == 0 and part.material in ("suit", "cloth", "trim"):
             B.relax(obj, part.sdf, iterations=2)
         co = B.get_co(obj)
         n = S.normals(part.sdf, co)
@@ -199,9 +206,11 @@ def main():
     sets = [s for s in args.sets.split(",") if s]
 
     parts, anchors = [], []
-    if not only or "body" in only:
+    if not args.no_body and (not only or "body" in only):
         parts.append(body_part(rig, body))
     for set_id in sets:
+        if set_id == "none":
+            continue
         module = importlib.import_module(f"set_{set_id}")
         set_parts, set_anchors = module.build(rig)
         parts += [p for p in set_parts if not only or p.slot in only]
@@ -214,7 +223,7 @@ def main():
     made = []
     for p in parts:
         scene_fn = body if p.slot == "body" else S.Union([body] + groups[(p.slot, p.set)])
-        made += process(p, arm, scene_fn, args.fast)
+        made += process(p, arm, scene_fn, args.fast, args.lod0_scale, args.adaptivity)
     empties = [add_anchor(a) for a in anchors]
 
     total = sum(B.tri_count(o) for o in made if o.get("lod") == 0)

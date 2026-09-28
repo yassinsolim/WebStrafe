@@ -306,6 +306,18 @@ def polygon2(px, py, verts):
     return s * np.sqrt(d)
 
 
+class Displace(SDF):
+    """adds a small pattern to a surface (ribs, quilting); keep amplitudes to a few mm"""
+
+    def __init__(self, a, fn, amp):
+        self.a, self.fn, self.amp = a, fn, float(amp)
+        self.lo = a.lo - abs(self.amp)
+        self.hi = a.hi + abs(self.amp)
+
+    def __call__(self, p):
+        return self.a(p) + self.amp * self.fn(p)
+
+
 class Fn(SDF):
     """wraps a plain function with explicit bounds"""
 
@@ -544,7 +556,7 @@ def ambient_occlusion(fn, p, n, steps=5, delta=0.012, falloff=0.55):
     return np.clip(1.0 - occ / total * 1.6, 0.0, 1.0)
 
 
-def convexity(fn, p, n, depth=0.007):
+def convexity(fn, p, n, depth=0.0035):
     """0 on flat or concave skin, towards 1 on sharp outside edges (paint chips there)"""
     d = evaluate(fn, p - n * depth)
     return np.clip((d + depth) / depth, 0.0, 1.0)

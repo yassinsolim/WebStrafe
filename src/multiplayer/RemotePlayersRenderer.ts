@@ -1,6 +1,5 @@
 import {
   Bone,
-  Box3,
   BoxGeometry,
   Euler,
   Group,
@@ -12,17 +11,20 @@ import {
   Vector3,
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { AttackKind, MultiplayerSnapshotPlayer, PlayerModel } from '../network/types';
 import type { FireView } from '../network/MultiplayerTransport';
 import { InterpolationBuffer } from '../netcode/InterpolationBuffer';
 import { RemoteTimeline } from '../netcode/RemoteTimeline';
-import { createPlayerModel } from './ProceduralPlayer';
 import {
-  addPlayerEyeDetails,
+  createCharacterSync,
+  loadCharacterLibrary,
+  type CharacterHandle,
+} from '../characters/CharacterFactory';
+import type { CharacterLibrary } from '../characters/library';
+import { decodeLook, defaultLook, lookForBot, type CharacterLook } from '../characters/look';
+import {
   applyKnifeIdlePose,
   attachKnifeModel,
-  buildArmRig,
   loadKnifeMesh,
   type ArmRig,
 } from './playerRig';
@@ -30,6 +32,9 @@ import {
 interface RemotePlayerActor {
   id: string;
   model: PlayerModel;
+  /** the cosmetics string the current look came from ('' = default or bot look) */
+  cosmetics: string;
+  character: CharacterHandle | null;
   group: Group;
   targetPosition: Vector3;
   displayPosition: Vector3;
@@ -47,6 +52,9 @@ interface RemotePlayerActor {
   /** visual-only offset that eases out a mispredicted extrapolation */
   correction: Vector3;
   lastMode: 'interp' | 'extrap' | 'hold' | null;
+  /** smoothed on-screen velocity, drives cloth sway */
+  shownVelocity: Vector3;
+  lastShown: Vector3;
 }
 
 /** how fast a leftover extrapolation error fades, 1/s */
@@ -61,11 +69,12 @@ const SWING_DURATION_SEC = 0.28;
 export const REMOTE_POSITION_SMOOTHING_RATE = 14;
 
 const gltfLoader = new GLTFLoader();
+const tmpVelocity = new Vector3();
 
 export class RemotePlayersRenderer {
   public readonly root = new Group();
 
-  private readonly templateRoots = new Map<PlayerModel, Object3D>();
+  private library: CharacterLibrary | null = null;
   private knifeTemplate: Object3D | null = null;
   private readonly actors = new Map<string, RemotePlayerActor>();
   private readonly timeline = new RemoteTimeline();
@@ -76,16 +85,16 @@ export class RemotePlayersRenderer {
   }
 
   public async load(): Promise<void> {
-    const models = await Promise.all([
-      this.loadTemplate('terrorist'),
-      this.loadTemplate('counterterrorist'),
-    ]);
-    for (const [model, root] of models) {
-      this.templateRoots.set(model, root);
-    }
-    // bodies are generated locally; a failed knife download only costs the knife
+    // armored characters come from one shared part library; without it the
+    // old procedural soldiers stand in
+    this.library = await loadCharacterLibrary();
+    // a failed knife build only costs the knife
     this.knifeTemplate = await this.loadKnifeTemplate().catch(() => null);
     this.loaded = true;
+    // anyone who showed up before the library did gets dressed now
+    for (const actor of [...this.actors.values()]) {
+      if (!actor.character) this.redress(actor, actor.model, actor.cosmetics);
+    }
   }
 
   public update(dt: number, localNowMs = performance.now()): void {
@@ -126,6 +135,17 @@ export class RemotePlayersRenderer {
         actor.swingTimer = Math.max(0, actor.swingTimer - dt);
       }
       this.applyRigPose(actor, nowSec);
+      if (actor.character) {
+        if (dt > 0) {
+          tmpVelocity.subVectors(actor.displayPosition, actor.lastShown).divideScalar(dt);
+          // a teleport or respawn is not motion
+          if (tmpVelocity.lengthSq() > 40 * 40) tmpVelocity.set(0, 0, 0);
+          actor.shownVelocity.lerp(tmpVelocity, 1 - Math.exp(-dt * 8));
+        }
+        actor.lastShown.copy(actor.displayPosition);
+        (actor.character as { setVelocity?: (v: Vector3) => void }).setVelocity?.(actor.shownVelocity);
+        actor.character.update(dt, nowSec);
+      }
     }
   }
 
@@ -142,19 +162,17 @@ export class RemotePlayersRenderer {
       }
       visibleIds.add(player.id);
 
+      const cosmetics = typeof player.cosmetics === 'string' ? player.cosmetics : '';
       let actor = this.actors.get(player.id);
       if (!actor) {
-        actor = this.createActor(player.id, player.model, player.position, player.yaw);
+        actor = this.createActor(player.id, player.model, cosmetics, player.position, player.yaw);
         this.actors.set(player.id, actor);
         this.root.add(actor.group);
       }
 
-      if (actor.model !== player.model) {
-        this.root.remove(actor.group);
-        const replacement = this.createActor(player.id, player.model, player.position, player.yaw);
-        this.actors.set(player.id, replacement);
-        this.root.add(replacement.group);
-        actor = replacement;
+      // a new team or look re-dresses the same actor, its motion history stays
+      if (actor.model !== player.model || actor.cosmetics !== cosmetics) {
+        this.redress(actor, player.model, cosmetics);
       }
 
       actor.targetPosition.set(player.position[0], player.position[1], player.position[2]);
@@ -183,6 +201,7 @@ export class RemotePlayersRenderer {
         continue;
       }
       this.root.remove(actor.group);
+      actor.character?.dispose();
       this.actors.delete(id);
       if (actor.clockKey) this.timeline.forget(actor.clockKey);
     }
@@ -237,17 +256,20 @@ export class RemotePlayersRenderer {
     return this.actors.get(playerId)?.model ?? null;
   }
 
+  /** the look a remote is shown in (null when unknown) */
+  public getPlayerLook(playerId: string): CharacterLook | null {
+    return this.actors.get(playerId)?.character?.look ?? null;
+  }
+
   private createActor(
     id: string,
     model: PlayerModel,
+    cosmetics: string,
     position: [number, number, number],
     yaw: number,
   ): RemotePlayerActor {
     const group = new Group();
     group.name = `RemotePlayer:${id}`;
-
-    const { root, rig } = this.instantiateModel(model);
-    group.add(root);
 
     const displayPosition = new Vector3(position[0], position[1], position[2]);
     group.position.copy(displayPosition);
@@ -256,12 +278,14 @@ export class RemotePlayersRenderer {
     const actor: RemotePlayerActor = {
       id,
       model,
+      cosmetics,
+      character: null,
       group,
       targetPosition: displayPosition.clone(),
       displayPosition,
       targetYaw: yaw,
       displayYaw: yaw,
-      rig,
+      rig: null,
       swingTimer: 0,
       swingKind: 'primary',
       idlePhase: hashToPhase(id),
@@ -270,34 +294,44 @@ export class RemotePlayersRenderer {
       renderedSourceT: null,
       correction: new Vector3(),
       lastMode: null,
+      shownVelocity: new Vector3(),
+      lastShown: displayPosition.clone(),
     };
 
-    this.applyRigPose(actor, performance.now() * 0.001);
+    this.redress(actor, model, cosmetics);
     return actor;
   }
 
-  private instantiateModel(model: PlayerModel): { root: Object3D; rig: ArmRig | null } {
+  /** the look for a row: its own cosmetics, a stable bot look, or the team default */
+  private resolveLook(id: string, model: PlayerModel, cosmetics: string): CharacterLook {
+    const fallback = defaultLook(model);
+    if (cosmetics) {
+      const decoded = decodeLook(cosmetics, fallback);
+      if (decoded) return decoded;
+    }
+    return id.startsWith('bot:') ? lookForBot(id) : fallback;
+  }
+
+  /** (re)builds what an actor wears; keeps its position, clock and buffer */
+  private redress(actor: RemotePlayerActor, model: PlayerModel, cosmetics: string): void {
+    actor.model = model;
+    actor.cosmetics = cosmetics;
     if (!this.loaded) {
-      const fallback = this.makeFallbackPlaceholder(model);
-      return { root: fallback, rig: null };
+      if (actor.group.children.length === 0) actor.group.add(this.makeFallbackPlaceholder(model));
+      return;
     }
-
-    const template = this.templateRoots.get(model);
-    if (!template) {
-      const fallback = this.makeFallbackPlaceholder(model);
-      return { root: fallback, rig: null };
+    const look = this.resolveLook(actor.id, model, cosmetics);
+    if (actor.character) {
+      actor.character.setLook(look, model);
+    } else {
+      actor.group.clear();
+      const character = createCharacterSync(this.library, look, model, { pose: 'none' });
+      actor.group.add(character.root);
+      actor.character = character;
+      actor.rig = character.rig;
+      if (actor.rig) attachKnifeModel(actor.rig.rightWeaponHand, this.knifeTemplate);
     }
-
-    const clone = cloneSkeleton(template);
-    const rig = buildArmRig(clone);
-    if (rig) {
-      attachKnifeModel(rig.rightWeaponHand, this.knifeTemplate);
-    }
-
-    return {
-      root: clone,
-      rig,
-    };
+    this.applyRigPose(actor, performance.now() * 0.001);
   }
 
   private applyRigPose(actor: RemotePlayerActor, nowSec: number): void {
@@ -363,32 +397,6 @@ export class RemotePlayersRenderer {
     }
   }
 
-  private async loadTemplate(model: PlayerModel): Promise<[PlayerModel, Object3D]> {
-    const root = createPlayerModel(model);
-    root.name = `RemoteModelTemplate:${model}`;
-    root.updateWorldMatrix(true, true);
-
-    normalizeTemplateToPlayerHeight(root);
-    addPlayerEyeDetails(root);
-
-    root.traverse((child) => {
-      if (!(child instanceof Mesh)) {
-        return;
-      }
-      const materials = Array.isArray(child.material) ? child.material : [child.material];
-      for (const material of materials) {
-        material.depthWrite = true;
-        material.depthTest = true;
-        material.needsUpdate = true;
-      }
-      child.castShadow = false;
-      child.receiveShadow = false;
-      child.frustumCulled = false;
-    });
-
-    return [model, root];
-  }
-
   private async loadKnifeTemplate(): Promise<Object3D | null> {
     return loadKnifeMesh(gltfLoader);
   }
@@ -401,22 +409,6 @@ export class RemotePlayersRenderer {
     placeholder.add(mesh);
     return placeholder;
   }
-}
-
-function normalizeTemplateToPlayerHeight(root: Object3D): void {
-  const bounds = new Box3().setFromObject(root);
-  if (bounds.isEmpty()) {
-    return;
-  }
-
-  const size = bounds.getSize(new Vector3());
-  const height = Math.max(0.0001, size.y);
-  const scale = 1.78 / height;
-  root.scale.setScalar(scale);
-  root.updateWorldMatrix(true, true);
-
-  const adjustedBounds = new Box3().setFromObject(root);
-  root.position.y -= adjustedBounds.min.y;
 }
 
 function hashToPhase(value: string): number {

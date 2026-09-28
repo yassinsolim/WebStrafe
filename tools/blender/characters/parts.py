@@ -94,6 +94,50 @@ def slab_y(y0, y1, lo=(-1, -1, -1), hi=(1, 1, 1)):
     return S.Fn(lambda p: np.abs(p[:, 1] - mid) - half, (lo[0], min(y0, y1), lo[2]), (hi[0], max(y0, y1), hi[2]))
 
 
+_AXES = {
+    # local x, local y, extrude axis (columns), per projection
+    "z": np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=np.float64).T,
+    "x": np.array([[0, 0, 1], [0, 1, 0], [1, 0, 0]], dtype=np.float64).T,
+    "y": np.array([[1, 0, 0], [0, 0, 1], [0, 1, 0]], dtype=np.float64).T,
+}
+
+
+def outline(points, axis="z", lo=-1.0, hi=1.0, r=0.0):
+    """a 2d outline extruded along a world axis between lo and hi.
+    axis z: points are (x, y) seen from the front; axis x: (z, y) seen from the
+    side; axis y: (x, z) seen from above. used to cut plates to shape."""
+    R = _AXES[axis]
+    ext = S.Extrusion(points, (hi - lo) * 0.5, r)
+    origin = R[:, 2] * (lo + hi) * 0.5
+    return ext.place(R, origin)
+
+
+def strap(points, width, thickness, up_hint=(0.0, 0.0, 1.0), r=0.0015):
+    """a flat band along a polyline, width across `up_hint` x tangent"""
+    shape = None
+    pts = [np.asarray(p, dtype=np.float64) for p in points]
+    for a, b in zip(pts[:-1], pts[1:]):
+        y = S.normalize(b - a)
+        z = np.asarray(up_hint, dtype=np.float64)
+        z = S.normalize(z - y * (z @ y))
+        R = S.frame_from(y=y, z=z)
+        seg = S.Box((0, 0, 0), (width * 0.5, float(np.linalg.norm(b - a)) * 0.5 + width * 0.25, thickness * 0.5), r)
+        seg = seg.place(R, (a + b) * 0.5)
+        shape = seg if shape is None else shape | seg
+    return shape
+
+
+def ribs(direction, period, phase=0.0):
+    """unit amplitude sine ribs along a direction, for Displace"""
+    d = S.normalize(direction)
+    k = 2.0 * np.pi / period
+
+    def fn(p):
+        return np.sin((p @ d) * k + phase)
+
+    return fn
+
+
 def box_region(lo, hi, r=0.0):
     lo = np.asarray(lo, dtype=np.float64)
     hi = np.asarray(hi, dtype=np.float64)

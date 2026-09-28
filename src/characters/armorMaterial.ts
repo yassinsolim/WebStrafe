@@ -47,11 +47,11 @@ export class ArmorMaterial extends MeshStandardMaterial {
     this.slotColor[S.primary].copy(primary);
     this.slotColor[S.secondary].copy(secondary);
     this.slotColor[S.accent].copy(accent);
-    // the undersuit is a dark take on the secondary paint
-    this.slotColor[S.suit].copy(secondary).multiplyScalar(0.22).addScalar(0.018);
+    // the undersuit is charcoal with a hint of the secondary paint
+    this.slotColor[S.suit].set(0.028, 0.03, 0.034).lerp(secondary.clone().multiplyScalar(0.3), 0.3);
     this.slotColor[S.dark].set(0.032, 0.034, 0.038);
     this.slotColor[S.light].set(teamColor.r, teamColor.g, teamColor.b);
-    this.slotColor[S.visor].set(0.012, 0.014, 0.018).lerp(new Vector3(teamColor.r, teamColor.g, teamColor.b), 0.06);
+    this.slotColor[S.visor].set(0.006, 0.007, 0.009);
     this.slotColor[S.metal].set(0.6, 0.61, 0.63);
     this.slotColor[S.cloth].copy(secondary).multiplyScalar(0.85);
     this.slotColor[S.trim].copy(accent).multiplyScalar(0.9);
@@ -64,7 +64,7 @@ export class ArmorMaterial extends MeshStandardMaterial {
     this.slotPbr[S.suit].set(0.86, 0, 0);
     this.slotPbr[S.dark].set(0.5, 0.25, 0);
     this.slotPbr[S.light].set(0.35, 0, 3.2);
-    this.slotPbr[S.visor].set(0.07, 0.25, 0.22);
+    this.slotPbr[S.visor].set(0.06, 0.0, 0);
     this.slotPbr[S.metal].set(0.3, 1, 0);
     this.slotPbr[S.cloth].set(0.92, 0, 0);
     this.slotPbr[S.trim].set(0.88, 0, 0);
@@ -138,10 +138,11 @@ if (armorPaint) {
   float n1 = armorNoise(vBindPos * 60.0);
   float n2 = armorNoise(vBindPos * 210.0);
   armorRough = clamp(armorRough + (n1 - 0.5) * 0.08, 0.05, 1.0);
-  // worn finish: paint chips off the sharp edges and scuffs a little elsewhere
-  float chip = smoothstep(0.42, 0.62, vOcc.y + (n1 - 0.5) * 0.5 + (n2 - 0.5) * 0.25) * uWear;
-  float scuff = smoothstep(0.7, 0.95, n2) * 0.25 * uWear;
-  float bare = max(chip, scuff * (1.0 - armorAo));
+  // worn finish: paint chips off along the sharp edges, a few scratches elsewhere
+  float edge = smoothstep(0.45, 0.85, vOcc.y);
+  float chip = edge * smoothstep(0.35, 0.6, armorNoise(vBindPos * 150.0) + (n1 - 0.5) * 0.3) * uWear;
+  float scuff = smoothstep(0.86, 0.95, n2) * 0.3 * uWear;
+  float bare = max(chip, scuff);
   armorColor = mix(armorColor, vec3(0.5, 0.49, 0.47), bare);
   armorMetal = mix(armorMetal, 0.85, bare);
   armorRough = mix(armorRough, 0.34, bare);
@@ -166,6 +167,11 @@ metalnessFactor = armorMetal;`,
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
 totalEmissiveRadiance = armorColor * armorGlow;
+if (armorSlot == 6) {
+  // visor glass: dark, with a faint team tint that rises at glancing angles
+  float vf = pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), 2.0);
+  totalEmissiveRadiance = uTeam * (0.012 + 0.07 * vf);
+}
 if (armorFabric) {
   // soft sheen at grazing angles so cloth reads as cloth
   float fres = pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), 3.0);

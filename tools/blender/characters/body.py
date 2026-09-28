@@ -26,15 +26,15 @@ def body_sdf(rig):
     torso = torso_core(rig)
     trap = S.Capsule((0.045, 1.462, -0.07), (0.15, 1.438, -0.07), 0.052).mirror_x()
     delt = S.Sphere(rig.p("arm_upper_l") + (0.004, -0.004, 0.0), 0.062).mirror_x()
-    neck = S.RoundCone((0, 1.43, -0.058), (0, 1.625, -0.034), 0.062, 0.051)
-    head = S.Ellipsoid((0, 1.695, -0.004), (0.081, 0.106, 0.096))
+    # the neck stops inside the helmet; every helmet closes over it, so no head
+    neck = S.RoundCone((0, 1.43, -0.058), (0, 1.615, -0.036), 0.062, 0.05)
     upper = S.RoundCone(rig.p("arm_upper_l"), rig.p("arm_lower_l"), 0.055, 0.043).mirror_x()
     fore_end = rig.p("hand_l") + rig.axis("arm_lower_l") * 0.012
     fore = S.RoundCone(rig.p("arm_lower_l"), fore_end, 0.046, 0.033).mirror_x()
     thigh = S.RoundCone(rig.p("leg_upper_l") + (0.005, 0.02, -0.005), rig.p("leg_lower_l"), 0.09, 0.056).mirror_x()
     calf = S.Ellipsoid(rig.lerp("leg_lower_l", "ankle_l", 0.3) + (0.0, 0.0, -0.022), (0.05, 0.11, 0.05)).mirror_x()
     shin = S.RoundCone(rig.p("leg_lower_l"), rig.p("ankle_l") + (0, -0.015, 0.0), 0.054, 0.036).mirror_x()
-    b = torso.su(trap, 0.05).su(delt, 0.035).su(neck, 0.04).su(head, 0.03)
+    b = torso.su(trap, 0.05).su(delt, 0.035).su(neck, 0.04)
     b = b.su(upper, 0.03).su(fore, 0.02).su(thigh, 0.06).su(shin, 0.025).su(calf, 0.03)
     return b
 

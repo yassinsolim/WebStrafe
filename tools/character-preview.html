@@ -19,7 +19,8 @@
         MeshStandardMaterial, PerspectiveCamera, PMREMGenerator, Scene, SRGBColorSpace, WebGLRenderer,
       } from 'three';
       import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-      import { createCharacter } from '/src/characters/CharacterFactory.ts';
+      import { createCharacter, provideCharacterLibrary } from '/src/characters/CharacterFactory.ts';
+      import { CharacterLibrary } from '/src/characters/library.ts';
       import { BUILTIN_PRESETS } from '/src/characters/presets.ts';
       import { decodeLook, defaultLook } from '/src/characters/look.ts';
       import { attachKnifeModel, loadKnifeMesh } from '/src/multiplayer/playerRig.ts';
@@ -59,6 +60,7 @@
       floor.rotation.x = -Math.PI / 2;
       scene.add(floor);
 
+      if (params.get('lib')) provideCharacterLibrary(await CharacterLibrary.load(params.get('lib')));
       const knife = await loadKnifeMesh();
       const spacing = 1.05;
       const chars = [];
