@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Vector3 } from 'three';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   COSMETICS_DEBOUNCE_MS,
   COSMETICS_MIN_INTERVAL_MS,
   HOST_STALE_MS,
+  IDLE_DISCONNECT_MS,
   JOIN_GRACE_MS,
   MAX_PENDING_FIRES,
   SUPABASE_PROTOCOL,
@@ -32,8 +33,22 @@ class FakeBus {
   }
 
   leave(ch: FakeChannel): void {
-    this.topics.get(ch.topic)?.delete(ch);
+    const had = this.topics.get(ch.topic)?.delete(ch) ?? false;
+    // presence tells everyone left that this client went
+    if (had && ch.presence) {
+      for (const other of this.topics.get(ch.topic) ?? []) {
+        this.events += 1;
+        this.bill(other.key);
+      }
+      this.byEvent.set('presence', (this.byEvent.get('presence') ?? 0) + (this.topics.get(ch.topic)?.size ?? 0));
+    }
     this.syncPresence(ch.topic);
+  }
+
+  /** billed messages per client: what it sends plus what is delivered to it */
+  readonly perClient = new Map<string, number>();
+  bill(key: string, n = 1): void {
+    this.perClient.set(key, (this.perClient.get(key) ?? 0) + n);
   }
 
   syncPresence(topic: string): void {
@@ -45,10 +60,12 @@ class FakeBus {
   broadcast(from: FakeChannel, event: string, payload: unknown): void {
     this.sent.push({ from: from.key, event, payload, at: Date.now() });
     this.events += 1;
+    this.bill(from.key);
     this.byEvent.set(event, (this.byEvent.get(event) ?? 0) + 1);
     for (const ch of this.topics.get(from.topic) ?? []) {
       if (ch === from) continue;
       this.events += 1;
+      this.bill(ch.key);
       ch.emit('broadcast', event, { event, payload });
     }
   }
@@ -82,6 +99,7 @@ class FakeChannel {
     // billed like a broadcast: the track, then a presence diff to every peer
     const peers = this.bus.topics.get(this.topic)?.size ?? 1;
     this.bus.events += peers;
+    for (const ch of this.bus.topics.get(this.topic) ?? []) this.bus.bill(ch.key);
     this.bus.byEvent.set('presence', (this.bus.byEvent.get('presence') ?? 0) + peers);
     this.bus.tracks.set(this.key, (this.bus.tracks.get(this.key) ?? 0) + 1);
     this.bus.syncPresence(this.topic);
@@ -120,8 +138,8 @@ const config = {
   lobbyChannelPrefix: 'test_room',
 };
 
-function makePeer(bus: FakeBus, id: string, visible = () => true): SupabaseMultiplayer {
-  return new SupabaseMultiplayer(fakeClient(bus), config, { sessionId: id, isVisible: visible });
+function makePeer(bus: FakeBus, id: string, visible = () => true, idleDisconnectMs?: number): SupabaseMultiplayer {
+  return new SupabaseMultiplayer(fakeClient(bus), config, { sessionId: id, isVisible: visible, idleDisconnectMs });
 }
 
 /** drives one peer like GameApp does: a state every 128 Hz tick */
@@ -648,6 +666,169 @@ describe('SupabaseMultiplayer (p7 protocol)', () => {
     expect(statesFrom(bus, 'p_b').some((st) => st.k === 1)).toBe(true);
     host.disconnect();
     guest.disconnect();
+  });
+
+  describe('idle tabs leave the channel', () => {
+    const HOUR = 3_600_000;
+    // peers listen for visibilitychange on the document; visibility itself comes from each peer's isVisible
+    beforeEach(() => {
+      (globalThis as any).document = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    });
+    const knife = (seed: number) => ({ knife: { id: 'flip' as const, finish: 'fade', wear: 0.02, seed } });
+
+    /** runs the clock, sending states at `hz` from the peers that are playing */
+    function run(ms: number, playing: SupabaseMultiplayer[], hz = 32): void {
+      const step = 1000 / hz;
+      for (let t = 0; t < ms; t += step) {
+        vi.advanceTimersByTime(step);
+        const now = Date.now();
+        for (const [i, p] of playing.entries()) {
+          p.sendState({ position: [i, 0, now / 1000], velocity: [0, 0, 1], yaw: 0, pitch: 0, t: now });
+        }
+      }
+    }
+
+    /** billed messages per hour for `id`, over an hour after `settle` */
+    function perHour(bus: FakeBus, id: string, playing: SupabaseMultiplayer[], settle = 0): number {
+      if (settle) run(settle, playing);
+      const before = bus.perClient.get(id) ?? 0;
+      run(HOUR, playing);
+      return (bus.perClient.get(id) ?? 0) - before;
+    }
+
+    const rates: Record<string, number> = {};
+    afterAll(() => {
+      // eslint-disable-next-line no-console
+      console.log('[idle] billed messages per hour', JSON.stringify(rates));
+    });
+
+    it('a tab left on the menu: ~3600 messages an hour before, none after the first minute', () => {
+      for (const [label, idleMs] of [['before', Infinity], ['after', undefined]] as const) {
+        const bus = new FakeBus();
+        const menu = makePeer(bus, 'p_menu', () => true, idleMs);
+        menu.join('map1', 'Player', 'terrorist'); // the game joins at start, on the menu
+        const first = perHour(bus, 'p_menu', []);
+        const second = perHour(bus, 'p_menu', []);
+        rates[`menu tab alone, ${label}, first hour`] = first;
+        rates[`menu tab alone, ${label}, later hours`] = second;
+        if (label === 'before') expect(second).toBeGreaterThan(3000);
+        else {
+          expect(menu.isParked()).toBe(true);
+          expect(first).toBeLessThan(100);
+          expect(second).toBe(0);
+        }
+        menu.disconnect();
+      }
+    }, 30_000);
+
+    it('a hidden tab in a map next to a player: tens of thousands an hour before, none after', () => {
+      for (const [label, idleMs] of [['before', Infinity], ['after', undefined]] as const) {
+        const bus = new FakeBus();
+        let hidden = false;
+        const player = makePeer(bus, 'p_play', () => true, idleMs);
+        const tab = makePeer(bus, 'p_tab', () => !hidden, idleMs);
+        enter(player);
+        enter(tab);
+        run(JOIN_GRACE_MS + 1000, [player, tab]);
+        hidden = true;
+        document.dispatchEvent(new Event('visibilitychange'));
+        const hiddenHour = perHour(bus, 'p_tab', [player]);
+        const alone = new FakeBus();
+        const solo = makePeer(alone, 'p_solo', () => false, idleMs);
+        enter(solo);
+        const hiddenAlone = perHour(alone, 'p_solo', [], 5000);
+        rates[`hidden tab next to a player, ${label}`] = hiddenHour;
+        rates[`hidden tab alone in a map, ${label}`] = hiddenAlone;
+        if (label === 'before') {
+          expect(hiddenHour).toBeGreaterThan(20_000);
+          expect(hiddenAlone).toBeGreaterThan(3000);
+        } else {
+          expect(tab.isParked()).toBe(true);
+          expect(solo.isParked()).toBe(true);
+          expect(hiddenHour).toBeLessThan(2000);
+          expect(hiddenAlone).toBeLessThan(100);
+        }
+        for (const p of [player, tab, solo]) p.disconnect();
+      }
+    }, 30_000);
+
+    it('rejoins on return as a fresh joiner: presence, cosmetics and an unchanged host', () => {
+      const bus = new FakeBus();
+      let hidden = false;
+      const host = makePeer(bus, 'p_a');
+      const tab = makePeer(bus, 'p_b', () => !hidden);
+      tab.setCosmetics(knife(1));
+      enter(host);
+      enter(tab);
+      run(JOIN_GRACE_MS + 1000, [host, tab]);
+      expect(hosting(host)).toBe(true);
+      expect((host as any).remotes.get('p_b')?.cosmetics?.knife?.seed).toBe(1);
+
+      hidden = true;
+      document.dispatchEvent(new Event('visibilitychange'));
+      run(IDLE_DISCONNECT_MS + 2000, [host]);
+      expect(tab.isParked()).toBe(true);
+      expect((host as any).remotes.has('p_b')).toBe(false);
+      expect([...bus.topics.values()].every((set) => ![...set].some((ch) => ch.key === 'p_b'))).toBe(true);
+
+      // picks a new finish while away, then comes back
+      tab.setCosmetics(knife(2));
+      run(20_000, [host]);
+      hidden = false;
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(tab.isParked()).toBe(false);
+      run(JOIN_GRACE_MS + 1000, [host, tab]);
+      expect((host as any).remotes.get('p_b')?.cosmetics?.knife?.seed).toBe(2);
+      expect((tab as any).remotes.has('p_a')).toBe(true);
+      // the host keeps the room; the returning tab doesn't take it back
+      expect(hosting(host)).toBe(true);
+      expect(hosting(tab)).toBe(false);
+      host.disconnect();
+      tab.disconnect();
+    }, 30_000);
+
+    it('a hidden host hands the room off before it leaves', () => {
+      const bus = new FakeBus();
+      let hidden = false;
+      const host = makePeer(bus, 'p_a', () => !hidden);
+      const other = makePeer(bus, 'p_b');
+      enter(host);
+      run(JOIN_GRACE_MS + 1000, [host]);
+      enter(other);
+      run(JOIN_GRACE_MS + 1000, [host, other]);
+      expect(hosting(host)).toBe(true);
+
+      hidden = true;
+      document.dispatchEvent(new Event('visibilitychange'));
+      run(5000, [other]);
+      expect(hosting(other)).toBe(true);
+      expect(hosting(host)).toBe(false);
+      run(IDLE_DISCONNECT_MS, [other]);
+      expect(host.isParked()).toBe(true);
+      expect(hosting(other)).toBe(true);
+      host.disconnect();
+      other.disconnect();
+    }, 30_000);
+
+    it('a parked menu tab rejoins when it enters a map', () => {
+      const bus = new FakeBus();
+      const tab = makePeer(bus, 'p_menu');
+      tab.join('map1', 'Player', 'terrorist');
+      run(IDLE_DISCONNECT_MS + 1000, []);
+      expect(tab.isParked()).toBe(true);
+      // picking another map on a visible menu means the player is back: it rejoins
+      tab.join('map2', 'Player', 'terrorist');
+      expect(tab.isParked()).toBe(false);
+      run(IDLE_DISCONNECT_MS + 1000, []);
+      expect(tab.isParked()).toBe(true);
+      tab.setRoomContext(ctx());
+      tab.setCombatReady(true);
+      expect(tab.isParked()).toBe(false);
+      expect([...bus.topics.keys()]).toContain('test_room_p6_map2');
+      run(IDLE_DISCONNECT_MS + 5000, [tab]);
+      expect(tab.isParked()).toBe(false);
+      tab.disconnect();
+    }, 30_000);
   });
 
   describe('cosmetics', () => {

@@ -44,6 +44,15 @@ const HOST_STEP_MS = 1000 / 60;
 export const HOST_STALE_MS = 3000;
 /** after joining, wait this long for an existing host's claim before self-electing */
 export const JOIN_GRACE_MS = 2500;
+/**
+ * a forgotten tab kept a channel open forever: a keepalive every second plus
+ * every message the room sends it, ~86K billed messages a day. after this long
+ * hidden, on the menu or out of play the tab leaves the channel (presence goes
+ * with it) and rejoins as a fresh joiner when it comes back.
+ */
+export const IDLE_DISCONNECT_MS = 60_000;
+/** a host with a visible peer waits up to this long past the idle limit for the handoff */
+export const IDLE_HANDOFF_GRACE_MS = 10_000;
 
 type Packed = [number, number, number, number, number, number, number, number];
 
@@ -125,6 +134,11 @@ export interface SupabaseMultiplayerOptions {
   sessionId?: string;
   /** clock override for tests */
   now?: () => number;
+  /**
+   * leave the channel after this long hidden, on the menu or out of play, and
+   * rejoin on return (default IDLE_DISCONNECT_MS; Infinity keeps it connected)
+   */
+  idleDisconnectMs?: number;
 }
 
 interface RemoteRecord {
@@ -241,6 +255,12 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
 
   private readonly budget: BudgetOptions;
   private readonly isVisible: () => boolean;
+  private readonly idleDisconnectMs: number;
+  /** what the game asked to join, kept while parked */
+  private desiredJoin: { mapId: string; name: string; model: PlayerModel } | null = null;
+  /** left the channel while idle; rejoins on return */
+  private parked = false;
+  private idleSince: number | null = null;
   private readonly now: () => number;
 
   constructor(
@@ -252,9 +272,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.isVisible = options.isVisible ?? isDocumentVisible;
     this.now = options.now ?? (() => Date.now());
     this.localId = options.sessionId ?? loadSessionId();
+    this.idleDisconnectMs = options.idleDisconnectMs ?? IDLE_DISCONNECT_MS;
     this.detachVisibility = watchVisibility(() => {
+      this.wake();
       this.cadence.flush();
       this.updateHostRole();
+      // tell the room right away, so a hidden host hands off early
+      if (this.channel && this.subscribed) this.broadcastState();
     });
   }
 
@@ -263,6 +287,9 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   }
 
   disconnect(): void {
+    this.desiredJoin = null;
+    this.parked = false;
+    this.idleSince = null;
     this.cosmeticsPublisher.dispose();
     this.localCombatReady = false;
     this.stopPump();
@@ -291,10 +318,22 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     return broadcastRateHz(this.remotes.size + 1, this.budget);
   }
 
+  /** true while parked: left the channel after sitting idle, rejoins on return */
+  isParked(): boolean {
+    return this.parked;
+  }
+
   join(mapId: string, name: string, model: PlayerModel): void {
     const profileChanged = name !== this.localName || model !== this.localModel;
     this.localName = name;
     this.localModel = model;
+    this.desiredJoin = { mapId, name, model };
+    if (this.parked) {
+      // parked on the menu: remember the pick, join when the player comes back
+      this.activeMapId = mapId;
+      this.wake();
+      return;
+    }
 
     // Same map: refresh presence only when the profile actually changed
     // (presence track is limited to 5 calls per client per 30 s).
@@ -305,6 +344,11 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       return;
     }
 
+    this.openChannel(mapId);
+  }
+
+  /** leaves any channel and joins the one for `mapId` as a fresh joiner */
+  private openChannel(mapId: string): void {
     if (this.channel) {
       void this.client.removeChannel(this.channel);
       this.channel = null;
@@ -313,6 +357,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.stopHost();
     this.botRows = [];
     this.remotes.clear();
+    this.parked = false;
+    this.idleSince = null;
     this.activeMapId = mapId;
     this.presenceSynced = false;
     this.subscribed = false;
@@ -328,6 +374,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.channel = channel;
 
     channel.on('presence', { event: 'sync' }, () => {
+      if (this.channel !== channel) return;
       this.presenceSynced = true;
       this.syncPresence();
       this.updateHostRole();
@@ -340,6 +387,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     channel.on('broadcast', { event: 'cb' }, ({ payload }) => this.onCombatBatch(payload));
 
     channel.subscribe((status) => {
+      // a channel we already left (parked, changed map) reports CLOSED late
+      if (this.channel !== channel) return;
       if (status === 'SUBSCRIBED') {
         this.subscribed = true;
         this.localCosmetics = this.cosmeticsPublisher.joined();
@@ -359,12 +408,14 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       return;
     }
     this.localCombatReady = ready;
+    this.wake();
     // rides on the next state message, sent right away
     this.cadence.flush();
     this.broadcastState();
   }
 
   sendState(state: OutgoingState): void {
+    if (this.parked) this.wake();
     this.localState = { ...state, t: state.t ?? this.now() };
     this.localStateAtMs = this.now();
     this.restSent = false;
@@ -498,6 +549,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
 
   setRoomContext(context: RoomContext | null): void {
     this.roomContext = context;
+    this.wake();
     // eligibility rides on state, tell the room right away
     this.cadence.flush();
     this.broadcastState();
@@ -616,6 +668,65 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     }
   }
 
+  /** hidden, on the menu (no map) or out of play (paused, dead menu, run over) */
+  private isIdle(): boolean {
+    return !this.isVisible() || !this.roomContext || !this.localCombatReady;
+  }
+
+  /** runs from the pump: parks the tab once it has been idle long enough */
+  private checkIdle(): void {
+    if (this.parked || !this.channel || !Number.isFinite(this.idleDisconnectMs)) return;
+    const now = this.now();
+    if (!this.isIdle()) {
+      this.idleSince = null;
+      return;
+    }
+    this.idleSince ??= now;
+    const idleFor = now - this.idleSince;
+    if (idleFor < this.idleDisconnectMs) return;
+    // a host hands the room to a visible peer first (it stops being eligible
+    // once hidden); only past the grace does it leave regardless
+    if (this.hostSim && this.hasVisiblePeer() && idleFor < this.idleDisconnectMs + IDLE_HANDOFF_GRACE_MS) return;
+    this.park();
+  }
+
+  private hasVisiblePeer(): boolean {
+    const now = this.now();
+    for (const r of this.remotes.values()) {
+      if (r.eligibility === 2 && now - r.lastSeen <= HOST_STALE_MS) return true;
+    }
+    return false;
+  }
+
+  /** leaves the channel (and presence) but remembers the join, see IDLE_DISCONNECT_MS */
+  private park(): void {
+    this.parked = true;
+    this.idleSince = null;
+    this.stopPump();
+    this.stopHost();
+    if (this.channel) {
+      void this.client.removeChannel(this.channel);
+      this.channel = null;
+    }
+    this.subscribed = false;
+    this.presenceSynced = false;
+    this.remotes.clear();
+    this.botRows = [];
+    this.roomFull = false;
+    this.pendingFires = [];
+    // clear the remote players the game is drawing
+    this.emitSnapshot();
+    this.onConnectedChange?.(false);
+  }
+
+  /** a parked tab that is wanted again (visible, or back in a map) rejoins */
+  private wake(): void {
+    if (!this.parked || !this.desiredJoin) return;
+    // back on a visible tab rejoins even on the menu (and parks again later if it stays there)
+    if (!this.isVisible()) return;
+    this.openChannel(this.desiredJoin.mapId);
+  }
+
   private stopHost(): void {
     this.hostSim?.dispose();
     this.hostSim = null;
@@ -643,6 +754,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
    * player is paused (no ticks arriving), and idle keepalives.
    */
   private pump(): void {
+    this.checkIdle();
+    if (this.parked) return;
     const now = this.now();
     // liveness and grace windows expire on their own, re-run the election
     this.updateHostRole();
