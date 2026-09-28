@@ -42,4 +42,13 @@ export class SendCadence {
   flush(): void {
     this.nextDueMs = Number.NaN;
   }
+
+  /**
+   * An out-of-schedule send just happened (e.g. a fire riding on state): the
+   * next regular send is one interval after it, so it replaces a send instead
+   * of adding one.
+   */
+  markSent(tMs: number): void {
+    this.nextDueMs = tMs + this.intervalMs;
+  }
 }
