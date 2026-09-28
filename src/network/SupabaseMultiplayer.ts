@@ -19,6 +19,7 @@ import { broadcastRateHz, DEFAULT_BUDGET, MAX_ROOM_PLAYERS, type BudgetOptions }
 import { RESPAWN_DELAY_MS } from '../combat/CombatState';
 import { decodeCosmetics, encodeCosmetics, type PlayerCosmetics } from './cosmetics';
 import { CosmeticsPublisher } from './cosmeticsPublisher';
+import { clampDuck } from '../movement/hull';
 
 const SESSION_KEY = 'webstrafe:session-id:v1';
 /**
@@ -75,6 +76,8 @@ interface WireState {
   f?: WireFire[];
   /** combat events, only from the elected host */
   ev?: CombatWireEvent[];
+  /** crouch 0..1 in hundredths, only while crouching (sizes the host's hit capsule) */
+  k?: number;
 }
 
 interface WireFire {
@@ -628,6 +631,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         combatReady: this.localCombatReady,
         yaw: this.localState.yaw,
         pitch: this.localState.pitch,
+        duck: this.localState.duck,
       });
     }
     for (const [id, record] of this.remotes) {
@@ -644,6 +648,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
           combatReady: record.combatReady,
           yaw: record.state.yaw,
           pitch: record.state.pitch,
+          duck: record.state.duck,
         });
       }
     }
@@ -690,6 +695,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (this.hostSim) payload.h = this.hostEpoch;
     if (this.localWeapon) payload.w = this.localWeapon;
     if (this.localDeadUntil !== null) payload.d = Math.max(0, Math.round(this.localDeadUntil - now));
+    const duck = Math.round(clampDuck(s?.duck) * 100) / 100;
+    if (duck > 0) payload.k = duck;
     if (this.hostSim && this.botRows.length > 0) {
       payload.b = this.botRows.map((row) => ({
         id: row.id,
@@ -741,7 +748,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     record.weapon = typeof p.w === 'string' ? p.w : record.weapon;
     record.deadForMs = typeof p.d === 'number' && Number.isFinite(p.d) ? p.d : null;
     if (Array.isArray(p.s) && p.s.length === 8 && (record.t === null || p.t > record.t)) {
-      record.state = unpack(p.s);
+      record.state = { ...unpack(p.s), duck: clampDuck(p.k) };
       record.t = p.t;
       this.hostSim?.recordHumanSample(
         p.id,
@@ -749,6 +756,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         p.t,
         record.state.velocity,
         record.state.yaw,
+        record.state.duck,
       );
     }
 

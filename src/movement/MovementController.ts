@@ -1,5 +1,5 @@
 import { MathUtils, Vector3 } from 'three';
-import { defaultCvars, METRES_PER_UNIT, sanitizeMapCvars, type MapCvarResult } from './cvars';
+import { defaultCvars, sanitizeMapCvars, type MapCvarResult } from './cvars';
 import { StrafeStatsTracker, type StrafeStats } from './StrafeStats';
 import {
   accelerate,
@@ -10,6 +10,7 @@ import {
 } from './MovementMath';
 import type { CapsuleShape, GroundProbe, MoveInput, MovementDebugState, MovementMode, MovementSnapshot, SourceCvars } from './types';
 import type { CollisionAdapter } from '../world/CollisionWorld';
+import { CROUCH_EYE_HEIGHT, CROUCH_HEIGHT, STAND_EYE_HEIGHT, STAND_HEIGHT } from './hull';
 
 const UP = new Vector3(0, 1, 0);
 const WALKABLE_EPS = 0.5;
@@ -26,11 +27,6 @@ const SURF_CONTACT_GRACE_TICKS = 20;
 const SURF_EDGE_GROUND_OVERRIDE_MIN_ANGLE_DEG = 1;
 const SURF_EDGE_OVERRIDE_MIN_SPEED = 1.2;
 const SURF_EDGE_LAUNCH_MIN_SPEED = 5;
-// cs2 hull is 72 u standing and 54 u crouched, eyes 64 u and 46 u above the feet
-const STAND_HEIGHT = 72 * METRES_PER_UNIT;
-const CROUCH_HEIGHT = 54 * METRES_PER_UNIT;
-const STAND_EYE_HEIGHT = 64 * METRES_PER_UNIT;
-const CROUCH_EYE_HEIGHT = 46 * METRES_PER_UNIT;
 // seconds for a full duck or unduck on the ground
 const DUCK_TIME = 0.12;
 // cs crouch-walk speed, 34% of the run speed (85 u/s with a knife), ground only

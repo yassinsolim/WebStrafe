@@ -145,6 +145,7 @@ export class MultiplayerClient implements MultiplayerTransport {
       velocity: roundVec(state.velocity),
       yaw: Math.round(state.yaw * 10000) / 10000,
       pitch: Math.round(state.pitch * 10000) / 10000,
+      ...wireDuck(state.duck),
     });
   }
 
@@ -544,4 +545,10 @@ function isVec3(value: unknown): value is [number, number, number] {
     && typeof value[1] === 'number'
     && typeof value[2] === 'number'
   );
+}
+
+/** crouch on the wire in hundredths, left off while standing */
+function wireDuck(duck: number | undefined): { duck?: number } {
+  const d = Math.round(Math.min(1, Math.max(0, duck ?? 0)) * 100) / 100;
+  return d > 0 ? { duck: d } : {};
 }

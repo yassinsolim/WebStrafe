@@ -61,8 +61,10 @@ export function resolveMeleeHit(
 
   let best: MeleeHit | null = null;
   for (const target of targets) {
-    const bottom = target.feet;
-    const top = bottom.clone().addScaledVector(UP, target.height);
+    // core segment inset by the radius, so the capsule ends at the feet and the head
+    const inset = Math.min(target.radius, target.height / 2);
+    const bottom = target.feet.clone().addScaledVector(UP, inset);
+    const top = target.feet.clone().addScaledVector(UP, target.height - inset);
     const closest = closestSegmentPoints(origin, sweepEnd, bottom, top);
     const gap = Math.sqrt(closest.distSq);
     if (gap > target.radius + radius) continue;
