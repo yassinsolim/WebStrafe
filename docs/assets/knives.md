@@ -206,6 +206,28 @@ through the game's loader, lights and ACES tone mapping
 ![3/4 view, one camera distance](../screenshots/knives/models_34.png)
 ![Folders half open and closed, the balisong half closed and closed](../screenshots/knives/models_folding.png)
 
+## Grips in the game
+
+`tools/assets/gripFit.ts` fits each knife's finger curls offline and writes
+`src/viewmodel/knifeHandPoses.json`. The running game is the authority though:
+
+```bash
+# every knife through idle, draw, slashes, stab, backstab and inspect, live finger
+# bones against the live knife meshes (both hands on the push daggers)
+GPU=1 node tools/qa/grip-check.mjs http://<lan ip>:5173 report.json
+STEP=0.00833 GPU=1 node tools/qa/grip-check.mjs ...      # every clip at 1/120 s
+BYPASS_FILE=~/.config/webstrafe/vercel-bypass.txt ...    # against a vercel preview
+# refit in the game when a knife fails: finger curls, and the thumb's way to an opener
+node tools/qa/grip-tune.mjs http://<lan ip>:5173 karambit middle,ring
+node tools/qa/grip-tune-opener.mjs http://<lan ip>:5173 stiletto
+```
+
+The tuners print `engine`, `opener` and `openerVia` entries for the pose table;
+`gripFit.ts` keeps them when it's rerun. The push daggers' t-grip is authored
+in `knifeGrips.ts` (the rig can't spread fingers in the fitter). Close-ups from
+the first person camera for every knife are in
+`docs/screenshots/knives/grips/ingame/`.
+
 ## Knife by knife
 
 Real-world counterparts come from
