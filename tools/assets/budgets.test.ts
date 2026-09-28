@@ -41,7 +41,7 @@ function gpuBytes(info: KtxInfo): number {
   return info.width * info.height * (info.levels > 1 ? 4 / 3 : 1);
 }
 
-// only map directories: stat'ing manifest.json/scene.glb throws ENOTDIR on linux
+// only map folders: stat('manifest.json/scene.glb') throws ENOTDIR on linux
 const maps = readdirSync(path.join(ROOT, 'public/maps'), { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
   .map((entry) => entry.name)
