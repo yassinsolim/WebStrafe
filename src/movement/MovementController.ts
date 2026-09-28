@@ -1,11 +1,10 @@
 import { MathUtils, Vector3 } from 'three';
-import { defaultCvars, sanitizeMapCvars, type MapCvarResult } from './cvars';
+import { defaultCvars, METRES_PER_UNIT, sanitizeMapCvars, type MapCvarResult } from './cvars';
 import { StrafeStatsTracker, type StrafeStats } from './StrafeStats';
 import {
   accelerate,
   airAccelerate,
   applyFriction,
-  clampHorizontalSpeed,
   clipVelocity,
   horizontalLength,
 } from './MovementMath';
@@ -27,29 +26,40 @@ const SURF_CONTACT_GRACE_TICKS = 20;
 const SURF_EDGE_GROUND_OVERRIDE_MIN_ANGLE_DEG = 1;
 const SURF_EDGE_OVERRIDE_MIN_SPEED = 1.2;
 const SURF_EDGE_LAUNCH_MIN_SPEED = 5;
-const CROUCH_HEIGHT = 1.32;
-const CROUCH_EYE_HEIGHT = 1.12;
+// cs2 hull is 72 u standing and 54 u crouched, eyes 64 u and 46 u above the feet
+const STAND_HEIGHT = 72 * METRES_PER_UNIT;
+const CROUCH_HEIGHT = 54 * METRES_PER_UNIT;
+const STAND_EYE_HEIGHT = 64 * METRES_PER_UNIT;
+const CROUCH_EYE_HEIGHT = 46 * METRES_PER_UNIT;
 // seconds for a full duck or unduck on the ground
 const DUCK_TIME = 0.12;
-// source's duck speed crop, ground only
+// cs crouch-walk speed, 34% of the run speed (85 u/s with a knife), ground only
 const DUCK_SPEED_SCALE = 0.34;
+// share of the hull change the feet take when ducking in the air. cs shrinks the
+// hull about its middle there, so the feet come up 9 u and the head drops 9 u
+const AIR_DUCK_FEET_SHARE = 0.5;
 // the stand-up check starts this far off the floor so touching it doesn't count
 const UNDUCK_CLEARANCE = 0.01;
 
 export class MovementController {
   /** standing hull, what spawn checks use. the live hull shrinks while crouched */
   public readonly capsule: CapsuleShape = {
-    height: 1.76,
+    height: STAND_HEIGHT,
     radius: 0.34,
   };
 
   /** standing eye height, see getEyeHeight() for the live one */
-  public readonly eyeHeight = 1.6;
+  public readonly eyeHeight = STAND_EYE_HEIGHT;
 
   private readonly hull: CapsuleShape = { ...this.capsule };
   private duckAmount = 0;
+  // camera only: added to the eye height after an air duck moved the feet, so the
+  // view eases to the new eye height instead of jumping
+  private viewEase = 0;
 
   private readonly cvars: SourceCvars = { ...defaultCvars };
+  // held weapon run speed, see setMaxSpeedCap. infinity leaves only sv_maxspeed
+  private maxSpeedCap = Number.POSITIVE_INFINITY;
   private readonly position = new Vector3(0, 4, 0); // feet
   private readonly velocity = new Vector3();
   private readonly surfContactNormal = new Vector3(0, 1, 0);
@@ -97,6 +107,22 @@ export class MovementController {
   }
 
   /**
+   * run speed cap from the held weapon in m/s, cs2's weapons.vdata m_flMaxSpeed
+   * (the scoped value while zoomed). wishspeed is clamped to the lower of this and
+   * sv_maxspeed, like cs's per-player max speed. it's an input the owner keeps up
+   * to date, so it's not in the snapshot and reset() keeps it. anything but a
+   * positive number clears it.
+   */
+  public setMaxSpeedCap(speed: number): void {
+    this.maxSpeedCap = Number.isFinite(speed) && speed > 0 ? speed : Number.POSITIVE_INFINITY;
+  }
+
+  /** what wishspeed is clamped to right now: min(sv_maxspeed, weapon cap), m/s */
+  public getMaxSpeed(): number {
+    return Math.min(this.cvars.sv_maxspeed, this.maxSpeedCap);
+  }
+
+  /**
    * per-map physics: resets every cvar to its default, then applies the map's
    * overrides that pass validation (known name, right type, inside
    * mapCvarRules). anything else is skipped and listed in `rejected`.
@@ -117,6 +143,7 @@ export class MovementController {
       yawRad: this.yawRad,
       pitchRad: this.pitchRad,
       duckAmount: this.duckAmount,
+      viewEase: this.viewEase,
     };
   }
 
@@ -128,6 +155,7 @@ export class MovementController {
     this.yawRad = state.yawRad;
     this.pitchRad = state.pitchRad;
     this.setDuckAmount(state.duckAmount);
+    this.viewEase = state.viewEase;
     this.statsYawRad = state.yawRad;
   }
 
@@ -145,6 +173,7 @@ export class MovementController {
     this.yawRad = MathUtils.degToRad(yawDeg);
     this.pitchRad = 0;
     this.setDuckAmount(0);
+    this.viewEase = 0;
     this.strafeStats.reset();
     this.statsYawRad = this.yawRad;
   }
@@ -187,7 +216,7 @@ export class MovementController {
       && this.surfContactGraceTicks > 0
       && groundProbe !== null
       && groundProbe.slopeAngleDeg <= walkableAngle + 1
-      && horizontalLength(this.velocity) > Math.max(SURF_EDGE_LAUNCH_MIN_SPEED, this.cvars.sv_maxspeed * 0.9)
+      && horizontalLength(this.velocity) > Math.max(SURF_EDGE_LAUNCH_MIN_SPEED, this.getMaxSpeed() * 0.9)
       && this.velocity.y <= 0.9;
     if (preserveLaunchFromSurf) {
       mode = 'air';
@@ -214,6 +243,7 @@ export class MovementController {
     }
     const accelMode = mode;
     this.updateDuck(dt, input.crouchHeld === true, mode === 'ground', world);
+    this.easeView(dt);
 
     switch (mode) {
       case 'ground':
@@ -221,9 +251,13 @@ export class MovementController {
           this.applyGroundFriction(dt);
           frictionApplied = true;
         }
+        // the crouch crop lowers the goal speed, not the accel rate. at cs2's
+        // accelerate 5.5 a rate cropped with it couldn't beat stopspeed friction
+        // under 76 u/s, and a scoped awp crouch-walks at 34 u/s
         this.accelerateGround(
           wish.wishDir,
           wish.wishSpeed * MathUtils.lerp(1, DUCK_SPEED_SCALE, this.duckAmount),
+          wish.wishSpeed,
           dt,
         );
         if (this.velocity.y < 0) {
@@ -255,8 +289,11 @@ export class MovementController {
         break;
     }
 
-    if (mode !== 'ground' || jumped) {
-      this.velocity.y -= this.cvars.sv_gravity * dt;
+    // source's StartGravity / FinishGravity: half the tick's gravity before the move
+    // and half after, so the arc is the exact parabola and a jump peaks at v^2 / 2g
+    const airborne = mode !== 'ground' || jumped;
+    if (airborne) {
+      this.velocity.y -= this.cvars.sv_gravity * dt * 0.5;
     }
 
     const preSlideVelocity = this.velocity.clone();
@@ -265,6 +302,9 @@ export class MovementController {
     let collisionSpeedAfter = this.velocity.length();
     const dropWarnRatio = 0.5;
     let collisionDropWarn = collisionSpeedBefore > 0.2 && collisionSpeedAfter < collisionSpeedBefore * dropWarnRatio;
+    if (airborne) {
+      this.velocity.y -= this.cvars.sv_gravity * dt * 0.5;
+    }
 
     groundProbe = world.queryGround(this.position, this.hull, GROUND_PROBE_DIST);
     contactPoint = groundProbe?.position.clone() ?? contactPoint;
@@ -320,7 +360,7 @@ export class MovementController {
       && this.surfContactGraceTicks > 0
       && groundProbe !== null
       && groundProbe.slopeAngleDeg <= walkableAngle + 1
-      && horizontalLength(this.velocity) > Math.max(SURF_EDGE_LAUNCH_MIN_SPEED, this.cvars.sv_maxspeed * 0.9)
+      && horizontalLength(this.velocity) > Math.max(SURF_EDGE_LAUNCH_MIN_SPEED, this.getMaxSpeed() * 0.9)
       && this.velocity.y <= 0.9;
 
     const walkable = this.isWalkable(groundProbe);
@@ -405,9 +445,9 @@ export class MovementController {
     this.position.copy(position);
   }
 
-  /** live eye height above the feet, blends down to 1.12 m while crouched */
+  /** live eye height above the feet, blends down to 1.17 m (46 u) while crouched */
   public getEyeHeight(): number {
-    return MathUtils.lerp(this.eyeHeight, CROUCH_EYE_HEIGHT, this.duckAmount);
+    return this.eyeHeightAt(this.duckAmount) + this.viewEase;
   }
 
   /** 0 standing, 1 fully crouched */
@@ -462,7 +502,8 @@ export class MovementController {
     }
 
     const wishDir = wishVel.multiplyScalar(1 / len);
-    const wishSpeed = Math.min(this.cvars.sv_maxspeed, len * this.cvars.sv_maxspeed);
+    const maxSpeed = this.getMaxSpeed();
+    const wishSpeed = Math.min(maxSpeed, len * maxSpeed);
     return { wishDir, wishSpeed };
   }
 
@@ -472,10 +513,10 @@ export class MovementController {
     );
   }
 
-  // source-style ducking. on the ground the hull and eye blend over DUCK_TIME with
-  // the feet planted. off the ground it's instant and the feet move instead so the
-  // head stays put, which is why ducking mid-jump clears higher ledges. standing
-  // back up only happens where the standing hull fits.
+  // cs-style ducking. on the ground the hull and eye blend over DUCK_TIME with the
+  // feet planted. off the ground the hull switches at once about its middle, so the
+  // feet come up 9 u (a crouch jump clears 57 + 9 = 66 u) and the camera eases down.
+  // standing back up only happens where the standing hull fits.
   private updateDuck(dt: number, crouchHeld: boolean, onGround: boolean, world: CollisionAdapter): void {
     const target = crouchHeld ? 1 : 0;
     if (this.duckAmount === target) {
@@ -483,13 +524,17 @@ export class MovementController {
     }
 
     if (!onGround) {
+      const shift = (this.hull.height - this.hullHeightAt(target)) * AIR_DUCK_FEET_SHARE;
       const feet = this.position.clone();
-      feet.y += this.hull.height - this.hullHeightAt(target);
+      feet.y += shift;
       if (target < this.duckAmount && !this.hullFits(feet, this.hullHeightAt(target), world)) {
         return;
       }
+      const eyeBefore = this.getEyeHeight();
       this.position.copy(feet);
       this.setDuckAmount(target);
+      // same camera height as before the switch, easeView() takes it from there
+      this.viewEase = eyeBefore - shift - this.eyeHeightAt(target);
       return;
     }
 
@@ -508,8 +553,18 @@ export class MovementController {
     return !world.resolveCapsulePosition(start, { radius: this.hull.radius, height }).collided;
   }
 
+  // the camera moves at the ground duck rate while it catches up
+  private easeView(dt: number): void {
+    const step = ((STAND_EYE_HEIGHT - CROUCH_EYE_HEIGHT) * dt) / DUCK_TIME;
+    this.viewEase = Math.abs(this.viewEase) <= step ? 0 : this.viewEase - Math.sign(this.viewEase) * step;
+  }
+
   private hullHeightAt(duckAmount: number): number {
     return MathUtils.lerp(this.capsule.height, CROUCH_HEIGHT, duckAmount);
+  }
+
+  private eyeHeightAt(duckAmount: number): number {
+    return MathUtils.lerp(this.eyeHeight, CROUCH_EYE_HEIGHT, duckAmount);
   }
 
   private setDuckAmount(duckAmount: number): void {
@@ -528,12 +583,13 @@ export class MovementController {
     );
   }
 
-  private accelerateGround(wishDir: Vector3, wishSpeed: number, dt: number): void {
+  // no speed clamp after this: source's WalkMove only clamps wishspeed, so landing
+  // fast without jumping bleeds off through friction over a few ticks
+  private accelerateGround(wishDir: Vector3, wishSpeed: number, accelScale: number, dt: number): void {
     if (wishSpeed <= 0 || wishDir.lengthSq() <= 0) {
       return;
     }
-    this.velocity.copy(accelerate(this.velocity, wishDir, wishSpeed, this.cvars.sv_accelerate, dt));
-    this.velocity.copy(clampHorizontalSpeed(this.velocity, this.cvars.sv_maxspeed));
+    this.velocity.copy(accelerate(this.velocity, wishDir, wishSpeed, this.cvars.sv_accelerate, dt, 1, accelScale));
   }
 
   private pickMode(groundProbe: GroundProbe | null): MovementMode {

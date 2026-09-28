@@ -24,13 +24,14 @@ import {
   type CharacterHandle,
 } from '../characters/CharacterFactory';
 import type { CharacterLibrary } from '../characters/library';
-import { decodeLook, defaultLook, lookForBot, type CharacterLook } from '../characters/look';
+import { armorToLook, decodeLook as decodeWire, defaultLook, encodeLook, lookForBot, type CharacterLook } from '../characters/look';
 import {
   applyKnifeIdlePose,
   attachKnifeModel,
   loadKnifeMesh,
   type ArmRig,
 } from './playerRig';
+import { remoteKnifeKey, setRemoteKnife } from './remoteKnife';
 
 interface RemotePlayerActor {
   id: string;
@@ -58,6 +59,8 @@ interface RemotePlayerActor {
   /** smoothed on-screen velocity, drives cloth sway */
   shownVelocity: Vector3;
   lastShown: Vector3;
+  /** which knife pick the weapon hand holds (see remoteKnife.ts) */
+  knifeKey: string;
 }
 
 /** how fast a leftover extrapolation error fades, 1/s */
@@ -186,7 +189,9 @@ export class RemotePlayersRenderer {
       }
       visibleIds.add(player.id);
 
-      const cosmetics = typeof player.cosmetics === 'string' ? player.cosmetics : '';
+      // the armor part of the shared cosmetics field, keyed so an unchanged look is a no-op
+      const shared = armorToLook(player.cosmetics?.armor, defaultLook(player.model));
+      const cosmetics = shared ? encodeLook(shared) : '';
       let actor = this.actors.get(player.id);
       if (!actor) {
         actor = this.createActor(player.id, player.model, cosmetics, player.position, player.yaw);
@@ -197,6 +202,12 @@ export class RemotePlayersRenderer {
       // a new team or look re-dresses the same actor, its motion history stays
       if (actor.model !== player.model || actor.cosmetics !== cosmetics) {
         this.redress(actor, player.model, cosmetics);
+      }
+
+      const knifeKey = remoteKnifeKey(player.cosmetics?.knife);
+      if (actor.rig && actor.knifeKey !== knifeKey) {
+        setRemoteKnife(actor.rig.rightWeaponHand, player.cosmetics?.knife);
+        actor.knifeKey = knifeKey;
       }
 
       actor.targetPosition.set(player.position[0], player.position[1], player.position[2]);
@@ -320,6 +331,7 @@ export class RemotePlayersRenderer {
       lastMode: null,
       shownVelocity: new Vector3(),
       lastShown: displayPosition.clone(),
+      knifeKey: remoteKnifeKey(undefined),
     };
 
     this.redress(actor, model, cosmetics);
@@ -330,7 +342,7 @@ export class RemotePlayersRenderer {
   private resolveLook(id: string, model: PlayerModel, cosmetics: string): CharacterLook {
     const fallback = defaultLook(model);
     if (cosmetics) {
-      const decoded = decodeLook(cosmetics, fallback);
+      const decoded = decodeWire(cosmetics, fallback);
       if (decoded) return decoded;
     }
     return id.startsWith('bot:') ? lookForBot(id) : fallback;

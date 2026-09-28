@@ -69,8 +69,14 @@ import type { MeleeTarget } from '../combat/MeleeResolver';
 import { DEFAULT_ZOOM_SENSITIVITY_RATIO } from '../combat/Scope';
 import { ScopeOverlay } from '../ui/ScopeOverlay';
 import { isCombatEnabled } from '../combat/combatConfig';
-import { getWeapon, type WeaponId } from '../combat/weapons';
-import { DEFAULT_KNIFE_ID, getKnife, isKnifeId, type KnifeId } from '../combat/knives';
+import { getWeapon, weaponMaxSpeed, type WeaponId } from '../combat/weapons';
+import { DEFAULT_KNIFE_ID, getKnife, type KnifeId } from '../combat/knives';
+import {
+  defaultKnifeSelection,
+  loadKnifeSelection,
+  saveKnifeSelection,
+  type KnifeLoadoutSelection,
+} from '../cosmetics/finishes/selection';
 import { CollisionWorld } from '../world/CollisionWorld';
 import { deleteCustomMap, listCustomMaps } from '../world/CustomMapStore';
 import { MapLoader, type MapLoadReporter } from '../world/MapLoader';
@@ -94,7 +100,7 @@ import { PlayerCharacter } from '../characters/PlayerCharacter';
 import { loadCharacterLibrary } from '../characters/CharacterFactory';
 import { devCharacterRows, parseDevCharacters } from '../characters/devCharacters';
 import { setCharacterDetail } from '../characters/ArmorCharacter';
-import { decodeLook, encodeLook } from '../characters/look';
+import { decodeLook, encodeLook, lookToArmor } from '../characters/look';
 
 type MapSource =
   | {
@@ -165,6 +171,8 @@ export class GameApp {
   private crosshairSpreadRad = 0;
 
   private readonly viewmodel = new ViewmodelSystem();
+  /** knife model and finish, persisted */
+  private knifeSelection: KnifeLoadoutSelection = defaultKnifeSelection();
   private readonly muzzleScratch = new Vector3();
   private readonly shot: ShotRequest | null = parseShotRequest(window.location.search);
   private framePerf: FramePerf | null = null;
@@ -352,10 +360,12 @@ export class GameApp {
       container: this.container,
       worldScene: this.worldScene,
       team: this.getPlayerModelFromLoadout(this.loadout),
-      onLookChanged: () => this.syncMultiplayerIdentity(),
+      onLookChanged: () => this.syncCosmetics(),
       viewmodel: this.viewmodel,
     });
-    this.viewmodel.setKnife(loadKnifeStyle());
+    this.knifeSelection = loadKnifeSelection();
+    this.viewmodel.setKnifeFinish(this.knifeSelection);
+    this.viewmodel.setKnife(this.knifeSelection.knifeId);
     this.activeKnifeSoundProfile = this.getKnifeSoundProfileFromLoadout(this.loadout);
     this.knifeAudio.setProfile(this.activeKnifeSoundProfile);
     this.syncViewmodelMotionStyle();
@@ -386,12 +396,21 @@ export class GameApp {
       onNameChanged: (name) => this.applyPlayerName(name),
       onKnifeSelected: (knifeId) => {
         this.viewmodel.setKnife(knifeId);
-        saveKnifeStyle(knifeId);
+        this.knifeSelection = { ...this.knifeSelection, knifeId: this.viewmodel.getKnife() };
+        saveKnifeSelection(this.knifeSelection);
+        this.syncCosmetics();
         this.showStatus(`Knife: ${getKnife(knifeId ?? DEFAULT_KNIFE_ID).name}`);
         this.syncHudKnifeName();
       },
+      onKnifeFinishChanged: (selection) => {
+        this.knifeSelection = { ...selection, knifeId: this.viewmodel.getKnife() };
+        this.viewmodel.setKnifeFinish(this.knifeSelection);
+        saveKnifeSelection(this.knifeSelection);
+        this.syncCosmetics();
+      },
     });
     this.menu.setSelectedKnife(this.viewmodel.getKnife());
+    this.menu.setKnifeFinish(this.knifeSelection);
     this.menu.setMaps(this.getMapEntries(), this.selectedMapId);
     this.menu.setCosmetics(cosmeticsManifest, this.loadout);
     this.playerCharacter.attachMenu(this.menu);
@@ -410,6 +429,7 @@ export class GameApp {
     // Pick the transport: Supabase Realtime when configured (serverless deploy),
     // else the self-hosted WebSocket client (local dev / LAN).
     this.multiplayer = this.shot && !this.shot.qa ? new OfflineMultiplayer() : await createMultiplayer();
+    this.syncCosmetics();
 
     this.multiplayer.onSnapshot = (snapshot) => {
       if (snapshot.mapId !== this.selectedMapId) {
@@ -664,6 +684,9 @@ export class GameApp {
         // around as a "ghost" until they respawn.
         const sampledMove = this.input.sampleMoveInput();
         const moveInput = dead ? this.deadMoveInput : this.qaMove ? { ...sampledMove, ...this.qaMove } : sampledMove;
+        // cs2 run speed follows the held weapon, and the awp's scoped value while zoomed
+        // (knife 250 u/s, deagle 230, awp 200 or 100). outside combat you hold the knife
+        this.movement.setMaxSpeedCap(weaponMaxSpeed(this.weapon.getActive(), this.combatAim.isScoped()));
         this.movement.tick(FIXED_TICK_DT, moveInput, this.collisionWorld);
         this.updateMapTriggers();
         if (this.combatEnabled) {
@@ -1114,7 +1137,6 @@ export class GameApp {
       this.selectedMapId,
       this.localPlayerName,
       this.getPlayerModelFromLoadout(this.loadout),
-      this.playerCharacter?.wire(),
     );
   }
 
@@ -1398,7 +1420,8 @@ export class GameApp {
     this.combatAim.tick(dt, {
       velocity: this.movement.getVelocity(),
       grounded: this.movement.getDebugState().grounded,
-      maxSpeed: cvars.sv_maxspeed,
+      // cs measures move inaccuracy against the held weapon's own max speed
+      maxSpeed: this.movement.getMaxSpeed(),
       jumpImpulse: cvars.sv_jump_impulse,
     });
   }
@@ -2554,6 +2577,15 @@ export class GameApp {
     if (request.thirdPerson) this.debugCameraMode = 'thirdPerson';
   }
 
+  /** tells other players which knife (and finish) we hold */
+  private syncCosmetics(): void {
+    const { finishId, wear, seed } = this.knifeSelection;
+    this.multiplayer?.setCosmetics?.({
+      knife: { id: this.viewmodel.getKnife(), finish: finishId, wear, seed },
+      ...(this.playerCharacter ? { armor: lookToArmor(this.playerCharacter.look) } : {}),
+    });
+  }
+
   /** sounds for viewmodel clip events GunAudio doesn't already schedule */
   private playViewmodelEvent(name: string): void {
     switch (name) {
@@ -2726,26 +2758,4 @@ function formatRunTime(totalMs: number): string {
   const minutePrefix = minutes > 0 ? `${minutes}:` : '';
   const secondText = minutes > 0 ? seconds.toString().padStart(2, '0') : seconds.toString();
   return `${minutePrefix}${secondText}.${ms.toString().padStart(3, '0')}`;
-}
-
-const KNIFE_STYLE_KEY = 'webstrafe:knife-style:v1';
-const LEGACY_KNIFE = 'legacy';
-
-/** Stored knife choice; defaults to the procedural karambit. */
-function loadKnifeStyle(): KnifeId | null {
-  try {
-    const raw = globalThis.localStorage?.getItem(KNIFE_STYLE_KEY);
-    if (raw === LEGACY_KNIFE) return null;
-    return isKnifeId(raw) ? raw : DEFAULT_KNIFE_ID;
-  } catch {
-    return DEFAULT_KNIFE_ID;
-  }
-}
-
-function saveKnifeStyle(id: KnifeId | null): void {
-  try {
-    globalThis.localStorage?.setItem(KNIFE_STYLE_KEY, id ?? LEGACY_KNIFE);
-  } catch {
-    // storage blocked, the choice just won't persist
-  }
 }

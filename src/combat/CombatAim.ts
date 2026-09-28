@@ -8,7 +8,7 @@ export interface CombatAimMotion {
   /** player velocity, m/s */
   velocity: { x: number; y: number; z: number };
   grounded: boolean;
-  /** sv_maxspeed, m/s */
+  /** the held weapon's max speed (MovementController.getMaxSpeed), m/s */
   maxSpeed: number;
   /** sv_jump_impulse, m/s */
   jumpImpulse: number;

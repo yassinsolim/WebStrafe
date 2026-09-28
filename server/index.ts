@@ -1,3 +1,4 @@
+import { decodeCosmetics, encodeCosmetics, type WireCosmetics } from '../src/network/cosmetics';
 import crypto from 'node:crypto';
 import { createReadStream, promises as fs } from 'node:fs';
 import http, { type IncomingMessage, type ServerResponse } from 'node:http';
@@ -18,7 +19,6 @@ import { loadHeadlessMap } from './mapCollision';
 import { SourceClock } from '../src/netcode/SourceClock';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { clientIp, isOriginAllowed as originAllowed, readOriginPolicy } from './access';
-import { isPlausibleLookWire } from '../src/characters/look';
 
 type PlayerModel = 'terrorist' | 'counterterrorist';
 type AttackKind = 'primary' | 'secondary';
@@ -49,8 +49,8 @@ interface ClientState {
   name: string;
   mapId: string;
   model: PlayerModel;
-  /** look wire string, only ever sent in profile messages, never in snapshots */
-  cosmetics: string | null;
+  /** optional knife / armour choices in wire form, relayed in snapshots */
+  cosmetics?: WireCosmetics;
   position: [number, number, number];
   velocity: [number, number, number];
   yaw: number;
@@ -64,8 +64,6 @@ interface ClientState {
   stateWindowStart: number;
   attackMessageCount: number;
   attackWindowStart: number;
-  cosmeticsMessageCount: number;
-  cosmeticsWindowStart: number;
 }
 
 interface JsonObject {
@@ -84,9 +82,6 @@ const HOST = process.env.HOST ?? '0.0.0.0';
 const DEV_MODE = process.env.NODE_ENV !== 'production';
 const MAX_HTTP_BODY_BYTES = 4 * 1024;
 const MAX_STATE_MESSAGES_PER_SECOND = 70;
-/** each look change goes out to the whole map, so extra ones are just dropped */
-const MAX_COSMETICS_MESSAGES_PER_WINDOW = 5;
-const COSMETICS_WINDOW_MS = 10_000;
 const MAX_WEBSOCKET_MESSAGE_BYTES = 2 * 1024;
 const SNAPSHOT_RATE_HZ = clampInt(process.env.SNAPSHOT_RATE_HZ, 30, 10, 64);
 /** a client whose socket has this much unsent data gets no new snapshots until it drains */
@@ -208,7 +203,6 @@ wss.on('connection', (ws, req) => {
     name: 'Player',
     mapId: '',
     model: 'terrorist',
-    cosmetics: null,
     position: [0, 0, 0],
     velocity: [0, 0, 0],
     yaw: 0,
@@ -220,8 +214,6 @@ wss.on('connection', (ws, req) => {
     stateWindowStart: Date.now(),
     attackMessageCount: 0,
     attackWindowStart: Date.now(),
-    cosmeticsMessageCount: 0,
-    cosmeticsWindowStart: Date.now(),
   };
 
   clients.set(ws, client);
@@ -269,10 +261,6 @@ wss.on('connection', (ws, req) => {
           });
           return;
         }
-        // a bad look never fails the join, it just means no look
-        const cosmetics = parseCosmetics(payload.cosmetics);
-        const previousMapId = client.joined ? client.mapId : '';
-        const previousCosmetics = client.cosmetics;
 
         client.joined = true;
         client.hasState = false;
@@ -283,7 +271,6 @@ wss.on('connection', (ws, req) => {
         client.mapId = mapId;
         client.name = name;
         client.model = model;
-        client.cosmetics = cosmetics;
         clearTimeout(joinTimeout);
 
         sendWs(ws, {
@@ -293,27 +280,14 @@ wss.on('connection', (ws, req) => {
         });
         arena.addPlayer(client.id, mapId, 'knife');
         botManager.resetTargeting(mapId);
-        shareProfilesOnJoin(client, previousMapId, previousCosmetics);
         break;
       }
       case 'cosmetics': {
         if (!client.joined) {
           return;
         }
-        const now = Date.now();
-        if (now - client.cosmeticsWindowStart >= COSMETICS_WINDOW_MS) {
-          client.cosmeticsWindowStart = now;
-          client.cosmeticsMessageCount = 0;
-        }
-        client.cosmeticsMessageCount += 1;
-        if (client.cosmeticsMessageCount > MAX_COSMETICS_MESSAGES_PER_WINDOW) {
-          return;
-        }
-        const cosmetics = parseCosmetics(payload.cosmetics);
-        if (cosmetics !== client.cosmetics) {
-          client.cosmetics = cosmetics;
-          broadcastProfile(client, client.mapId, cosmetics);
-        }
+        // re-encode the decoded form so only validated fields are relayed
+        client.cosmetics = encodeCosmetics(decodeCosmetics(payload.c));
         break;
       }
       case 'combat-ready': {
@@ -511,14 +485,12 @@ wss.on('connection', (ws, req) => {
     arena.removePlayer(client.id);
     if (client.mapId) botManager.resetTargeting(client.mapId);
     clients.delete(ws);
-    forgetProfile(client);
   });
 
   ws.on('error', () => {
     arena.removePlayer(client.id);
     if (client.mapId) botManager.resetTargeting(client.mapId);
     clients.delete(ws);
-    forgetProfile(client);
   });
 });
 
@@ -566,6 +538,7 @@ function snapshotTick(): void {
     health: number;
     alive: boolean;
     t: number;
+    c?: WireCosmetics;
   }>>();
 
   for (const client of clients.values()) {
@@ -592,6 +565,7 @@ function snapshotTick(): void {
       health: arena.getHealth(client.id) ?? 100,
       alive: arena.isAlive(client.id),
       t: client.sampleT,
+      ...(client.cosmetics ? { c: client.cosmetics } : {}),
     });
     groupedByMap.set(client.mapId, list);
   }
@@ -1044,11 +1018,6 @@ function parseAttackKind(value: unknown): AttackKind | null {
   return null;
 }
 
-/** a look wire string (src/characters/look.ts): 1..96 of [0-9A-Za-z.-], anything else is no look */
-function parseCosmetics(value: unknown): string | null {
-  return isPlausibleLookWire(value) ? value : null;
-}
-
 function parseInteger(value: unknown, min: number, max: number): number | null {
   const parsed = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(parsed)) {
@@ -1171,49 +1140,6 @@ function broadcastToMap(mapId: string, payload: Record<string, unknown>): void {
       continue;
     }
     sendWs(client.ws, payload);
-  }
-}
-
-/** one player's look to everyone else on a map, null tells them to drop it */
-function broadcastProfile(client: ClientState, mapId: string, cosmetics: string | null): void {
-  const payload = cosmetics ? { type: 'profile', id: client.id, cosmetics } : { type: 'profile', id: client.id };
-  for (const other of clients.values()) {
-    if (other === client || !other.joined || other.mapId !== mapId) {
-      continue;
-    }
-    sendWs(other.ws, payload);
-  }
-}
-
-/**
- * after a join the joiner gets everyone else's look on the map, the map hears
- * the joiner's look when it's news to them, and a map it left forgets it
- */
-function shareProfilesOnJoin(client: ClientState, previousMapId: string, previousCosmetics: string | null): void {
-  const players: Array<{ id: string; cosmetics: string }> = [];
-  for (const other of clients.values()) {
-    if (other !== client && other.joined && other.mapId === client.mapId && other.cosmetics) {
-      players.push({ id: other.id, cosmetics: other.cosmetics });
-    }
-  }
-  // skipped when empty, so a room without looks gets exactly the messages it used to
-  if (players.length > 0) {
-    sendWs(client.ws, { type: 'profiles', players });
-  }
-  if (previousMapId && previousMapId !== client.mapId && previousCosmetics) {
-    broadcastProfile(client, previousMapId, null);
-  }
-  const known = previousMapId === client.mapId ? previousCosmetics : null;
-  if (client.cosmetics !== known) {
-    broadcastProfile(client, client.mapId, client.cosmetics);
-  }
-}
-
-/** a player that leaves takes its look with it, so nobody keeps a stale one */
-function forgetProfile(client: ClientState): void {
-  if (client.joined && client.cosmetics) {
-    broadcastProfile(client, client.mapId, null);
-    client.cosmetics = null;
   }
 }
 

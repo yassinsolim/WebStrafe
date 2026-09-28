@@ -558,7 +558,8 @@ def main():
         "attribution": "Original layout and procedural textures made for WebStrafe.",
         "spawns": spawns,
         "triggers": triggers,
-        "cvars": {"sv_airaccelerate": 100},
+        # surf servers run 150 (sharptimer's surf config)
+        "cvars": {"sv_airaccelerate": 150},
         "notes": "Four surf stages, 10 ramps from 55 to 62 degrees. Falling under a stage teleports you to its start.",
     }
     layout_json = {

@@ -9,6 +9,7 @@ import {
 } from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { KnifeDef, KnifeShape } from '../combat/knives';
+import { clearKnifeFinish } from './finishes/applyFinish';
 import { buildBlade } from './knife/blade';
 import { createKnifeMaterials, type KnifeMaterials } from './knife/materials';
 import {
@@ -105,14 +106,19 @@ export function buildProceduralKnife(def: KnifeDef): Group {
   group.userData.mechanism = mechanism;
   group.userData.pair = s.pair === true;
   group.userData.overallLength = s.bladeLength + s.handleLength + guardDepth(s);
+  // same hints the contract glbs carry, the finish shaders scale patterns by them
+  group.userData.bladeLength = s.bladeLength;
+  group.userData.bladeHeight = s.bladeHeight;
   return group;
 }
 
 /**
  * disposes geometries and materials created by {@link buildProceduralKnife}.
- * the small generated textures are shared between knives and stay alive.
+ * the small generated textures are shared between knives and stay alive, and
+ * a finish is cleared first so its shared materials survive.
  */
 export function disposeProceduralKnife(root: Group): void {
+  clearKnifeFinish(root);
   const materials = new Set<Material>();
   root.traverse((child) => {
     if (child instanceof Mesh) {

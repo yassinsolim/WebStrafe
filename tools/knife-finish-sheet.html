@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WebStrafe knife finish sheet (dev only)</title>
+    <style>
+      html, body { margin: 0; background: #0a0d12; color: #f2f4f8; font-family: system-ui, sans-serif; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <!-- dev tool: /tools/knife-finish-sheet.html?knife=<id>
+         mode=finishes (every finish), mode=wear&finish=<id> (one per exterior), mode=seeds&finish=<id>&seeds=1,2,3
+         &wear=<float>&seed=<n>&cols=5&width=1500&tilt=0.25&fold=0..1
+         sets document.title = 'ready' once drawn -->
+    <script type="module">
+      import {
+        ACESFilmicToneMapping, AmbientLight, Box3, CanvasTexture, DirectionalLight, Group, Mesh, MeshBasicMaterial,
+        OrthographicCamera, PlaneGeometry, PMREMGenerator, Scene, SRGBColorSpace, Vector3, WebGLRenderer,
+      } from 'three';
+      import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+      import { getKnife } from '/src/combat/knives.ts';
+      import { buildProceduralKnife } from '/src/cosmetics/ProceduralKnife.ts';
+      import { applyKnifeFinish } from '/src/cosmetics/finishes/applyFinish.ts';
+      import {
+        clampKnifeWear, finishPatternLabel, knifeFinishDisplayName, resolveKnifeFinish, selectableKnifeFinishIds, wearCondition,
+      } from '/src/cosmetics/finishes/catalog.ts';
+
+      const params = new URLSearchParams(location.search);
+      const knifeId = params.get('knife') ?? 'karambit';
+      const mode = params.get('mode') ?? 'finishes';
+      const finishParam = params.get('finish') ?? 'case_hardened';
+      const wearParam = params.get('wear');
+      const seedParam = Number(params.get('seed') ?? 1);
+      const tilt = Number(params.get('tilt') ?? 0.25);
+      const fold = Number(params.get('fold') ?? 0);
+
+      let cells = [];
+      if (mode === 'wear') {
+        cells = [0.02, 0.1, 0.26, 0.41, 0.75].map((w) => ({ finishId: finishParam, wear: w, seed: seedParam }));
+      } else if (mode === 'seeds') {
+        const seeds = (params.get('seeds') ?? '1,2,3,4,5').split(',').map(Number);
+        cells = seeds.map((s) => ({ finishId: finishParam, wear: Number(wearParam ?? 0), seed: s }));
+      } else {
+        cells = selectableKnifeFinishIds().map((id) => ({ finishId: id, wear: Number(wearParam ?? 0), seed: seedParam }));
+      }
+      const cols = Number(params.get('cols') ?? Math.min(5, cells.length));
+      const rows = Math.ceil(cells.length / cols);
+      const cellW = 0.36;
+      const cellH = 0.2;
+      const width = Number(params.get('width') ?? 1500);
+      const height = Math.round((width * rows * cellH) / (cols * cellW));
+
+      const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(1);
+      renderer.setSize(width, height);
+      renderer.setClearColor(0x14181f);
+      renderer.outputColorSpace = SRGBColorSpace;
+      renderer.toneMapping = ACESFilmicToneMapping;
+      document.body.appendChild(renderer.domElement);
+      const scene = new Scene();
+      const pmrem = new PMREMGenerator(renderer);
+      scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      scene.add(new AmbientLight(0xffffff, 0.3));
+      const key = new DirectionalLight(0xffffff, 1.4);
+      key.position.set(0.4, 1, 1.2);
+      scene.add(key);
+      const halfW = (cols * cellW) / 2;
+      const halfH = (rows * cellH) / 2;
+      const camera = new OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.01, 10);
+      camera.position.set(0, 0, 3);
+
+      const def = getKnife(knifeId);
+      cells.forEach((cell, i) => {
+        const cx = -halfW + cellW * (i % cols) + cellW / 2;
+        const cy = halfH - cellH * Math.floor(i / cols) - cellH / 2;
+        const knife = buildProceduralKnife(def);
+        if (fold) {
+          knife.getObjectByName('blade_pivot')?.rotation.set(0, 0, -Math.PI * fold);
+          knife.getObjectByName('handle_safe')?.rotation.set(0, 0, Math.PI * fold);
+          knife.getObjectByName('handle_bite')?.rotation.set(0, 0, -Math.PI * fold);
+        }
+        applyKnifeFinish(knife, cell);
+        const holder = new Group();
+        holder.add(knife);
+        holder.rotation.set(-tilt, tilt * 0.9, 0);
+        holder.updateMatrixWorld(true);
+        const box = new Box3().setFromObject(holder);
+        const size = box.getSize(new Vector3());
+        const center = box.getCenter(new Vector3());
+        const scale = Math.min((cellW * 0.9) / size.x, (cellH * 0.72) / size.y);
+        holder.scale.setScalar(scale);
+        holder.position.set(cx - center.x * scale, cy + cellH * 0.06 - center.y * scale, 0);
+        scene.add(holder);
+
+        const wear = clampKnifeWear(cell.finishId, cell.wear);
+        const finish = resolveKnifeFinish(cell.finishId).finish;
+        const note = finish.id === 'vanilla' ? '' : `${wearCondition(wear).short} ${wear.toFixed(2)}`
+          + (finish.seedMatters ? ` · #${cell.seed}` : '') + (finishPatternLabel(cell.finishId, cell.seed) ? ` · ${finishPatternLabel(cell.finishId, cell.seed)}` : '');
+        const c = document.createElement('canvas');
+        c.width = 640; c.height = 64;
+        const g = c.getContext('2d');
+        g.fillStyle = '#f2f4f8'; g.font = '600 28px system-ui'; g.textAlign = 'center';
+        g.fillText(knifeFinishDisplayName(cell.finishId), 320, 28);
+        g.fillStyle = '#8c96a5'; g.font = '22px system-ui';
+        g.fillText(note, 320, 56);
+        const label = new Mesh(new PlaneGeometry(cellW * 0.95, cellW * 0.095), new MeshBasicMaterial({ map: new CanvasTexture(c), transparent: true, toneMapped: false }));
+        label.position.set(cx, cy - cellH * 0.4, 0.5);
+        scene.add(label);
+      });
+      renderer.compile(scene, camera);
+      renderer.render(scene, camera);
+      window.__sheetReady = true;
+      document.title = 'ready';
+    </script>
+  </body>
+</html>

@@ -82,6 +82,17 @@ Barrel along Blender `+Y`, top of the weapon `+Z`. Required names:
 | `mag` | yes | yes | origin at the top of the magazine, drops along the magazine axis |
 | `trigger` | yes | yes | rotates about X at its pivot |
 
+## Knives (`public/knives/<id>.glb`)
+
+`knives/build_knives.py` builds all 20 (one function per knife, helpers in
+`knives/klib.py`), `knives/optimize_knives.ts` shrinks them and
+`knives/render_knives.py` renders the contact sheets. The frame, node names,
+sockets, userData and materials are in `docs/assets/knife-contract.md`; the
+design notes, sources and socket positions are in `docs/assets/knives.md`.
+Knives are authored in the knife frame (+X tip, +Y spine, Z thickness) and
+turned into blender axes at export, so unlike the weapons they do not use
+blender +Y forward.
+
 ## Watch hands at runtime
 
 The watch objects export Y up, so in three.js the dial normal is the watch's

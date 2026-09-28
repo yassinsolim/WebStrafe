@@ -271,3 +271,50 @@ export function randomLook(seed?: number | string): CharacterLook {
 export function lookForBot(id: string): CharacterLook {
   return randomLook(`bot|${id}`);
 }
+
+/**
+ * the look as the `armor` part of the shared cosmetics field
+ * (network/cosmetics.ts): slot -> item id, lowercase tokens, at most 12 slots.
+ * colours go without the '#', the callsign lowercased; empty values are left out.
+ */
+export function lookToArmor(look: CharacterLook): Record<string, string> {
+  const armor: Record<string, string> = {
+    helmet: look.helmet,
+    arms: look.arms,
+    chest: look.chest,
+    legs: look.legs,
+    class: look.classItem,
+    primary: look.primary.slice(1).toLowerCase(),
+    secondary: look.secondary.slice(1).toLowerCase(),
+    accent: look.accent.slice(1).toLowerCase(),
+    finish: look.finish,
+    emblem: look.emblem,
+    watch: look.watch ? 'on' : 'off',
+  };
+  const tag = sanitizeTag(look.tag).toLowerCase();
+  if (tag) armor.tag = tag;
+  return armor;
+}
+
+/** reads the `armor` part back; null when there is none, bad fields fall back per field */
+export function armorToLook(armor: Record<string, string> | undefined, fallback: CharacterLook = defaultLook()): CharacterLook | null {
+  if (!armor || typeof armor !== 'object' || Object.keys(armor).length === 0) return null;
+  const hex = (v: string | undefined) => (typeof v === 'string' && /^[0-9a-f]{6}$/i.test(v) ? `#${v.toLowerCase()}` : undefined);
+  return sanitizeLook(
+    {
+      helmet: armor.helmet,
+      arms: armor.arms,
+      chest: armor.chest,
+      legs: armor.legs,
+      classItem: armor.class,
+      primary: hex(armor.primary),
+      secondary: hex(armor.secondary),
+      accent: hex(armor.accent),
+      finish: armor.finish,
+      emblem: armor.emblem,
+      tag: armor.tag ?? '',
+      watch: armor.watch === 'on' ? true : armor.watch === 'off' ? false : undefined,
+    },
+    fallback,
+  );
+}

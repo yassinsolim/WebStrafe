@@ -3,7 +3,7 @@ import { devToolsEnabled } from '../app/devTools';
 import { ARMOR_SETS, ARMOR_SLOTS, type ArmorSetId } from './catalog';
 import type { CharacterLibrary } from './library';
 import type { CharacterDetail } from './ArmorCharacter';
-import { decodeLook, defaultLook, encodeLook, lookForBot, randomLook, type CharacterLook } from './look';
+import { decodeLook, defaultLook, encodeLook, lookForBot, lookToArmor, randomLook, type CharacterLook } from './look';
 import { BUILTIN_PRESETS } from './presets';
 
 /**
@@ -114,7 +114,7 @@ export function devCharacterRows(
       // face the camera
       yaw: yawRad + Math.PI,
       pitch: 0,
-      cosmetics,
+      cosmetics: { armor: lookToArmor(decodeLook(cosmetics, defaultLook(team)) ?? defaultLook(team)) },
     });
   }
   return rows;

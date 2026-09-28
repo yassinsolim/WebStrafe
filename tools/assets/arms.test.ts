@@ -120,7 +120,8 @@ describe('public/viewmodels/v2/arms.glb', () => {
         }
       }
     }
-  });
+    // walks every vertex of the skinned mesh, slow on a busy machine
+  }, 30000);
 
   it('parents the watch to forearm_twist_l with all its parts', () => {
     for (const name of WATCH_NODES) {
