@@ -242,6 +242,7 @@ export class GameApp {
   private readonly movementAudio = new MovementAudioTracker();
   private runTimerAllowed = false;
   private readonly surf: SurfSession;
+  private lastLocalHealth = 100;
   private boardsPanel: LeaderboardPanel | null = null;
   private readonly boardsMapInfo = new Map<string, Promise<BoardsMap>>();
   private lastShotDirectionAtMs = 0;
@@ -1237,6 +1238,7 @@ export class GameApp {
 
   private applyLocalHealth(health: number, alive: boolean): void {
     const wasAlive = this.localAlive;
+    this.lastLocalHealth = health;
     this.localAlive = alive;
     // Authoritative health applies immediately, while the centered death
     // presentation waits for the incoming round to travel to its endpoint.
@@ -2532,7 +2534,27 @@ export class GameApp {
         ammo: this.weapon.getAmmo(),
         feet: this.movement.getFeetPosition().toArray(),
         players: this.remotePlayers.getDisplayedPlayers().map((p) => ({ id: p.id, pos: p.position.toArray() })),
+        health: this.lastLocalHealth,
+        surf: this.surf.qaState(),
       }),
+      togglePvp: () => this.surf.togglePvp(performance.now() + 60_000),
+      hostArena: () => {
+        const sim = (this.multiplayer as unknown as { hostSim?: { arena: { players: Map<string, Record<string, unknown>> } } }).hostSim;
+        if (!sim) return null;
+        return [...sim.arena.players.values()].map((p) => ({
+          id: p.id,
+          pvp: p.pvp,
+          feet: (p.feet as Vector3).toArray().map((v) => Math.round(v * 10) / 10),
+          protectedMs: Math.max(0, Number(p.spawnProtectedUntilMs) - Date.now()),
+          history: (p.positionHistory as unknown[]).length,
+          weapon: (p.weapon as { getActive?: () => string }).getActive?.(),
+        }));
+      },
+      restartRun: () => this.resetToSpawn('Run restarted', true),
+      nameplates: () => Array.from(document.querySelectorAll('.surf-nameplate:not([hidden])')).map((el) => el.textContent ?? ''),
+      roomBoardText: () => document.querySelector('.surf-room-board')?.textContent ?? null,
+      pvpBadgeText: () => document.querySelector('.surf-pvp')?.textContent ?? null,
+      timerText: () => document.querySelector('.surf-timer')?.textContent ?? null,
       equip: (id: WeaponId) => this.equipCombatWeapon(id),
       teleport: (x: number, y: number, z: number, yawDeg: number) => this.movement.reset(new Vector3(x, y, z), yawDeg),
       move: (forwardMove: number, sideMove: number, jump = false) => {

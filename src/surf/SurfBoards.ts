@@ -214,12 +214,17 @@ export class SurfBoards {
 }
 
 async function defaultClient(): Promise<SupabaseClient | null> {
-  const config = await loadSupabaseConfig();
+  // local qa builds can point the boards at a throwaway database (tools/surf/test-migrations.sh --serve)
+  const env = (import.meta as { env?: Record<string, string | undefined> }).env ?? {};
+  const override = env.VITE_SURF_BOARDS_URL && env.VITE_SURF_BOARDS_KEY
+    ? { supabaseUrl: env.VITE_SURF_BOARDS_URL, supabaseKey: env.VITE_SURF_BOARDS_KEY }
+    : null;
+  const config = override ?? await loadSupabaseConfig();
   if (!config) return null;
   try {
     const { createClient } = await import('@supabase/supabase-js');
     return createClient(config.supabaseUrl, config.supabaseKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
+      auth: { persistSession: false, autoRefreshToken: false, storageKey: 'webstrafe-surf-boards' },
     });
   } catch {
     return null;

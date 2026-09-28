@@ -5,6 +5,7 @@
  *   BOARDS_URL=http://127.0.0.1:54330 BOARDS_JWT_SECRET=... npx tsx tools/surf/boards-e2e.ts
  */
 import { createHmac } from 'node:crypto';
+import { createServer } from 'node:http';
 import { createClient } from '@supabase/supabase-js';
 import { SurfBoards } from '../../src/surf/SurfBoards';
 import { GhostRecorder, decodeGhost, encodeGhost } from '../../src/surf/ghost';
@@ -103,4 +104,40 @@ async function main(): Promise<void> {
   console.log('boards e2e passed');
 }
 
-void main();
+/** a /rest/v1 prefix proxy so a browser build can use supabase-js against the bare postgrest */
+function serve(): void {
+  const upstream = new URL(url);
+  createServer(async (req, res) => {
+    const path = (req.url ?? '/').replace(/^\/rest\/v1/, '') || '/';
+    const chunks: Buffer[] = [];
+    for await (const c of req) chunks.push(c as Buffer);
+    const headers = new Headers();
+    for (const [k, v] of Object.entries(req.headers)) {
+      if (typeof v === 'string' && k !== 'host' && k !== 'connection') headers.set(k, v);
+    }
+    headers.set('x-forwarded-for', req.socket.remoteAddress ?? '127.0.0.1');
+    const r = await fetch(new URL(path, upstream), {
+      method: req.method,
+      headers,
+      body: req.method === 'GET' || req.method === 'HEAD' ? undefined : Buffer.concat(chunks),
+    });
+    const out: Record<string, string> = {};
+    r.headers.forEach((v, k) => {
+      if (k !== 'content-encoding' && k !== 'content-length' && k !== 'transfer-encoding') out[k] = v;
+    });
+    out['access-control-allow-origin'] = '*';
+    out['access-control-allow-headers'] = '*';
+    out['access-control-allow-methods'] = 'GET, POST, PATCH, DELETE, OPTIONS';
+    res.writeHead(req.method === 'OPTIONS' ? 204 : r.status, out);
+    res.end(req.method === 'OPTIONS' ? undefined : Buffer.from(await r.arrayBuffer()));
+  }).listen(54331, '127.0.0.1');
+  console.log('boards proxy on http://127.0.0.1:54331');
+  console.log(`VITE_SURF_BOARDS_URL=http://127.0.0.1:54331`);
+  console.log(`VITE_SURF_BOARDS_KEY=${anonJwt()}`);
+}
+
+if (process.argv.includes('--serve')) {
+  serve();
+} else {
+  void main();
+}

@@ -99,7 +99,9 @@ export class LiveRoomBoard {
 
     this.timesSection.hidden = view.times === null;
     if (view.times) {
-      this.timesSub.textContent = view.pbMs !== null ? `your pb ${formatRunTime(view.pbMs)}` : view.timesNote;
+      this.timesSub.textContent = view.pbMs !== null
+        ? `your pb ${formatRunTime(view.pbMs)}`
+        : view.times.length > 0 ? 'top 5' : '';
       this.timesList.replaceChildren();
       if (view.times.length === 0) {
         this.timesList.appendChild(empty(view.timesNote || 'No ranked runs yet'));

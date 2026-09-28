@@ -2,11 +2,15 @@
 # applies supabase/schema.sql and every migration to a throwaway local postgres
 # (docker) with supabase-like anon/authenticated roles, then runs the sql tests.
 # with --e2e it also starts postgrest and drives the real SurfBoards client.
+# with --serve it leaves postgrest up behind a /rest/v1 proxy on 127.0.0.1:54331
+# for a local qa build (prints the VITE_SURF_BOARDS_* values), ctrl-c to stop.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 e2e=0
+serve=0
 [[ "${1:-}" == "--e2e" ]] && e2e=1
+[[ "${1:-}" == "--serve" ]] && e2e=1 && serve=1
 tag="webstrafe-sqltest-$$"
 jwt_secret="webstrafe-local-test-secret-0123456789abcdef"
 docker network create "$tag" >/dev/null
@@ -55,5 +59,9 @@ if [[ $e2e -eq 1 ]]; then
     if curl -sf http://127.0.0.1:54330/ >/dev/null 2>&1; then break; fi
     sleep 0.5
   done
-  BOARDS_URL=http://127.0.0.1:54330 BOARDS_JWT_SECRET="$jwt_secret" npx tsx tools/surf/boards-e2e.ts
+  if [[ $serve -eq 1 ]]; then
+    BOARDS_URL=http://127.0.0.1:54330 BOARDS_JWT_SECRET="$jwt_secret" npx tsx tools/surf/boards-e2e.ts --serve
+  else
+    BOARDS_URL=http://127.0.0.1:54330 BOARDS_JWT_SECRET="$jwt_secret" npx tsx tools/surf/boards-e2e.ts
+  fi
 fi

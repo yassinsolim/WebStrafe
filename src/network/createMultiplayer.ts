@@ -1,6 +1,7 @@
 import { MultiplayerClient } from './MultiplayerClient';
 import type { MultiplayerTransport } from './MultiplayerTransport';
 import { loadSupabaseConfig } from './supabaseConfig';
+import { devToolsEnabled } from '../app/devTools';
 
 /**
  * Picks the multiplayer transport: Supabase Realtime when a config is present
@@ -22,8 +23,21 @@ export function pickTransport(forced: unknown, hasSupabaseConfig: boolean): Tran
   return hasSupabaseConfig ? 'supabase' : 'ws';
 }
 
+/**
+ * ?room=<id> on dev and preview builds puts the tab in its own lobby, so qa
+ * runs never share a room with anyone else. production ignores it.
+ */
+export function qaRoomPrefix(prefix: string, search: string, devTools: boolean): string {
+  if (!devTools) return prefix;
+  const room = new URLSearchParams(search).get('room')?.replace(/[^a-z0-9]/gi, '').slice(0, 24);
+  return room ? `${prefix}_qa${room.toLowerCase()}` : prefix;
+}
+
 export async function createMultiplayer(): Promise<MultiplayerTransport> {
-  const config = await loadSupabaseConfig();
+  const loaded = await loadSupabaseConfig();
+  const config = loaded && typeof location !== 'undefined'
+    ? { ...loaded, lobbyChannelPrefix: qaRoomPrefix(loaded.lobbyChannelPrefix, location.search, devToolsEnabled(import.meta.env)) }
+    : loaded;
   if (!config || pickTransport(import.meta.env.VITE_MULTIPLAYER_TRANSPORT, true) === 'ws') {
     return new MultiplayerClient();
   }

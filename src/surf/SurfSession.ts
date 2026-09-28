@@ -325,6 +325,26 @@ export class SurfSession {
     });
   }
 
+  /** for the qa hooks */
+  qaState() {
+    return {
+      mapId: this.mapId,
+      modes: this.modes,
+      timed: this.timer !== null,
+      phase: this.timer?.phase ?? null,
+      ms: this.timer?.elapsedMs() ?? 0,
+      splits: this.timer?.splits.map((s) => ({ ...s })) ?? [],
+      pbMs: this.pb ? ticksToMs(this.pb.ticks) : null,
+      record: this.record,
+      pvp: this.pvpOn,
+      pvpToggleable: this.rule.toggleable,
+      scores: this.scores.map((r) => ({ ...r })),
+      roster: [...this.roster.entries()].map(([id, p]) => ({ id, ...p })),
+      boardsAvailable: this.deps.boards.available,
+      lastFinish: this.lastFinished ? { ...this.lastFinished.run } : null,
+    };
+  }
+
   // ---------------------------------------------------------------- frame
 
   frame(input: {
