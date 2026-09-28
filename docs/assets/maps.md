@@ -4,8 +4,8 @@ WebStrafe v2 ships three original maps plus the generated practice range:
 
 | id | name | mode | cvars |
 |----|------|------|-------|
-| `surf_prismline` | Prismline | surf, 4 stages | `sv_airaccelerate` 100 |
-| `bhop_emberdrift` | Emberdrift | bhop, 33 jumps | `sv_airaccelerate` 150 |
+| `surf_prismline` | Prismline | surf, 4 stages | `sv_airaccelerate` 150 |
+| `bhop_emberdrift` | Emberdrift | bhop, 33 jumps | `sv_airaccelerate` 1000 |
 | `aim_ochrecut` | Ochre Cut | AWP and Deagle duels, bots | none |
 | `movement_test_scene` | Movement Test Scene | combat practice range | none |
 
@@ -92,7 +92,7 @@ A build writes scratch files to `.blender-tmp/maps/<id>/` and then
     { "id": "lava", "type": "teleport", "min": [..], "max": [..] },
     { "id": "finish", "type": "finish", "min": [..], "max": [..] }
   ],
-  "cvars": { "sv_airaccelerate": 150 },
+  "cvars": { "sv_airaccelerate": 1000 },
   "environment": {
     "sky": { "zenith": "#28305f", "horizon": "#f2a36e", "ground": "#7a3326", "exponent": 0.55,
              "sunSizeDeg": 2.2, "sunGlow": 0.45, "sunHaze": 0.3,
