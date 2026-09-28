@@ -34,6 +34,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import type { FirearmId as GunId } from '../combat/FirearmTiming';
 import { ViewmodelSystem, type ViewAction } from '../viewmodel/ViewmodelSystem';
 import { parseShotRequest, type ShotRequest } from './shotMode';
+import { devToolsEnabled } from './devTools';
 import { runGripCheck } from '../viewmodel/gripCheckRun';
 import { FramePerf } from './FramePerf';
 import { AdaptiveResolution } from './AdaptiveResolution';
@@ -193,6 +194,8 @@ export class GameApp {
   private readonly tracerForward = new Vector3();
   private surfaceProbe: SurfaceProbe | null = null;
   private readonly shot: ShotRequest | null = parseShotRequest(window.location.search);
+  /** third person and free camera see around walls, so V only works on dev and preview builds */
+  private readonly debugCameraAllowed = devToolsEnabled();
   private framePerf: FramePerf | null = null;
   private qaMove: { forwardMove: number; sideMove: number; jumpHeld: boolean; jumpPressed: boolean } | null = null;
   private readonly adaptiveResolution = new AdaptiveResolution();
@@ -634,7 +637,7 @@ export class GameApp {
       this.debugAxes.visible = this.showWorldDebugHelpers;
       this.showStatus(this.showWorldDebugHelpers ? 'World debug helpers ON' : 'World debug helpers OFF');
     }
-    if (actions.toggleDebugCameraPressed) {
+    if (actions.toggleDebugCameraPressed && this.debugCameraAllowed) {
       this.debugCameraMode = this.nextDebugCameraMode(this.debugCameraMode);
       if (this.debugCameraMode === 'freecam') {
         this.freecamInitialized = false;

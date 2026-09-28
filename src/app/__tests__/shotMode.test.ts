@@ -7,6 +7,8 @@ describe('shot mode gating', () => {
     expect(devToolsEnabled({ DEV: false, PROD: true })).toBe(false);
     expect(devToolsEnabled({ DEV: false, VITE_DEV_TOOLS: 'false' })).toBe(false);
     expect(parseShotRequest('?shot=aim_ochrecut&qa=1', false)).toBeNull();
+    // a free camera or hidden viewmodel in live play would be a spectator cheat
+    expect(parseShotRequest('?shot=aim_ochrecut&qa=1&vm=0&cam=0,50,0', false)).toBeNull();
   });
 
   it('is on for the dev server and preview builds', () => {
