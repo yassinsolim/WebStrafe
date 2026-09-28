@@ -106,3 +106,5 @@ Considered and skipped: TAA (it smears thin tracers and adds latency; MSAA
 covers geometry edges), SMAA on High (MSAA looks better on the viewmodel), and
 real-time shadow maps for the whole world (the baked visibility is sharper and
 free).
+
+Budgets, scaling rules and measured fps are in `docs/PERFORMANCE.md`.
