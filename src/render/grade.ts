@@ -35,6 +35,12 @@ export const DEFAULT_GRADE: Readonly<ColorGrade> = {
 };
 
 const MID_GREY = 0.18;
+/**
+ * strength of the tone map toe. khronos neutral uses 1, which pulls the lowest
+ * channel of a dark color almost to zero (x -> 6.25 x^2), so warm shadows lose
+ * all their blue and go muddy. half keeps some of the sky in them.
+ */
+export const TONE_TOE = 0.5;
 
 function finite(value: unknown, fallback: number, min: number, max: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
@@ -68,13 +74,16 @@ export function whiteBalanceGains(temperature: number, tint: number, out = new V
   return out.set(r / luma, g / luma, b / luma);
 }
 
-/** khronos pbr neutral, same constants as the shader */
+function toeOffset(x: number): number {
+  return TONE_TOE * (x < 0.08 ? x - 6.25 * x * x : 0.04);
+}
+
+/** khronos pbr neutral with a softer toe, same constants as the shader */
 function neutral(c: [number, number, number]): [number, number, number] {
   const start = 0.8 - 0.04;
   const desat = 0.15;
   let [r, g, b] = c;
-  const x = Math.min(r, g, b);
-  const offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
+  const offset = toeOffset(Math.min(r, g, b));
   r -= offset;
   g -= offset;
   b -= offset;
@@ -107,9 +116,12 @@ export function gradeLinear(input: [number, number, number], grade: ColorGrade):
 /** undoes the neutral curve's toe offset, `c` is the color after the offset */
 function addToeOffset(c: [number, number, number]): [number, number, number] {
   const outMin = Math.max(0, Math.min(c[0], c[1], c[2]));
-  // below 0.08 the toe maps x to 6.25 x^2, above it subtracts a flat 0.04
-  const x = outMin < 0.04 ? Math.sqrt(outMin / 6.25) : outMin + 0.04;
-  const offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
+  // below 0.08 the toe maps x to (1 - t) x + 6.25 t x^2, above it subtracts a flat 0.04 t
+  const t = TONE_TOE;
+  const x = outMin < 0.08 - 0.04 * t
+    ? (-(1 - t) + Math.sqrt((1 - t) * (1 - t) + 25 * t * outMin)) / (12.5 * t)
+    : outMin + 0.04 * t;
+  const offset = toeOffset(x);
   return [c[0] + offset, c[1] + offset, c[2] + offset];
 }
 
@@ -150,6 +162,7 @@ export function inverseGrade(display: Color, grade: ColorGrade, out = new Color(
 
 /** glsl for the composite: exposure, white balance, contrast, saturation, neutral tone map */
 export const GRADE_GLSL = /* glsl */ `
+#define TONE_TOE ${TONE_TOE.toFixed(4)}
 uniform float gradeExposure;
 uniform vec3 gradeWhiteBalance;
 uniform float gradeContrast;
@@ -159,7 +172,7 @@ vec3 neutralToneMap(vec3 color) {
   const float startCompression = 0.8 - 0.04;
   const float desaturation = 0.15;
   float x = min(color.r, min(color.g, color.b));
-  float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
+  float offset = TONE_TOE * (x < 0.08 ? x - 6.25 * x * x : 0.04);
   color -= offset;
   float peak = max(color.r, max(color.g, color.b));
   if (peak < startCompression) return color;
