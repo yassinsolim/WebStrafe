@@ -4,11 +4,18 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WebStrafe — Surf · Bhop · Frag</title>
+    <meta name="theme-color" content="#06080b" />
+    <title>WebStrafe · Surf · Bhop · Frag</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Rajdhani:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap"
+    />
     <style>
-      /* Instant boot loader — inline so it paints before the JS bundle and
-         style.css load. Themed to match the main menu (orange on near-black)
-         instead of the old blue flash. Removed by GameApp once the menu is up. */
+      /* instant boot loader, inline so it paints before the js bundle and
+         style.css arrive. same mark, palette and type as the menu. GameApp
+         fades it out once the menu is up. */
       #boot-loader {
         position: fixed;
         inset: 0;
@@ -17,9 +24,9 @@
         place-items: center;
         background:
           radial-gradient(120% 80% at 80% 8%, rgba(255, 106, 43, 0.12), transparent 55%),
-          radial-gradient(90% 70% at 0% 100%, rgba(255, 106, 43, 0.05), transparent 52%),
-          linear-gradient(180deg, #0a0d12, #050607);
-        font-family: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+          radial-gradient(90% 70% at 0% 100%, rgba(70, 213, 255, 0.05), transparent 52%),
+          linear-gradient(180deg, #0a0d12, #06080b);
+        font-family: 'Rajdhani', 'Barlow Semi Condensed', system-ui, sans-serif;
         transition: opacity 320ms ease;
       }
       #boot-loader.is-hiding {
@@ -29,15 +36,21 @@
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 20px;
+        gap: 22px;
+      }
+      .boot-mark {
+        width: 64px;
+        height: 64px;
+        animation: boot-breathe 1.8s ease-in-out infinite;
       }
       .boot-word {
         font-weight: 700;
-        font-size: clamp(2.4rem, 6vw, 3.6rem);
+        font-size: clamp(2.2rem, 5vw, 3.4rem);
         letter-spacing: 0.02em;
         text-transform: uppercase;
-        color: #f2f4f8;
+        color: #eef1f6;
         line-height: 1;
+        transform: skewX(-8deg);
       }
       .boot-word span {
         color: #ff6a2b;
@@ -52,7 +65,7 @@
       .boot-bar::after {
         content: '';
         position: absolute;
-        left: -40%;
+        left: 0;
         top: 0;
         height: 100%;
         width: 40%;
@@ -64,14 +77,31 @@
         font-size: 0.66rem;
         letter-spacing: 0.42em;
         text-transform: uppercase;
-        color: #7d8794;
+        color: #6b7686;
       }
       @keyframes boot-sweep {
-        0% {
-          left: -40%;
+        from {
+          transform: translateX(-100%);
         }
+        to {
+          transform: translateX(250%);
+        }
+      }
+      @keyframes boot-breathe {
+        0%,
         100% {
-          left: 100%;
+          transform: scale(1);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(0.94);
+          opacity: 0.82;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-mark,
+        .boot-bar::after {
+          animation: none;
         }
       }
     </style>
@@ -80,6 +110,21 @@
     <div id="app"></div>
     <div id="boot-loader" aria-hidden="true">
       <div class="boot-inner">
+        <svg class="boot-mark" viewBox="0 0 64 64" aria-hidden="true">
+          <defs>
+            <linearGradient id="boot-grad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#ffa24a" />
+              <stop offset="0.55" stop-color="#ff6a2b" />
+              <stop offset="1" stop-color="#e5461a" />
+            </linearGradient>
+          </defs>
+          <path fill="url(#boot-grad)" d="M4 4H60V60H18L4 46Z" />
+          <path
+            fill="#120804"
+            transform="matrix(1 0 -0.1405 1 2.1 0)"
+            d="M11.5 15H19.5L25.2 35.4L30.4 24H36.6L41.8 35.4L50.2 10H58.2L45.4 49H38.9L33.5 37.2L28.1 49H21.6Z"
+          />
+        </svg>
         <div class="boot-word">WEB<span>STRAFE</span></div>
         <div class="boot-bar"></div>
         <div class="boot-tag">Loading</div>

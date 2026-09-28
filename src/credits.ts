@@ -190,10 +190,10 @@ export const CREDITS: readonly CreditEntry[] = [
   {
     id: 'original-ui',
     category: 'original',
-    title: 'HUD, menu, crosshair and weapon icons',
+    title: 'HUD, menu, crosshair, logo mark and weapon icons',
     author: 'WebStrafe',
     license: 'Original work',
-    files: ['src/ui/hud/icons.ts'],
+    files: ['src/ui/hud/icons.ts', 'src/ui/brand.ts', 'public/favicon.svg'],
   },
   {
     id: 'original-maps',

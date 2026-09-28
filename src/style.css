@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Rajdhani:wght@500;600;700&family=Space+Mono:wght@400;700&display=swap');
+/* fonts load from the stylesheet link in index.html (Barlow Semi Condensed, Rajdhani, Space Mono) */
 @import './ui/styles/menu.css';
 @import './ui/styles/settings.css';
 @import './ui/styles/loading.css';
@@ -242,7 +242,7 @@ canvas {
   top: 5.6rem;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 45;
+  z-index: 26;
   max-width: min(44rem, 90vw);
   pointer-events: none;
   padding: 0.4rem 1rem 0.42rem 0.9rem;
