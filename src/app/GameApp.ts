@@ -77,6 +77,7 @@ import {
   saveKnifeSelection,
   type KnifeLoadoutSelection,
 } from '../cosmetics/finishes/selection';
+import { RoomFullNotice } from '../ui/RoomFullNotice';
 import { CollisionWorld } from '../world/CollisionWorld';
 import { deleteCustomMap, listCustomMaps } from '../world/CustomMapStore';
 import { MapLoader, type MapLoadReporter } from '../world/MapLoader';
@@ -152,6 +153,7 @@ export class GameApp {
   private readonly killFeed = new KillFeed();
   private readonly weapon = new WeaponController('knife');
   private localAlive = true;
+  private readonly roomFullNotice = new RoomFullNotice();
   private respawnFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   private deathPresentationTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly deadMoveInput = { forwardMove: 0, sideMove: 0, jumpPressed: false, jumpHeld: false };
@@ -892,6 +894,8 @@ export class GameApp {
       }
       this.setCrosshairVisible(this.debugCameraMode === 'firstPerson');
       this.showStatus('Map loaded');
+      // after the map-loaded flash, so it isn't overwritten
+      this.showRoomFullNoticeIfPlaying();
     } catch (error) {
       if (loadToken !== this.currentLoadToken) {
         return;
@@ -1145,8 +1149,14 @@ export class GameApp {
       }
       this.applyLocalHealth(health, alive);
     };
+    this.multiplayer.onConnectedChange = (connected) => {
+      // subscribing to a room means we got a seat; a turn-away follows the
+      // presence sync, so it re-raises the notice afterwards if needed
+      if (connected) this.roomFullNotice.clear();
+    };
     this.multiplayer.onRoomFull = () => {
-      this.showStatus('Room is full (6 players), playing solo', 6000);
+      this.roomFullNotice.raise();
+      this.showRoomFullNoticeIfPlaying();
     };
     this.multiplayer.onRespawn = ({ playerId }) => {
       if (playerId === this.multiplayer.getLocalId()) {
@@ -1332,7 +1342,7 @@ export class GameApp {
     this.multiplayer.sendFire(
       [origin.x, origin.y, origin.z],
       [forward.x, forward.y, forward.z],
-      this.remotePlayers.getFireView(),
+      { ...this.remotePlayers.getFireView(), ammo: result.ammoRemaining + 1 },
     );
     this.combatAim.onShotFired(nowMs);
     if (result.magazineEmptied) {
@@ -1444,7 +1454,7 @@ export class GameApp {
     if (!this.combatEnabled) {
       return;
     }
-    this.weapon.equip(id);
+    this.weapon.equip(id, performance.now());
     this.combatAim.setWeapon(id, performance.now());
     this.multiplayer.sendEquip(id);
     this.audio.play('weaponDraw');
@@ -1917,6 +1927,17 @@ export class GameApp {
     }
   }
 
+  /** Room-full is raised on the menu; only spend a showing once the player is in the map. */
+  private showRoomFullNoticeIfPlaying(): void {
+    if (!this.playing) {
+      return;
+    }
+    const notice = this.roomFullNotice.takeForPlay();
+    if (notice) {
+      this.showStatus(notice.text, notice.durationMs);
+    }
+  }
+
   private showStatus(text: string, durationMs = 1800): void {
     this.statusLabel.textContent = text;
     this.statusLabel.style.display = 'block';
@@ -2261,6 +2282,7 @@ export class GameApp {
     if (showResumedStatus) {
       this.showStatus(this.combatEnabled ? 'Combat restarted' : 'Resumed');
     }
+    this.showRoomFullNoticeIfPlaying();
     return true;
   }
 

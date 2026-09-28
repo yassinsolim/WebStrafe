@@ -27,7 +27,7 @@ const SESSION_KEY = 'webstrafe:session-id:v1';
  * melee/backstab, and fires carry the shooter's weapon. a p3 host would resolve
  * those differently, so p3 and p4 tabs must never share a room.
  */
-export const SUPABASE_PROTOCOL = 'p4';
+export const SUPABASE_PROTOCOL = 'p5';
 const PLAYER_STALE_MS = 8000;
 /** idle/paused clients only need to prove they are still here */
 const KEEPALIVE_MS = 1000;
@@ -70,7 +70,32 @@ interface WireState {
   b?: WireBot[];
   /** host clock time of the step that produced `b` */
   bt?: number;
+  /** fire requests from this sender, for the host to resolve */
+  f?: WireFire[];
+  /** combat events, only from the elected host */
+  ev?: CombatWireEvent[];
 }
+
+interface WireFire {
+  origin: [number, number, number];
+  dir: [number, number, number];
+  targets?: Record<string, number>;
+  t: number;
+  w?: string;
+  melee?: AttackKind;
+  /** shooter's magazine before the shot; older p5 peers omit it */
+  a?: number;
+}
+
+/** fires waiting for a carrier past this many are stale, drop the oldest */
+export const MAX_PENDING_FIRES = 16;
+
+/**
+ * Fires and combat batches ride on an immediate state message instead of
+ * their own broadcasts (each broadcast is billed once per receiver), at most
+ * one such early send per this many ms per client.
+ */
+export const CARRIER_MIN_GAP_MS = 25;
 
 type CombatWireEvent =
   | { k: 'hit'; e: HitEvent }
@@ -152,6 +177,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   private botRowsAt = 0;
   private presenceSynced = false;
   private pendingCombat: CombatWireEvent[] = [];
+  private pendingFires: WireFire[] = [];
+  private carrierTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly detachVisibility: (() => void) | null;
   private localWeapon: string | null = null;
   private localCosmetics: PlayerCosmetics | null = null;
@@ -326,20 +353,52 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         targetTimes: fireView.targets,
         shooterTimeMs: shooterT,
         attackTimeMs: Date.now(),
+        clientAmmo: fireView.ammo,
         weapon: this.localWeapon ?? undefined,
       }, melee);
       this.flushCombat();
       return;
     }
-    this.broadcast('fire', {
-      id: this.localId,
+    if (this.roomFull) {
+      // turned away by a full room: nobody hosts for us, nothing to send
+      return;
+    }
+    this.pendingFires.push({
       origin,
       dir,
       targets: fireView.targets,
       t: shooterT,
       ...(this.localWeapon ? { w: this.localWeapon } : {}),
       ...(melee ? { melee } : {}),
+      ...(Number.isFinite(fireView.ammo) ? { a: fireView.ammo } : {}),
     });
+    if (this.pendingFires.length > MAX_PENDING_FIRES) {
+      this.pendingFires.splice(0, this.pendingFires.length - MAX_PENDING_FIRES);
+    }
+    this.requestCarrier();
+  }
+
+  /** Sends state now (carrying queued fires/combat), or as soon as the gap allows. */
+  private requestCarrier(): void {
+    const wait = CARRIER_MIN_GAP_MS - (this.now() - this.lastBroadcastAtMs);
+    if (wait <= 0) {
+      this.sendCarrier();
+      return;
+    }
+    if (this.carrierTimer === null) {
+      this.carrierTimer = setTimeout(() => {
+        this.carrierTimer = null;
+        this.sendCarrier();
+      }, wait);
+    }
+  }
+
+  private sendCarrier(): void {
+    if (this.pendingFires.length === 0 && this.pendingCombat.length === 0) {
+      return;
+    }
+    this.broadcastState();
+    this.cadence.markSent(this.localState?.t ?? this.now());
   }
 
   sendReload(): void {
@@ -495,6 +554,10 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   }
 
   private stopPump(): void {
+    if (this.carrierTimer !== null) {
+      clearTimeout(this.carrierTimer);
+      this.carrierTimer = null;
+    }
     if (this.pumpTimer) {
       clearInterval(this.pumpTimer);
       this.pumpTimer = null;
@@ -594,9 +657,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (this.pendingCombat.length === 0) {
       return;
     }
-    const events = this.pendingCombat;
-    this.pendingCombat = [];
-    this.broadcast('cb', { host: this.localId, ev: events });
+    this.requestCarrier();
   }
 
   /**
@@ -630,6 +691,14 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       }));
       // bot poses come from the last host step, not this tick
       payload.bt = Math.round(this.botRowsT);
+    }
+    if (this.pendingFires.length > 0) {
+      payload.f = this.pendingFires;
+      this.pendingFires = [];
+    }
+    if (this.hostSim && this.pendingCombat.length > 0) {
+      payload.ev = this.pendingCombat;
+      this.pendingCombat = [];
     }
     this.lastBroadcastAtMs = now;
     this.broadcast('st', payload);
@@ -696,6 +765,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (before !== `${record.eligibility}|${record.hostEpoch}`) {
       this.updateHostRole();
     }
+    this.onCarried(p);
     this.emitSnapshot();
   }
 
@@ -730,6 +800,18 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     }
   }
 
+  /** Fires and combat events carried by a state message. */
+  private onCarried(p: WireState): void {
+    if (Array.isArray(p.f)) {
+      for (const f of p.f.slice(0, 16)) {
+        this.onRemoteFire({ id: p.id, ...f });
+      }
+    }
+    if (Array.isArray(p.ev)) {
+      this.onCombatBatch({ host: p.id, ev: p.ev });
+    }
+  }
+
   private onRemoteFire(payload: unknown): void {
     const p = payload as {
       id?: string;
@@ -739,6 +821,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       t?: number;
       w?: unknown;
       melee?: unknown;
+      a?: unknown;
     };
     const melee = p.melee === undefined ? undefined : parseMelee(p.melee);
     if (melee === null) {
@@ -749,6 +832,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         targetTimes: sanitizeTargets(p.targets),
         shooterTimeMs: Number.isFinite(p.t) ? p.t : undefined,
         weapon: typeof p.w === 'string' ? p.w : undefined,
+        clientAmmo: typeof p.a === 'number' && Number.isFinite(p.a) ? p.a : undefined,
       }, melee);
       this.flushCombat();
     }
@@ -817,6 +901,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     const seat = roster.findIndex((r) => r.id === this.localId);
     if (seat >= MAX_ROOM_PLAYERS) {
       this.roomFull = true;
+      this.pendingFires = [];
       this.stopPump();
       this.stopHost();
       if (this.channel) {

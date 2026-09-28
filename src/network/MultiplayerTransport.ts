@@ -21,6 +21,8 @@ export interface OutgoingState {
 export interface FireView {
   targets?: Record<string, number>;
   observedAtMs?: number;
+  /** rounds in the shooter's magazine before this shot (lets the host self-correct) */
+  ammo?: number;
 }
 
 /** Per-map context the elected host needs to run the bot/combat simulation. */
