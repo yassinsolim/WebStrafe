@@ -8,13 +8,14 @@ import {
   type BotPerception,
 } from './BotPerception';
 import { weaponMaxSpeed } from './weapons';
+import { STAND_EYE_HEIGHT } from '../movement/hull';
 
 export type { BotPerception } from './BotPerception';
 
 /** applyLookDelta maps deltaX to a yaw change of `-deltaX * 0.0022 * sensitivity`. */
 const LOOK_YAW_SCALE = 0.0022;
-/** Eye height above feet (matches MovementController.eyeHeight). */
-const EYE_HEIGHT = 1.6;
+/** Eye height above feet (the standing cs2 eye, like MovementController). */
+const EYE_HEIGHT = STAND_EYE_HEIGHT;
 /** Aim at roughly the target's upper body. */
 const AIM_HEIGHT = 1.2;
 /** First round lands into nearby cover beside the player before follow-up taps. */

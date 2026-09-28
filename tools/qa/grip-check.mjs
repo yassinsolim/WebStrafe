@@ -43,7 +43,21 @@ const LIMITS = {
   ringSeat: 0.0115, // index first phalanx within the ring's inner radius of its centre
   wrapTip: 0.016, // closed fingertips at idle rest on the handle
   wrapTipRing: 0.022,
+  // the knife's grip socket (on the part the hand holds, a balisong's bite
+  // handle) stays this close to where the hand's grip puts it
+  attach: 0.005,
 };
+// the only moments a knife may leave the hand, each bounded and reported
+const ALLOWANCES = {
+  // the toss inspect: in the air above the hand
+  toss: { when: (f) => f.tossY > 0.001, max: 0.2 },
+  // the skeleton's hand travelling between its handle and its ring: bounded by
+  // the distance between the two holds, and a finger stays on the knife once
+  // the ring is on the finger
+  ringMove: { when: (f) => f.ringHold > 0 && f.ringHold < 1, max: 0.1 },
+};
+const used = Object.fromEntries(Object.keys(ALLOWANCES).map((k) => [k, { frames: 0, maxMm: 0 }]));
+let attachMax = 0;
 const failures = [];
 const fail = (f, why) => failures.push(`${f.knife}${f.side === 'l' ? ' (left)' : ''} ${f.action}@${f.t}: ${why}`);
 for (const f of report) {
@@ -63,7 +77,31 @@ for (const f of report) {
   if (ringKnife && f.check.indexToRing !== null && f.check.indexToRing > LIMITS.ringSeat) {
     fail(f, `index ${(f.check.indexToRing * 1000).toFixed(1)} mm from the ring centre (not through the ring)`);
   }
-  if (f.action === 'idle') {
+  if (f.attach) {
+    const err = f.ringHold >= 1 && f.attach.ring !== null ? f.attach.ring
+      : f.ringHold > 0 && f.attach.ring !== null ? Math.min(f.attach.grip, f.attach.ring)
+        : f.attach.grip;
+    if (!Number.isFinite(err)) fail(f, 'attachment measured nothing');
+    const allowance = Object.entries(ALLOWANCES).find(([, a]) => a.when(f));
+    if (err > LIMITS.attach) {
+      if (!allowance) fail(f, `knife ${(err * 1000).toFixed(1)} mm off the hand's grip (detached)`);
+      else {
+        const [name, a] = allowance;
+        used[name].frames += 1;
+        used[name].maxMm = Math.max(used[name].maxMm, Math.round(err * 10000) / 10);
+        if (err > a.max) fail(f, `knife ${(err * 1000).toFixed(1)} mm off the hand, past the ${name} allowance`);
+        if (name === 'ringMove' && f.ringHold >= 0.5) {
+          const contact = Math.min(...f.check.digits.map((d) => d.handleClearance));
+          if (contact > 0.015) fail(f, `no finger on the knife while it moves to the ring (${(contact * 1000).toFixed(1)} mm)`);
+        }
+      }
+    } else if (!allowance) {
+      attachMax = Math.max(attachMax, err);
+    }
+  } else if (f.source === 'glb') {
+    fail(f, 'no attachment measurement');
+  }
+    if (f.action === 'idle') {
     const limit = f.kind === 'reverse_ring' ? LIMITS.wrapTipRing : LIMITS.wrapTip;
     for (const d of f.check.digits) {
       if (!['middle', 'ring'].includes(d.digit) && !(d.digit === 'index' && f.kind !== 'reverse_ring')) continue;
@@ -71,8 +109,9 @@ for (const f of report) {
     }
   }
 }
-if (out) writeFileSync(out, JSON.stringify({ limits: LIMITS, frames: report.length, failures, report }, null, 2));
+if (out) writeFileSync(out, JSON.stringify({ limits: LIMITS, allowances: used, attachMaxMm: attachMax * 1000, frames: report.length, failures, report }, null, 2));
 const knives = new Set(report.map((f) => f.knife)).size;
 console.log(`grip check: ${report.length} frames over ${knives} knives, ${failures.length} failures`);
+console.log(`attachment: held frames within ${(attachMax * 1000).toFixed(1)} mm; allowances used: ${Object.entries(used).map(([k, u]) => `${k} ${u.frames} frames (max ${u.maxMm} mm)`).join(', ')}`);
 for (const line of failures.slice(0, 80)) console.log(`  ${line}`);
 process.exit(failures.length ? 1 : 0);

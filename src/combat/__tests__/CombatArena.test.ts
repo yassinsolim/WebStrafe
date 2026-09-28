@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CombatArena,
   MAX_LAG_COMPENSATION_MS,
+  PLAYER_CAPSULE_HEIGHT,
   PLAYER_CAPSULE_RADIUS,
   SPAWN_PROTECTION_MS,
 } from '../CombatArena';
@@ -38,8 +39,11 @@ describe('CombatArena.handleFire', () => {
     expect(out.fired).toBe(true);
     expect(out.hit?.targetId).toBe('target');
     expect(out.hit?.damage).toBeGreaterThan(0);
-    // The endpoint is the near capsule surface, not its hidden center axis.
-    expect(out.impactDistance).toBeCloseTo(10 - PLAYER_CAPSULE_RADIUS, 6);
+    // The endpoint is the near capsule surface, not its hidden center axis:
+    // at 1.6 m the ray meets the rounded top, which starts a radius below the head
+    const r = PLAYER_CAPSULE_RADIUS;
+    const capDepth = Math.sqrt(r ** 2 - (eye[1] - (PLAYER_CAPSULE_HEIGHT - r)) ** 2);
+    expect(out.impactDistance).toBeCloseTo(10 - capDepth, 6);
     expect(a.getHealth('target')).toBe(MAX_HEALTH - out.hit!.damage);
   });
 

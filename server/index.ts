@@ -1,4 +1,5 @@
 import { decodeCosmetics, encodeCosmetics, type WireCosmetics } from '../src/network/cosmetics';
+import { clampDuck } from '../src/movement/hull';
 import crypto from 'node:crypto';
 import { createReadStream, promises as fs } from 'node:fs';
 import http, { type IncomingMessage, type ServerResponse } from 'node:http';
@@ -384,7 +385,7 @@ wss.on('connection', (ws, req) => {
         client.yaw = yaw;
         client.pitch = pitch;
         client.sampleT = sampleT;
-        arena.setPosition(client.id, position, client.mapId, sampleT, velocity, yaw);
+        arena.setPosition(client.id, position, client.mapId, sampleT, velocity, yaw, clampDuck(payload.duck));
         break;
       }
       case 'attack': {

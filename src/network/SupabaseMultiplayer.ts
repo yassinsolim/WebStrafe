@@ -19,6 +19,7 @@ import { broadcastRateHz, DEFAULT_BUDGET, MAX_ROOM_PLAYERS, type BudgetOptions }
 import { RESPAWN_DELAY_MS } from '../combat/CombatState';
 import { decodeCosmetics, encodeCosmetics, type PlayerCosmetics } from './cosmetics';
 import { CosmeticsPublisher } from './cosmeticsPublisher';
+import { clampDuck } from '../movement/hull';
 
 const SESSION_KEY = 'webstrafe:session-id:v1';
 /**
@@ -27,8 +28,11 @@ const SESSION_KEY = 'webstrafe:session-id:v1';
  * flagged melee with the cs knife damage table and backstabs, hits carry
  * melee/backstab, and fires carry the shooter's weapon. a p3 host would resolve
  * those differently, so p3 and p4 tabs must never share a room.
+ * p6: hit capsules follow the cs2 hull (72 u standing, 54 u crouched, rounded
+ * ends at the feet and the top of the head) and states carry the crouch (`k`),
+ * so a p5 host resolves the same shot differently.
  */
-export const SUPABASE_PROTOCOL = 'p5';
+export const SUPABASE_PROTOCOL = 'p6';
 const PLAYER_STALE_MS = 8000;
 /** idle/paused clients only need to prove they are still here */
 const KEEPALIVE_MS = 1000;
@@ -75,6 +79,8 @@ interface WireState {
   f?: WireFire[];
   /** combat events, only from the elected host */
   ev?: CombatWireEvent[];
+  /** crouch 0..1 in hundredths, only while crouching (sizes the host's hit capsule) */
+  k?: number;
 }
 
 interface WireFire {
@@ -84,7 +90,7 @@ interface WireFire {
   t: number;
   w?: string;
   melee?: AttackKind;
-  /** shooter's magazine before the shot; older p5 peers omit it */
+  /** shooter's magazine before the shot; peers from before p5 omit it */
   a?: number;
 }
 
@@ -628,6 +634,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         combatReady: this.localCombatReady,
         yaw: this.localState.yaw,
         pitch: this.localState.pitch,
+        duck: this.localState.duck,
       });
     }
     for (const [id, record] of this.remotes) {
@@ -644,6 +651,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
           combatReady: record.combatReady,
           yaw: record.state.yaw,
           pitch: record.state.pitch,
+          duck: record.state.duck,
         });
       }
     }
@@ -690,6 +698,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (this.hostSim) payload.h = this.hostEpoch;
     if (this.localWeapon) payload.w = this.localWeapon;
     if (this.localDeadUntil !== null) payload.d = Math.max(0, Math.round(this.localDeadUntil - now));
+    const duck = Math.round(clampDuck(s?.duck) * 100) / 100;
+    if (duck > 0) payload.k = duck;
     if (this.hostSim && this.botRows.length > 0) {
       payload.b = this.botRows.map((row) => ({
         id: row.id,
@@ -741,7 +751,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     record.weapon = typeof p.w === 'string' ? p.w : record.weapon;
     record.deadForMs = typeof p.d === 'number' && Number.isFinite(p.d) ? p.d : null;
     if (Array.isArray(p.s) && p.s.length === 8 && (record.t === null || p.t > record.t)) {
-      record.state = unpack(p.s);
+      record.state = { ...unpack(p.s), duck: clampDuck(p.k) };
       record.t = p.t;
       this.hostSim?.recordHumanSample(
         p.id,
@@ -749,6 +759,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         p.t,
         record.state.velocity,
         record.state.yaw,
+        record.state.duck,
       );
     }
 

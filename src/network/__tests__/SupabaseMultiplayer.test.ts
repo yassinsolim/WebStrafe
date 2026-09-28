@@ -7,6 +7,7 @@ import {
   HOST_STALE_MS,
   JOIN_GRACE_MS,
   MAX_PENDING_FIRES,
+  SUPABASE_PROTOCOL,
   SupabaseMultiplayer,
 } from '../SupabaseMultiplayer';
 import type { MultiplayerSnapshot } from '../types';
@@ -154,7 +155,7 @@ const arenaOf = (p: SupabaseMultiplayer) => (p as any).hostSim.arena;
 const statesFrom = (bus: FakeBus, id: string, since = 0) =>
   bus.sent.filter((m) => m.from === id && m.event === 'st' && m.at >= since).map((m) => m.payload);
 
-describe('SupabaseMultiplayer (p5 protocol)', () => {
+describe('SupabaseMultiplayer (p6 protocol)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
@@ -519,6 +520,37 @@ describe('SupabaseMultiplayer (p5 protocol)', () => {
     for (const p of peers) p.disconnect();
   });
 
+  it('joins p6 channels, so p5 hosts (old hit capsules) never share a room with it', () => {
+    const bus = new FakeBus();
+    const peer = makePeer(bus, 'p_a');
+    enter(peer);
+    expect(SUPABASE_PROTOCOL).toBe('p6');
+    expect([...bus.topics.keys()]).toEqual(['test_room_p6_map1']);
+    peer.disconnect();
+  });
+
+  it("the host sizes a guest's hit capsule from the crouch in its state", () => {
+    const bus = new FakeBus();
+    const host = makePeer(bus, 'p_a');
+    const guest = makePeer(bus, 'p_b');
+    enter(host);
+    enter(guest);
+    tickAll([host, guest], JOIN_GRACE_MS + 500);
+    expect(hosting(host)).toBe(true);
+    const guestOnHost = () => arenaOf(host).players.get('p_b');
+    expect(guestOnHost().duck).toBe(0);
+    for (let i = 0; i < 40; i += 1) {
+      vi.advanceTimersByTime(1000 / 128);
+      guest.sendState({ position: [1, 0, 0], velocity: [0, 0, 0], yaw: 0, pitch: 0, t: Date.now(), duck: 1 });
+    }
+    tickAll([host], 600);
+    expect(guestOnHost().duck).toBe(1);
+    expect(guestOnHost().eyeHeight).toBeCloseTo(46 * 0.0254, 4);
+    expect(statesFrom(bus, 'p_b').some((st) => st.k === 1)).toBe(true);
+    host.disconnect();
+    guest.disconnect();
+  });
+
   describe('cosmetics', () => {
     const knife = (seed: number) => ({ knife: { id: 'karambit' as const, finish: 'doppler_ruby', wear: 0.01, seed } });
     const remoteSeed = (p: SupabaseMultiplayer, id: string) => (p as any).remotes.get(id)?.cosmetics?.knife?.seed;
@@ -559,7 +591,7 @@ describe('SupabaseMultiplayer (p5 protocol)', () => {
       b.disconnect();
     });
 
-    it('a full room changing cosmetics constantly at 4 shots/s stays inside the p5 budget', () => {
+    it('a full room changing cosmetics constantly at 4 shots/s stays inside the room budget from #46', () => {
       const bus = new FakeBus();
       const peers = ['p_a', 'p_b', 'p_c', 'p_d', 'p_e', 'p_f'].map((id) => makePeer(bus, id));
       for (const p of peers) {

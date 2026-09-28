@@ -1653,6 +1653,7 @@ export class GameApp {
       yaw: this.movement.getYawRad(),
       pitch: this.movement.getPitchRad(),
       t: tickWallMs,
+      duck: this.movement.getDuckAmount(),
     });
   }
 

@@ -37,6 +37,10 @@ export interface GripFrameReport {
   kind: string;
   source: string;
   check: GripCheck;
+  /** metres from the knife's grip socket to where the hand holds it (and to the ring hold, skeleton) */
+  attach: { grip: number; ring: number | null } | null;
+  /** the toss inspect's height above the hand, > 0 while the knife is meant to be in the air */
+  tossY: number;
 }
 
 async function waitForModel(vm: ViewmodelSystem): Promise<void> {
@@ -65,6 +69,7 @@ export async function runGripCheck(vm: ViewmodelSystem, step = 0): Promise<GripF
       for (const side of sides) {
         const check = vm.checkKnifeGrip(side);
         if (!check) continue;
+        const attach = vm.checkKnifeAttachment(side);
         out.push({
           knife: def.id,
           side,
@@ -75,6 +80,8 @@ export async function runGripCheck(vm: ViewmodelSystem, step = 0): Promise<GripF
           kind: String(debug.kind),
           source: String(debug.source),
           check,
+          attach,
+          tossY: vm.debugChannel('tossY'),
         });
       }
     }
