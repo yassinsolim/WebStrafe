@@ -1,7 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Vector3 } from 'three';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { HOST_STALE_MS, JOIN_GRACE_MS, MAX_PENDING_FIRES, SupabaseMultiplayer } from '../SupabaseMultiplayer';
+import {
+  COSMETICS_DEBOUNCE_MS,
+  COSMETICS_MIN_INTERVAL_MS,
+  HOST_STALE_MS,
+  JOIN_GRACE_MS,
+  MAX_PENDING_FIRES,
+  SUPABASE_PROTOCOL,
+  SupabaseMultiplayer,
+} from '../SupabaseMultiplayer';
 import type { MultiplayerSnapshot } from '../types';
 import { CollisionWorld } from '../../world/CollisionWorld';
 import { MAX_ROOM_PLAYERS, SUPABASE_FREE_EVENTS_PER_SEC } from '../../netcode/RateBudget';
@@ -14,6 +22,8 @@ class FakeBus {
   readonly topics = new Map<string, Set<FakeChannel>>();
   events = 0;
   readonly byEvent = new Map<string, number>();
+  /** presence track calls per client */
+  readonly tracks = new Map<string, number>();
 
   join(ch: FakeChannel): void {
     const set = this.topics.get(ch.topic) ?? new Set();
@@ -69,6 +79,11 @@ class FakeChannel {
 
   track(payload: Record<string, unknown>): Promise<string> {
     this.presence = payload;
+    // billed like a broadcast: the track, then a presence diff to every peer
+    const peers = this.bus.topics.get(this.topic)?.size ?? 1;
+    this.bus.events += peers;
+    this.bus.byEvent.set('presence', (this.bus.byEvent.get('presence') ?? 0) + peers);
+    this.bus.tracks.set(this.key, (this.bus.tracks.get(this.key) ?? 0) + 1);
     this.bus.syncPresence(this.topic);
     return Promise.resolve('ok');
   }
@@ -602,6 +617,124 @@ describe('SupabaseMultiplayer (p7 protocol)', () => {
     expect(bus.byEvent.get('fire') ?? 0).toBe(0);
     expect(bus.byEvent.get('cb') ?? 0).toBe(0);
     for (const p of peers) p.disconnect();
+  });
+
+  it('joins p7 channels, so p6 hosts (no pvp opt-in) and p5 hosts (old hit capsules) never share a room with it', () => {
+    const bus = new FakeBus();
+    const peer = makePeer(bus, 'p_a');
+    enter(peer);
+    expect(SUPABASE_PROTOCOL).toBe('p7');
+    expect([...bus.topics.keys()]).toEqual(['test_room_p7_map1']);
+    peer.disconnect();
+  });
+
+  it("the host sizes a guest's hit capsule from the crouch in its state", () => {
+    const bus = new FakeBus();
+    const host = makePeer(bus, 'p_a');
+    const guest = makePeer(bus, 'p_b');
+    enter(host);
+    enter(guest);
+    tickAll([host, guest], JOIN_GRACE_MS + 500);
+    expect(hosting(host)).toBe(true);
+    const guestOnHost = () => arenaOf(host).players.get('p_b');
+    expect(guestOnHost().duck).toBe(0);
+    for (let i = 0; i < 40; i += 1) {
+      vi.advanceTimersByTime(1000 / 128);
+      guest.sendState({ position: [1, 0, 0], velocity: [0, 0, 0], yaw: 0, pitch: 0, t: Date.now(), duck: 1 });
+    }
+    tickAll([host], 600);
+    expect(guestOnHost().duck).toBe(1);
+    expect(guestOnHost().eyeHeight).toBeCloseTo(46 * 0.0254, 4);
+    expect(statesFrom(bus, 'p_b').some((st) => st.k === 1)).toBe(true);
+    host.disconnect();
+    guest.disconnect();
+  });
+
+  describe('cosmetics', () => {
+    const knife = (seed: number) => ({ knife: { id: 'karambit' as const, finish: 'doppler_ruby', wear: 0.01, seed } });
+    const remoteSeed = (p: SupabaseMultiplayer, id: string) => (p as any).remotes.get(id)?.cosmetics?.knife?.seed;
+
+    it('rides the join and collapses a burst of changes into one spaced out presence track', () => {
+      const bus = new FakeBus();
+      const a = makePeer(bus, 'p_a');
+      const b = makePeer(bus, 'p_b');
+      a.setCosmetics(knife(1));
+      enter(a);
+      enter(b);
+      tickAll([a, b], 200);
+      expect(remoteSeed(b, 'p_a')).toBe(1);
+      const joinTracks = bus.tracks.get('p_a') ?? 0;
+      // scrubbing the seed slider: 30 changes in 3 s
+      for (let i = 0; i < 30; i += 1) {
+        a.setCosmetics(knife(100 + i));
+        tickAll([a, b], 100);
+      }
+      tickAll([a, b], COSMETICS_DEBOUNCE_MS + 200);
+      // the join track counts, so nothing yet: tracks stay 10 s apart
+      expect((bus.tracks.get('p_a') ?? 0) - joinTracks).toBe(0);
+      tickAll([a, b], COSMETICS_MIN_INTERVAL_MS);
+      expect((bus.tracks.get('p_a') ?? 0) - joinTracks).toBe(1);
+      expect(remoteSeed(b, 'p_a')).toBe(129);
+      // the next change waits for the minimum interval
+      a.setCosmetics(knife(7));
+      tickAll([a, b], COSMETICS_DEBOUNCE_MS + 200);
+      expect(remoteSeed(b, 'p_a')).toBe(129);
+      tickAll([a, b], COSMETICS_MIN_INTERVAL_MS);
+      expect(remoteSeed(b, 'p_a')).toBe(7);
+      expect((bus.tracks.get('p_a') ?? 0) - joinTracks).toBe(2);
+      // picking the same thing again sends nothing
+      a.setCosmetics(knife(7));
+      tickAll([a, b], COSMETICS_MIN_INTERVAL_MS + COSMETICS_DEBOUNCE_MS);
+      expect((bus.tracks.get('p_a') ?? 0) - joinTracks).toBe(2);
+      a.disconnect();
+      b.disconnect();
+    });
+
+    it('a full room changing cosmetics constantly at 4 shots/s stays inside the room budget from #46', () => {
+      const bus = new FakeBus();
+      const peers = ['p_a', 'p_b', 'p_c', 'p_d', 'p_e', 'p_f'].map((id) => makePeer(bus, id));
+      for (const p of peers) {
+        enter(p);
+        p.sendEquip('deagle');
+      }
+      tickAll(peers, JOIN_GRACE_MS + 1000);
+      bus.events = 0;
+      bus.byEvent.clear();
+      bus.tracks.clear();
+      const step = 1000 / 128;
+      let nextShot = Date.now();
+      let nextPick = Date.now();
+      let shooter = 0;
+      let seed = 0;
+      const secs = 30;
+      for (let t = 0; t < secs * 1000; t += step) {
+        vi.advanceTimersByTime(step);
+        const now = Date.now();
+        for (const [i, p] of peers.entries()) {
+          p.sendState({ position: [i, 0, now / 1000], velocity: [0, 0, 1], yaw: 0, pitch: 0, t: now });
+        }
+        if (now >= nextShot) {
+          peers[shooter % peers.length].sendFire([0, 1.6, 0], [1, 0, 0], { targets: {} });
+          shooter += 1;
+          nextShot += 250;
+        }
+        // every player picks something new 5 times a second, the worst case
+        if (now >= nextPick) {
+          seed += 1;
+          for (const p of peers) p.setCosmetics(knife(seed % 1000));
+          nextPick += 200;
+        }
+      }
+      // at most one track per player per interval, never with the state traffic
+      for (const id of ['p_a', 'p_b', 'p_c', 'p_d', 'p_e', 'p_f']) {
+        expect(bus.tracks.get(id) ?? 0).toBeLessThanOrEqual(Math.ceil((secs * 1000) / COSMETICS_MIN_INTERVAL_MS));
+      }
+      const presencePerSec = (bus.byEvent.get('presence') ?? 0) / secs;
+      expect(presencePerSec).toBeLessThanOrEqual((6 * 6 * 1000) / COSMETICS_MIN_INTERVAL_MS);
+      // same ceiling as the full room at 4 shots/s without cosmetics
+      expect(bus.events / secs).toBeLessThan(88);
+      for (const p of peers) p.disconnect();
+    });
   });
 
   describe('ammo on the host', () => {

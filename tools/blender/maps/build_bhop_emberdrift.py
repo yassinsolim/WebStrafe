@@ -623,7 +623,8 @@ def main():
         "attribution": "Original layout and procedural textures made for WebStrafe.",
         "spawns": spawns,
         "triggers": make_triggers(plats),
-        "cvars": {"sv_airaccelerate": 150},
+        # autobhop bhop servers run 1000 (sharptimer's bhop config, shavit's normal style)
+        "cvars": {"sv_airaccelerate": 1000},
         "notes": f"{jumps} jumps, checkpoints every six, lava teleports to the last checkpoint.",
     }
     layout = {

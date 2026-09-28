@@ -111,7 +111,7 @@ FINISH_HALF_LAT = 16.0
 GATE_HALF = 6.0
 BASIN_DROP = 76.0            # basin water under the finish ledge
 # fastest full run of the headless test rider (src/world/__tests__/surfRiders.ts), rounded
-PAR_TIME_MS = 88100
+PAR_TIME_MS = 112200
 
 
 # ---------------------------------------------------------------------------
@@ -476,7 +476,7 @@ def main():
         "attribution": "Original layout and procedural textures made for WebStrafe.",
         "spawns": spawns,
         "triggers": triggers,
-        "cvars": {"sv_airaccelerate": 100},
+        "cvars": {"sv_airaccelerate": 150},
         "modes": ["surf"],
         "difficulty": "intermediate",
         "parTimeMs": PAR_TIME_MS,

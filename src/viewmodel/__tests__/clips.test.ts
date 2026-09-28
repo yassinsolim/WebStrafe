@@ -41,10 +41,10 @@ describe('viewmodel clips', () => {
 
   it('gives every knife a draw, an inspect and attacks that end at rest', () => {
     for (const def of KNIVES) {
-      for (const name of ['draw', 'inspect', 'slashA', 'slashB', 'stab'] as const) {
+      for (const name of ['draw', 'inspect', 'slashA', 'slashB', 'stab', 'backstab'] as const) {
         const clip = knifeClip(def, name);
         expect(clip.duration, `${def.id} ${name}`).toBeGreaterThan(0.3);
-        for (const channel of ['px', 'py', 'pz', 'rx', 'ry', 'rz', 'tossY', 'gripOpen', 'watch']) {
+        for (const channel of ['px', 'py', 'pz', 'rx', 'ry', 'rz', 'tossY', 'gripOpen', 'watch', 'ringHold', 'thumbOpener']) {
           const keys = clip.tracks[channel];
           if (keys) expect(sampleKeys(keys, clip.duration), `${def.id} ${name} ${channel}`).toBeCloseTo(0, 5);
         }
@@ -60,6 +60,14 @@ describe('viewmodel clips', () => {
     expect(knifeDrawStyle(byId.get('flip')!)).toBe('flip_open');
     expect(knifeInspectStyle(byId.get('shadow_daggers')!)).toBe('dagger_pair');
     expect(knifeInspectStyle(byId.get('bowie')!)).toBe('heavy_show');
+    expect(knifeDrawStyle(byId.get('stiletto')!)).toBe('switch_open');
+    expect(knifeDrawStyle(byId.get('navaja')!)).toBe('flick_open');
+    expect(knifeDrawStyle(byId.get('m9_bayonet')!)).toBe('spin_draw');
+    expect(knifeInspectStyle(byId.get('m9_bayonet')!)).toBe('twirl');
+    expect(knifeDrawStyle(byId.get('karambit')!)).toBe('spin_in');
+    expect(knifeDrawStyle(byId.get('talon')!)).toBe('spin_in');
+    expect(knifeDrawStyle(byId.get('skeleton')!)).toBe('skeleton_spin');
+    expect(knifeInspectStyle(byId.get('skeleton')!)).toBe('skeleton_ring');
   });
 
   it('shows the watch in every gun inspect', () => {

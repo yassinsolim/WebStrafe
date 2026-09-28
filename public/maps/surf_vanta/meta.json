@@ -302,14 +302,14 @@
     }
   ],
   "cvars": {
-    "sv_airaccelerate": 100
+    "sv_airaccelerate": 150
   },
   "modes": [
     "surf",
     "combat"
   ],
   "difficulty": "advanced",
-  "parTimeMs": 72800,
+  "parTimeMs": 84900,
   "notes": "Advanced surf, four stages, 15 ramps from 58 to 64 degrees with two transfers. Combat deck behind the start pad, four spawns per side, bots start on side b.",
   "environment": {
     "sky": {

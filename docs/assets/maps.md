@@ -4,11 +4,11 @@ WebStrafe v2 ships six original maps plus the generated practice range:
 
 | id | name | mode | modes / difficulty | cvars |
 |----|------|------|--------------------|-------|
-| `surf_prismline` | Prismline | surf, 4 stages | surf / intermediate | `sv_airaccelerate` 100 |
-| `surf_lumen` | Lumen | surf, 1 stage, 6 ramps | surf / beginner | `sv_airaccelerate` 100 |
-| `surf_cascade` | Cascade | surf, 6 stages | surf / intermediate | `sv_airaccelerate` 100 |
-| `surf_vanta` | Vanta | surf, 4 stages with transfers, plus a combat deck | surf, combat / advanced | `sv_airaccelerate` 100 |
-| `bhop_emberdrift` | Emberdrift | bhop, 33 jumps | surf / intermediate | `sv_airaccelerate` 150 |
+| `surf_prismline` | Prismline | surf, 4 stages | surf / intermediate | `sv_airaccelerate` 150 |
+| `surf_lumen` | Lumen | surf, 1 stage, 6 ramps | surf / beginner | `sv_airaccelerate` 150 |
+| `surf_cascade` | Cascade | surf, 6 stages | surf / intermediate | `sv_airaccelerate` 150 |
+| `surf_vanta` | Vanta | surf, 4 stages with transfers, plus a combat deck | surf, combat / advanced | `sv_airaccelerate` 150 |
+| `bhop_emberdrift` | Emberdrift | bhop, 33 jumps | surf / intermediate | `sv_airaccelerate` 1000 |
 | `aim_ochrecut` | Ochre Cut | AWP and Deagle duels, bots | combat | none |
 | `movement_test_scene` | Movement Test Scene | combat practice range | surf, combat | none |
 
@@ -123,10 +123,10 @@ walls, trigger volumes and the layout file. Prismline keeps its own copies.
     { "id": "lava", "type": "teleport", "min": [..], "max": [..] },
     { "id": "finish", "type": "finish", "min": [..], "max": [..] }
   ],
-  "cvars": { "sv_airaccelerate": 150 },
+  "cvars": { "sv_airaccelerate": 1000 },
   "modes": ["surf"],
   "difficulty": "intermediate",
-  "parTimeMs": 88100,
+  "parTimeMs": 112200,
   "environment": {
     "sky": { "zenith": "#28305f", "horizon": "#f2a36e", "ground": "#7a3326", "exponent": 0.55,
              "sunSizeDeg": 2.2, "sunGlow": 0.45, "sunHaze": 0.3,

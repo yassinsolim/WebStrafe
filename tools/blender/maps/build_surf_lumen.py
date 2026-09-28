@@ -442,7 +442,7 @@ def main():
         "attribution": "Original layout and procedural textures made for WebStrafe.",
         "spawns": spawns,
         "triggers": triggers,
-        "cvars": {"sv_airaccelerate": 100},
+        "cvars": {"sv_airaccelerate": 150},
         "modes": ["surf"],
         "difficulty": "beginner",
         "parTimeMs": PAR_TIME_MS,

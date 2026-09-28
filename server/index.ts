@@ -1,3 +1,5 @@
+import { decodeCosmetics, encodeCosmetics, type WireCosmetics } from '../src/network/cosmetics';
+import { clampDuck } from '../src/movement/hull';
 import crypto from 'node:crypto';
 import { createReadStream, promises as fs } from 'node:fs';
 import http, { type IncomingMessage, type ServerResponse } from 'node:http';
@@ -50,6 +52,10 @@ interface ClientState {
   name: string;
   mapId: string;
   model: PlayerModel;
+  /** optional knife / armour choices in wire form, relayed on join and change, never in snapshots */
+  cosmetics?: WireCosmetics;
+  /** cosmetics changed since the last relay to this client's map */
+  cosmeticsDirty: boolean;
   position: [number, number, number];
   velocity: [number, number, number];
   yaw: number;
@@ -194,6 +200,7 @@ wss.on('connection', (ws, req) => {
     ws,
     ip: getClientIp(req),
     joined: false,
+    cosmeticsDirty: false,
     hasState: false,
     combatReady: false,
     pvp: true,
@@ -273,11 +280,17 @@ wss.on('connection', (ws, req) => {
         client.model = model;
         clearTimeout(joinTimeout);
 
+        // the join carries the current cosmetics; peers hear on the next relay
+        client.cosmetics = encodeCosmetics(decodeCosmetics(payload.c));
+        // peers in the map know nothing of this player yet, so only a pick is news
+        client.cosmeticsDirty = client.cosmetics !== undefined;
         sendWs(ws, {
           type: 'joined',
           id: client.id,
           mapId,
         });
+        // everyone already in the map, once
+        sendWs(ws, { type: 'cosmetics', players: cosmeticsRoster(mapId, client.id) });
         arena.addPlayer(client.id, mapId, 'knife');
         arena.setPvp(client.id, client.pvp);
         botManager.resetTargeting(mapId);
@@ -290,6 +303,19 @@ wss.on('connection', (ws, req) => {
         client.pvp = payload.on;
         arena.setPvp(client.id, client.pvp);
         botManager.resetTargeting(client.mapId);
+        break;
+      }
+      case 'cosmetics': {
+        if (!client.joined) {
+          return;
+        }
+        // re-encode the decoded form so only validated fields are relayed; a
+        // flood of changes still reaches peers at most once per relay tick
+        const next = encodeCosmetics(decodeCosmetics(payload.c));
+        if (JSON.stringify(next ?? null) !== JSON.stringify(client.cosmetics ?? null)) {
+          client.cosmetics = next;
+          client.cosmeticsDirty = true;
+        }
         break;
       }
       case 'combat-ready': {
@@ -372,7 +398,7 @@ wss.on('connection', (ws, req) => {
         client.yaw = yaw;
         client.pitch = pitch;
         client.sampleT = sampleT;
-        arena.setPosition(client.id, position, client.mapId, sampleT, velocity, yaw);
+        arena.setPosition(client.id, position, client.mapId, sampleT, velocity, yaw, clampDuck(payload.duck));
         break;
       }
       case 'attack': {
@@ -603,6 +629,8 @@ function snapshotTick(): void {
 // setInterval drifts late and bunches under load; schedule against an ideal
 // timeline instead so snapshots leave at an even cadence
 scheduleFixedRate(SNAPSHOT_RATE_HZ, snapshotTick);
+// changed cosmetics are relayed at 1 hz; changes in between collapse into one
+scheduleFixedRate(1, relayCosmetics);
 
 if (ENABLE_BOTS) {
   const botDt = 1 / BOT_TICK_HZ;
@@ -1168,6 +1196,40 @@ setInterval(() => {
     broadcastToMap(mapId, { type: 'scoreboard', mapId, rows });
   }
 }, 2000).unref?.();
+
+/** every joined player's cosmetics in a map, for a client that just joined it */
+function cosmeticsRoster(mapId: string, except: string): Array<{ id: string; c?: WireCosmetics }> {
+  const out: Array<{ id: string; c?: WireCosmetics }> = [];
+  for (const client of clients.values()) {
+    if (client.joined && client.mapId === mapId && client.id !== except && client.cosmetics) out.push({ id: client.id, c: client.cosmetics });
+  }
+  return out;
+}
+
+/**
+ * relays changed cosmetics to each map at a low fixed rate, apart from the
+ * 30 hz snapshots: a change costs one small message per peer, idle rooms cost
+ * nothing. a missing `c` means the player cleared theirs.
+ */
+function relayCosmetics(): void {
+  const byMap = new Map<string, Array<{ id: string; c?: WireCosmetics }>>();
+  for (const client of clients.values()) {
+    if (!client.cosmeticsDirty) continue;
+    client.cosmeticsDirty = false;
+    if (!client.joined) continue;
+    const list = byMap.get(client.mapId) ?? [];
+    list.push(client.cosmetics ? { id: client.id, c: client.cosmetics } : { id: client.id });
+    byMap.set(client.mapId, list);
+  }
+  if (byMap.size === 0) return;
+  // each player hears about everyone else, not their own echo
+  for (const client of clients.values()) {
+    const changed = client.joined ? byMap.get(client.mapId) : undefined;
+    if (!changed) continue;
+    const players = changed.filter((row) => row.id !== client.id);
+    if (players.length > 0) sendWs(client.ws, { type: 'cosmetics', players });
+  }
+}
 
 function broadcastToMap(mapId: string, payload: Record<string, unknown>): void {
   for (const client of clients.values()) {

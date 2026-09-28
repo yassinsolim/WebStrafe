@@ -1,5 +1,7 @@
 import type { CosmeticsManifest, LoadoutSelection } from '../cosmetics/types';
 import type { KnifeId } from '../combat/knives';
+import type { KnifeFinishSelection } from '../cosmetics/finishes/catalog';
+import type { KnifeLoadoutSelection } from '../cosmetics/finishes/selection';
 import type { MapManifestEntry } from '../world/types';
 import { devToolsEnabled } from '../app/devTools';
 import type { GameSettings } from './SettingsStore';
@@ -22,6 +24,8 @@ interface MainMenuCallbacks {
   onNameChanged: (name: string) => void;
   /** null = the authored (legacy) viewmodel knife */
   onKnifeSelected?: (knifeId: KnifeId | null) => void;
+  /** finish, wear or pattern seed of the equipped knife changed */
+  onKnifeFinishChanged?: (selection: KnifeLoadoutSelection) => void;
   /** true while this map is loaded and paused, so Play reads Resume */
   canResume?: (mapId: string) => boolean;
 }
@@ -183,6 +187,7 @@ export class MainMenu {
     const loadoutSection = this.makeSection('loadout', 'Loadout', 'Your AWP, Deagle and the knife you carry.');
     this.loadoutPanel = new LoadoutPanel(loadoutSection, {
       onKnifeSelected: (knifeId) => this.callbacks.onKnifeSelected?.(knifeId),
+      onKnifeFinishChanged: (selection) => this.callbacks.onKnifeFinishChanged?.(selection),
     });
     panels.appendChild(loadoutSection);
 
@@ -300,6 +305,7 @@ export class MainMenu {
     } else {
       this.preview?.stop();
     }
+    this.loadoutPanel.setActive(this.visible && this.activeTab === 'loadout');
   }
 
   /** Reflects the authoritative (already-sanitized) player name into the field. */
@@ -367,6 +373,7 @@ export class MainMenu {
   public dispose(): void {
     this.detachSounds();
     this.settingsPanel.dispose();
+    this.loadoutPanel.dispose();
     this.preview?.dispose();
     this.preview = null;
   }
@@ -434,6 +441,11 @@ export class MainMenu {
   /** Reflects the stored knife choice without firing the callback. */
   public setSelectedKnife(knifeId: KnifeId | null): void {
     this.loadoutPanel.setSelectedKnife(knifeId);
+  }
+
+  /** reflects the stored knife finish without firing the callback */
+  public setKnifeFinish(selection: KnifeFinishSelection): void {
+    this.loadoutPanel.setKnifeFinish(selection);
   }
 
   private refreshPlayLabel(): void {

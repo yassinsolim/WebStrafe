@@ -106,7 +106,7 @@ ARENA_HALF = (32.0, 24.0)    # combat deck behind the start pad: half lateral, h
 DOOR_HALF = 6.0
 CITY_DROP = 120.0            # city lights under the finish
 # fastest full run of the headless test rider (src/world/__tests__/surfRiders.ts), rounded
-PAR_TIME_MS = 72800
+PAR_TIME_MS = 84900
 
 # combat cover for side a, arena frame (x lateral, y towards the start pad).
 # side b is the same rotated 180 degrees about the deck centre.
@@ -503,7 +503,7 @@ def main():
         "attribution": "Original layout and procedural textures made for WebStrafe.",
         "spawns": spawns,
         "triggers": triggers,
-        "cvars": {"sv_airaccelerate": 100},
+        "cvars": {"sv_airaccelerate": 150},
         "modes": ["surf", "combat"],
         "difficulty": "advanced",
         "parTimeMs": PAR_TIME_MS,

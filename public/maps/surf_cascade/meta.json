@@ -337,13 +337,13 @@
     }
   ],
   "cvars": {
-    "sv_airaccelerate": 100
+    "sv_airaccelerate": 150
   },
   "modes": [
     "surf"
   ],
   "difficulty": "intermediate",
-  "parTimeMs": 88100,
+  "parTimeMs": 112200,
   "notes": "Six surf stages, 14 ramps from 55 to 60 degrees. Each ledge is a checkpoint, falling under a stage teleports you to its start.",
   "environment": {
     "sky": {

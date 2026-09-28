@@ -1,22 +1,32 @@
 import type { SourceCvars } from './types';
 
-// Units:
-// - Distance: meters (Three.js units)
-// - Time: seconds
-// - Speed: meters / second
-// Values are tuned for a Source-like feel under a 128 Hz simulation step.
+/** source units are inches */
+export const METRES_PER_UNIT = 0.0254;
+const U = METRES_PER_UNIT;
+
+// units: metres, seconds, metres / second. cs2 values are converted from source
+// units, see docs/movement-cs2.md for every value and where it comes from.
 export const defaultCvars: SourceCvars = {
-  sv_gravity: 19.0,
-  sv_accelerate: 13.0,
-  // typical cs bhop/surf server value. the 30 u/s air wishspeed cap below is
-  // what keeps this from being too strong, gain only comes from synced turning.
+  // cs2 sv_gravity 800 u/s^2
+  sv_gravity: 800 * U,
+  // cs2 sv_accelerate 5.5. only just above sv_friction, so running tops out at
+  // wishspeed and ground strafing can't run away
+  sv_accelerate: 5.5,
+  // cs2 ships 12. this is a movement game with autobhop on, so the default is the
+  // surf server value and bhop maps set 1000. with the 30 u/s cap below anything
+  // past about 15 (knife speed) only changes how hard wrong inputs hit, gain
+  // comes from synced turning
   sv_airaccelerate: 150.0,
-  // 30 u/s * 0.0254 m/u
-  sv_air_max_wishspeed: 0.762,
+  // cs2 sv_air_max_wishspeed 30 u/s
+  sv_air_max_wishspeed: 30 * U,
+  // cs2 sv_friction 5.2
   sv_friction: 5.2,
-  sv_stopspeed: 2.4,
-  sv_maxspeed: 9.5,
-  sv_jump_impulse: 5.4,
+  // cs2 sv_stopspeed 80 u/s: friction acts as if you move at least this fast
+  sv_stopspeed: 80 * U,
+  // cs2 sv_maxspeed 320 u/s, a server-wide cap on wishspeed
+  sv_maxspeed: 320 * U,
+  // cs2 sv_jump_impulse 301.99338 u/s = sqrt(2 * 800 * 57), a 57 u (1.45 m) jump
+  sv_jump_impulse: 301.99338 * U,
   sv_bhop_enabled: true,
   sv_autobhop_enabled: true,
   surf_min_angle_deg: 40,

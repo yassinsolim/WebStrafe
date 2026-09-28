@@ -20,9 +20,10 @@ import { resolveMeleeHit, type SegmentBlocked } from './MeleeResolver';
 import { WeaponController } from './WeaponController';
 import { type WeaponId } from './weapons';
 import { interpolateSamples, MAX_EXTRAPOLATION_MS } from '../netcode/InterpolationBuffer';
+import { clampDuck, eyeHeight, hullHeight, STAND_EYE_HEIGHT, STAND_HEIGHT } from '../movement/hull';
 
-/** Default player capsule (mirrors MovementController.capsule). */
-export const PLAYER_CAPSULE_HEIGHT = 1.76;
+/** Standing player capsule (the cs2 hull MovementController uses, 72 u). */
+export const PLAYER_CAPSULE_HEIGHT = STAND_HEIGHT;
 export const PLAYER_CAPSULE_RADIUS = 0.34;
 
 /**
@@ -64,6 +65,8 @@ interface PositionSample {
   velocity?: Vector3;
   /** body yaw (camera yaw convention), when the sender reported one */
   yaw?: number;
+  /** 0 standing, 1 fully crouched */
+  duck: number;
 }
 
 export interface HitEvent {
@@ -143,7 +146,10 @@ interface ArenaPlayer {
   /** latest reported body yaw */
   yaw: number;
   positionHistory: PositionSample[];
+  /** live eye height above the feet, follows the reported crouch */
   eyeHeight: number;
+  /** latest reported crouch, 0 standing to 1 crouched */
+  duck: number;
   /** Damage is ignored until this time (spawn protection). 0 = unprotected. */
   spawnProtectedUntilMs: number;
   /**
@@ -186,7 +192,7 @@ export class CombatArena {
       : SPAWN_PROTECTION_MS;
   }
 
-  addPlayer(id: string, mapId: string, initialWeapon: WeaponId = 'knife', eyeHeight = 1.6): void {
+  addPlayer(id: string, mapId: string, initialWeapon: WeaponId = 'knife'): void {
     this.players.set(id, {
       id,
       mapId,
@@ -196,7 +202,8 @@ export class CombatArena {
       feet: new Vector3(),
       yaw: 0,
       positionHistory: [],
-      eyeHeight,
+      eyeHeight: STAND_EYE_HEIGHT,
+      duck: 0,
       spawnProtectedUntilMs: 0,
       pvp: true,
     });
@@ -283,10 +290,14 @@ export class CombatArena {
     nowMs = Date.now(),
     velocity?: [number, number, number],
     yaw?: number,
+    duck?: number,
   ): void {
     const p = this.players.get(id);
     if (!p) return;
     p.feet.set(feet[0], feet[1], feet[2]);
+    // a crouch shrinks the hit capsule and lowers the eye like the movement hull
+    p.duck = clampDuck(duck);
+    p.eyeHeight = eyeHeight(p.duck);
     if (mapId !== undefined) p.mapId = mapId;
     const hasYaw = typeof yaw === 'number' && Number.isFinite(yaw);
     if (hasYaw) p.yaw = yaw;
@@ -297,6 +308,7 @@ export class CombatArena {
       feet: p.feet.clone(),
       velocity: velocity ? new Vector3(velocity[0], velocity[1], velocity[2]) : undefined,
       yaw: hasYaw ? yaw : undefined,
+      duck: p.duck,
     };
     const previous = p.positionHistory.at(-1);
     // clock domain changed (new host, reconnect): old samples are meaningless now
@@ -613,7 +625,7 @@ export class CombatArena {
         capsule: {
           id: other.id,
           feet: targetFeet.clone(),
-          height: PLAYER_CAPSULE_HEIGHT,
+          height: hullHeight(rewindAt !== null ? duckAt(other.positionHistory, rewindAt) ?? other.duck : other.duck),
           radius: PLAYER_CAPSULE_RADIUS,
         },
         yaw: rewindAt !== null ? yawAt(other.positionHistory, rewindAt) ?? other.yaw : other.yaw,
@@ -682,6 +694,14 @@ function stepRewind(history: readonly PositionSample[], atMs: number): Vector3 |
  * Body yaw at `atMs`, shortest-arc blended between the samples around it and
  * clamped to the same rewind window as positions. Null without yaw samples.
  */
+/** crouch of the newest sample at or before `atMs` (a crouch is a state, not a path) */
+function duckAt(history: readonly PositionSample[], atMs: number): number | null {
+  if (history.length === 0) return null;
+  let i = history.length - 1;
+  while (i > 0 && history[i].atMs > atMs) i -= 1;
+  return history[i].duck;
+}
+
 function yawAt(history: readonly PositionSample[], atMs: number): number | null {
   const withYaw = history.filter((sample) => sample.yaw !== undefined);
   const newest = withYaw.at(-1);

@@ -1,3 +1,5 @@
+import type { PlayerCosmetics } from './cosmetics';
+
 export type PlayerModel = 'terrorist' | 'counterterrorist';
 export type AttackKind = 'primary' | 'secondary';
 
@@ -26,6 +28,8 @@ export interface MultiplayerSnapshotPlayer {
   clock?: string;
   /** opted into pvp; undefined counts as on */
   pvp?: boolean;
+  /** optional knife / armour choices, see network/cosmetics.ts */
+  cosmetics?: PlayerCosmetics;
 }
 
 export interface MultiplayerSnapshot {

@@ -115,7 +115,7 @@ export interface MapMeta {
   sceneScale?: number;
   notes?: string;
   /**
-   * movement cvar overrides for this map, e.g. { "sv_airaccelerate": 100 } for
+   * movement cvar overrides for this map, e.g. { "sv_airaccelerate": 150 } for
    * surf. validated by MovementController.applyMapCvars, bad entries are ignored.
    */
   cvars?: Partial<SourceCvars>;

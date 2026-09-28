@@ -222,7 +222,7 @@
     }
   ],
   "cvars": {
-    "sv_airaccelerate": 100
+    "sv_airaccelerate": 150
   },
   "modes": [
     "surf"

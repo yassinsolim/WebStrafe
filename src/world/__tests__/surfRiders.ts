@@ -1,5 +1,6 @@
 import { Vector3 } from 'three';
 import { MovementController } from '../../movement/MovementController';
+import { weaponMaxSpeed } from '../../combat/weapons';
 import type { CollisionWorld } from '../CollisionWorld';
 import { MapTriggers } from '../MapTriggers';
 import type { MapMeta } from '../types';
@@ -123,7 +124,9 @@ export function rideStage(w: CollisionWorld, layout: SurfLayout, stageIndex: num
     .addScaledVector(right, first.lateral + sign * depth0 / Math.tan((first.angleDeg * Math.PI) / 180));
   start.y = first.ridgeStart + (first.ridgeEnd - first.ridgeStart) * (8 / first.length) - depth0 + 0.3;
   const player = new MovementController();
-  player.setCvar('sv_airaccelerate', 100);
+  // outside combat you run with the knife out, like the game
+  player.setMaxSpeedCap(weaponMaxSpeed('knife'));
+  player.setCvar('sv_airaccelerate', 150);
   player.reset(start, (yawFor(fwd) * 180) / Math.PI);
   player.setVelocity(fwd.clone().multiplyScalar(speed));
   const holder = new LineHolder(ramps, depth0);
@@ -174,6 +177,7 @@ export function fullRun(w: CollisionWorld, meta: MapMeta, layout: SurfLayout, op
   const entryOffset = options.entryOffset ?? 3;
   const spawn = meta.spawns![0];
   const player = new MovementController();
+  player.setMaxSpeedCap(weaponMaxSpeed('knife'));
   player.applyMapCvars(meta.cvars);
   player.reset(vec(spawn.position), spawn.yawDeg ?? 0);
   const triggers = new MapTriggers(meta.triggers, { position: spawn.position, yawDeg: spawn.yawDeg ?? 0 });

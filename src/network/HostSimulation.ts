@@ -37,6 +37,8 @@ export interface HostHuman {
   weapon?: string;
   /** set while the player is dead: ms until their respawn is due */
   deadForMs?: number;
+  /** 0 standing, 1 fully crouched */
+  duck?: number;
   /** opted into pvp; undefined counts as on (older peers, the ws server) */
   pvp?: boolean;
   /** kills and deaths as last published by any host, seeds a new host's tally */
@@ -201,7 +203,7 @@ export class HostSimulation {
       if (!isNew && isWeaponId(h.weapon) && this.arena.getActiveWeapon(h.id) !== h.weapon) {
         this.arena.equip(h.id, h.weapon, now);
       }
-      this.arena.setPosition(h.id, h.position, MAP_ID, h.t ?? now, h.velocity, h.yaw);
+      this.arena.setPosition(h.id, h.position, MAP_ID, h.t ?? now, h.velocity, h.yaw, h.duck);
       this.humanPositions.set(h.id, new Vector3(h.position[0], h.position[1], h.position[2]));
       this.humanCombatReady.set(h.id, h.combatReady);
       if (Number.isFinite(h.yaw) && Number.isFinite(h.pitch)) {
@@ -256,9 +258,10 @@ export class HostSimulation {
     t: number,
     velocity?: [number, number, number],
     yaw?: number,
+    duck?: number,
   ): void {
     if (!this.humanPositions.has(id)) return;
-    this.arena.setPosition(id, position, MAP_ID, t, velocity, yaw);
+    this.arena.setPosition(id, position, MAP_ID, t, velocity, yaw, duck);
     this.humanPositions.get(id)?.set(position[0], position[1], position[2]);
     let clock = this.humanClocks.get(id);
     if (!clock) {

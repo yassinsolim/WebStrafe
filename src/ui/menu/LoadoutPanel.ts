@@ -1,21 +1,27 @@
 import { DEFAULT_KNIFE_ID, KNIFE_DAMAGE, KNIVES, getKnife, type KnifeId } from '../../combat/knives';
 import { getWeapon, type WeaponId } from '../../combat/weapons';
+import { knifeFinishDisplayName, resolveKnifeFinish, wearCondition, type KnifeFinishSelection } from '../../cosmetics/finishes/catalog';
+import type { KnifeLoadoutSelection } from '../../cosmetics/finishes/selection';
 import { iconMarkup, type IconName } from '../hud/icons';
+import { FinishPicker } from './FinishPicker';
 import { knifeDescriptor, knifeSilhouetteMarkup } from './knifeSilhouette';
 import { firearmStats, weaponDisplayName } from './menuInfo';
 
 export interface LoadoutPanelCallbacks {
   /** null = the default knife */
   onKnifeSelected(knifeId: KnifeId | null): void;
+  /** finish, wear or pattern changed on the equipped knife */
+  onKnifeFinishChanged?(selection: KnifeLoadoutSelection): void;
 }
 
 /**
  * Loadout: the AWP and Deagle as fixed slots with their numbers from
- * weapons.ts, the equipped knife, and a picker grid for all 20 knives.
+ * weapons.ts, the equipped knife, its finish, and a picker grid for all 20 knives.
  */
 export class LoadoutPanel {
   private readonly knifeSlot: HTMLDivElement;
   private readonly grid: HTMLDivElement;
+  private readonly finishPicker: FinishPicker;
   private selected: KnifeId | null = null;
 
   constructor(section: HTMLElement, private readonly callbacks: LoadoutPanelCallbacks) {
@@ -26,19 +32,42 @@ export class LoadoutPanel {
     this.knifeSlot.className = 'loadout-slot loadout-slot-knife';
     slots.appendChild(this.knifeSlot);
 
+    this.finishPicker = new FinishPicker({
+      onChange: (finish) => {
+        this.renderKnifeSlot();
+        this.callbacks.onKnifeFinishChanged?.({ knifeId: this.selected ?? DEFAULT_KNIFE_ID, ...finish });
+      },
+    });
+
     const hint = document.createElement('p');
     hint.className = 'menu-section-hint';
     hint.textContent = 'Knife: every type shares the same damage, pick the one you like holding.';
     this.grid = document.createElement('div');
     this.grid.className = 'knife-grid';
-    section.append(slots, hint, this.grid);
+    section.append(slots, this.finishPicker.element, hint, this.grid);
     this.render();
   }
 
   /** reflects the stored knife choice without firing the callback */
   setSelectedKnife(knifeId: KnifeId | null): void {
     this.selected = knifeId;
+    this.finishPicker.setKnife(knifeId ?? DEFAULT_KNIFE_ID);
     this.render();
+  }
+
+  /** reflects the stored finish without firing the callback */
+  setKnifeFinish(selection: KnifeFinishSelection): void {
+    this.finishPicker.setSelection(selection);
+    this.renderKnifeSlot();
+  }
+
+  /** true while the loadout tab is on screen, the inspect view only renders then */
+  setActive(active: boolean): void {
+    this.finishPicker.setActive(active);
+  }
+
+  dispose(): void {
+    this.finishPicker.dispose();
   }
 
   private firearmSlot(id: WeaponId, key: number, role: string): HTMLDivElement {
@@ -92,6 +121,7 @@ export class LoadoutPanel {
       `<div class="loadout-art">${art}</div>`,
       `<div class="loadout-name"></div>`,
       `<div class="loadout-sub"></div>`,
+      `<div class="loadout-sub loadout-finish"></div>`,
       '<dl class="loadout-stats loadout-stats-compact">',
       `<div class="loadout-stat"><dt>Slash</dt><dd>${d.primary} / ${d.primaryFollowUp}</dd></div>`,
       `<div class="loadout-stat"><dt>Stab</dt><dd>${d.secondary}</dd></div>`,
@@ -100,6 +130,11 @@ export class LoadoutPanel {
     ].join('');
     (this.knifeSlot.querySelector('.loadout-name') as HTMLElement).textContent = name;
     (this.knifeSlot.querySelector('.loadout-sub') as HTMLElement).textContent = knifeDescriptor(knife);
+    const finish = this.finishPicker.getSelection();
+    const vanilla = resolveKnifeFinish(finish.finishId).finish.id === 'vanilla';
+    (this.knifeSlot.querySelector('.loadout-finish') as HTMLElement).textContent = vanilla
+      ? knifeFinishDisplayName(finish.finishId)
+      : `${knifeFinishDisplayName(finish.finishId)} · ${wearCondition(finish.wear).short}`;
   }
 
   private knifeCard(id: KnifeId | null, name: string, detail: string, art: string): HTMLButtonElement {
@@ -128,6 +163,7 @@ export class LoadoutPanel {
         return;
       }
       this.selected = id;
+      this.finishPicker.setKnife(id ?? DEFAULT_KNIFE_ID);
       this.render();
       this.callbacks.onKnifeSelected(id);
     });

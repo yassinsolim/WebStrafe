@@ -1,5 +1,6 @@
 import { FIREARM_TIMINGS } from './FirearmTiming';
 import { KNIFE_DAMAGE, KNIFE_RANGE_M, KNIFE_TIMING_MS } from './knives';
+import { METRES_PER_UNIT } from '../movement/cvars';
 
 export type WeaponId = 'awp' | 'deagle' | 'knife';
 
@@ -32,6 +33,10 @@ export interface WeaponDef {
   reloadMs: number;
   /** Optional linear damage falloff over distance. */
   falloff?: RangeFalloff;
+  /** run speed while held, m/s (cs2 weapons.vdata m_flMaxSpeed, first value) */
+  maxSpeed: number;
+  /** run speed while scoped, m/s (m_flMaxSpeed second value), scoped weapons only */
+  scopedMaxSpeed?: number;
 }
 
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
@@ -45,6 +50,9 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     fireIntervalMs: FIREARM_TIMINGS.awp.fireIntervalMs,
     magazine: 10,
     reloadMs: FIREARM_TIMINGS.awp.reloadMs,
+    // m_flMaxSpeed = [ 200.0, 100.0 ]
+    maxSpeed: 200 * METRES_PER_UNIT,
+    scopedMaxSpeed: 100 * METRES_PER_UNIT,
   },
   deagle: {
     id: 'deagle',
@@ -57,6 +65,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     magazine: 7,
     reloadMs: FIREARM_TIMINGS.deagle.reloadMs,
     falloff: { start: 512, end: 3072, minMultiplier: 0.55 },
+    // m_flMaxSpeed = [ 230.0, 230.0 ]
+    maxSpeed: 230 * METRES_PER_UNIT,
   },
   // knife hits resolve through CombatArena.handleMelee with the knives.ts
   // table; these mirror a front slash so older callers read sane numbers
@@ -71,11 +81,19 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     fireIntervalMs: KNIFE_TIMING_MS.primaryInterval,
     magazine: 0,
     reloadMs: 0,
+    // m_flMaxSpeed = [ 250.0, 250.0 ], the fastest thing a cs2 player can hold
+    maxSpeed: 250 * METRES_PER_UNIT,
   },
 };
 
 export function getWeapon(id: WeaponId): WeaponDef {
   return WEAPONS[id];
+}
+
+/** run speed cap for the held weapon, m/s: the scoped value while zoomed */
+export function weaponMaxSpeed(id: WeaponId, scoped = false): number {
+  const def = WEAPONS[id];
+  return scoped ? def.scopedMaxSpeed ?? def.maxSpeed : def.maxSpeed;
 }
 
 export function isMelee(def: WeaponDef): boolean {

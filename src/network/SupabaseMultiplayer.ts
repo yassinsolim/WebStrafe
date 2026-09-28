@@ -17,6 +17,9 @@ import { HostSimulation, type HostBotRow, type HostEmitter } from './HostSimulat
 import { SendCadence } from '../netcode/SendCadence';
 import { broadcastRateHz, DEFAULT_BUDGET, MAX_ROOM_PLAYERS, type BudgetOptions } from '../netcode/RateBudget';
 import { RESPAWN_DELAY_MS } from '../combat/CombatState';
+import { decodeCosmetics, encodeCosmetics, type PlayerCosmetics } from './cosmetics';
+import { CosmeticsPublisher } from './cosmeticsPublisher';
+import { clampDuck } from '../movement/hull';
 
 const SESSION_KEY = 'webstrafe:session-id:v1';
 /**
@@ -26,8 +29,9 @@ const SESSION_KEY = 'webstrafe:session-id:v1';
  * melee/backstab, and fires carry the shooter's weapon. a p3 host would resolve
  * those differently, so p3 and p4 tabs must never share a room. p5 moves fires
  * and combat events onto state messages. p6 (knives, #51) swaps in the cs2 hull
- * hit capsules and crouch on the wire. p7 adds per player pvp opt-in (an older
- * host would let peaceful players be hit) and the host's room scoreboard.
+ * hit capsules (72 u standing, 54 u crouched, rounded ends at the feet and the top
+ * of the head) and crouch on the wire (`k`). p7 adds per player pvp opt-in (an
+ * older host would let peaceful players be hit) and the host's room scoreboard.
  */
 export const SUPABASE_PROTOCOL = 'p7';
 const PLAYER_STALE_MS = 8000;
@@ -82,6 +86,8 @@ interface WireState {
   sc?: [number, number];
   /** room scoreboard [id, kills, deaths], only from the elected host */
   sb?: Array<[string, number, number]>;
+  /** crouch 0..1 in hundredths, only while crouching (sizes the host's hit capsule) */
+  k?: number;
 }
 
 interface WireFire {
@@ -91,7 +97,7 @@ interface WireFire {
   t: number;
   w?: string;
   melee?: AttackKind;
-  /** shooter's magazine before the shot; older p5 peers omit it */
+  /** shooter's magazine before the shot; peers from before p5 omit it */
   a?: number;
 }
 
@@ -135,6 +141,7 @@ interface RemoteRecord {
   pvp: boolean;
   /** kills/deaths this peer last saw for itself, seeds a new host */
   score: { kills: number; deaths: number } | null;
+  cosmetics: PlayerCosmetics | undefined;
   joinedAt: number;
   lastSeen: number;
 }
@@ -148,6 +155,9 @@ export interface RoomScore {
 
 /** how often the host republishes the room scoreboard on its state */
 const SCOREBOARD_EVERY_MS = 2000;
+/** quiet time before a cosmetics change is tracked, and the least time between two tracks */
+export const COSMETICS_DEBOUNCE_MS = 1000;
+export const COSMETICS_MIN_INTERVAL_MS = 10000;
 
 /**
  * Serverless multiplayer over Supabase Realtime broadcast + presence.
@@ -208,6 +218,14 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   private roomScores: RoomScore[] = [];
   private roomScoresKey = '';
   private lastScoreboardSentAt = 0;
+  /** cosmetics peers have been told (what presence carries) */
+  private localCosmetics: PlayerCosmetics | null = null;
+  // presence track costs ~N events per room and is capped at 5 per client per
+  // 30 s, so changes are collapsed and spaced out; joins carry the latest
+  private readonly cosmeticsPublisher = new CosmeticsPublisher((cosmetics) => {
+    this.localCosmetics = cosmetics;
+    if (this.channel && this.subscribed) void this.channel.track(this.presencePayload());
+  }, { debounceMs: COSMETICS_DEBOUNCE_MS, minIntervalMs: COSMETICS_MIN_INTERVAL_MS, now: () => this.now() });
   /** Date.now() when the local player respawns, while dead */
   private localDeadUntil: number | null = null;
   /** our claim epoch while hosting, and the highest epoch seen in this room */
@@ -245,6 +263,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   }
 
   disconnect(): void {
+    this.cosmeticsPublisher.dispose();
     this.localCombatReady = false;
     this.stopPump();
     this.stopHost();
@@ -323,6 +342,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     channel.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         this.subscribed = true;
+        this.localCosmetics = this.cosmeticsPublisher.joined();
         void channel.track(this.presencePayload());
         this.cadence.flush();
         this.startPump();
@@ -501,7 +521,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       name: this.localName,
       model: this.localModel,
       j: this.joinedChannelAt,
+      ...(this.localCosmetics ? { c: encodeCosmetics(this.localCosmetics) } : {}),
     };
+  }
+
+  /** re-tracks presence when the choice changed, debounced and spaced out (presence is rate limited) */
+  setCosmetics(cosmetics: PlayerCosmetics | null): void {
+    this.cosmeticsPublisher.set(cosmetics);
   }
 
   /**
@@ -668,6 +694,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         combatReady: this.localCombatReady,
         yaw: this.localState.yaw,
         pitch: this.localState.pitch,
+        duck: this.localState.duck,
       });
     }
     for (const [id, record] of this.remotes) {
@@ -686,6 +713,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
           combatReady: record.combatReady,
           yaw: record.state.yaw,
           pitch: record.state.pitch,
+          duck: record.state.duck,
         });
       }
     }
@@ -740,6 +768,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       payload.sb = this.roomScores.slice(0, 16).map((r) => [r.id, r.kills, r.deaths] as [string, number, number]);
       this.lastScoreboardSentAt = now;
     }
+    const duck = Math.round(clampDuck(s?.duck) * 100) / 100;
+    if (duck > 0) payload.k = duck;
     if (this.hostSim && this.botRows.length > 0) {
       payload.b = this.botRows.map((row) => ({
         id: row.id,
@@ -798,7 +828,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       this.setRoomScores(parseScores(p.sb));
     }
     if (Array.isArray(p.s) && p.s.length === 8 && (record.t === null || p.t > record.t)) {
-      record.state = unpack(p.s);
+      record.state = { ...unpack(p.s), duck: clampDuck(p.k) };
       record.t = p.t;
       this.hostSim?.recordHumanSample(
         p.id,
@@ -806,6 +836,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         p.t,
         record.state.velocity,
         record.state.yaw,
+        record.state.duck,
       );
     }
 
@@ -928,6 +959,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       name: string;
       model: PlayerModel;
       j?: number;
+      c?: unknown;
     }>();
     const present = new Set<string>();
     for (const entries of Object.values(state)) {
@@ -940,6 +972,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         existing.name = entry.name;
         existing.model = entry.model;
         existing.joinedAt = typeof entry.j === 'number' ? entry.j : existing.joinedAt;
+        existing.cosmetics = decodeCosmetics(entry.c);
         this.remotes.set(entry.id, existing);
       }
     }
@@ -1023,6 +1056,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         t: record.t ?? undefined,
         clock: id,
         pvp: record.pvp,
+        ...(record.cosmetics ? { cosmetics: record.cosmetics } : {}),
       });
     }
 
@@ -1058,6 +1092,7 @@ function newRecord(name: string, model: PlayerModel, now: number): RemoteRecord 
     eligibility: 0,
     hostEpoch: null,
     weapon: null,
+    cosmetics: undefined,
     deadForMs: null,
     pvp: true,
     score: null,
