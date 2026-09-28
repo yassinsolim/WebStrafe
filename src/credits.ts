@@ -117,6 +117,16 @@ export const CREDITS: readonly CreditEntry[] = [
     notes: 'Loaded from Google Fonts.',
   },
   {
+    id: 'font-barlow-semi-condensed',
+    category: 'fonts',
+    title: 'Barlow Semi Condensed',
+    author: 'Jeremy Tribby (The Barlow Project Authors)',
+    license: 'SIL Open Font License 1.1',
+    licenseUrl: OFL,
+    sourceUrl: 'https://fonts.google.com/specimen/Barlow+Semi+Condensed',
+    notes: 'Loaded from Google Fonts. Used for hud numbers and body text because it has tabular figures.',
+  },
+  {
     id: 'lib-three',
     category: 'software',
     title: 'three.js',

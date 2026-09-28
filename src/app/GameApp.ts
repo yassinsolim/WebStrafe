@@ -88,6 +88,7 @@ import { MovementAudioTracker } from '../audio/MovementAudio';
 import { KNIFE_DAMAGE, KNIFE_RANGE_M } from '../combat/knives';
 import type { DeathEvent, HitEvent, ShotEvent } from '../network/MultiplayerTransport';
 import { GameHud } from '../ui/hud/GameHud';
+import { runHudDemo } from '../ui/hud/hudDemo';
 import { damageDirection } from '../ui/hud/hudMath';
 import { showsRunTimer } from '../ui/menu/menuInfo';
 
@@ -1550,13 +1551,18 @@ export class GameApp {
   }
 
   private updateTimerHud(): void {
-    if (this.runStartTimeMs <= 0) {
-      this.timerLabel.textContent = '';
-      return;
+    const text = this.runStartTimeMs <= 0 ? '' : formatRunTime(this.getCurrentRunTimeMs());
+    // whole seconds and milliseconds are separate spans, each only written when it changes
+    const dot = text.lastIndexOf('.');
+    const main = dot >= 0 ? text.slice(0, dot) : text;
+    const ms = dot >= 0 ? text.slice(dot) : '';
+    const [mainEl, msEl] = Array.from(this.timerLabel.children);
+    if (mainEl && mainEl.textContent !== main) {
+      mainEl.textContent = main;
     }
-
-    const elapsedMs = this.getCurrentRunTimeMs();
-    this.timerLabel.textContent = formatRunTime(elapsedMs);
+    if (msEl && msEl.textContent !== ms) {
+      msEl.textContent = ms;
+    }
   }
 
   private tryCompleteRun(): void {
@@ -2025,13 +2031,18 @@ export class GameApp {
   private createRunHud(): { timer: HTMLDivElement; info: HTMLDivElement } {
     const timer = document.createElement('div');
     timer.className = 'run-timer';
-    timer.style.display = 'none';
+    const timerMain = document.createElement('span');
+    timerMain.className = 'run-timer-main';
+    const timerMs = document.createElement('span');
+    timerMs.className = 'run-timer-ms';
+    timer.append(timerMain, timerMs);
 
     const info = document.createElement('div');
     info.className = 'run-info';
-    info.style.display = 'none';
 
-    this.container.append(timer, info);
+    // the timer sits in the middle of the hud's top bar, which also decides when it shows
+    this.gameHud.mountRunTimer(timer, info);
+    this.gameHud.setCombatMode(this.combatEnabled);
     return { timer, info };
   }
 
@@ -2351,9 +2362,7 @@ export class GameApp {
       strafeStats: this.readStrafeStats(),
       pingMs: this.multiplayer.getPingMs?.() ?? null,
     });
-    const showTimer = this.playing && this.runTimerAllowed && this.settings.showHud;
-    this.timerLabel.style.display = showTimer ? 'block' : 'none';
-    this.runInfoLabel.style.display = showTimer ? 'block' : 'none';
+    this.gameHud.setRunTimerVisible(this.playing && this.runTimerAllowed && this.settings.showHud);
 
     this.worldCamera.getWorldDirection(this.listenerForward);
     this.listenerUp.set(0, 1, 0).applyQuaternion(this.worldCamera.quaternion);
@@ -2497,6 +2506,9 @@ export class GameApp {
     }
     // let the map, lightmaps and a few frames settle before the capture
     await new Promise((resolve) => setTimeout(resolve, 1500));
+    if (shot.hudDemo) {
+      runHudDemo({ variant: shot.hudDemo, gameHud: this.gameHud, combatHud: this.combatHud, killFeed: this.killFeed, localId: this.multiplayer.getLocalId(), localName: this.localPlayerName });
+    }
     const info = this.renderer.info.render;
     (window as unknown as { __shotInfo?: unknown }).__shotInfo = { calls: info.calls, triangles: info.triangles };
     (window as unknown as { __shotReady?: boolean }).__shotReady = true;
