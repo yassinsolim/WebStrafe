@@ -26,7 +26,7 @@ const SESSION_KEY = 'webstrafe:session-id:v1';
  * melee/backstab, and fires carry the shooter's weapon. a p3 host would resolve
  * those differently, so p3 and p4 tabs must never share a room.
  */
-export const SUPABASE_PROTOCOL = 'p4';
+export const SUPABASE_PROTOCOL = 'p6';
 const PLAYER_STALE_MS = 8000;
 /** idle/paused clients only need to prove they are still here */
 const KEEPALIVE_MS = 1000;
@@ -69,6 +69,12 @@ interface WireState {
   b?: WireBot[];
   /** host clock time of the step that produced `b` */
   bt?: number;
+  /** pvp off (0); omitted means on */
+  pv?: 0;
+  /** own kills/deaths from the last host scoreboard */
+  sc?: [number, number];
+  /** room scoreboard [id, kills, deaths], only from the elected host */
+  sb?: Array<[string, number, number]>;
 }
 
 type CombatWireEvent =
@@ -97,9 +103,23 @@ interface RemoteRecord {
   hostEpoch: number | null;
   weapon: string | null;
   deadForMs: number | null;
+  /** opted into pvp; false = immune and harmless */
+  pvp: boolean;
+  /** kills/deaths this peer last saw for itself, seeds a new host */
+  score: { kills: number; deaths: number } | null;
   joinedAt: number;
   lastSeen: number;
 }
+
+/** room kills/deaths as published by the host */
+export interface RoomScore {
+  id: string;
+  kills: number;
+  deaths: number;
+}
+
+/** how often the host republishes the room scoreboard on its state */
+const SCOREBOARD_EVERY_MS = 2000;
 
 /**
  * Serverless multiplayer over Supabase Realtime broadcast + presence.
@@ -125,6 +145,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   public onConnectedChange: ((connected: boolean) => void) | null = null;
   /** fired when the room already holds MAX_ROOM_PLAYERS and this client backed out */
   public onRoomFull: (() => void) | null = null;
+  /** live room kills/deaths from the elected host (or our own sim while hosting) */
+  public onScoreboard: ((rows: RoomScore[]) => void) | null = null;
 
   private readonly localId: string;
   private channel: RealtimeChannel | null = null;
@@ -152,6 +174,10 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   private pendingCombat: CombatWireEvent[] = [];
   private readonly detachVisibility: (() => void) | null;
   private localWeapon: string | null = null;
+  private localPvp = true;
+  private roomScores: RoomScore[] = [];
+  private roomScoresKey = '';
+  private lastScoreboardSentAt = 0;
   /** Date.now() when the local player respawns, while dead */
   private localDeadUntil: number | null = null;
   /** our claim epoch while hosting, and the highest epoch seen in this room */
@@ -356,6 +382,38 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.broadcast('equip', { id: this.localId, weaponId });
   }
 
+  /**
+   * Opt in or out of pvp. Enforced by the host: off means immune and unable to
+   * damage anyone (players or bots). Goes out immediately.
+   */
+  setPvp(on: boolean): void {
+    if (this.localPvp === on) return;
+    this.localPvp = on;
+    this.cadence.flush();
+    this.broadcastState();
+  }
+
+  getPvp(): boolean {
+    return this.localPvp;
+  }
+
+  getRoomScores(): RoomScore[] {
+    return this.roomScores.map((r) => ({ ...r }));
+  }
+
+  private ownScore(): { kills: number; deaths: number } | null {
+    const row = this.roomScores.find((r) => r.id === this.localId);
+    return row ? { kills: row.kills, deaths: row.deaths } : null;
+  }
+
+  private setRoomScores(rows: RoomScore[]): void {
+    const key = JSON.stringify(rows);
+    if (key === this.roomScoresKey) return;
+    this.roomScoresKey = key;
+    this.roomScores = rows;
+    this.onScoreboard?.(this.getRoomScores());
+  }
+
   setRoomContext(context: RoomContext | null): void {
     this.roomContext = context;
     // eligibility rides on state, tell the room right away
@@ -539,6 +597,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         t: this.localState.t,
         weapon: this.localWeapon ?? undefined,
         deadForMs: this.localDeadUntil !== null ? Math.max(0, this.localDeadUntil - now) : undefined,
+        pvp: this.localPvp,
+        score: this.ownScore() ?? undefined,
         combatReady: this.localCombatReady,
         yaw: this.localState.yaw,
         pitch: this.localState.pitch,
@@ -555,6 +615,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
           t: record.t ?? undefined,
           weapon: record.weapon ?? undefined,
           deadForMs: record.deadForMs ?? undefined,
+          pvp: record.pvp,
+          score: record.score ?? undefined,
           combatReady: record.combatReady,
           yaw: record.state.yaw,
           pitch: record.state.pitch,
@@ -566,6 +628,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     while (this.hostAccumulatorMs >= HOST_STEP_MS) {
       this.hostAccumulatorMs -= HOST_STEP_MS;
       this.botRows = this.hostSim.tick(HOST_STEP_MS);
+      this.setRoomScores(this.hostSim.scoreboard());
       stepped = true;
     }
     if (stepped) {
@@ -606,6 +669,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (this.hostSim) payload.h = this.hostEpoch;
     if (this.localWeapon) payload.w = this.localWeapon;
     if (this.localDeadUntil !== null) payload.d = Math.max(0, Math.round(this.localDeadUntil - now));
+    if (!this.localPvp) payload.pv = 0;
+    const own = this.ownScore();
+    if (own) payload.sc = [own.kills, own.deaths];
+    if (this.hostSim && now - this.lastScoreboardSentAt >= SCOREBOARD_EVERY_MS) {
+      payload.sb = this.roomScores.slice(0, 16).map((r) => [r.id, r.kills, r.deaths] as [string, number, number]);
+      this.lastScoreboardSentAt = now;
+    }
     if (this.hostSim && this.botRows.length > 0) {
       payload.b = this.botRows.map((row) => ({
         id: row.id,
@@ -648,6 +718,14 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (record.hostEpoch !== null) this.maxEpochSeen = Math.max(this.maxEpochSeen, record.hostEpoch);
     record.weapon = typeof p.w === 'string' ? p.w : record.weapon;
     record.deadForMs = typeof p.d === 'number' && Number.isFinite(p.d) ? p.d : null;
+    const wasPvp = record.pvp;
+    record.pvp = p.pv !== 0;
+    if (Array.isArray(p.sc) && p.sc.length === 2) {
+      record.score = { kills: Number(p.sc[0]) || 0, deaths: Number(p.sc[1]) || 0 };
+    }
+    if (Array.isArray(p.sb) && p.id === this.electedHostId() && !this.hostSim) {
+      this.setRoomScores(parseScores(p.sb));
+    }
     if (Array.isArray(p.s) && p.s.length === 8 && (record.t === null || p.t > record.t)) {
       record.state = unpack(p.s);
       record.t = p.t;
@@ -682,6 +760,10 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
 
     if (before !== `${record.eligibility}|${record.hostEpoch}`) {
       this.updateHostRole();
+    }
+    if (wasPvp !== record.pvp) {
+      // pvp changes go out right away so the host enforces them without a gap
+      this.cadence.flush();
     }
     this.emitSnapshot();
   }
@@ -840,6 +922,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         velocity: this.localState.velocity,
         yaw: this.localState.yaw,
         pitch: this.localState.pitch,
+        pvp: this.localPvp,
       });
     }
     for (const [id, record] of this.remotes) {
@@ -856,17 +939,30 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         pitch: record.state.pitch,
         t: record.t ?? undefined,
         clock: id,
+        pvp: record.pvp,
       });
     }
 
     if (now - this.botRowsAt <= PLAYER_STALE_MS) {
       for (const bot of this.botRows) {
-        players.push({ ...bot, t: this.botRowsT, clock: this.botRowsClock });
+        players.push({ ...bot, t: this.botRowsT, clock: this.botRowsClock, pvp: true });
       }
     }
 
     this.onSnapshot({ mapId: this.activeMapId, players, serverTimeMs: now });
   }
+}
+
+function parseScores(raw: unknown[]): RoomScore[] {
+  const out: RoomScore[] = [];
+  for (const row of raw.slice(0, 16)) {
+    if (!Array.isArray(row) || typeof row[0] !== 'string') continue;
+    const kills = Number(row[1]);
+    const deaths = Number(row[2]);
+    if (!Number.isFinite(kills) || !Number.isFinite(deaths)) continue;
+    out.push({ id: row[0], kills: Math.max(0, Math.floor(kills)), deaths: Math.max(0, Math.floor(deaths)) });
+  }
+  return out;
 }
 
 function newRecord(name: string, model: PlayerModel, now: number): RemoteRecord {
@@ -880,6 +976,8 @@ function newRecord(name: string, model: PlayerModel, now: number): RemoteRecord 
     hostEpoch: null,
     weapon: null,
     deadForMs: null,
+    pvp: true,
+    score: null,
     // unknown join time sorts last, so an unseen peer never bumps a seated one
     joinedAt: Number.MAX_SAFE_INTEGER,
     lastSeen: now,

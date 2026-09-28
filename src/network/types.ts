@@ -24,6 +24,8 @@ export interface MultiplayerSnapshotPlayer {
   t?: number;
   /** Which clock `t` is in: 'server', or the sending peer id in Supabase mode. */
   clock?: string;
+  /** opted into pvp; undefined counts as on */
+  pvp?: boolean;
 }
 
 export interface MultiplayerSnapshot {

@@ -102,6 +102,10 @@ export interface MultiplayerTransport {
   onConnectedChange: ((connected: boolean) => void) | null;
   /** set by transports with a room size limit; fired when this client was turned away */
   onRoomFull?: (() => void) | null;
+  /** live room kills/deaths, published by the authority */
+  onScoreboard?: ((rows: Array<{ id: string; kills: number; deaths: number }>) => void) | null;
+  /** opt in or out of pvp; transports without a toggle treat everyone as on */
+  setPvp?(on: boolean): void;
 
   connect(): void;
   disconnect(): void;

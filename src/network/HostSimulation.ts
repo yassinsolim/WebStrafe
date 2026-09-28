@@ -37,6 +37,16 @@ export interface HostHuman {
   weapon?: string;
   /** set while the player is dead: ms until their respawn is due */
   deadForMs?: number;
+  /** opted into pvp; undefined counts as on (older peers, the ws server) */
+  pvp?: boolean;
+  /** kills and deaths as last published by any host, seeds a new host's tally */
+  score?: { kills: number; deaths: number };
+}
+
+export interface HostScore {
+  id: string;
+  kills: number;
+  deaths: number;
 }
 
 export interface HostFireLag {
@@ -108,6 +118,8 @@ export class HostSimulation {
   private readonly humanViews = new Map<string, { yaw: number; pitch: number }>();
   /** latest weapon each human reported in their state */
   private readonly humanWeapons = new Map<string, WeaponId>();
+  /** authoritative kills/deaths for this room, published on the host's state */
+  private readonly scores = new Map<string, { kills: number; deaths: number }>();
   /** maps each remote human's clock onto host time, for knife cooldowns */
   private readonly humanClocks = new Map<string, SourceClock>();
   private shotSequence = 1;
@@ -172,6 +184,15 @@ export class HostSimulation {
           this.humanPausedAtMs.set(h.id, now);
         }
       }
+      if (isNew && h.score && !this.scores.has(h.id)) {
+        this.scores.set(h.id, { kills: clampScore(h.score.kills), deaths: clampScore(h.score.deaths) });
+      }
+      const pvp = h.pvp !== false;
+      if (!isNew && this.arena.isPvp(h.id) !== pvp) {
+        // bots drop a target that just went peaceful
+        this.resetBotEngagement();
+      }
+      this.arena.setPvp(h.id, pvp);
       if (isWeaponId(h.weapon)) {
         this.humanWeapons.set(h.id, h.weapon);
       }
@@ -520,6 +541,7 @@ export class HostSimulation {
       });
     }
     if (outcome.death) {
+      this.recordKill(outcome.death.killerId, outcome.death.victimId);
       this.emit.death(outcome.death);
     }
   }
@@ -544,11 +566,29 @@ export class HostSimulation {
     return tuple(this.spawn.position);
   }
 
+  private recordKill(killerId: string, victimId: string): void {
+    const bump = (id: string, field: 'kills' | 'deaths') => {
+      const score = this.scores.get(id) ?? { kills: 0, deaths: 0 };
+      score[field] += 1;
+      this.scores.set(id, score);
+    };
+    bump(victimId, 'deaths');
+    if (killerId && killerId !== victimId) bump(killerId, 'kills');
+  }
+
+  /** Room kills/deaths for everyone this host has seen, best first. */
+  scoreboard(): HostScore[] {
+    return [...this.scores.entries()]
+      .map(([id, s]) => ({ id, kills: s.kills, deaths: s.deaths }))
+      .sort((a, b) => b.kills - a.kills || a.deaths - b.deaths || (a.id < b.id ? -1 : 1));
+  }
+
   private livingHumanPositions(nowMs: number): BotTargetCandidate[] {
     const out: BotTargetCandidate[] = [];
     for (const [id, pos] of this.humanPositions) {
       if (
         this.humanCombatReady.get(id)
+        && this.arena.isPvp(id)
         && this.arena.isAlive(id)
         && !this.arena.isSpawnProtected(id, nowMs)
       ) {
@@ -568,6 +608,10 @@ export class HostSimulation {
 
 function tuple(v: Vector3): [number, number, number] {
   return [v.x, v.y, v.z];
+}
+
+function clampScore(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(9999, Math.floor(value))) : 0;
 }
 
 function isWeaponId(value: unknown): value is WeaponId {

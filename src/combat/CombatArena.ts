@@ -144,6 +144,11 @@ interface ArenaPlayer {
   eyeHeight: number;
   /** Damage is ignored until this time (spawn protection). 0 = unprotected. */
   spawnProtectedUntilMs: number;
+  /**
+   * opted into pvp. a player with it off can't be hit and can't hit anyone,
+   * so peaceful surfers are never interrupted. bots are always on.
+   */
+  pvp: boolean;
 }
 
 interface RewoundTarget {
@@ -188,7 +193,18 @@ export class CombatArena {
       positionHistory: [],
       eyeHeight,
       spawnProtectedUntilMs: 0,
+      pvp: true,
     });
+  }
+
+  /** Opt a player in or out of pvp (see ArenaPlayer.pvp). */
+  setPvp(id: string, on: boolean): void {
+    const p = this.players.get(id);
+    if (p) p.pvp = on;
+  }
+
+  isPvp(id: string): boolean {
+    return this.players.get(id)?.pvp ?? false;
   }
 
   removePlayer(id: string): void {
@@ -560,9 +576,13 @@ export class CombatArena {
       ? observedAtMs
       : null;
     const targets: RewoundTarget[] = [];
+    // pvp is opt-in on both ends: a peaceful shooter hits nothing and a
+    // peaceful target is invisible to every shot and swing
+    if (!shooter.pvp) return targets;
     for (const other of this.players.values()) {
       if (other.id === shooter.id) continue;
       if (other.mapId !== shooter.mapId) continue;
+      if (!other.pvp) continue;
       if (!other.combat.alive) continue;
       if (other.spawnProtectedUntilMs > nowMs) continue;
       const requested = targetTimes?.[other.id];

@@ -139,7 +139,7 @@ const arenaOf = (p: SupabaseMultiplayer) => (p as any).hostSim.arena;
 const statesFrom = (bus: FakeBus, id: string, since = 0) =>
   bus.sent.filter((m) => m.from === id && m.event === 'st' && m.at >= since).map((m) => m.payload);
 
-describe('SupabaseMultiplayer (p4 protocol)', () => {
+describe('SupabaseMultiplayer (p6 protocol)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
@@ -412,5 +412,104 @@ describe('SupabaseMultiplayer (p4 protocol)', () => {
     tickAll(peers, 5000);
     expect(bus.events / 5).toBeLessThan(SUPABASE_FREE_EVENTS_PER_SEC);
     for (const p of peers) p.disconnect();
+  });
+
+  describe('pvp', () => {
+    function stabRoom(hostPvp: boolean, guestPvp: boolean) {
+      const bus = new FakeBus();
+      const host = makePeer(bus, 'p_a');
+      const guest = makePeer(bus, 'p_b');
+      const hits: unknown[] = [];
+      guest.onHit = (e) => hits.push(e);
+      for (const p of [host, guest]) {
+        p.join('map1', 'Player', 'terrorist');
+        p.setRoomContext({
+          collisionWorld: new CollisionWorld(),
+          spawn: { position: new Vector3(0, 0, 0), yawDeg: 0 },
+          botCount: 0,
+        });
+        p.setCombatReady(true);
+      }
+      host.setPvp(hostPvp);
+      guest.setPvp(guestPvp);
+      const step = 1000 / 128;
+      for (let t = 0; t < 4200; t += step) {
+        vi.advanceTimersByTime(step);
+        const now = Date.now();
+        host.sendState({ position: [0, 0, -1.1], velocity: [0, 0, 0], yaw: 0, pitch: 0, t: now });
+        guest.sendState({ position: [0, 0, 0], velocity: [0, 0, 0], yaw: 0, pitch: 0, t: now });
+      }
+      return { bus, host, guest, hits };
+    }
+
+    it('both opted in: the stab lands', () => {
+      const { host, guest, hits } = stabRoom(true, true);
+      guest.sendFire([0, 1.6, 0], [0, 0, -1], undefined, 'secondary');
+      vi.advanceTimersByTime(150);
+      expect(hits).toHaveLength(1);
+      host.disconnect();
+      guest.disconnect();
+    });
+
+    it('a peaceful host is immune to a pvp guest, enforced by the host sim', () => {
+      const { host, guest, hits } = stabRoom(false, true);
+      guest.sendFire([0, 1.6, 0], [0, 0, -1], undefined, 'secondary');
+      vi.advanceTimersByTime(150);
+      expect(hits).toHaveLength(0);
+      expect(arenaOf(host).getHealth('p_a')).toBe(100);
+      host.disconnect();
+      guest.disconnect();
+    });
+
+    it('a peaceful guest cannot damage anyone, even if its client sends the swing', () => {
+      const { host, guest, hits } = stabRoom(true, false);
+      expect(arenaOf(host).isPvp('p_b')).toBe(false);
+      guest.sendFire([0, 1.6, 0], [0, 0, -1], undefined, 'secondary');
+      vi.advanceTimersByTime(150);
+      expect(hits).toHaveLength(0);
+      host.disconnect();
+      guest.disconnect();
+    });
+
+    it('carries the flag on state (pv=0 only when off) and into snapshot rows', () => {
+      const { bus, host, guest } = stabRoom(true, false);
+      expect(statesFrom(bus, 'p_b').at(-1).pv).toBe(0);
+      expect(statesFrom(bus, 'p_a').at(-1).pv).toBeUndefined();
+      let rows: any[] = [];
+      host.onSnapshot = (snap) => { rows = snap.players; };
+      tickAll([host, guest], 200);
+      expect(rows.find((r) => r.id === 'p_b')?.pvp).toBe(false);
+      expect(rows.find((r) => r.id === 'p_a')?.pvp).toBe(true);
+      host.disconnect();
+      guest.disconnect();
+    });
+  });
+
+  it('publishes live room kills from the host, and a new host keeps them', () => {
+    const bus = new FakeBus();
+    const a = makePeer(bus, 'p_a');
+    const b = makePeer(bus, 'p_b');
+    const c = makePeer(bus, 'p_c');
+    for (const p of [a, b, c]) enter(p);
+    tickAll([a, b, c], JOIN_GRACE_MS + 1000);
+    expect(hosting(a)).toBe(true);
+    let seenByC: Array<{ id: string; kills: number; deaths: number }> = [];
+    c.onScoreboard = (rows) => { seenByC = rows; };
+    // two kills for b, recorded by the host's arena path
+    const sim = (a as any).hostSim;
+    sim.recordKill('p_b', 'p_c');
+    sim.recordKill('p_b', 'p_a');
+    tickAll([a, b, c], 2600);
+    expect(seenByC.find((r) => r.id === 'p_b')).toMatchObject({ kills: 2, deaths: 0 });
+    expect(seenByC.find((r) => r.id === 'p_c')).toMatchObject({ kills: 0, deaths: 1 });
+
+    // host leaves; the next host seeds from each player's own published score
+    a.disconnect();
+    tickAll([b, c], 5000);
+    const next = [b, c].find(hosting)!;
+    expect(next).toBeDefined();
+    expect(next.getRoomScores().find((r) => r.id === 'p_b')).toMatchObject({ kills: 2 });
+    b.disconnect();
+    c.disconnect();
   });
 });
