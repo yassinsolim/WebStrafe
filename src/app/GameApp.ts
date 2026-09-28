@@ -70,7 +70,13 @@ import { DEFAULT_ZOOM_SENSITIVITY_RATIO } from '../combat/Scope';
 import { ScopeOverlay } from '../ui/ScopeOverlay';
 import { isCombatEnabled } from '../combat/combatConfig';
 import { getWeapon, type WeaponId } from '../combat/weapons';
-import { DEFAULT_KNIFE_ID, getKnife, isKnifeId, type KnifeId } from '../combat/knives';
+import { DEFAULT_KNIFE_ID, getKnife, type KnifeId } from '../combat/knives';
+import {
+  defaultKnifeSelection,
+  loadKnifeSelection,
+  saveKnifeSelection,
+  type KnifeLoadoutSelection,
+} from '../cosmetics/finishes/selection';
 import { CollisionWorld } from '../world/CollisionWorld';
 import { deleteCustomMap, listCustomMaps } from '../world/CustomMapStore';
 import { MapLoader, type MapLoadReporter } from '../world/MapLoader';
@@ -160,6 +166,8 @@ export class GameApp {
   private crosshairSpreadRad = 0;
 
   private readonly viewmodel = new ViewmodelSystem();
+  /** knife model and finish, persisted */
+  private knifeSelection: KnifeLoadoutSelection = defaultKnifeSelection();
   private readonly muzzleScratch = new Vector3();
   private readonly shot: ShotRequest | null = parseShotRequest(window.location.search);
   private framePerf: FramePerf | null = null;
@@ -342,7 +350,9 @@ export class GameApp {
     this.selectedMapId = loadSelectedMapId(this.mapSources.keys(), fallbackMapId);
 
     this.loadout = defaultLoadout(cosmeticsManifest);
-    this.viewmodel.setKnife(loadKnifeStyle());
+    this.knifeSelection = loadKnifeSelection();
+    this.viewmodel.setKnifeFinish(this.knifeSelection);
+    this.viewmodel.setKnife(this.knifeSelection.knifeId);
     this.activeKnifeSoundProfile = this.getKnifeSoundProfileFromLoadout(this.loadout);
     this.knifeAudio.setProfile(this.activeKnifeSoundProfile);
     this.syncViewmodelMotionStyle();
@@ -371,7 +381,8 @@ export class GameApp {
       onNameChanged: (name) => this.applyPlayerName(name),
       onKnifeSelected: (knifeId) => {
         this.viewmodel.setKnife(knifeId);
-        saveKnifeStyle(knifeId);
+        this.knifeSelection = { ...this.knifeSelection, knifeId: this.viewmodel.getKnife() };
+        saveKnifeSelection(this.knifeSelection);
         this.showStatus(`Knife: ${getKnife(knifeId ?? DEFAULT_KNIFE_ID).name}`);
         this.syncHudKnifeName();
       },
@@ -2674,26 +2685,4 @@ function formatRunTime(totalMs: number): string {
   const minutePrefix = minutes > 0 ? `${minutes}:` : '';
   const secondText = minutes > 0 ? seconds.toString().padStart(2, '0') : seconds.toString();
   return `${minutePrefix}${secondText}.${ms.toString().padStart(3, '0')}`;
-}
-
-const KNIFE_STYLE_KEY = 'webstrafe:knife-style:v1';
-const LEGACY_KNIFE = 'legacy';
-
-/** Stored knife choice; defaults to the procedural karambit. */
-function loadKnifeStyle(): KnifeId | null {
-  try {
-    const raw = globalThis.localStorage?.getItem(KNIFE_STYLE_KEY);
-    if (raw === LEGACY_KNIFE) return null;
-    return isKnifeId(raw) ? raw : DEFAULT_KNIFE_ID;
-  } catch {
-    return DEFAULT_KNIFE_ID;
-  }
-}
-
-function saveKnifeStyle(id: KnifeId | null): void {
-  try {
-    globalThis.localStorage?.setItem(KNIFE_STYLE_KEY, id ?? LEGACY_KNIFE);
-  } catch {
-    // storage blocked, the choice just won't persist
-  }
 }
