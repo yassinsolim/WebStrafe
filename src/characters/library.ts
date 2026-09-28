@@ -86,7 +86,8 @@ export class CharacterLibrary {
       const extras = node.userData as Record<string, unknown>;
       if ((node as SkinnedMesh).isSkinnedMesh && typeof extras.slot === 'string') {
         lib.addPart(node as SkinnedMesh, extras);
-      } else if (node.name.startsWith('anchor.') && typeof extras.bone === 'string') {
+      } else if (typeof extras.kind === 'string' && typeof extras.bone === 'string' && typeof extras.set === 'string') {
+        // decal spots are empties; gltf loading strips the dots from their names, so go by extras
         lib.anchors.push({
           set: String(extras.set),
           kind: extras.kind === 'tag' ? 'tag' : 'emblem',

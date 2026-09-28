@@ -137,9 +137,9 @@ def add_anchor(anchor):
     y = y / max(np.linalg.norm(y), 1e-9)
     x = np.cross(y, z)
     R = np.stack([x, y, z], axis=1)
-    # three -> blender basis change for the rotation
+    # three -> blender basis change on both sides, the exporter undoes it the same way
     C = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=np.float64)
-    Rb = C @ R
+    Rb = C @ R @ C.T
     from mathutils import Matrix
 
     M = Matrix(((Rb[0, 0], Rb[0, 1], Rb[0, 2], 0), (Rb[1, 0], Rb[1, 1], Rb[1, 2], 0), (Rb[2, 0], Rb[2, 1], Rb[2, 2], 0), (0, 0, 0, 1)))

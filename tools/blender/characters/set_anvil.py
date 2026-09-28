@@ -189,7 +189,11 @@ def class_item(rig):
         seg = S.Box((0, 0, 0), ((w0 + w1) * 0.25, float(np.linalg.norm(b - a)) * 0.5 + 0.01, 0.006), 0.004).place(R, (a + b) * 0.5)
         cape = seg if cape is None else cape.su(seg, 0.01)
     # vertical folds, deeper towards the hem
-    cape = S.Displace(cape, lambda p: np.sin(p[:, 0] * 75.0 + 0.6) * np.clip((1.45 - p[:, 1]) / 0.5, 0.15, 1.0), 0.0045)
+    cape = S.Displace(
+        cape,
+        lambda p: np.sin(p[:, 0] * 75.0 + 0.6) * np.clip((1.45 - p[:, 1]) / 0.5, 0.15, 1.0) * np.clip((p[:, 1] - 0.655) / 0.05, 0.0, 1.0),
+        0.0045,
+    )
     shoulder = S.rounded_shell(S.Ellipsoid(rig.p("arm_upper_l") + (0.0, 0.03, -0.02), (0.1, 0.07, 0.12)), 0.01, 0.003)
     shoulder = shoulder.si(S.keep_side(rig.p("arm_upper_l") + (0, 0.0, 0), (-0.3, 1, 0)), 0.01)
     weights = lambda co: chain_weights(rig, co, ["cape_0", "cape_1", "cape_2", "cape_3"], "spine_3")  # noqa: E731

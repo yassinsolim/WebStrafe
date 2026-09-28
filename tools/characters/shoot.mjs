@@ -27,7 +27,19 @@ for (const job of jobs) {
   const file = job.slice(eq + 1);
   try {
     await page.goto(base + path, { timeout: 60000 });
-    await page.waitForFunction(() => window.__shotReady === true, null, { timeout: Number(process.env.TIMEOUT ?? 60000) });
+    if (path.includes('#wait=')) {
+      // pages without a ready flag (the menu): give them time, optionally click something first
+      await page.waitForTimeout(Number(path.split('#wait=')[1].split('&')[0]));
+      const click = path.includes('&click=') ? decodeURIComponent(path.split('&click=')[1]) : null;
+      if (click) {
+        for (const selector of click.split('|')) {
+          await page.click(selector, { timeout: 10000 });
+          await page.waitForTimeout(Number(process.env.CLICK_WAIT_MS ?? 1500));
+        }
+      }
+    } else {
+      await page.waitForFunction(() => window.__shotReady === true, null, { timeout: Number(process.env.TIMEOUT ?? 60000) });
+    }
     await page.waitForTimeout(Number(process.env.SETTLE_MS ?? 200));
     await page.screenshot({ path: join(outDir, file) });
     const info = await page.evaluate(() => window.__shotInfo ?? null);

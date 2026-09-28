@@ -107,6 +107,8 @@ export class ArmorCharacter {
       const mesh = new SkinnedMesh(undefined, this.material);
       mesh.name = `ArmorMesh:lod${level}`;
       mesh.frustumCulled = true;
+      // a live sun shadow on the lightmapped maps, where the renderer has shadows on
+      mesh.castShadow = true;
       this.meshes.push(mesh);
     }
     for (const name of [...CAPE, ...TAIL]) {
