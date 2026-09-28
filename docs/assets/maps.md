@@ -49,7 +49,7 @@ A build writes scratch files to `.blender-tmp/maps/<id>/` and then
 - `public/maps/<id>/collision.glb`: solid gameplay geometry only, one merged
   mesh, positions and indices, no materials, no meshopt (the node server parses it)
 - `public/maps/<id>/lightmap.ktx2`: 2048 px baked light atlas (ETC1S KTX2, srgb rgb plus linear alpha)
-- `public/maps/<id>/thumbnail.webp`: 480x270 menu card image (`thumbnailPath` in the manifest)
+- `public/maps/<id>/thumbnail.webp`: 480x270 menu card and loading screen image (`thumbnailPath` in the manifest), an in-game shot from `node tools/shots/thumbnails.mjs <dev url> [mapId]` (camera per map in its `VIEWS` table, `?shot=<id>&vm=0&cam=x,y,z`). Packaging only writes the Blender render for a map that has no thumbnail yet, or with `BLENDER_THUMB=1`
 - `public/maps/<id>/meta.json`: spawns, triggers, cvars, environment
 - `tools/blender/maps/layouts/<id>.json`: platform and ramp data the tests check against
 - `docs/screenshots/maps/<id>_overview.png` and `<id>_eye.png` (plus `<id>_arena.png`

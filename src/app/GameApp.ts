@@ -821,7 +821,7 @@ export class GameApp {
     this.updateStatusVisibility(time);
 
     this.mapEnvironment.update(frameDt, this.worldCamera);
-    const firstPerson = this.playing && this.debugCameraMode === 'firstPerson';
+    const firstPerson = this.playing && this.debugCameraMode === 'firstPerson' && this.shot?.viewmodel !== false;
     this.pipeline.render(
       this.worldScene,
       this.worldCamera,
@@ -2809,6 +2809,11 @@ export class GameApp {
         ((shot.yawDeg ?? 0) * Math.PI) / 180,
         ((shot.pitchDeg ?? 0) * Math.PI) / 180,
       );
+    }
+    if (shot.camera) {
+      this.debugCameraMode = 'freecam';
+      this.freecamPosition.set(...shot.camera);
+      this.freecamInitialized = true;
     }
     if (!shot.hud) {
       this.container.classList.add('shot-no-hud');
