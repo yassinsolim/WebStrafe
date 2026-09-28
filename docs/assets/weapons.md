@@ -3,11 +3,13 @@
 All of these models are original. The two firearms are built by committed
 Blender scripts from 2D outlines, lathes and booleans. The 20 knives are built
 in TypeScript at runtime. Nothing is imported: no Valve or Counter-Strike
-assets, no Sketchfab rigs, no downloaded meshes or textures. The designs follow
-real-world firearm and knife layouts (a heavy .50 gas pistol, a bolt-action
-magnum with a thumbhole stock, common knife styles), the same way any shooter
-models a real gun, but every vertex comes from code in this repo. The only
-texture maps are small normal maps generated in the scripts.
+assets, no Sketchfab rigs, no downloaded meshes. The designs follow real-world
+firearm and knife layouts (a heavy .50 gas pistol, a bolt-action magnum with a
+thumbhole stock, common knife styles), the same way any shooter models a real
+gun, but every vertex comes from code in this repo. The firearm textures are
+baked by the scripts. Three CC0 ambientCG maps (Scratches005, Metal009 and
+Plastic012B, downscaled in `tools/blender/weapons/textures/`, listed in
+`CREDITS.md`) feed the bake as scratch and micro roughness detail.
 
 Display names stay "AWP" and "Deagle".
 
@@ -17,20 +19,32 @@ Display names stay "AWP" and "Deagle".
 # firearms (blender 5.2 lts). --renders writes the preview pngs, omit it for a faster build
 blender -b --factory-startup --python-exit-code 1 -P tools/blender/weapons/build_deagle.py -- --renders .blender-tmp/weapons/final
 blender -b --factory-startup --python-exit-code 1 -P tools/blender/weapons/build_awp.py -- --renders .blender-tmp/weapons/final
-npx tsx tools/assets/optimize-glb.ts .blender-tmp/weapons/deagle_raw.glb public/viewmodels/v2/deagle.glb --texture-size 1024
-npx tsx tools/assets/optimize-glb.ts .blender-tmp/weapons/awp_raw.glb public/viewmodels/v2/awp.glb --texture-size 1024
+# optimize with png kept (--no-webp) so ktx2 encodes from lossless sources, then ktx2 last
+npx tsx tools/assets/optimize-glb.ts .blender-tmp/weapons/deagle_raw.glb public/viewmodels/v2/deagle.glb --texture-size 1024 --no-webp
+KTX2_UASTC_NORMALS=1 npx tsx tools/assets/ktx2-textures.ts public/viewmodels/v2/deagle.glb public/viewmodels/v2/deagle.glb
+npx tsx tools/assets/optimize-glb.ts .blender-tmp/weapons/awp_raw.glb public/viewmodels/v2/awp.glb --texture-size 1024 --no-webp
+npx tsx tools/assets/ktx2-textures.ts public/viewmodels/v2/awp.glb public/viewmodels/v2/awp.glb
 node tools/blender/weapons/compress_previews.mjs .blender-tmp/weapons/final docs/screenshots/weapons 1280
-npx vitest run tools/assets/weapons.test.ts
+npx vitest run tools/assets/weapons.test.ts tools/assets/budgets.test.ts
 
-# quick iteration: no ao bake, orthographic left/right/top/front + 3/4 + first person in .blender-tmp/weapons/
-# (the deagle also writes deagle_ref_right.png, a right side at 4 px per mm for holding against a photo)
+# quick iteration: no high poly or bake, flat materials, orthographic left/right/top/front + 3/4 + first person
+# in .blender-tmp/weapons/ (the deagle also writes deagle_ref_right.png, a right side at 4 px per mm)
 blender -b --factory-startup --python-exit-code 1 -P tools/blender/weapons/build_deagle.py -- --quick
 ```
 
-Without `--renders` a build with the AO bake takes about 10 to 15 s per weapon
-on the M5 (the vertex AO bake runs on the CPU). The preview renders (Cycles on
-Metal) add a few minutes. The export is deterministic, so rebuilding without
-script changes gives the same GLB.
+The ktx2 step must run last: running the optimizer again afterwards would
+re-encode the textures. The Deagle's normal map uses UASTC
+(`KTX2_UASTC_NORMALS=1`). With ETC1S the long flat barrel and slide faces
+broke into sawtooth streaks in game, because ETC1S can't hold the smooth
+normal gradients along thin uv islands. UASTC costs about 460 KB more and
+the file still fits under 1.5 MB. The AWP keeps ETC1S normals: with UASTC it
+came to 1,579 KB, over the budget, and in game its round and ribbed parts
+don't show the streaks the Deagle's long flats did.
+
+A full build (high poly, uv atlas and ten bake passes at 2048) takes about 5
+minutes per gun on the M5 when the machine is otherwise idle. The preview
+renders (Cycles on Metal) add a few more. `--size 1024` bakes faster for
+iteration. `--quick` skips the high poly and the bake and takes about 30 s.
 
 ## How the firearms are built
 
@@ -45,21 +59,57 @@ describes its gun.
   the barrel), lofts and lathes. Corners use real fillets in 2D. Exact
   booleans cut serrations, ports, rail slots, flutes, the magwell and screw
   recesses.
+- **Curves** get their segment counts from a chord tolerance instead of fixed
+  numbers: a fillet or lathe gets as many segments as it needs to stay within
+  0.05 mm (fillets) or 0.03 mm (lathes) of the true arc on the low poly (0.05
+  mm on the AWP's lathes, which keeps it near 40k triangles). So big radii
+  like the hood, the guard and the scope bells stop faceting, and 1 mm pins
+  stay cheap. Polygons of 8 sides or fewer (hex nuts) are left alone. The
+  grip is lofted through catmull-rom steps between the measured sections, so
+  the palm swell has no loft kinks.
 - **Edges** use an angle-limited bevel with hardened normals, so no box edge
-  is left raw. On metal parts the convex bevel faces get `mat_steel_worn`:
-  slightly brighter, lower roughness bare steel that reads as worn edges.
-  Concave bevel faces go back to the base finish, because a real finish
-  doesn't wear in inside corners.
-- **Ambient occlusion** is baked with Cycles into a corner colour attribute
-  `ao` and exported as `COLOR_0`. three.js multiplies it into the base
-  colour. The static body is baked with every part in place. The magazine is
-  baked on its own, so it doesn't look dirty when it drops out. Corner
-  colours are averaged over corners that share a vertex and normal, so the
-  AO doesn't split extra vertices (this cut the Deagle from 252 to 186 KB).
-- **Textures**: `mat_grip` (Deagle) and `mat_polymer_green_stipple` (AWP grip
-  and forend) carry a generated 256x256 pebble normal map on planar UVs. The
-  optimizer turns it into WebP (about 30 KB). Everything else is plain PBR
-  factors.
+  is left raw. Bevels of 0.8 mm and up get 2 segments on the low poly (2 mm
+  and up get 3). The Deagle's guard is bevelled 1.6 mm so it reads as a round
+  bar, and the AWP's stock 4.5 mm like moulded polymer. Creases under the
+  bevel angle between two wide faces are marked sharp, because a smooth
+  28 degree crease bends the normals across the whole face next to it.
+- **Two builds, one bake.** Each script builds the gun twice from the same
+  functions. The low poly ships. The high poly has 3x finer curves, 3 to 5
+  segment round bevels and detail that only lives in the bake: anti-glare
+  lines on the rear sight, ridges on the safety paddle, slide stop and
+  magazine release, the grip screw slots, hex sockets in the AWP's screws,
+  knurled turret caps, diopter ring and cheek wheel, white filled click marks
+  around the turret skirts, and shader bump for grip stipple and polymer or
+  rubber grain.
+- **UV atlas**: the low poly is triangulated, split into islands by smart
+  project (66 degrees), re-unwrapped with minimum stretch, scaled to equal
+  texel density and then weighted by distance from the eye at the idle pose
+  (with less for the Deagle grip rubber and magazine and the AWP stock), and
+  packed into one square for all parts.
+- **Bakes** (Cycles, selected to active, 0.3 mm cage, 0.8 mm reach, 2048
+  square) from the high poly onto the atlas: tangent space normal (OpenGL,
+  +Y), and emission passes for each finish's base colour, wear colour,
+  roughness, metalness and wear, grime and breakup strengths, a mask pass
+  (ambient occlusion over 12 mm against every part, convex edges from
+  occlusion inside the mesh, cavities from short range occlusion) and detail
+  passes (CC0 scratch, brushed steel and plastic roughness maps projected
+  triplanar in object space with the brushing along the bore, plus
+  procedural grunge and smudge noise). The low polys are hidden from rays so
+  only the high poly occludes. The magazine is baked on its own, so it
+  doesn't look dirty when it drops out.
+- **Compositing** (numpy, `compose_textures` in `wlib.py`): convex edges broken
+  up by noise wear through to the wear colour and roughness (bare steel on
+  nitride and anodising, polished edges on stainless, lighter scuffs on
+  polymer). Cavities get grime, scratches and smudges break up the
+  roughness, and a little AO goes into the base colour so crevices stay dark
+  under the direct lights. Empty texels are dilated from their neighbours.
+  Then everything is box filtered down to what ships: base colour 1024,
+  normal 1024 (renormalised), ORM 512 (R occlusion, G roughness, B
+  metalness).
+- **One material per gun** (`mat_deagle`, `mat_awp`), single sided, so each
+  moving part is one draw call. The GLB carries tangents from Blender's
+  mikktspace, so three.js shades the normal map in the frame it was baked
+  in. There is no vertex AO any more: it's in the ORM map.
 - **Moving parts are empties on the pivot with the mesh in a child named
   `<part>_mesh`.** `optimize-glb.ts` runs gltf-transform `meshopt()`. Inside
   it, `quantize()` folds a scale and offset into the matrix of every mesh
@@ -74,21 +124,36 @@ describes its gun.
   extras and then three.js `userData`. Directions and angles are in three.js
   axes.
 
-### Materials
+### LOD
 
-| material | used for |
-|----------|----------|
+There is only LOD0. Nothing but the first person viewmodel
+(`src/viewmodel/ViewmodelSystem.ts`) and the dev preview load these GLBs.
+Remote players carry the procedural knife, and the menu shows player models.
+A viewmodel always sits at the same distance from the camera, so a lower LOD
+would never be picked. If third person guns show up later, a `--simplify`
+pass in `optimize-glb.ts` on the same atlas would be the place to start.
+
+### Finishes
+
+These are the finishes in the build scripts (`W.finish(...)`). Each one drives
+the bake (base and wear colour, roughness, metalness, how much it wears, grime,
+roughness breakup, scratches and micro surface). They all end up in the one
+atlas material per gun, so the GLB only has `mat_deagle` or `mat_awp`.
+`--quick` builds still render them as flat materials.
+
+| finish | used for |
+|--------|----------|
 | `mat_stainless` | satin stainless: Deagle slide, barrel, rail, magazine (the default finish) |
 | `mat_stainless_frame` | Deagle frame, guard, beavertail and grip core (rougher satin, the second tone) |
 | `mat_sight_black` | Deagle front and rear sights, matte black so the dots read |
 | `mat_steel_dark` | black nitride: AWP receiver, barrel, brake, rail, bipod; the Deagle's slide, barrel, sights and magazine with `--finish black` |
 | `mat_gunmetal` | the Deagle frame with `--finish black` |
 | `mat_steel` | pins, screws, levers, safety, hammer, trigger, Deagle bolt head and rear plate, polished AWP bolt |
-| `mat_steel_worn` | convex bevel faces on metal parts |
-| `mat_grip` | Deagle raised stippled grip fields |
+| `mat_grip` | Deagle raised stippled grip fields (stipple baked from shader bump) |
 | `mat_polymer_green`, `mat_polymer_green_stipple` | AWP stock, cheek rest, stippled grip and forend panels |
 | `mat_aluminium` | AWP chassis rail, guard, magwell lip, rings, bipod mount, cheek wheel |
 | `mat_scope` | scope tube, turrets, saddle |
+| `mat_scope_knurl` | diopter ring and turret caps (same anodising, much less wear, since every knurl ridge counts as an edge) |
 | `mat_glass` | dark tinted domed lenses (opaque, so the tube never looks hollow) |
 | `mat_rubber`, `mat_polymer_black` | Deagle smooth grip rubber; AWP butt pad, eye cup, bipod feet, bolt knob |
 | `mat_sight_dot`, `mat_paint_white`, `mat_indicator`, `mat_paint_red`, `mat_brass` | sight dots, turret marks, AWP cocking indicator, Deagle fire dot, top round in each magazine |
@@ -141,17 +206,24 @@ the same scale and matched the outline to within 2 or 3 mm.
 - Size: 273 mm long, 160 mm tall (front sight to floorplate), 37 mm wide over
   the safety levers (the slide is 32 mm). The bore is 158 mm from the breech
   face to the muzzle.
-- Triangles: 16,406 (body 9,294, slide 5,274, hammer 554, trigger 200, mag
-  1,084). 14,478 vertices. The file is 244 KB optimized (760 KB raw). The
-  earlier model was 11,040 triangles and 186 KB.
+- Triangles: 28,278 (body 14,572, slide 10,254, hammer 1,312, trigger 396,
+  mag 1,744), 5 draw calls. The high poly it's baked from is 84,414. The
+  earlier flat shaded model was 16,406 triangles and 235 KB.
+- Textures: one atlas baked at 2048 and shipped as ktx2: base colour 1024
+  (etc1s), normal 1024 (uastc, see Rebuild), ORM 512 (etc1s). The atlas
+  averages 3.5 texels per mm at 2048, more on the slide and hammer, less on
+  the grip rubber and the magazine. The file is 1,314 KB (3.0 MB of gpu
+  texture memory once transcoded).
 - Finish: satin stainless by default, with a rougher satin frame, darker steel
   controls and matte black sights. `--finish black` builds the black nitride
   version. The black one read as a near black shape against the bright maps
   once the viewmodel took the world's light (a 0.03 reflectance metal
   reflects almost nothing), so stainless is the shipped finish.
-- Materials: the metals are metallic 0.6 to 1 at roughness 0.22 to 0.5. The
-  rubber is dielectric at roughness 0.62 (smooth) and 0.85 (stippled). None
-  of it is tuned to one environment map.
+- Finishes: the slide and barrel are satin stainless brushed along the bore
+  (roughness 0.28, polished to 0.16 on worn edges), the frame a rougher bead
+  blast (0.4). The rubber is dielectric at roughness 0.62 (smooth, with a
+  fine grain) and 0.85 (stippled). None of it is tuned to one environment
+  map.
 - Nodes: `deagle` (root), then `body` (static mesh), `slide`, `hammer`,
   `trigger`, `mag` (pivot empties with `_mesh` children), and the sockets.
 - The build prints a clearance check. It poses the hammer fired and the
@@ -227,8 +299,17 @@ Bolt-action magnum, laid out like a thumbhole-stock precision rifle:
 - Size: 1,185 mm long, 249 mm tall including the scope, 102 mm wide
   including the bolt knob. The barrel is 660 mm from the breech to the
   crown, and the brake adds 70 mm.
-- Triangles: 25,188 (body 22,404, bolt 1,728, trigger 208, mag 848). 24,208
-  vertices. The file is 365 KB optimized (1,214 KB raw).
+- Triangles: 39,222 (body 34,534, bolt 2,888, trigger 224, mag 1,576), 4
+  draw calls. The high poly it's baked from is 213,903. The earlier model
+  was 25,188 triangles and 356 KB.
+- Textures: one atlas baked at 2048, shipped as ktx2 etc1s: base colour 1024,
+  normal 1024, ORM 512. The atlas averages 1.8 texels per mm at 2048. The
+  eyepiece, turrets and action get up to 1.9 times that, and the stock
+  (beside and below the camera) and the brake far less. The file is
+  1,007 KB (3.0 MB of gpu texture memory).
+- Finishes: black nitride steel, anodised aluminium chassis and scope (worn
+  edges go to bare metal), a polished bolt, green polymer with a moulded grain
+  and stippled panels, and clean glass.
 - Nodes: `awp` (root), then `body`, `bolt`, `trigger`, `mag` (pivot empties
   with `_mesh` children), and the sockets.
 
@@ -376,8 +457,9 @@ Dev tools:
   - the size is within 10% of the target
   - the barrel points along -Z from the grip, and `socket_grip_r` tilts up
     the rake and sits at the origin
-  - the triangle budgets hold, and AO and `mat_*` materials are on every
-    primitive
+  - the triangle budgets hold (36k Deagle, 42k AWP)
+  - every primitive uses the one `mat_*` atlas material with base colour,
+    ORM, occlusion and normal textures, and carries uvs and tangents
   - the support hand and scope eye are placed correctly
 - `src/cosmetics/__tests__/ProceduralKnife.test.ts` checks:
   - sockets on all 20 knives
