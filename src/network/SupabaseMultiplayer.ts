@@ -28,8 +28,11 @@ const SESSION_KEY = 'webstrafe:session-id:v1';
  * flagged melee with the cs knife damage table and backstabs, hits carry
  * melee/backstab, and fires carry the shooter's weapon. a p3 host would resolve
  * those differently, so p3 and p4 tabs must never share a room.
+ * p6: hit capsules follow the cs2 hull (72 u standing, 54 u crouched, rounded
+ * ends at the feet and the top of the head) and states carry the crouch (`k`),
+ * so a p5 host resolves the same shot differently.
  */
-export const SUPABASE_PROTOCOL = 'p5';
+export const SUPABASE_PROTOCOL = 'p6';
 const PLAYER_STALE_MS = 8000;
 /** idle/paused clients only need to prove they are still here */
 const KEEPALIVE_MS = 1000;
@@ -87,7 +90,7 @@ interface WireFire {
   t: number;
   w?: string;
   melee?: AttackKind;
-  /** shooter's magazine before the shot; older p5 peers omit it */
+  /** shooter's magazine before the shot; peers from before p5 omit it */
   a?: number;
 }
 
