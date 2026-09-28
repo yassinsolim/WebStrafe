@@ -9,7 +9,57 @@
       "scenePath": "/maps/surf_prismline/scene.glb",
       "collisionPath": "/maps/surf_prismline/collision.glb",
       "metaPath": "/maps/surf_prismline/meta.json",
-      "thumbnailPath": "/maps/surf_prismline/thumbnail.webp"
+      "thumbnailPath": "/maps/surf_prismline/thumbnail.webp",
+      "modes": [
+        "surf"
+      ],
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "surf_lumen",
+      "name": "Lumen",
+      "author": "WebStrafe Team",
+      "source": "Original WebStrafe map",
+      "license": "MIT",
+      "scenePath": "/maps/surf_lumen/scene.glb",
+      "collisionPath": "/maps/surf_lumen/collision.glb",
+      "metaPath": "/maps/surf_lumen/meta.json",
+      "thumbnailPath": "/maps/surf_lumen/thumbnail.webp",
+      "modes": [
+        "surf"
+      ],
+      "difficulty": "beginner"
+    },
+    {
+      "id": "surf_cascade",
+      "name": "Cascade",
+      "author": "WebStrafe Team",
+      "source": "Original WebStrafe map",
+      "license": "MIT",
+      "scenePath": "/maps/surf_cascade/scene.glb",
+      "collisionPath": "/maps/surf_cascade/collision.glb",
+      "metaPath": "/maps/surf_cascade/meta.json",
+      "thumbnailPath": "/maps/surf_cascade/thumbnail.webp",
+      "modes": [
+        "surf"
+      ],
+      "difficulty": "intermediate"
+    },
+    {
+      "id": "surf_vanta",
+      "name": "Vanta",
+      "author": "WebStrafe Team",
+      "source": "Original WebStrafe map",
+      "license": "MIT",
+      "scenePath": "/maps/surf_vanta/scene.glb",
+      "collisionPath": "/maps/surf_vanta/collision.glb",
+      "metaPath": "/maps/surf_vanta/meta.json",
+      "thumbnailPath": "/maps/surf_vanta/thumbnail.webp",
+      "modes": [
+        "surf",
+        "combat"
+      ],
+      "difficulty": "advanced"
     },
     {
       "id": "bhop_emberdrift",
@@ -20,7 +70,11 @@
       "scenePath": "/maps/bhop_emberdrift/scene.glb",
       "collisionPath": "/maps/bhop_emberdrift/collision.glb",
       "metaPath": "/maps/bhop_emberdrift/meta.json",
-      "thumbnailPath": "/maps/bhop_emberdrift/thumbnail.webp"
+      "thumbnailPath": "/maps/bhop_emberdrift/thumbnail.webp",
+      "modes": [
+        "surf"
+      ],
+      "difficulty": "intermediate"
     },
     {
       "id": "aim_ochrecut",
@@ -31,7 +85,10 @@
       "scenePath": "/maps/aim_ochrecut/scene.glb",
       "collisionPath": "/maps/aim_ochrecut/collision.glb",
       "metaPath": "/maps/aim_ochrecut/meta.json",
-      "thumbnailPath": "/maps/aim_ochrecut/thumbnail.webp"
+      "thumbnailPath": "/maps/aim_ochrecut/thumbnail.webp",
+      "modes": [
+        "combat"
+      ]
     },
     {
       "id": "movement_test_scene",
@@ -41,7 +98,11 @@
       "license": "MIT",
       "scenePath": "/maps/movement_test_scene/scene.glb",
       "collisionPath": "/maps/movement_test_scene/collision.glb",
-      "metaPath": "/maps/movement_test_scene/meta.json"
+      "metaPath": "/maps/movement_test_scene/meta.json",
+      "modes": [
+        "surf",
+        "combat"
+      ]
     }
   ]
 }

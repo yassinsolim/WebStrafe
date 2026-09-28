@@ -115,6 +115,9 @@
       "side": "b"
     }
   ],
+  "modes": [
+    "combat"
+  ],
   "notes": "AWP and Deagle duel arena. Sniper nests at both ends, six spawns per side, bots start on side B.",
   "environment": {
     "sky": {

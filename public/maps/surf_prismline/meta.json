@@ -247,6 +247,10 @@
   "cvars": {
     "sv_airaccelerate": 100
   },
+  "modes": [
+    "surf"
+  ],
+  "difficulty": "intermediate",
   "notes": "Four surf stages, 10 ramps from 55 to 62 degrees. Falling under a stage teleports you to its start.",
   "environment": {
     "sky": {
