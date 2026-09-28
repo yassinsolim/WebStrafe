@@ -91,6 +91,8 @@ export interface LagCompensationInput {
   targetTimes?: Readonly<Record<string, number>>;
   /** shooter's own sample-clock time at the shot, for the origin check */
   shooterTimeMs?: number;
+  /** rounds the shooter's client had in the magazine before this shot */
+  clientAmmo?: number;
 }
 
 export interface MeleeOptions extends LagCompensationInput {
@@ -167,6 +169,9 @@ interface RewoundTarget {
  */
 export class CombatArena {
   private readonly players = new Map<string, ArenaPlayer>();
+  /** diagnostics: host copies of ammo corrected from a client, and fires refused */
+  public ammoCorrections = 0;
+  public rejectedFires = 0;
   private readonly spawnProtectionMs: number;
 
   constructor(options: CombatArenaOptions = {}) {
@@ -294,8 +299,13 @@ export class CombatArena {
     }
   }
 
-  equip(id: string, weaponId: WeaponId): void {
-    this.players.get(id)?.weapon.equip(weaponId);
+  equip(id: string, weaponId: WeaponId, nowMs = Date.now()): void {
+    this.players.get(id)?.weapon.equip(weaponId, nowMs);
+  }
+
+  /** Completes due reloads for everyone, so the arena's ammo follows real time. */
+  tickWeapons(nowMs: number): void {
+    for (const p of this.players.values()) p.weapon.update(nowMs);
   }
 
   reload(id: string, nowMs: number): boolean {
@@ -348,8 +358,14 @@ export class CombatArena {
       });
     }
 
+    // the client is the one that saw its reload finish; trust its count (capped)
+    // over a stale copy here instead of silently eating the shot
+    if (lag?.clientAmmo !== undefined && shooter.weapon.reconcileAmmo(lag.clientAmmo, nowMs)) {
+      this.ammoCorrections += 1;
+    }
     const fireResult = shooter.weapon.tryFire(nowMs);
     if (!fireResult.fired) {
+      this.rejectedFires += 1;
       return { fired: false };
     }
     const weapon = fireResult.weapon;

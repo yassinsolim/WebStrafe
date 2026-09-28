@@ -121,4 +121,67 @@ describe('WeaponController', () => {
     expect(wc.isReloading(1_100)).toBe(false);
     expect(wc.tryFire(1_100).fired).toBe(true);
   });
+
+  describe('reload then weapon switch', () => {
+    const empty = (wc: WeaponController, t0: number): number => {
+      let t = t0;
+      while (wc.getAmmo() > 0) {
+        wc.tryFire(t);
+        t += deagle.fireIntervalMs;
+      }
+      return t;
+    };
+
+    it('reload, switch, switch back, fire: a reload whose timer ran out survives the switch', () => {
+      const wc = new WeaponController('deagle');
+      const t = empty(wc, 0);
+      wc.reload(t);
+      // nobody calls update(); the switch comes well after the reload finished
+      const later = t + deagle.reloadMs + 500;
+      wc.equip('knife', later);
+      wc.equip('deagle', later + 400);
+      expect(wc.getAmmo()).toBe(deagle.magazine);
+      expect(wc.tryFire(later + 400 + deagle.fireIntervalMs).fired).toBe(true);
+    });
+
+    it('a reload interrupted early by a switch stays cancelled', () => {
+      const wc = new WeaponController('deagle');
+      const t = empty(wc, 0);
+      wc.reload(t);
+      wc.equip('knife', t + deagle.reloadMs / 2);
+      wc.equip('deagle', t + deagle.reloadMs * 2);
+      expect(wc.getAmmo()).toBe(0);
+      expect(wc.isReloading(t + deagle.reloadMs * 2)).toBe(false);
+      expect(wc.tryFire(t + deagle.reloadMs * 2).fired).toBe(false);
+    });
+  });
+
+  describe('reconcileAmmo', () => {
+    it('takes a higher client count, capped at a full magazine, and cancels a stale reload', () => {
+      const wc = new WeaponController('deagle');
+      let t = 0;
+      while (wc.getAmmo() > 0) { wc.tryFire(t); t += deagle.fireIntervalMs; }
+      wc.reload(t);
+      expect(wc.reconcileAmmo(99, t + 10)).toBe(true);
+      expect(wc.getAmmo()).toBe(deagle.magazine);
+      expect(wc.isReloading(t + 10)).toBe(false);
+    });
+
+    it('never lowers our count and does not skip the fire interval', () => {
+      const wc = new WeaponController('deagle');
+      expect(wc.tryFire(0).fired).toBe(true);
+      expect(wc.reconcileAmmo(2, 1)).toBe(false);
+      expect(wc.getAmmo()).toBe(deagle.magazine - 1);
+      wc.reconcileAmmo(deagle.magazine, 1);
+      expect(wc.tryFire(1).fired).toBe(false);
+    });
+
+    it('ignores melee and junk values', () => {
+      const knife = new WeaponController('knife');
+      expect(knife.reconcileAmmo(3, 0)).toBe(false);
+      const wc = new WeaponController('deagle');
+      expect(wc.reconcileAmmo(Number.NaN, 0)).toBe(false);
+      expect(wc.reconcileAmmo(-4, 0)).toBe(false);
+    });
+  });
 });

@@ -15,16 +15,24 @@ export interface BudgetOptions {
 }
 
 /**
- * Largest room the budget can serve: 80 / 6^2 = 2.2 Hz per client. At 7 the
- * 2 Hz floor would put a room at 98 events/s before any combat traffic, and
- * from 8 the floor alone passes the 100/s cap, so rooms stop at 6.
+ * Largest room the budget can serve: 64 / 6^2 = 1.8 Hz per client, 65 events/s
+ * of position traffic. At 7 the 1.8 Hz floor alone would be 88/s before any
+ * combat, so rooms stop at 6.
  */
 export const MAX_ROOM_PLAYERS = 6;
 
+/**
+ * Position traffic gets 64 of the 100 events/s. Fires and combat results ride
+ * on state messages but each shot still costs ~12 events (request to every peer,
+ * result to every peer), so a full room lands near 71/s at 2 shots/s and 85/s
+ * at 4 shots/s. Going lower barely helps heavy combat and costs interpolation.
+ * A full 6-player room runs at 1.8 Hz, which RemoteTimeline and the 1 s rewind
+ * window cover (556 ms interval, ~616 ms render delay).
+ */
 export const DEFAULT_BUDGET: BudgetOptions = {
-  budget: 80,
+  budget: 64,
   maxHz: 20,
-  minHz: 2,
+  minHz: 1.8,
 };
 
 /** Per-client state broadcast rate that keeps a room of `peers` inside the budget. */

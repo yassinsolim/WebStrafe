@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Vector3 } from 'three';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { HOST_STALE_MS, JOIN_GRACE_MS, SupabaseMultiplayer } from '../SupabaseMultiplayer';
+import { HOST_STALE_MS, JOIN_GRACE_MS, MAX_PENDING_FIRES, SupabaseMultiplayer } from '../SupabaseMultiplayer';
 import type { MultiplayerSnapshot } from '../types';
 import { CollisionWorld } from '../../world/CollisionWorld';
 import { MAX_ROOM_PLAYERS, SUPABASE_FREE_EVENTS_PER_SEC } from '../../netcode/RateBudget';
 import { RESPAWN_DELAY_MS } from '../../combat/CombatState';
+import { getWeapon } from '../../combat/weapons';
 
 // in-memory stand-in for supabase realtime: broadcast (self: false) + presence,
 // with a counter that bills events the way supabase does (sent + each delivery)
@@ -139,7 +140,7 @@ const arenaOf = (p: SupabaseMultiplayer) => (p as any).hostSim.arena;
 const statesFrom = (bus: FakeBus, id: string, since = 0) =>
   bus.sent.filter((m) => m.from === id && m.event === 'st' && m.at >= since).map((m) => m.payload);
 
-describe('SupabaseMultiplayer (p4 protocol)', () => {
+describe('SupabaseMultiplayer (p5 protocol)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
@@ -208,7 +209,8 @@ describe('SupabaseMultiplayer (p4 protocol)', () => {
       guest.sendState({ position: [0, 0, 0], velocity: [0, 0, 0], yaw: 0, pitch: 0, t: now });
     }
     guest.sendFire([0, 1.6, 0], [0, 0, -1], undefined, 'secondary');
-    vi.advanceTimersByTime(50);
+    // the stab rides the guest's next state, the result rides the host's
+    vi.advanceTimersByTime(120);
 
     expect(guestHits).toContainEqual(expect.objectContaining({
       shooterId: 'p_b',
@@ -412,5 +414,183 @@ describe('SupabaseMultiplayer (p4 protocol)', () => {
     tickAll(peers, 5000);
     expect(bus.events / 5).toBeLessThan(SUPABASE_FREE_EVENTS_PER_SEC);
     for (const p of peers) p.disconnect();
+  });
+
+  it('fires and combat results ride on state messages, not their own broadcasts', () => {
+    const bus = new FakeBus();
+    const host = makePeer(bus, 'p_a');
+    const guest = makePeer(bus, 'p_b');
+    enter(host);
+    enter(guest);
+    tickAll([host, guest], JOIN_GRACE_MS + 1000);
+    expect(host.isHosting()).toBe(true);
+    guest.sendEquip('deagle');
+    tickAll([host, guest], 300);
+    const since = Date.now();
+    guest.sendFire([0, 1.6, 0], [1, 0, 0], { targets: {} });
+    tickAll([host, guest], 300);
+    expect(bus.byEvent.get('fire') ?? 0).toBe(0);
+    expect(bus.byEvent.get('cb') ?? 0).toBe(0);
+    const carried = statesFrom(bus, 'p_b', since).filter((st) => Array.isArray(st.f));
+    expect(carried).toHaveLength(1);
+    expect(carried[0].f[0].dir).toEqual([1, 0, 0]);
+    // the host resolved it and the shot came back on the host's state
+    expect(statesFrom(bus, 'p_a', since).some((st) => Array.isArray(st.ev) && st.ev.some((e: any) => e.k === 'shot'))).toBe(true);
+    host.disconnect();
+    guest.disconnect();
+  });
+
+  it('a carried fire replaces a scheduled send instead of adding one', () => {
+    const run = (fireEveryMs: number | null) => {
+      const bus = new FakeBus();
+      const peers = ['p_a', 'p_b', 'p_c', 'p_d', 'p_e', 'p_f'].map((id) => makePeer(bus, id));
+      for (const p of peers) enter(p);
+      tickAll(peers, JOIN_GRACE_MS + 1000);
+      const since = Date.now();
+      let next = since;
+      const step = 1000 / 128;
+      for (let t = 0; t < 6000; t += step) {
+        vi.advanceTimersByTime(step);
+        const now = Date.now();
+        for (const [i, p] of peers.entries()) {
+          p.sendState({ position: [i, 0, now / 1000], velocity: [0, 0, 1], yaw: 0, pitch: 0, t: now });
+        }
+        if (fireEveryMs !== null && now >= next) {
+          peers[1].sendFire([0, 1.6, 0], [1, 0, 0], { targets: {} });
+          next += fireEveryMs;
+        }
+      }
+      const out = statesFrom(bus, 'p_b', since).length;
+      for (const p of peers) p.disconnect();
+      return out;
+    };
+    const quiet = run(null);
+    const firing = run(1500);
+    // 4 fires in 6 s at 1.8 Hz: each one moves a send earlier, it doesn't add a full one
+    expect(firing - quiet).toBeLessThanOrEqual(2);
+  });
+
+  it.each([
+    // [shots per second across the room, events/s ceiling]
+    [0, 70],
+    [2, 76],
+    [4, 88],
+  ])('a full room with bots at %i shots/s stays under %i events/s', (shotsPerSec, ceiling) => {
+    const bus = new FakeBus();
+    const peers = ['p_a', 'p_b', 'p_c', 'p_d', 'p_e', 'p_f'].map((id) => makePeer(bus, id));
+    for (const p of peers) {
+      enter(p);
+      p.sendEquip('deagle');
+    }
+    tickAll(peers, JOIN_GRACE_MS + 1000);
+    bus.events = 0;
+    const step = 1000 / 128;
+    let next = Date.now();
+    let shooter = 0;
+    for (let t = 0; t < 10_000; t += step) {
+      vi.advanceTimersByTime(step);
+      const now = Date.now();
+      for (const [i, p] of peers.entries()) {
+        p.sendState({ position: [i, 0, now / 1000], velocity: [0, 0, 1], yaw: 0, pitch: 0, t: now });
+      }
+      if (shotsPerSec > 0 && now >= next) {
+        peers[shooter % peers.length].sendFire([0, 1.6, 0], [1, 0, 0], { targets: {} });
+        shooter += 1;
+        next += 1000 / shotsPerSec;
+      }
+    }
+    expect(bus.events / 10).toBeLessThan(ceiling);
+    expect(bus.byEvent.get('fire') ?? 0).toBe(0);
+    expect(bus.byEvent.get('cb') ?? 0).toBe(0);
+    for (const p of peers) p.disconnect();
+  });
+
+  describe('ammo on the host', () => {
+    const shotsFrom = (bus: FakeBus, host: string, shooter: string, since: number) =>
+      statesFrom(bus, host, since).flatMap((st) => (Array.isArray(st.ev) ? st.ev : []))
+        .filter((e: any) => e.k === 'shot' && e.e.playerId === shooter);
+    const deagleMs = getWeapon('deagle').fireIntervalMs;
+    const fire = (p: SupabaseMultiplayer, ammo?: number) =>
+      p.sendFire([0, 1.6, 0], [1, 0, 0], { targets: {}, ...(ammo === undefined ? {} : { ammo }) });
+
+    it('a host with a stale empty magazine takes the client count instead of eating the shot', () => {
+      const bus = new FakeBus();
+      const host = makePeer(bus, 'p_a');
+      const guest = makePeer(bus, 'p_b');
+      enter(host);
+      enter(guest);
+      tickAll([host, guest], JOIN_GRACE_MS + 1000);
+      guest.sendEquip('deagle');
+      tickAll([host, guest], 300);
+      // the host's copy of the guest's deagle ran dry (a reload it never saw finish)
+      const magazine = getWeapon('deagle').magazine;
+      const weapon = arenaOf(host).players.get('p_b').weapon;
+      for (let i = 0; i < magazine; i += 1) weapon.tryFire(-1e9 + i * 1e6);
+      expect(arenaOf(host).getAmmo('p_b')).toBe(0);
+      const since = Date.now();
+      fire(guest, magazine);
+      tickAll([host, guest], deagleMs + 200);
+      expect(shotsFrom(bus, 'p_a', 'p_b', since)).toHaveLength(1);
+      expect(arenaOf(host).ammoCorrections).toBe(1);
+      expect(arenaOf(host).getAmmo('p_b')).toBe(magazine - 1);
+      host.disconnect();
+      guest.disconnect();
+    });
+
+    it('keeps guns firing across a host handoff mid-magazine', () => {
+      const bus = new FakeBus();
+      const a = makePeer(bus, 'p_a');
+      const b = makePeer(bus, 'p_b');
+      const c = makePeer(bus, 'p_c');
+      for (const p of [a, b, c]) enter(p);
+      tickAll([a, b, c], JOIN_GRACE_MS + 1000);
+      expect(hosting(a)).toBe(true);
+      c.sendEquip('deagle');
+      tickAll([a, b, c], 300);
+      const magazine = getWeapon('deagle').magazine;
+      let ammo = magazine;
+      const since = Date.now();
+      for (let i = 0; i < 3; i += 1) { fire(c, ammo); ammo -= 1; tickAll([a, b, c], deagleMs + 50); }
+      a.disconnect();
+      tickAll([b, c], 1500);
+      const newHost = [b, c].find(hosting)!;
+      expect(newHost).toBe(b);
+      for (let i = 0; i < 3; i += 1) { fire(c, ammo); ammo -= 1; tickAll([b, c], deagleMs + 50); }
+      expect(shotsFrom(bus, 'p_a', 'p_c', since)).toHaveLength(3);
+      expect(shotsFrom(bus, 'p_b', 'p_c', since)).toHaveLength(3);
+      b.disconnect();
+      c.disconnect();
+    });
+  });
+
+  it('a player turned away by a full room does not queue fires', () => {
+    const bus = new FakeBus();
+    const peers: SupabaseMultiplayer[] = [];
+    let turnedAway: SupabaseMultiplayer | null = null;
+    for (const id of ['p_a', 'p_b', 'p_c', 'p_d', 'p_e', 'p_f', 'p_g']) {
+      const p = makePeer(bus, id);
+      p.onRoomFull = () => { turnedAway = p; };
+      enter(p);
+      peers.push(p);
+      vi.advanceTimersByTime(50);
+    }
+    expect(turnedAway).not.toBeNull();
+    for (let i = 0; i < 200; i += 1) {
+      turnedAway!.sendFire([0, 1.6, 0], [1, 0, 0], { targets: {}, ammo: 7 });
+      vi.advanceTimersByTime(30);
+    }
+    expect((turnedAway as any).pendingFires.length).toBe(0);
+    for (const p of peers) p.disconnect();
+  });
+
+  it(`caps fires waiting for a carrier at ${MAX_PENDING_FIRES}`, () => {
+    const bus = new FakeBus();
+    const p = makePeer(bus, 'p_a');
+    // joined but never subscribed: nothing can carry the fires yet
+    (p as any).subscribed = false;
+    (p as any).channel = null;
+    for (let i = 0; i < 100; i += 1) p.sendFire([0, 1.6, 0], [1, 0, 0], { targets: {} });
+    expect((p as any).pendingFires.length).toBeLessThanOrEqual(MAX_PENDING_FIRES);
+    p.disconnect();
   });
 });
