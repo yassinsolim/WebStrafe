@@ -1,12 +1,14 @@
 import type { SourceCvars } from './types';
 
-// Units:
-// - Distance: meters (Three.js units)
-// - Time: seconds
-// - Speed: meters / second
-// Values are tuned for a Source-like feel under a 128 Hz simulation step.
+/** source units are inches */
+export const METRES_PER_UNIT = 0.0254;
+const U = METRES_PER_UNIT;
+
+// units: metres, seconds, metres / second. cs2 values are converted from source
+// units, see docs/movement-cs2.md for every value and where it comes from.
 export const defaultCvars: SourceCvars = {
-  sv_gravity: 19.0,
+  // cs2 sv_gravity 800 u/s^2
+  sv_gravity: 800 * U,
   sv_accelerate: 13.0,
   // typical cs bhop/surf server value. the 30 u/s air wishspeed cap below is
   // what keeps this from being too strong, gain only comes from synced turning.
@@ -16,7 +18,8 @@ export const defaultCvars: SourceCvars = {
   sv_friction: 5.2,
   sv_stopspeed: 2.4,
   sv_maxspeed: 9.5,
-  sv_jump_impulse: 5.4,
+  // cs2 sv_jump_impulse 301.99338 u/s = sqrt(2 * 800 * 57), a 57 u (1.45 m) jump
+  sv_jump_impulse: 301.99338 * U,
   sv_bhop_enabled: true,
   sv_autobhop_enabled: true,
   surf_min_angle_deg: 40,

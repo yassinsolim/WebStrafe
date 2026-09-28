@@ -54,7 +54,7 @@ describe('strafe stats', () => {
     const mc = runnerAt(9.5);
     let prevSide = 0;
     const jumps = finishJumps(mc, world, 3, (m, airTick) => {
-      const side = airTick % 70 < 35 ? 1 : -1;
+      const side = airTick % 96 < 48 ? 1 : -1;
       if (side === prevSide || prevSide === 0) {
         m.setView(headingYaw(m.getVelocity()), 0);
       }
@@ -66,7 +66,7 @@ describe('strafe stats', () => {
     for (const jump of jumps) {
       expect(jump.sync).toBe(100);
       expect(jump.strafes).toBe(2);
-      expect(jump.airTicks).toBe(70);
+      expect(jump.airTicks).toBe(96);
       expect(jump.maxSpeed).toBeGreaterThan(jump.takeoffSpeed);
     }
     expect(jumps[0].takeoffSpeed).toBe(9.5);
@@ -106,7 +106,7 @@ describe('strafe stats', () => {
     const mc = runnerAt(9.5);
     const [still] = finishJumps(mc, world, 1, () => input(1, true));
     expect(still.sync).toBe(0);
-    expect(still.airTicks).toBe(70);
+    expect(still.airTicks).toBe(96);
 
     // turning on every other tick only (like 64 fps at 128 tick) still reads 100
     const halfRate = runnerAt(9.5);

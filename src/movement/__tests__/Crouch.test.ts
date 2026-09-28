@@ -110,9 +110,9 @@ describe('crouch', () => {
     const vy = mc.getVelocity().y;
     mc.tick(DT, move(), world);
     expect(mc.getDuckAmount()).toBe(0);
-    // same head height after the swap, minus one tick of the jump arc
+    // same head height after the swap, minus one tick of the jump arc (half-step gravity)
     const headAfter = mc.getFeetPosition().y + STAND.height;
-    expect(headAfter - headBefore).toBeCloseTo((vy - defaultCvars.sv_gravity * DT) * DT, 9);
+    expect(headAfter - headBefore).toBeCloseTo((vy - defaultCvars.sv_gravity * DT * 0.5) * DT, 9);
   });
 
   it('standing up right above the floor waits for the landing', () => {

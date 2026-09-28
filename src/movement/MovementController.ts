@@ -255,8 +255,11 @@ export class MovementController {
         break;
     }
 
-    if (mode !== 'ground' || jumped) {
-      this.velocity.y -= this.cvars.sv_gravity * dt;
+    // source's StartGravity / FinishGravity: half the tick's gravity before the move
+    // and half after, so the arc is the exact parabola and a jump peaks at v^2 / 2g
+    const airborne = mode !== 'ground' || jumped;
+    if (airborne) {
+      this.velocity.y -= this.cvars.sv_gravity * dt * 0.5;
     }
 
     const preSlideVelocity = this.velocity.clone();
@@ -265,6 +268,9 @@ export class MovementController {
     let collisionSpeedAfter = this.velocity.length();
     const dropWarnRatio = 0.5;
     let collisionDropWarn = collisionSpeedBefore > 0.2 && collisionSpeedAfter < collisionSpeedBefore * dropWarnRatio;
+    if (airborne) {
+      this.velocity.y -= this.cvars.sv_gravity * dt * 0.5;
+    }
 
     groundProbe = world.queryGround(this.position, this.hull, GROUND_PROBE_DIST);
     contactPoint = groundProbe?.position.clone() ?? contactPoint;

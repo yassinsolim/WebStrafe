@@ -107,15 +107,15 @@ describe('air strafing with the 30 u/s air wishspeed cap', () => {
     });
     // the last tick run was jump 2's takeoff, everything before it is jump 1
     const airTicks = mc.getStrafeStats().last!.airTicks;
-    expect(airTicks).toBe(70);
+    expect(airTicks).toBe(96);
     expect(speeds).toHaveLength(airTicks + 1);
 
     for (let i = 0; i < airTicks; i += 1) {
       expect(speeds[i + 1] - speeds[i]).toBeCloseTo(maxTickGain(speeds[i]), 9);
     }
-    // 9.5 -> sqrt(9.5^2 + 70 * 0.762^2) = 11.44 m/s in one jump
+    // 9.5 -> sqrt(9.5^2 + 96 * 0.762^2) = 12.08 m/s in one jump
     expect(takeoffs[1]).toBeCloseTo(Math.sqrt(9.5 ** 2 + airTicks * W * W), 9);
-    expect(takeoffs[1]).toBeCloseTo(11.441, 3);
+    expect(takeoffs[1]).toBeCloseTo(12.083, 3);
   });
 
   it('a steady mouse turn with the key never beats the formula but gets most of it', () => {
@@ -132,13 +132,13 @@ describe('air strafing with the 30 u/s air wishspeed cap', () => {
       return strafe(1);
     });
 
-    expect(speeds).toHaveLength(71);
+    expect(speeds).toHaveLength(97);
     for (let i = 0; i + 1 < speeds.length; i += 1) {
       const gain = speeds[i + 1] - speeds[i];
       expect(gain).toBeGreaterThan(0);
       expect(gain).toBeLessThanOrEqual(maxTickGain(speeds[i]) + 1e-12);
     }
-    const ideal = Math.sqrt(9.5 ** 2 + 70 * W * W) - 9.5;
+    const ideal = Math.sqrt(9.5 ** 2 + 96 * W * W) - 9.5;
     const gained = takeoffs[1] - takeoffs[0];
     expect(gained).toBeLessThan(ideal);
     expect(gained).toBeGreaterThan(ideal * 0.85);
@@ -199,11 +199,12 @@ describe('air strafing with the 30 u/s air wishspeed cap', () => {
     //   tick (see the test above).
     // - autobhop jumps on the landing tick, and the jump tick runs air accel, so the chain
     //   has no ground ticks and no friction at all.
-    // - air ticks per jump P come from the arc: vy0 = 5.4, g = 19, dt = 1/128. after k ticks
-    //   y_k = dt * (5.4 k - g dt k (k + 1) / 2), and the landing snap (feet within 0.08 m)
-    //   first catches it at k = 70 (y_69 = 0.110, y_70 = 0.071), so P = 70.
-    // - v_10 = sqrt(9.5^2 + 10 * 70 * 0.762^2) = sqrt(90.25 + 406.45) = 22.29 m/s.
-    // - one tick either way on the landing (P = 69..71) gives the range [22.15, 22.42].
+    // - air ticks per jump P come from the arc: vy0 = 7.67 (301.99 u/s), g = 20.32 (800 u/s^2),
+    //   dt = 1/128. gravity is split in halves around the move, so after k ticks the feet are
+    //   on the exact parabola y_k = vy0 k dt - g (k dt)^2 / 2, and the landing snap (feet
+    //   within 0.08 m) first catches it at k = 96 (y_95 = 0.097, y_96 = 0.038), so P = 96.
+    // - v_10 = sqrt(9.5^2 + 10 * 96 * 0.762^2) = sqrt(90.25 + 557.42) = 25.45 m/s.
+    // - one tick either way on the landing (P = 95..97) gives the range [25.33, 25.57].
     const world = flatWorld();
     const ideal = runnerAt(9.5);
     const { takeoffs } = runJumps(ideal, world, 10, (m) => {
@@ -211,9 +212,9 @@ describe('air strafing with the 30 u/s air wishspeed cap', () => {
       return strafe(1);
     });
     const v10 = takeoffs[10];
-    expect(v10).toBeGreaterThan(22.15);
-    expect(v10).toBeLessThan(22.42);
-    expect(v10).toBeCloseTo(Math.sqrt(9.5 ** 2 + 700 * W * W), 6);
+    expect(v10).toBeGreaterThan(25.33);
+    expect(v10).toBeLessThan(25.57);
+    expect(v10).toBeCloseTo(Math.sqrt(9.5 ** 2 + 960 * W * W), 6);
     expect(ideal.getStrafeStats().chain).toBe(11);
 
     // same chain, same key, view never moves: one tick of gain on jump 1 and then nothing

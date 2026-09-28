@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { Box3, Texture, Vector3, type Mesh } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { MovementController } from '../../movement/MovementController';
+import { defaultCvars } from '../../movement/cvars';
 import type { CollisionWorld } from '../CollisionWorld';
 import { MapTriggers, sanitizeTriggers } from '../MapTriggers';
 import { applyLightmaps, resolveEnvironment, resolveMapAssetPath } from '../MapEnvironment';
@@ -196,8 +197,8 @@ describe('bhop_emberdrift course', () => {
   });
 
   it('has a platform top under every jump and every one is reachable', () => {
-    const g = 19;
-    const vz = 5.4;
+    const g = defaultCvars.sv_gravity;
+    const vz = defaultCvars.sv_jump_impulse;
     for (let i = 1; i < layout.platforms.length; i += 1) {
       const a = layout.platforms[i - 1];
       const b = layout.platforms[i];
@@ -250,22 +251,24 @@ describe('bhop_emberdrift course', () => {
     let next = 0;
     let landed = 0;
     let side = 1;
+    let hopping = false;
+    const { sv_gravity: g, sv_jump_impulse: vz } = player.getCvars();
     for (let t = 0; t < 128 * 8 && next < targets.length; t += 1) {
       const feet = player.getFeetPosition();
       const goal = targets[next];
       const to = goal.clone().sub(feet).setY(0);
-      // run up facing the platform, then hop holding W and steer the wish direction like a mouse strafe.
-      // with the 30 u/s air cap that's the only way to turn, gain or lose speed in the air, so the bot
-      // turns toward the platform and gains or bleeds speed so it lands on the centre
+      // run up facing the platform and start hopping once a flat jump at this speed reaches its
+      // centre, then hold W and steer the wish direction like a mouse strafe. with the 30 u/s air
+      // cap that's the only way to turn, gain or lose speed in the air, so the bot turns toward
+      // the platform and gains or bleeds speed so it lands on the centre
       let yaw = Math.atan2(-to.x, -to.z);
       const vel = player.captureState().velocity;
       const speed = Math.hypot(vel[0], vel[2]);
-      const hopping = t >= 40;
+      hopping ||= to.length() <= speed * ((2 * vz) / g);
       if (hopping && speed > 1 && !player.getDebugState().grounded && feet.y > goal.y - 1) {
         const velYaw = Math.atan2(-vel[0], -vel[2]);
         const err = Math.atan2(Math.sin(yaw - velYaw), Math.cos(yaw - velYaw));
         // speed that lands on the platform centre in the air time left
-        const g = player.getCvars().sv_gravity;
         const drop = Math.max(0, vel[1] * vel[1] + 2 * g * (feet.y - goal.y));
         const airLeft = (vel[1] + Math.sqrt(drop)) / g;
         const want = to.length() / Math.max(airLeft, 0.05);
