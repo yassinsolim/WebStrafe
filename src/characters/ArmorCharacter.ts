@@ -22,11 +22,16 @@ import { ALL_JOINTS, buildSkeleton, CAP_HELPERS } from './skeleton';
 
 export type CharacterDetail = 'high' | 'medium' | 'low';
 
-/** camera distances where lod 1 and lod 2 take over, per detail setting */
-const LOD_DISTANCES: Record<CharacterDetail, [number, number]> = {
+/**
+ * camera distances where lod 1 and lod 2 take over, per detail setting (the
+ * graphics preset). low and balanced drop to the lighter lods early so six
+ * players cost about what main's soldiers did on weak and software gl
+ * (docs/PERFORMANCE.md, characters section).
+ */
+export const LOD_DISTANCES: Record<CharacterDetail, [number, number]> = {
   high: [9, 24],
-  medium: [5, 14],
-  low: [2.5, 7],
+  medium: [3, 9],
+  low: [1.5, 4],
 };
 let detail: CharacterDetail = 'high';
 const live = new Set<ArmorCharacter>();

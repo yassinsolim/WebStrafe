@@ -32,6 +32,9 @@ export interface ArmsSurface {
   joints: Map<string, Vector3>;
 }
 
+/** forearm length of the first-person arms rig (forearm to hand joint, tools/blender/arms) */
+export const FP_FOREARM_M = 0.26;
+
 /** how far plates stay off the sleeve and glove, metres */
 export const FP_CLEARANCE = 0.0035;
 
@@ -192,7 +195,8 @@ function rigidIfSmall(position: Float32Array, skinIndex: Uint16Array, skinWeight
   }
 }
 
-const SEGMENT_OF: Record<string, Segment> = { arm_upper: 'upper', arm_lower: 'lower', hand: 'hand', finger: 'hand' };
+// the elbow cap helper sits at the forearm's pivot with the forearm's bind frame
+const SEGMENT_OF: Record<string, Segment> = { arm_upper: 'upper', arm_lower: 'lower', elbow: 'lower', hand: 'hand', finger: 'hand' };
 
 function segmentOfJoint(name: string): { segment: Segment; side: 'l' | 'r' } | null {
   const side = name.endsWith('_l') ? 'l' : name.endsWith('_r') ? 'r' : null;
@@ -208,7 +212,15 @@ function segmentOfJoint(name: string): { segment: Segment; side: 'l' | 'r' } | n
  * arms. `body` is the third-person undersuit, used for the forearm radius.
  * returns new parts whose skin indices point into the arms skeleton.
  */
-export function transplantArms(pieces: PartMesh[], body: PartMesh[], arms: ArmsSurface): PartMesh[] {
+export function transplantArms(pieces: PartMesh[], body: PartMesh[], armsIn: ArmsSurface): PartMesh[] {
+  // the viewmodel's bind space can be in any unit: work in metres (the arms rig's forearm is
+  // FP_FOREARM_M long), so the grid cells, clearance and piece sizes below mean what they say
+  const unit = armsIn.joints.get('forearm_r')!.distanceTo(armsIn.joints.get('hand_r')!) / FP_FOREARM_M;
+  const arms: ArmsSurface = {
+    ...armsIn,
+    position: armsIn.position.map((v) => v / unit),
+    joints: new Map([...armsIn.joints].map(([k, v]) => [k, v.clone().divideScalar(unit)])),
+  };
   const bind = new Map(bindPose(ALL_JOINTS).map((j) => [j.name, j.position]));
   const jointNames = ALL_JOINTS.map((j) => j.name);
   const armsPoints: Vector3[] = [];
@@ -313,7 +325,7 @@ export function transplantArms(pieces: PartMesh[], body: PartMesh[], arms: ArmsS
       accN.normalize();
       // every vertex needs weights: unweighted vertices skin to the origin
       let near = grid.nearest(acc);
-      if (near < 0) near = grid.nearest(acc, 40);
+      if (near < 0) near = grid.nearest(acc, 12);
       nearest[i] = near;
       if (near >= 0) {
         armsN.fromArray(arms.normal, near * 3).normalize();
@@ -338,6 +350,7 @@ export function transplantArms(pieces: PartMesh[], body: PartMesh[], arms: ArmsS
       acc.fromArray(position, i * 3).addScaledVector(armsN, lift + extra).toArray(position, i * 3);
     }
     rigidIfSmall(position, skinIndex, skinWeight);
+    for (let i = 0; i < position.length; i += 1) position[i] *= unit;
     out.push({ ...piece, position, normal, skinIndex, skinWeight });
   }
   return out;

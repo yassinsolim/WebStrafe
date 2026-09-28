@@ -2654,6 +2654,8 @@ export class GameApp {
     this.mapEnvironment.setQuality(next);
     this.combatEffects?.setQuality(next);
     this.viewmodelRenderer.setQuality(next);
+    // characters switch to their lighter lods sooner on the lighter presets (a dev ?chardetail wins)
+    if (!parseDevCharacters(window.location.search)?.detail) setCharacterDetail(next.level);
     if (changed) {
       this.adaptiveResolution.reset();
     }

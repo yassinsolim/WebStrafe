@@ -96,6 +96,17 @@ describe('first-person armor transplanted from the kit arm pieces', () => {
     }
   });
 
+  it('moves every piece onto the arms (none left at the third-person body)', () => {
+    const skel = armsMesh().skeleton;
+    const idx = new Map(skel.bones.map((b, i) => [b.name, i]));
+    for (const set of ARMOR_SETS) {
+      const box = new Box3();
+      for (const m of armsMeshes()) box.union(forearmBox(m, new Set(idx.values())));
+      const plates = forearmBox(armor.meshFor(set)!, new Set(idx.values()));
+      expect(box.clone().expandByScalar(0.25).containsBox(plates), set).toBe(true);
+    }
+  });
+
   it('covers the forearm the way the sleeve does, not just the wrist', () => {
     const base = armsMesh();
     const idx = new Map(base.skeleton.bones.map((b, i) => [b.name, i]));
