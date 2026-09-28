@@ -660,7 +660,7 @@ export class ViewmodelSystem {
     // ahead gets the fingers clear before the blade gets there
     const swing = (v: number) => Math.sin(Math.PI * Math.min(1, Math.max(0, v)));
     const moving = Math.max(
-      rig.bladePivot ? 3 * Math.max(swing(this.channel('knifeOpen')), swing(this.ahead('knifeOpen'))) : 0,
+      rig.bladePivot ? 3 * Math.max(swing(this.channel('knifeOpen')), swing(this.ahead('knifeOpen'))) * this.moving('knifeOpen') : 0,
       rig.handleSafe ? this.baliLetGo * Math.max(this.channel('baliSafe'), this.ahead('baliSafe')) : 0,
       rig.handleBite ? this.baliLetGo * Math.max(this.channel('baliBite'), this.ahead('baliBite')) : 0,
     );
@@ -688,6 +688,16 @@ export class ViewmodelSystem {
         ? Math.min(1, this.channel('thumbOpener')) * (1 - Math.min(1, swing(this.channel('knifeOpen')) * 4))
         : 0;
       for (let i = 0; i < 3; i += 1) this.poseR.thumb[i] += this.thumbAway[i] * m * (1 - onOpener);
+    }
+    if (rig.bladePivot) {
+      // a folding blade held part open crosses in front of the index and
+      // middle fingers, so they stay off it even while the blade is still
+      const held = Math.min(1, 3 * swing(this.channel('knifeOpen')));
+      if (held > 0.03) {
+        blendHandPose(this.poseR, this.ringSpinPose(), held, this.poseTmp);
+        copyDigit(this.poseTmp.index, this.poseR.index);
+        copyDigit(this.poseTmp.middle, this.poseR.middle);
+      }
     }
     arms.setArmVisible('r', true);
     arms.solveArm('r', pA, qA, this.pole(POLE_R));
@@ -730,9 +740,16 @@ export class ViewmodelSystem {
   }
 
   /** a channel's value a moment ahead in the current clip */
-  private ahead(name: string): number {
+  private ahead(name: string, by = LOOK_AHEAD_S): number {
     const now = this.channel(name);
-    return this.clip ? sampleClip(this.clip, name, this.time + LOOK_AHEAD_S, now) : now;
+    return this.clip ? sampleClip(this.clip, name, Math.max(0, this.time + by), now) : now;
+  }
+
+  /** 0..1, whether a channel is changing around now (a held half open blade isn't) */
+  private moving(name: string): number {
+    const now = this.channel(name);
+    const change = Math.abs(this.ahead(name) - now) + Math.abs(now - this.ahead(name, -LOOK_AHEAD_S));
+    return Math.min(1, change * 12);
   }
 
   private ringSpinPose(f = this.ringSpinFlare): HandPose {
