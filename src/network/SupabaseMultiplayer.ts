@@ -24,7 +24,9 @@ const SESSION_KEY = 'webstrafe:session-id:v1';
  * message format never share a room with this one. p4 (v2): knife swings are
  * flagged melee with the cs knife damage table and backstabs, hits carry
  * melee/backstab, and fires carry the shooter's weapon. a p3 host would resolve
- * those differently, so p3 and p4 tabs must never share a room.
+ * those differently, so p3 and p4 tabs must never share a room. p5 moves fires
+ * and combat events onto state messages. p6 adds per player pvp opt-in (a p5
+ * host would let peaceful players be hit) and the host's room scoreboard.
  */
 export const SUPABASE_PROTOCOL = 'p6';
 const PLAYER_STALE_MS = 8000;
@@ -69,6 +71,10 @@ interface WireState {
   b?: WireBot[];
   /** host clock time of the step that produced `b` */
   bt?: number;
+  /** fire requests from this sender, for the host to resolve */
+  f?: WireFire[];
+  /** combat events, only from the elected host */
+  ev?: CombatWireEvent[];
   /** pvp off (0); omitted means on */
   pv?: 0;
   /** own kills/deaths from the last host scoreboard */
@@ -76,6 +82,22 @@ interface WireState {
   /** room scoreboard [id, kills, deaths], only from the elected host */
   sb?: Array<[string, number, number]>;
 }
+
+interface WireFire {
+  origin: [number, number, number];
+  dir: [number, number, number];
+  targets?: Record<string, number>;
+  t: number;
+  w?: string;
+  melee?: AttackKind;
+}
+
+/**
+ * Fires and combat batches ride on an immediate state message instead of
+ * their own broadcasts (each broadcast is billed once per receiver), at most
+ * one such early send per this many ms per client.
+ */
+export const CARRIER_MIN_GAP_MS = 25;
 
 type CombatWireEvent =
   | { k: 'hit'; e: HitEvent }
@@ -172,6 +194,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   private botRowsAt = 0;
   private presenceSynced = false;
   private pendingCombat: CombatWireEvent[] = [];
+  private pendingFires: WireFire[] = [];
+  private carrierTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly detachVisibility: (() => void) | null;
   private localWeapon: string | null = null;
   private localPvp = true;
@@ -354,8 +378,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       this.flushCombat();
       return;
     }
-    this.broadcast('fire', {
-      id: this.localId,
+    this.pendingFires.push({
       origin,
       dir,
       targets: fireView.targets,
@@ -363,6 +386,30 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       ...(this.localWeapon ? { w: this.localWeapon } : {}),
       ...(melee ? { melee } : {}),
     });
+    this.requestCarrier();
+  }
+
+  /** Sends state now (carrying queued fires/combat), or as soon as the gap allows. */
+  private requestCarrier(): void {
+    const wait = CARRIER_MIN_GAP_MS - (this.now() - this.lastBroadcastAtMs);
+    if (wait <= 0) {
+      this.sendCarrier();
+      return;
+    }
+    if (this.carrierTimer === null) {
+      this.carrierTimer = setTimeout(() => {
+        this.carrierTimer = null;
+        this.sendCarrier();
+      }, wait);
+    }
+  }
+
+  private sendCarrier(): void {
+    if (this.pendingFires.length === 0 && this.pendingCombat.length === 0) {
+      return;
+    }
+    this.broadcastState();
+    this.cadence.markSent(this.localState?.t ?? this.now());
   }
 
   sendReload(): void {
@@ -540,6 +587,10 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   }
 
   private stopPump(): void {
+    if (this.carrierTimer !== null) {
+      clearTimeout(this.carrierTimer);
+      this.carrierTimer = null;
+    }
     if (this.pumpTimer) {
       clearInterval(this.pumpTimer);
       this.pumpTimer = null;
@@ -644,9 +695,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (this.pendingCombat.length === 0) {
       return;
     }
-    const events = this.pendingCombat;
-    this.pendingCombat = [];
-    this.broadcast('cb', { host: this.localId, ev: events });
+    this.requestCarrier();
   }
 
   /**
@@ -687,6 +736,14 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       }));
       // bot poses come from the last host step, not this tick
       payload.bt = Math.round(this.botRowsT);
+    }
+    if (this.pendingFires.length > 0) {
+      payload.f = this.pendingFires;
+      this.pendingFires = [];
+    }
+    if (this.hostSim && this.pendingCombat.length > 0) {
+      payload.ev = this.pendingCombat;
+      this.pendingCombat = [];
     }
     this.lastBroadcastAtMs = now;
     this.broadcast('st', payload);
@@ -765,6 +822,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       // pvp changes go out right away so the host enforces them without a gap
       this.cadence.flush();
     }
+    this.onCarried(p);
     this.emitSnapshot();
   }
 
@@ -796,6 +854,18 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       || (item.k === 'health' && item.e.playerId === this.localId && item.e.alive)
     ) {
       this.localDeadUntil = null;
+    }
+  }
+
+  /** Fires and combat events carried by a state message. */
+  private onCarried(p: WireState): void {
+    if (Array.isArray(p.f)) {
+      for (const f of p.f.slice(0, 16)) {
+        this.onRemoteFire({ id: p.id, ...f });
+      }
+    }
+    if (Array.isArray(p.ev)) {
+      this.onCombatBatch({ host: p.id, ev: p.ev });
     }
   }
 

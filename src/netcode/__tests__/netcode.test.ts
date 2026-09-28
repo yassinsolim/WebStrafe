@@ -3,7 +3,7 @@ import { SourceClock } from '../SourceClock';
 import { InterpolationBuffer, MAX_EXTRAPOLATION_MS, type EntitySample } from '../InterpolationBuffer';
 import { RemoteTimeline } from '../RemoteTimeline';
 import { SendCadence } from '../SendCadence';
-import { broadcastRateHz, roomEventsPerSecond, SUPABASE_FREE_EVENTS_PER_SEC } from '../RateBudget';
+import { broadcastRateHz, MAX_ROOM_PLAYERS, roomEventsPerSecond, SUPABASE_FREE_EVENTS_PER_SEC } from '../RateBudget';
 
 function circleSample(tMs: number, radius = 12, speed = 16): EntitySample {
   const w = speed / radius;
@@ -78,6 +78,24 @@ describe('InterpolationBuffer', () => {
     expect(buffer.sampleAt(50)!.position[0]).toBe(0);
   });
 
+  it('interpolates a fast player at full-room rates instead of treating each gap as a teleport', () => {
+    const buffer = new InterpolationBuffer();
+    const interval = 1000 / 1.8;
+    // 16 m/s on a straight line: 8.9 m between samples
+    const at = (t: number): EntitySample => ({ t, position: [(t / 1000) * 16, 0, 0], velocity: [16, 0, 0], yaw: 0, pitch: 0 });
+    buffer.push(at(0));
+    buffer.push(at(interval));
+    const mid = buffer.sampleAt(interval / 2)!;
+    expect(mid.position[0]).toBeCloseTo((interval / 2 / 1000) * 16, 3);
+  });
+
+  it('still snaps a respawn even when the player was moving', () => {
+    const buffer = new InterpolationBuffer();
+    buffer.push({ t: 0, position: [0, 0, 0], velocity: [16, 0, 0], yaw: 0, pitch: 0 });
+    buffer.push({ t: 50, position: [80, 0, 40], velocity: [0, 0, 0], yaw: 0, pitch: 0 });
+    expect(buffer.sampleAt(25)!.position[0]).toBe(0);
+  });
+
   it('keeps order for late packets and drops duplicates', () => {
     const buffer = new InterpolationBuffer();
     expect(buffer.push(circleSample(0))).toBe(true);
@@ -147,17 +165,19 @@ describe('SendCadence', () => {
 });
 
 describe('RateBudget', () => {
-  it('keeps every room size under the free-plan event cap', () => {
-    for (let n = 1; n <= 6; n += 1) {
+  it('keeps every room size under the free-plan event cap with headroom', () => {
+    for (let n = 1; n <= MAX_ROOM_PLAYERS; n += 1) {
       const hz = broadcastRateHz(n);
-      if (n <= 5) {
-        expect(roomEventsPerSecond(n, hz)).toBeLessThan(SUPABASE_FREE_EVENTS_PER_SEC);
-      }
-      expect(hz).toBeGreaterThanOrEqual(2);
+      // position traffic leaves at least 34 events/s for combat, presence and churn
+      expect(roomEventsPerSecond(n, hz)).toBeLessThanOrEqual(66);
+      expect(hz).toBeGreaterThanOrEqual(1.8);
       expect(hz).toBeLessThanOrEqual(20);
     }
-    expect(broadcastRateHz(2)).toBe(20);
-    expect(broadcastRateHz(3)).toBeCloseTo(8.9, 1);
+    expect(broadcastRateHz(2)).toBe(16);
+    expect(broadcastRateHz(3)).toBeCloseTo(7.1, 1);
+    expect(broadcastRateHz(6)).toBeCloseTo(1.8, 5);
+    // one more player and the floor alone would eat the headroom
+    expect(roomEventsPerSecond(MAX_ROOM_PLAYERS + 1, broadcastRateHz(MAX_ROOM_PLAYERS + 1))).toBeGreaterThan(85);
   });
 
   it('shows why the old traffic tripped the cap with two players', () => {
@@ -170,10 +190,10 @@ describe('RateBudget', () => {
 });
 
 describe('large rooms', () => {
-  it('a 2.2 Hz sender (6 player room) stays interpolated, not extrapolated', () => {
+  it('a full-room sender (1.8 Hz) stays interpolated, not extrapolated', () => {
     const timeline = new RemoteTimeline();
     const buffer = new InterpolationBuffer();
-    const interval = 1000 / 2.22;
+    const interval = 1000 / broadcastRateHz(MAX_ROOM_PLAYERS);
     let local = 0;
     let extrap = 0;
     let frames = 0;
