@@ -403,8 +403,7 @@
   grid-template-columns: 1fr auto;
   grid-template-areas:
     'weapon weapon'
-    'pips main'
-    'state state';
+    'pips main';
   align-items: end;
   justify-items: end;
   column-gap: 0.85rem;
@@ -516,9 +515,12 @@
   transform-origin: left center;
 }
 
+/* shares the rounds cell so the panel never changes height */
 .hud-ammo-state {
-  grid-area: state;
-  margin-top: 0.2rem;
+  grid-area: pips;
+  align-self: end;
+  margin-bottom: 1.45rem;
+  white-space: nowrap;
   color: var(--ws-warn);
   font-family: var(--font-mono);
   font-size: 0.6rem;

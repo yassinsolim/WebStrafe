@@ -125,6 +125,11 @@
   font-size: 0.92rem;
 }
 
+.loading-mode:empty,
+.loading-author:empty {
+  display: none;
+}
+
 .loading-title {
   overflow: hidden;
   font-family: var(--font-display);
@@ -149,6 +154,7 @@
 }
 
 .loading-tip {
+  grid-column: 1;
   display: flex;
   align-items: baseline;
   gap: 0.75rem;
@@ -177,6 +183,7 @@
 }
 
 .loading-status {
+  grid-column: 2;
   display: flex;
   align-items: baseline;
   gap: 1rem;
@@ -240,6 +247,7 @@
 
 .loading-overlay-error .loading-backdrop,
 .loading-overlay-error .loading-shade,
+.loading-overlay-error .loading-brand,
 .loading-overlay-error .loading-thumb,
 .loading-overlay-error .loading-tip,
 .loading-overlay-error .loading-bar,

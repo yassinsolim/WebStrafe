@@ -1553,7 +1553,8 @@ export class GameApp {
   }
 
   private updateTimerHud(): void {
-    const text = this.runStartTimeMs <= 0 ? '' : formatRunTime(this.getCurrentRunTimeMs());
+    // untimed maps never show it, so don't restyle a hidden label every frame
+    const text = this.runStartTimeMs <= 0 || !this.runTimerAllowed ? '' : formatRunTime(this.getCurrentRunTimeMs());
     // whole seconds and milliseconds are separate spans, each only written when it changes
     const dot = text.lastIndexOf('.');
     const main = dot >= 0 ? text.slice(0, dot) : text;

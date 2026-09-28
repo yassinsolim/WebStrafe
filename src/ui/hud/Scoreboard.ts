@@ -88,7 +88,8 @@ export class Scoreboard {
     this.title.textContent = view.mapName;
     this.mode.textContent = view.combat ? `${view.mapType} · Free for all` : view.mapType;
     const count = view.rows.length;
-    this.count.textContent = String(count);
+    // before the first snapshot lists you, you are still in the server
+    this.count.textContent = String(count + (view.rows.some((row) => row.isLocal) ? 0 : 1));
     this.body.replaceChildren();
     if (count === 0) {
       const row = document.createElement('tr');
