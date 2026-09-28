@@ -64,8 +64,11 @@ export async function packageMap(mapId: string): Promise<void> {
   ktx2(path.join(tmp, 'lightmap.png'), path.join(out, 'lightmap.ktx2'));
   await copyFile(path.join(tmp, 'meta.json'), path.join(out, 'meta.json'));
 
-  if (await exists(path.join(tmp, 'thumb.png'))) {
-    await writeThumbnail(path.join(tmp, 'thumb.png'), path.join(out, 'thumbnail.webp'));
+  // menu thumbnails are in-game shots (tools/shots/thumbnails.mjs); the blender
+  // render only fills in for a new map, or when BLENDER_THUMB=1 asks for it
+  const thumb = path.join(out, 'thumbnail.webp');
+  if (await exists(path.join(tmp, 'thumb.png')) && (process.env.BLENDER_THUMB === '1' || !(await exists(thumb)))) {
+    await writeThumbnail(path.join(tmp, 'thumb.png'), thumb);
   }
   // arena: optional extra shot for maps with a combat area
   for (const view of ['overview', 'eye', 'arena']) {

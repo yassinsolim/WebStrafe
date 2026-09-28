@@ -76,6 +76,12 @@ export interface MapEnvironmentConfig {
   lightmapMode?: 'full' | 'indirect';
   /** multiplier on baked indirect light, 'indirect' mode only */
   indirectIntensity?: number;
+  /**
+   * hue shift for baked indirect light ('indirect' mode), normalised to keep its
+   * brightness, e.g. a cool tint for shade under a warm baked sky. sunlit
+   * surfaces keep the live sun's color
+   */
+  indirectTint?: string;
   /** sky light and reflections on players and weapons */
   envIntensity?: number;
   /** color grade overrides, see src/render/grade.ts */

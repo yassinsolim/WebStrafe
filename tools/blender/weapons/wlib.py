@@ -1303,6 +1303,12 @@ def compose_textures(P, name, look=None):
     occ = np.clip(L["ao_floor"] + (1.0 - L["ao_floor"]) * ao, 0.0, 1.0)
 
     nrm = P["normal"][..., :3].copy()
+    # lens glass is a smooth dome with no detail to bake. the high to low poly
+    # difference only added ripples, and ao deep in the tube made it blotchy,
+    # so clean finishes get flat normals, no ao and their plain roughness
+    nrm[clean] = (0.5, 0.5, 1.0)
+    occ = np.where(clean, 1.0, occ)
+    r = np.where(clean, np.clip(rough0, 0.05, 1.0), r)
 
     # empty texels take their neighbours' values, so mips and ktx2 blocks that
     # straddle an island edge don't pull in a foreign colour

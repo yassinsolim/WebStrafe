@@ -118,7 +118,7 @@ def make_materials():
         # knurled rings: the ridges read as edges, so full wear would strip them bare
         "scope_knurl": W.finish("mat_scope_knurl", base=0x151618, rough=0.42, metal=0.55, wear=0.2, wear_color=0x55595e,
                                 wear_rough=0.34, wear_metal=0.9, grime=0.45, rvar=0.05, scratch=0.2),
-        "glass": W.finish("mat_glass", base=0x0b1c24, rough=0.03, grime=0.0, rvar=0.01, scratch=0.05),
+        "glass": W.finish("mat_glass", base=0x0b1c24, rough=0.07, grime=0.0, rvar=0.01, scratch=0.05),
         "black": W.finish("mat_polymer_black", base=0x19191a, rough=0.5, wear=0.2, wear_color=0x28282b,
                           wear_rough=0.35, grime=0.4, rvar=0.06, scratch=0.2, bump="grain"),
         "paint": W.finish("mat_paint_white", base=0xe6e3da, rough=0.5, grime=0.3, rvar=0.03),
@@ -293,7 +293,7 @@ def build_scope(M):
     body = lathe_mm("scope_body", [
         (17.5, -35.0), (21.0, SCOPE_REAR_Y), (22.5, SCOPE_REAR_Y + 1.5), (22.5, -14.0), (21.0, -10.0), (18.0, 20.0),
         (18.8, 22.0), (18.8, 44.0), (15.2, 47.0), (15.2, 214.0), (15.8, 217.5)] + bell + [(29.2, 261.8), (29.5, 263.5),
-        (29.5, 306.0), (28.5, 310.0), (26.5, 310.0), (26.0, 306.0)], 40, M["scope"], "Y", (0.0, 0.0, z))
+        (29.5, 306.0), (28.5, 310.0), (26.5, 310.0), (26.0, 306.0)], 64, M["scope"], "Y", (0.0, 0.0, z))
     W.bevel(body, 0.5 * MM, segs=1, angle=40.0)
     # knurled diopter ring (ridges only in the high poly) and a ribbed power ring. the
     # knurl pitch is about 3 mm: finer than that aliases at 1024 texels on the atlas
@@ -301,14 +301,17 @@ def build_scope(M):
                        90 if W.hi() else 60, M["scope_knurl"], "Y", (0.0, 0.0, z), ripple=0.02 if W.hi() else None)
     power = lathe_mm("power_ring", [(18.9, 25.0), (19.4, 25.5), (19.4, 40.5), (18.9, 41.0)], 192 if W.hi() else 96,
                      M["scope"], "Y", (0.0, 0.0, z), ribs=(24, 1.1 * MM, 0.45))
-    cup = lathe_mm("eye_cup", [(21.0, -41.5), (23.3, -41.5), (23.6, -39.0), (23.3, -36.5), (21.0, -36.5)], 40,
+    cup = lathe_mm("eye_cup", [(21.0, -41.5), (23.3, -41.5), (23.6, -39.0), (23.3, -36.5), (21.0, -36.5)], 64,
                    M["rubber"], "Y", (0.0, 0.0, z), closed=True)
     lever = cube("power_lever", 12.0, 16.0, 30.0, 36.0, z + 13.0, z + 22.5, M["scope"])
     W.rotate(lever, -35.0, "Y", (0.0, 33.0 * MM, z * MM))
     W.bevel(lever, 0.6 * MM, segs=1)
-    rear_lens = lathe_mm("lens_rear", [(0.0, -36.6), (9.0, -36.3), (17.6, -35.1), (17.6, -34.6), (0.0, -34.6)], 32,
+    # the lenses, eye cup and body need under 10 degrees per segment, or
+    # mark_creases shades the wide facets around the eyepiece sharp and the
+    # glass shows them as blotches up close
+    rear_lens = lathe_mm("lens_rear", [(0.0, -36.6), (9.0, -36.3), (17.6, -35.1), (17.6, -34.6), (0.0, -34.6)], 64,
                          M["glass"], "Y", (0.0, 0.0, z))
-    front_lens = lathe_mm("lens_front", [(0.0, 305.2), (26.1, 305.2), (26.1, 305.8), (13.0, 306.8), (0.0, 307.1)], 40,
+    front_lens = lathe_mm("lens_front", [(0.0, 305.2), (26.1, 305.2), (26.1, 305.8), (13.0, 306.8), (0.0, 307.1)], 72,
                           M["glass"], "Y", (0.0, 0.0, z))
 
     saddle = front("turret_saddle", [(-18.0, z - 18.0, 7.0), (18.0, z - 18.0, 7.0), (18.0, z + 18.0, 7.0),

@@ -37,10 +37,10 @@ ENV = {
     "sun_strength": 4.0,
     "sun_color": "#fff3de",
     "sun_angle": 1.0,
-    "sky_strength": 1.3,
+    "sky_strength": 1.1,
     "sky": {
-        "zenith": "#6aa9e4",
-        "horizon": "#fbe9d4",
+        "zenith": "#4f90d8",
+        "horizon": "#efd9c2",
         "ground": "#f6ecdf",
         "bake_ground": "#b9e3dd",
         "exponent": 0.55,
@@ -51,7 +51,8 @@ ENV = {
     },
     "bake_ground_scale": 0.75,
     "hemi": {"sky": "#d6e6f5", "ground": "#e9ddc8", "intensity": 2.3},
-    "fog": {"color": "#f6e8d7", "near": 170.0, "far": 1150.0},
+    "fog": {"color": "#ead7c3", "near": 170.0, "far": 1150.0},
+    "grade": {"exposure": 0.62, "contrast": 1.16, "saturation": 1.24, "temperature": 0.02, "vignette": 0.2, "bloom": 0.07},
     "exposure": 1.0,
 }
 
@@ -118,7 +119,7 @@ def tex_ramp(folder, name, base, deep, seed):
     tg = M.TexGen(512, TEX_SEED + seed)
     u, v = tg.u, tg.v
     # pearl face with a pastel wash that pools towards the foot
-    pearl = M.mix(M.hex_rgb("#e9e4db"), M.hex_rgb("#fbf9f4"), M.smoothstep(0.0, 1.0, v))
+    pearl = M.mix(M.hex_rgb("#ddd6ca"), M.hex_rgb("#eee8de"), M.smoothstep(0.0, 1.0, v))
     wash = (1.0 - M.smoothstep(0.1, 0.8, v)) * 0.55 + 0.12
     col = M.mix(pearl, M.hex_rgb(base), wash)
     # soft sea-glass ripples running along the ramp
@@ -154,7 +155,7 @@ def tex_column(folder):
     tg = M.TexGen(512, TEX_SEED + 21)
     flute = 0.5 + 0.5 * np.cos(tg.u * 2 * np.pi * 12)
     n = tg.fbm(3, 4, cells_v=6)
-    col = M.mix(M.hex_rgb("#d8d0c2"), M.hex_rgb("#fbf7ef"), 0.45 + 0.35 * flute + 0.2 * (n - 0.5))
+    col = M.mix(M.hex_rgb("#cfc6b6"), M.hex_rgb("#ede5d7"), 0.45 + 0.35 * flute + 0.2 * (n - 0.5))
     return M.save_texture("column", col, folder)
 
 
@@ -189,7 +190,7 @@ def tex_lighthouse(folder):
     tg = M.TexGen(512, TEX_SEED + 25)
     band = (tg.v * 5) % 1.0 < 0.5
     n = tg.fbm(3, 4)
-    white = M.mix(M.hex_rgb("#e2ddd4"), M.hex_rgb("#fbf8f3"), n)
+    white = M.mix(M.hex_rgb("#d6d0c5"), M.hex_rgb("#ece6dc"), n)
     coral = M.mix(M.hex_rgb("#d8705a"), M.hex_rgb("#f08d74"), n)
     col = np.where(band[..., None], coral, white)
     return M.save_texture("lighthouse", col, folder)
