@@ -1,0 +1,220 @@
+{
+  "base": "https://webstrafe-git-surf-timing-pvp-boards-yassins-projects-11732a5e.vercel.app",
+  "map": "surf_vanta",
+  "room": "sxz1rwd0",
+  "checks": {
+    "join and see each other": {
+      "ok": true,
+      "detail": {
+        "ids": [
+          "p_617ywv1ihxyu",
+          "p_5dmec5yai0ov",
+          "p_c1uwjmzyi2tx"
+        ]
+      }
+    },
+    "surf map is timed, peaceful by default, toggleable": {
+      "ok": true,
+      "detail": {
+        "modes": [
+          "surf",
+          "combat"
+        ],
+        "pvp": false
+      }
+    },
+    "pvp flags reach other clients": {
+      "ok": true,
+      "detail": {
+        "rosterOnC": [
+          {
+            "id": "p_c1uwjmzyi2tx",
+            "name": "Player_597",
+            "pvp": false,
+            "isBot": false
+          },
+          {
+            "id": "p_5dmec5yai0ov",
+            "name": "Player_519",
+            "pvp": true,
+            "isBot": false
+          },
+          {
+            "id": "p_617ywv1ihxyu",
+            "name": "Player_145",
+            "pvp": true,
+            "isBot": false
+          },
+          {
+            "id": "bot:0",
+            "name": "Ada (bot)",
+            "pvp": true,
+            "isBot": true
+          }
+        ]
+      }
+    },
+    "the peaceful player shows as peaceful": {
+      "ok": true,
+      "detail": {
+        "rosterOnA": [
+          {
+            "id": "p_617ywv1ihxyu",
+            "name": "Player_145",
+            "pvp": true,
+            "isBot": false
+          },
+          {
+            "id": "p_5dmec5yai0ov",
+            "name": "Player_519",
+            "pvp": true,
+            "isBot": false
+          },
+          {
+            "id": "p_c1uwjmzyi2tx",
+            "name": "Player_597",
+            "pvp": false,
+            "isBot": false
+          },
+          {
+            "id": "bot:0",
+            "name": "Ada (bot)",
+            "pvp": true,
+            "isBot": true
+          }
+        ]
+      }
+    },
+    "a host bot on a map tagged combat": {
+      "ok": true,
+      "detail": {
+        "modes": [
+          "surf",
+          "combat"
+        ]
+      }
+    },
+    "pvp badge shows each player their mode": {
+      "ok": true,
+      "detail": {
+        "badgeA": "PvP onP to surf in peace",
+        "badgeC": "PeacefulP to fight"
+      }
+    },
+    "pvp players can kill each other": {
+      "ok": true,
+      "detail": {
+        "sightAB": true,
+        "bHealth": 37
+      }
+    },
+    "nameplates show pvp state": {
+      "ok": true,
+      "detail": {
+        "platesPvp": [
+          "Player_519PVP",
+          "Player_597PEACEFUL"
+        ],
+        "platesPeace": [
+          "Player_597PEACEFUL"
+        ]
+      }
+    },
+    "a peaceful player takes no damage from a pvp player": {
+      "ok": true,
+      "detail": {
+        "sightAC": true,
+        "health": 100,
+        "alive": true
+      }
+    },
+    "a peaceful player cannot damage a pvp player": {
+      "ok": true,
+      "detail": {
+        "sightCA": true,
+        "before": 100,
+        "health": 100
+      }
+    },
+    "room kills from the host reach every client": {
+      "ok": true,
+      "detail": {
+        "scores": [
+          {
+            "id": "p_617ywv1ihxyu",
+            "kills": 1,
+            "deaths": 0
+          },
+          {
+            "id": "p_5dmec5yai0ov",
+            "kills": 0,
+            "deaths": 1
+          }
+        ]
+      }
+    },
+    "hold tab shows the live room board": {
+      "ok": true,
+      "detail": {
+        "boardText": "Room killslive · this room01Player_145PVP1 / 002Player_519PVP0 / 1Map timesRanked times need the new database tables"
+      }
+    },
+    "timed run: armed, runs, records a split per checkpoint and finishes ranked": {
+      "ok": true,
+      "detail": {
+        "ready": "ready",
+        "running": "running",
+        "phase": "finished",
+        "finish": {
+          "ticks": 1651,
+          "timeMs": 12898,
+          "splits": [
+            {
+              "stage": 2,
+              "ticks": 421
+            },
+            {
+              "stage": 3,
+              "ticks": 831
+            },
+            {
+              "stage": 4,
+              "ticks": 1240
+            }
+          ],
+          "ranked": true,
+          "unrankedReason": null,
+          "pvp": false
+        }
+      }
+    },
+    "finish overlay shows the time": {
+      "ok": true,
+      "detail": {
+        "overlay": "Finished in 12.898, new personal best"
+      }
+    },
+    "without the migration the ranked boards stay off and skip closes the overlay": {
+      "ok": true,
+      "detail": {
+        "boardsAvailable": false
+      }
+    },
+    "no console errors": {
+      "ok": true,
+      "detail": []
+    }
+  },
+  "errors": {
+    "A": [
+      "Failed to load resource: the server responded with a status of 404 ()"
+    ],
+    "B": [
+      "Failed to load resource: the server responded with a status of 404 ()"
+    ],
+    "C": [
+      "Failed to load resource: the server responded with a status of 404 ()"
+    ]
+  },
+  "bHealth": 37
+}
