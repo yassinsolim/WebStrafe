@@ -1,4 +1,5 @@
-import { decodeCosmetics, encodeCosmetics, sameCosmetics, type PlayerCosmetics } from './cosmetics';
+import { decodeCosmetics, encodeCosmetics, type PlayerCosmetics } from './cosmetics';
+import { CosmeticsPublisher } from './cosmeticsPublisher';
 import type { AttackKind, MultiplayerSnapshot, PlayerModel } from './types';
 import { resolveWsUrl } from './endpoints';
 import type {
@@ -71,6 +72,7 @@ export class MultiplayerClient implements MultiplayerTransport {
   }
 
   public disconnect(): void {
+    this.cosmeticsPublisher.dispose();
     this.shouldReconnect = false;
     this.clearReconnect();
     this.clearHeartbeat();
@@ -93,7 +95,14 @@ export class MultiplayerClient implements MultiplayerTransport {
     return this.pingMs === null ? null : Math.round(this.pingMs);
   }
 
-  private cosmetics: PlayerCosmetics | null = null;
+  // cosmetics go with the join and as their own message when they change
+  // (debounced, at most once a second), never with state or snapshots
+  private readonly cosmeticsPublisher = new CosmeticsPublisher((cosmetics) => {
+    if (!this.desiredJoin) return;
+    this.send({ type: 'cosmetics', ...(cosmetics ? { c: encodeCosmetics(cosmetics) } : {}) });
+  }, { debounceMs: 400, minIntervalMs: 1000 });
+  /** other players' cosmetics from the server's join roster and change relays */
+  private readonly remoteCosmetics = new Map<string, PlayerCosmetics>();
 
   public join(mapId: string, name: string, model: PlayerModel): void {
     this.desiredJoin = {
@@ -244,6 +253,8 @@ export class MultiplayerClient implements MultiplayerTransport {
         }
         case 'joined': {
           if (typeof payload.mapId === 'string') {
+            // a roster for the new map follows right after
+            this.remoteCosmetics.clear();
             this.activeMapId = payload.mapId;
             this.send({ type: 'combat-ready', ready: this.combatReady });
           }
@@ -277,7 +288,8 @@ export class MultiplayerClient implements MultiplayerTransport {
             return true;
           }).map((entry) => {
             const raw = entry as MultiplayerSnapshot['players'][number] & { c?: unknown };
-            const cosmetics = decodeCosmetics(raw.c);
+            // older servers still put cosmetics in every row
+            const cosmetics = decodeCosmetics(raw.c) ?? this.remoteCosmetics.get(raw.id);
             const { c: _wire, ...rest } = raw;
             const row = cosmetics ? { ...rest, cosmetics } : rest;
             return typeof row.t === 'number' ? { ...row, clock: 'server' } : row;
@@ -405,7 +417,18 @@ export class MultiplayerClient implements MultiplayerTransport {
           }
           break;
         }
-        case 'error': {
+        case 'cosmetics': {
+          if (!Array.isArray(payload.players)) return;
+          for (const entry of payload.players) {
+            if (!entry || typeof entry !== 'object' || typeof (entry as { id?: unknown }).id !== 'string') continue;
+            const { id, c } = entry as { id: string; c?: unknown };
+            const decoded = decodeCosmetics(c);
+            if (decoded) this.remoteCosmetics.set(id, decoded);
+            else this.remoteCosmetics.delete(id);
+          }
+          break;
+        }
+                case 'error': {
           // eslint-disable-next-line no-console
           console.warn('[Multiplayer] server error:', payload.reason ?? 'unknown');
           break;
@@ -426,19 +449,17 @@ export class MultiplayerClient implements MultiplayerTransport {
       mapId: this.desiredJoin.mapId,
       name: this.desiredJoin.name,
       model: this.desiredJoin.model,
+      ...this.joinCosmetics(),
     });
-    this.sendCosmetics();
+  }
+
+  private joinCosmetics(): { c?: ReturnType<typeof encodeCosmetics> } {
+    const c = encodeCosmetics(this.cosmeticsPublisher.joined());
+    return c ? { c } : {};
   }
 
   public setCosmetics(cosmetics: PlayerCosmetics | null): void {
-    if (sameCosmetics(this.cosmetics ?? undefined, cosmetics ?? undefined)) return;
-    this.cosmetics = cosmetics;
-    this.sendCosmetics();
-  }
-
-  private sendCosmetics(): void {
-    if (!this.desiredJoin || !this.cosmetics) return;
-    this.send({ type: 'cosmetics', c: encodeCosmetics(this.cosmetics) });
+    this.cosmeticsPublisher.set(cosmetics);
   }
 
   private send(payload: unknown): void {

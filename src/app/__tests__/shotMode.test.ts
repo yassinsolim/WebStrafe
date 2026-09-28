@@ -21,4 +21,11 @@ describe('shot mode gating', () => {
   it('needs a map to do anything', () => {
     expect(parseShotRequest('?qa=1', true)).toBeNull();
   });
+
+  it('reads the hud demo variant, off by default', () => {
+    expect(parseShotRequest('?shot=aim_ochrecut', true)?.hudDemo).toBeNull();
+    expect(parseShotRequest('?shot=aim_ochrecut&hudDemo=1', true)?.hudDemo).toBe('1');
+    expect(parseShotRequest('?shot=aim_ochrecut&hudDemo=board', true)?.hudDemo).toBe('board');
+    expect(parseShotRequest('?shot=aim_ochrecut&hudDemo=1', false)).toBeNull();
+  });
 });

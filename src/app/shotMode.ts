@@ -1,4 +1,5 @@
 import type { WeaponId } from '../combat/weapons';
+import type { GraphicsQuality } from '../ui/SettingsStore';
 import { devToolsEnabled } from './devTools';
 
 /**
@@ -7,6 +8,8 @@ import { devToolsEnabled } from './devTools';
  * &yaw=<deg>&pitch=<deg>&pos=x,y,z&time=HH:MM:SS&hud=0
  * &perf=<s> (frame timing, clip keeps looping)&scope=1|2&pr=<pixel ratio>
  * &dpr=<screen ratio to emulate>&adaptive=0|1&qa=1 (window.__qa test hooks)
+ * &quality=low|medium|high (graphics preset for this run)
+ * &hudDemo=1|board|death|low|kill|body (sample killfeed, scores and hit feedback)
  * it drops straight into the map without pointer lock, poses the viewmodel,
  * freezes it and sets window.__shotReady once a few frames have drawn.
  * dev server and preview builds only. without qa=1 it plays offline; qa=1
@@ -37,6 +40,14 @@ export interface ShotRequest {
   adaptiveLowFps: number | null;
   /** exposes window.__qa for automated multiplayer tests */
   qa: boolean;
+  /** runs the in-engine grip check over every knife and frame (window.__gripReport) */
+  gripCheck: boolean;
+  /** grip check: sweep every clip at this step (seconds) instead of the key frames */
+  gripStep: number;
+  /** graphics preset for this run, null keeps the saved setting */
+  quality: GraphicsQuality | null;
+  /** fills the hud with sample data for screenshots: 1, board, death, low, kill, body */
+  hudDemo: string | null;
 }
 
 export function parseShotRequest(search: string, enabled = devToolsEnabled()): ShotRequest | null {
@@ -76,6 +87,14 @@ export function parseShotRequest(search: string, enabled = devToolsEnabled()): S
     dpr: num('dpr'),
     adaptiveLowFps: num('adaptiveLow'),
     qa: params.get('qa') === '1',
+    gripCheck: params.get('gripcheck') === '1',
+    gripStep: Math.max(0, Number(params.get('gripstep') ?? 0) || 0),
     adaptive: params.has('adaptive') ? params.get('adaptive') !== '0' : null,
+    quality: parseQuality(params.get('quality')),
+    hudDemo: params.get('hudDemo') || null,
   };
+}
+
+function parseQuality(raw: string | null): GraphicsQuality | null {
+  return raw === 'low' || raw === 'medium' || raw === 'high' || raw === 'auto' ? raw : null;
 }

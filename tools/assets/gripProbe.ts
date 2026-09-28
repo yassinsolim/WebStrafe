@@ -14,7 +14,7 @@ import { BufferAttribute, BufferGeometry, DoubleSide, Matrix4, Mesh, Object3D, Q
 import { MeshBVH } from 'three-mesh-bvh';
 import { getKnife, KNIVES, type KnifeId } from '../../src/combat/knives';
 import { applyDigitPose, DIGIT_NAMES, type DigitBones, type DigitRest } from '../../src/viewmodel/ArmsRig';
-import { alignRingGrip, gripKindFor, knifeGripSpec, measureHandleDiameter, type KnifeGripKind } from '../../src/viewmodel/knifeGrips';
+import { alignRingGrip, gripKindFor, knifeGripSpec, measureHandleDiameter, type KnifeGripKind, type RingFit } from '../../src/viewmodel/knifeGrips';
 import type { HandPose } from '../../src/viewmodel/handPoses';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -159,6 +159,8 @@ export interface GripScene {
   ringInnerRadius: number | null;
   /** folders: the blade pivot, where the opener is */
   pivot: Vector3 | null;
+  /** the grip socket (hammer-grip centre) in world space */
+  grip: Vector3;
   /** to move the hand along the handle without reloading (the fitter) */
   anchor: Vector3;
   anchorInHand: Vector3;
@@ -185,12 +187,19 @@ export interface KnifeHandFit {
   offset: [number, number, number];
   /** folders: thumb curls that put it on the opener */
   opener?: [number, number, number];
+  /** ring knives: index curl and turn about the ring */
+  ring?: RingFit;
+  /** per finger curls measured in the running game, applied over `pose` */
+  engine?: Partial<Record<'index' | 'middle' | 'ring' | 'pinky' | 'thumb', [number, number, number]>>;
+  /** thumb curls on the way to the opener that clear the handle, measured in the game */
+  openerVia?: [number, number, number];
 }
 
 export async function gripScene(
   id: KnifeId,
   poseTable: Record<string, HandPose | KnifeHandFit> = {},
   offsetOverride?: [number, number, number],
+  ringOverride?: RingFit,
 ): Promise<GripScene> {
   const knife = await loadScene(`public/knives/${id}.glb`);
   const top = knife.children.length === 1 ? knife.children[0] : knife;
@@ -210,7 +219,7 @@ export async function gripScene(
   const entry = poseTable[id];
   const fit = entry && 'pose' in entry ? entry : null;
   const offset = offsetOverride ?? fit?.offset;
-  let spec = knifeGripSpec(kind, measureHandleDiameter(knife), offset);
+  let spec = knifeGripSpec(kind, measureHandleDiameter(knife), offset, ringOverride ?? fit?.ring);
   if (ring) spec = alignRingGrip(spec, ring, grip);
   const anchor = spec.anchor === 'ring' && ring ? ring : spec.anchor === 'tee' && tee ? tee : grip;
 
@@ -240,6 +249,7 @@ export async function gripScene(
     ring: ring && kind === 'reverse_ring' ? ring : null,
     ringInnerRadius: typeof knife.userData.ringInnerRadius === 'number' ? knife.userData.ringInnerRadius : null,
     pivot: socket('socket_pivot'),
+    grip: grip.clone(),
     anchor: anchor.clone(),
     anchorInHand: spec.anchorInHand.clone().sub(new Vector3(...(offset ?? [0, 0, 0]))),
     knifeInHand: spec.knifeInHand.clone(),
@@ -311,7 +321,8 @@ export async function probeAll(poseTable: Record<string, HandPose | KnifeHandFit
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const mm = (v: number) => (Number.isFinite(v) ? (v * 1000).toFixed(0).padStart(4) : '   -');
   console.log('knife            kind          tip->handle mm (T I M R P)      blade clearance mm (T I M R P)   ring');
-  for (const p of await probeAll()) {
+  const table = JSON.parse((await import('node:fs')).readFileSync(path.join(ROOT, 'src/viewmodel/knifeHandPoses.json'), 'utf8'));
+  for (const p of await probeAll(table)) {
     const tips = p.digits.map((d) => mm(d.tipToHandle)).join(' ');
     const clear = p.digits.map((d) => mm(d.bladeClearance)).join(' ');
     const ring = p.indexToRing === null ? '' : `index ${mm(p.indexToRing)} / r ${mm(p.ringInnerRadius ?? NaN)}`;

@@ -19,6 +19,8 @@ const THUMB_AXES_R = [
 ];
 const THUMB_AXES_L = THUMB_AXES_R.map((axis) => new Vector3(axis.x, -axis.y, -axis.z));
 const CURL_AXIS = new Vector3(-1, 0, 0);
+const SPREAD_AXIS_R = new Vector3(0, 0, 1);
+const SPREAD_AXIS_L = new Vector3(0, 0, -1);
 const DEG = Math.PI / 180;
 
 interface ArmBones {
@@ -51,8 +53,11 @@ export type DigitBones = Record<Digit, [Object3D, Object3D, Object3D]>;
 export type DigitRest = Record<Digit, [Quaternion, Quaternion, Quaternion]>;
 export const DIGIT_NAMES = DIGITS;
 
+/** finger spread in degrees at the first knuckle, + toward the index side */
+export type DigitSpread = Partial<Record<'index' | 'middle' | 'ring' | 'pinky', number>>;
+
 /** curls every finger and thumb bone to `pose` on top of its rest rotation */
-export function applyDigitPose(digits: DigitBones, rest: DigitRest, side: Side, pose: HandPose): void {
+export function applyDigitPose(digits: DigitBones, rest: DigitRest, side: Side, pose: HandPose, spread?: DigitSpread): void {
   const thumbAxes = side === 'r' ? THUMB_AXES_R : THUMB_AXES_L;
   for (const digit of DIGITS) {
     const bones = digits[digit];
@@ -61,7 +66,10 @@ export function applyDigitPose(digits: DigitBones, rest: DigitRest, side: Side, 
     for (let i = 0; i < 3; i += 1) {
       const axis = digit === 'thumb' ? thumbAxes[i] : CURL_AXIS;
       qDelta.setFromAxisAngle(axis, angles[i] * DEG);
-      bones[i].quaternion.copy(restQ[i]).multiply(qDelta);
+      bones[i].quaternion.copy(restQ[i]);
+      const s = i === 0 && digit !== 'thumb' ? spread?.[digit] : undefined;
+      if (s) bones[i].quaternion.multiply(qT.setFromAxisAngle(side === 'r' ? SPREAD_AXIS_R : SPREAD_AXIS_L, s * DEG));
+      bones[i].quaternion.multiply(qDelta);
     }
   }
 }
@@ -155,9 +163,9 @@ export class ArmsRig {
     this.setWorldRotation(arm.hand, handRot);
   }
 
-  public applyHandPose(side: Side, pose: HandPose): void {
+  public applyHandPose(side: Side, pose: HandPose, spread?: DigitSpread): void {
     const arm = this.arms[side];
-    applyDigitPose(arm.digits, arm.digitRest, side, pose);
+    applyDigitPose(arm.digits, arm.digitRest, side, pose, spread);
   }
 
   /** watch hands show `date` local time; the second hand ticks */
@@ -172,6 +180,10 @@ export class ArmsRig {
     if (this.watchHands.hour) this.watchHands.hour.rotation.y = clockwise * (h / 12);
     if (this.watchHands.minute) this.watchHands.minute.rotation.y = clockwise * (m / 60);
     if (this.watchHands.second) this.watchHands.second.rotation.y = clockwise * ((s - 1 + tick) / 60);
+  }
+
+  public getDigits(side: Side): DigitBones {
+    return this.arms[side].digits;
   }
 
   public getHandBone(side: Side): Object3D {

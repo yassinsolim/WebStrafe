@@ -180,11 +180,29 @@ function wearKey(wear: number): number {
 }
 
 /** blade (and metal parts) or the polished edge bevel */
-export function acquireSurfaceMaterial(resolved: ResolvedKnifeFinish, wear: number, seed: number, part: 'blade' | 'edge'): MeshStandardMaterial {
+export function acquireSurfaceMaterial(
+  resolved: ResolvedKnifeFinish,
+  wear: number,
+  seed: number,
+  part: 'blade' | 'edge',
+  original?: Material,
+): MeshStandardMaterial {
   const step = wearKey(wear);
-  const key = `${resolved.id}|${part}|w${step}|s${seed}`;
+  // the model's baked normal and ao maps (grind lines, jimping, saw teeth) stay under the finish
+  const src = original instanceof MeshStandardMaterial ? original : null;
+  const detail = src ? `${src.normalMap?.uuid ?? '-'}|${src.aoMap?.uuid ?? '-'}` : '-';
+  const key = `${resolved.id}|${part}|w${step}|s${seed}|${detail}`;
   return acquire(key, () => {
     const material = new MeshStandardMaterial({ name: `knife_finish_${part}`, color: 0xffffff, metalness: 1, roughness: 0.3 });
+    if (src?.normalMap) {
+      material.normalMap = src.normalMap;
+      material.normalScale.copy(src.normalScale);
+      material.normalMapType = src.normalMapType;
+    }
+    if (src?.aoMap) {
+      material.aoMap = src.aoMap;
+      material.aoMapIntensity = src.aoMapIntensity;
+    }
     // matte paint would pick up too much of the bright studio environment
     if (part === 'blade' && resolved.finish.wearStyle === 'paint') material.envMapIntensity = 0.6;
     const polish = part === 'edge' ? EDGE_POLISH[resolved.finish.wearStyle] : 0;

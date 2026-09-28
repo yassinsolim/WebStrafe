@@ -85,7 +85,7 @@ Barrel along Blender `+Y`, top of the weapon `+Z`. Required names:
 ## Knives (`public/knives/<id>.glb`)
 
 `knives/build_knives.py` builds all 20 (one function per knife, helpers in
-`knives/klib.py`), `knives/optimize_knives.ts` shrinks them and
+`knives/klib.py`, texture bakes and LOD1 in `knives/kbake.py`), `knives/optimize_knives.ts` shrinks them and
 `knives/render_knives.py` renders the contact sheets. The frame, node names,
 sockets, userData and materials are in `docs/assets/knife-contract.md`; the
 design notes, sources and socket positions are in `docs/assets/knives.md`.

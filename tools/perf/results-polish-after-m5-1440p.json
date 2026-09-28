@@ -1,0 +1,425 @@
+{
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "vsync": false,
+  "viewport": [
+    2560,
+    1440
+  ],
+  "results": [
+    {
+      "label": "aim_ochrecut_low",
+      "query": "shot=aim_ochrecut&weapon=deagle&perf=8&adaptive=0&quality=low",
+      "frames": 4292,
+      "fpsMedian": 434.78,
+      "fps1Low": 257.64,
+      "frameMsMedian": 2.3,
+      "frameMsP99": 3.6,
+      "cpuMsMedian": 2.2,
+      "cpuMsP99": 3.3,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          5.8,
+          5228
+        ],
+        [
+          5,
+          2117
+        ],
+        [
+          4.7,
+          6282
+        ],
+        [
+          4.3,
+          2020
+        ],
+        [
+          4.3,
+          2192
+        ],
+        [
+          4.2,
+          2062
+        ]
+      ],
+      "calls": 65,
+      "triangles": 78758,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "aim_ochrecut_medium",
+      "query": "shot=aim_ochrecut&weapon=deagle&perf=8&adaptive=0&quality=medium",
+      "frames": 2708,
+      "fpsMedian": 333.33,
+      "fps1Low": 165.48,
+      "frameMsMedian": 3,
+      "frameMsP99": 5.6,
+      "cpuMsMedian": 2.9,
+      "cpuMsP99": 5.4,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          8,
+          5428
+        ],
+        [
+          7.6,
+          7945
+        ],
+        [
+          6.6,
+          5932
+        ],
+        [
+          6.6,
+          5941
+        ],
+        [
+          6.3,
+          2933
+        ],
+        [
+          6.1,
+          4435
+        ]
+      ],
+      "calls": 71,
+      "triangles": 78709,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "aim_ochrecut_high",
+      "query": "shot=aim_ochrecut&weapon=deagle&perf=8&adaptive=0&quality=high",
+      "frames": 1228,
+      "fpsMedian": 149.25,
+      "fps1Low": 72.95,
+      "frameMsMedian": 6.7,
+      "frameMsP99": 12.8,
+      "cpuMsMedian": 6.5,
+      "cpuMsP99": 12.7,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          14.9,
+          3523
+        ],
+        [
+          14.5,
+          4026
+        ],
+        [
+          14.1,
+          3551
+        ],
+        [
+          14,
+          7038
+        ],
+        [
+          13.9,
+          6565
+        ],
+        [
+          13.7,
+          2533
+        ]
+      ],
+      "calls": 80,
+      "triangles": 79036,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "bhop_emberdrift_low",
+      "query": "shot=bhop_emberdrift&weapon=deagle&perf=8&adaptive=0&quality=low",
+      "frames": 4240,
+      "fpsMedian": 454.55,
+      "fps1Low": 260.76,
+      "frameMsMedian": 2.2,
+      "frameMsP99": 3.7,
+      "cpuMsMedian": 2.1,
+      "cpuMsP99": 3.2,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          4.2,
+          5366
+        ],
+        [
+          4.1,
+          5524
+        ],
+        [
+          4.1,
+          5913
+        ],
+        [
+          4,
+          1632
+        ],
+        [
+          4,
+          1760
+        ],
+        [
+          4,
+          3348
+        ]
+      ],
+      "calls": 78,
+      "triangles": 94258,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "bhop_emberdrift_medium",
+      "query": "shot=bhop_emberdrift&weapon=deagle&perf=8&adaptive=0&quality=medium",
+      "frames": 2538,
+      "fpsMedian": 322.58,
+      "fps1Low": 143.57,
+      "frameMsMedian": 3.1,
+      "frameMsP99": 6.3,
+      "cpuMsMedian": 2.7,
+      "cpuMsP99": 5.6,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          9,
+          7442
+        ],
+        [
+          8.1,
+          7324
+        ],
+        [
+          7.6,
+          1930
+        ],
+        [
+          7.5,
+          7951
+        ],
+        [
+          7.4,
+          5452
+        ],
+        [
+          7.3,
+          6619
+        ]
+      ],
+      "calls": 85,
+      "triangles": 94265,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "bhop_emberdrift_high",
+      "query": "shot=bhop_emberdrift&weapon=deagle&perf=8&adaptive=0&quality=high",
+      "frames": 1213,
+      "fpsMedian": 149.25,
+      "fps1Low": 68.1,
+      "frameMsMedian": 6.7,
+      "frameMsP99": 14.3,
+      "cpuMsMedian": 6.4,
+      "cpuMsP99": 13.7,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          15.5,
+          8981
+        ],
+        [
+          15.2,
+          2937
+        ],
+        [
+          14.9,
+          3915
+        ],
+        [
+          14.9,
+          6982
+        ],
+        [
+          14.7,
+          4947
+        ],
+        [
+          14.6,
+          7945
+        ]
+      ],
+      "calls": 92,
+      "triangles": 94272,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "surf_prismline_low",
+      "query": "shot=surf_prismline&weapon=deagle&perf=8&adaptive=0&quality=low",
+      "frames": 4205,
+      "fpsMedian": 500,
+      "fps1Low": 241.3,
+      "frameMsMedian": 2,
+      "frameMsP99": 4,
+      "cpuMsMedian": 1.6,
+      "cpuMsP99": 3.4,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          4.4,
+          2914
+        ],
+        [
+          4.4,
+          3570
+        ],
+        [
+          4.4,
+          3811
+        ],
+        [
+          4.4,
+          7108
+        ],
+        [
+          4.3,
+          1977
+        ],
+        [
+          4.3,
+          2975
+        ]
+      ],
+      "calls": 79,
+      "triangles": 78978,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "surf_prismline_medium",
+      "query": "shot=surf_prismline&weapon=deagle&perf=8&adaptive=0&quality=medium",
+      "frames": 2354,
+      "fpsMedian": 303.03,
+      "fps1Low": 119.52,
+      "frameMsMedian": 3.3,
+      "frameMsP99": 7.6,
+      "cpuMsMedian": 2.8,
+      "cpuMsP99": 6.7,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          14.3,
+          3508
+        ],
+        [
+          9,
+          1915
+        ],
+        [
+          9,
+          7151
+        ],
+        [
+          9,
+          8947
+        ],
+        [
+          8.8,
+          3494
+        ],
+        [
+          8.5,
+          7413
+        ]
+      ],
+      "calls": 86,
+      "triangles": 78985,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "surf_prismline_high",
+      "query": "shot=surf_prismline&weapon=deagle&perf=8&adaptive=0&quality=high",
+      "frames": 1281,
+      "fpsMedian": 163.93,
+      "fps1Low": 70.12,
+      "frameMsMedian": 6.1,
+      "frameMsP99": 13,
+      "cpuMsMedian": 5.8,
+      "cpuMsP99": 12.3,
+      "over16": 1,
+      "over33": 0,
+      "worst": [
+        [
+          18.6,
+          4268
+        ],
+        [
+          15.6,
+          1648
+        ],
+        [
+          15,
+          4186
+        ],
+        [
+          14.9,
+          2350
+        ],
+        [
+          14.7,
+          5716
+        ],
+        [
+          13.7,
+          7197
+        ]
+      ],
+      "calls": 93,
+      "triangles": 78992,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    }
+  ],
+  "errors": []
+}

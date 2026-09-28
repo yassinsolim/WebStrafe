@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WebStrafe knife model preview (dev only)</title>
+    <style>
+      html, body { margin: 0; background: #20242b; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <!-- dev tool: close-up of a knife glb (public/knives/<id>.glb) with the viewmodel's lights and tone mapping.
+         /tools/knife-model-preview.html?knife=<id>&view=34|side|back|handle|blade&lod=0|1&finish=<id>&wear=0&seed=1
+         &width=2560&fold=0..1 (folders and the balisong). sets document.title = 'ready' once drawn -->
+    <script type="module">
+      import {
+        ACESFilmicToneMapping, AmbientLight, Box3, Color, DirectionalLight, Group, PerspectiveCamera, PMREMGenerator,
+        Scene, SRGBColorSpace, Vector3, WebGLRenderer,
+      } from 'three';
+      import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+      import { sharedGltfLoader } from '/src/assets/gltfLoader.ts';
+      import { applyKnifeFinish } from '/src/cosmetics/finishes/applyFinish.ts';
+
+      const params = new URLSearchParams(location.search);
+      const id = params.get('knife') ?? 'karambit';
+      const view = params.get('view') ?? '34';
+      const lod = params.get('lod') === '1' ? '_lod1' : '';
+      const width = Number(params.get('width') ?? 2560);
+      const height = Math.round(width * 9 / 16);
+      const fold = Number(params.get('fold') ?? 0);
+
+      const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setSize(width, height);
+      renderer.setClearColor(new Color(params.get('bg') ?? '#262b33'));
+      renderer.outputColorSpace = SRGBColorSpace;
+      renderer.toneMapping = ACESFilmicToneMapping;
+      document.body.appendChild(renderer.domElement);
+
+      const scene = new Scene();
+      scene.environment = new PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+      scene.add(new AmbientLight(0xffffff, 0.95));
+      const key = new DirectionalLight(0xffffff, 1.35);
+      key.position.set(0.3, 1, 0.6);
+      scene.add(key);
+      const fill = new DirectionalLight(0xbcd2ff, 0.55);
+      fill.position.set(-0.6, 0.2, -0.4);
+      scene.add(fill);
+
+      const gltf = await sharedGltfLoader().loadAsync(`/knives/${id}${lod}.glb`);
+      const knife = gltf.scene;
+      const holder = new Group();
+      holder.add(knife);
+      scene.add(holder);
+      knife.getObjectByName('blade_pivot')?.rotation.set(0, 0, -Math.PI * fold);
+      knife.getObjectByName('handle_safe')?.rotation.set(0, 0, -Math.PI * fold);
+      knife.getObjectByName('handle_bite')?.rotation.set(0, 0, Math.PI * fold);
+      if (params.get('finish')) {
+        applyKnifeFinish(knife, { finishId: params.get('finish'), wear: Number(params.get('wear') ?? 0), seed: Number(params.get('seed') ?? 1) });
+      }
+      knife.updateMatrixWorld(true);
+      const box = new Box3().setFromObject(knife);
+      const size = box.getSize(new Vector3());
+      const center = box.getCenter(new Vector3());
+      // first person looks at the knife's -z face
+      const camera = new PerspectiveCamera(30, width / height, 0.005, 5);
+      const tanHalf = Math.tan((camera.fov * Math.PI) / 360);
+      const fit = Math.max(size.x * 1.12 / (2 * tanHalf * camera.aspect), size.y * 1.25 / (2 * tanHalf));
+      let target = center.clone();
+      let dir = new Vector3(-0.35, 0.45, -0.82);
+      let dist = fit;
+      if (view === 'side') dir = new Vector3(0, 0, -1);
+      if (view === 'back') dir = new Vector3(0.35, 0.4, 0.84);
+      if (view === 'handle' || view === 'blade') {
+        target = new Vector3(view === 'handle' ? box.min.x * 0.55 : box.max.x * 0.5, center.y, 0);
+        dist = fit * 0.5;
+      }
+      camera.position.copy(target).addScaledVector(dir.normalize(), dist);
+      camera.lookAt(target);
+      renderer.compile(scene, camera);
+      renderer.render(scene, camera);
+      window.__shotReady = true;
+      document.title = 'ready';
+    </script>
+  </body>
+</html>

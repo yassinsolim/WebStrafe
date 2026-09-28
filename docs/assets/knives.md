@@ -4,22 +4,28 @@ All 20 knives in `public/knives/<id>.glb` are original geometry built by
 committed Blender scripts. Nothing is imported: no Valve or Counter-Strike
 meshes, textures or screenshots were downloaded or used. Each knife follows the
 real-world knife CS2 patterned it on (listed below) plus CS2's published item
-descriptions, the same way the firearms follow real guns. The only texture maps
-are small generated ones (pebble, checkering, G10 grain, paracord braid, wood
-grain), all made with numpy in `klib.py`.
+descriptions, the same way the firearms follow real guns. Every texture is
+baked by the build script from procedural shaders; no texture library or photo
+is used.
 
-The files follow [the knife asset contract](knife-contract.md). The runtime
-still builds the old procedural knives (`src/cosmetics/ProceduralKnife.ts`)
-until the viewmodel switches over.
+The files follow [the knife asset contract](knife-contract.md). Each knife
+ships as `<id>.glb` (LOD0, first person) and `<id>_lod1.glb` (about 40% of the
+triangles and 512 px textures, for third person) with the same nodes, sockets
+and hints.
 
 ## Rebuild
 
 ```bash
-# all 20 raw glbs into .blender-tmp/knives (about 7 s on the M5, ao bake included)
+# all 20 raw glbs (lod0 and lod1) into .blender-tmp/knives, about 5 min on the M5 (texture bakes on the gpu)
 blender -b --factory-startup --python-exit-code 1 -P tools/blender/knives/build_knives.py
-# or a few: ... build_knives.py -- karambit talon [--no-ao] [--quick]
-npx tsx tools/blender/knives/optimize_knives.ts          # -> public/knives/<id>.glb (meshopt, webp 512)
+# or a few: ... build_knives.py -- karambit talon [--no-bake] [--no-lod] [--quick]
+npx tsx tools/blender/knives/optimize_knives.ts          # -> public/knives/<id>.glb (webp up to 2048) and <id>_lod1.glb (512)
 npx vitest run tools/assets/knives.test.ts
+
+# 2560x1440 close-ups: blender, and three.js through the game's loader and tone mapping
+blender -b --factory-startup --python-exit-code 1 -P tools/blender/knives/render_knives.py -- \
+    .blender-tmp/knives .blender-tmp/knives/hires hires --samples 64
+#   /tools/knife-model-preview.html?knife=<id>&view=34|side|back|handle|blade&lod=1&finish=<id> on the dev server
 
 # preview sheets (tiles at one scale, a few minutes at 48 samples on the M5)
 blender -b --factory-startup --python-exit-code 1 -P tools/blender/knives/render_knives.py -- \
@@ -27,8 +33,9 @@ blender -b --factory-startup --python-exit-code 1 -P tools/blender/knives/render
 node tools/blender/weapons/compress_previews.mjs .blender-tmp/knives/final docs/screenshots/knives 1800
 ```
 
-`--quick` skips the bake and writes a side and 3/4 render per knife to
-`.blender-tmp/knives/quick/`. The export is deterministic.
+`--no-bake` exports plain materials (for geometry work, seconds instead of
+minutes); `--quick` also skips LOD1 and writes a side and 3/4 render per knife
+to `.blender-tmp/knives/quick/`.
 
 ## How they are built
 
@@ -66,14 +73,37 @@ node tools/blender/weapons/compress_previews.mjs .blender-tmp/knives/final docs/
   above the handle's bottom at every x. The backspacer is then carved to clear
   the closed edge (`back_line()`). The closed tang and any flipper tab stick out
   at the pivot end, as on the real knives.
-- **Materials** are the five contract names. Blades are satin steel with a
-  brighter polished edge; the finish system replaces them anyway.
-- **Ambient occlusion** is baked with Cycles into `COLOR_0` (floor 0.32). The
-  static body is baked with everything in place; blades on `blade_pivot` and
-  the balisong handles are baked on their own so they don't carry shadows
-  into other poses.
-- **UV0** is cylindrical on lofts, planar on scales and box-projected
-  elsewhere, 3 cm per tile, for the handle textures.
+- **Resolution for the viewmodel.** A knife can fill half of a 1440p screen, so
+  curves get a point every 1.1 mm (`CURVE_STEP`), blades twice the stations
+  (hollow grinds five rows), round sections, rings, pins and lathes 1.8 times
+  the segments, fillets up to ten segments per corner. Scales are domed with
+  rows packed toward the edges and a rounded 0.3 to 0.45 mm edge; guards,
+  bolsters, tangs and clips are bevelled with hardened normals; the blade's
+  spine is eased by a 0.4 mm chamfer row. Grind lines, the edge bevel and
+  swedges stay crisp on purpose.
+- **Materials** are the five contract names, split into three texture sets:
+  steel (`knife_blade`, `knife_edge`), handle (`knife_handle`) and fittings
+  (`knife_metal`, `knife_accent`). Each set has its own 0..1 UV atlas in UV0
+  (`kbake.unwrap()`: smart project of that set's faces across every mesh,
+  packed) and three images: base colour, a tangent-space normal map and an ORM
+  map (glTF occlusion in R, roughness in G, metalness in B). Materials read the
+  maps at factor 1. The blade's normal map is on `knife_blade` as its
+  `normalTexture`, so the finish system can keep it when it swaps the colour.
+- **Baked detail** (`kbake.py`). Each material's bake source is a Cycles shader
+  with a high-resolution procedural height field and colour: satin grain on
+  the steel, a finer polish on the edge, bead blast on fittings, fine G10 weave
+  and fibres, pebbled rubber, diamond checkering on the M9, flowing wood grain
+  with figure and pores, ivory grain, a woven paracord sheath, crepe grip tape.
+  Cycles bakes it onto the game mesh as the normal map, bakes ambient
+  occlusion from the real geometry (screws in their counterbores, pins,
+  guards against grips, teeth, windows, rings; 1 cm distance, 48 samples),
+  roughness, metalness and base colour. Handle normal maps are 2048 px
+  (1024 for the M9's checkering and the paracord, whose regular patterns
+  already hold at 1024 and cost four times as much at 2048 after WebP);
+  everything else is 1024. Vertex colours are gone; AO is in the ORM.
+- **LOD1** is a collapse decimation to 40% of every mesh (UV seams and
+  material borders kept), exported with the same nodes; the optimizer takes
+  its textures down to 512 px.
 
 ## Nodes and hints
 
@@ -102,39 +132,101 @@ start of the ring on ring knives), `handleHeight` is across Y at the grip and
 itself sits a little short of it and lower. `bladeHeight` is the widest
 spine-to-edge distance.
 
-### Sockets and budgets
+### Sockets
 
 Positions in millimetres in the knife frame (three.js axes). All sockets and
-pivots have z = 0.
+pivots have z = 0. These are what the grips were fitted to
+(`tools/assets/gripFit.ts`); `tools/assets/knives.test.ts` pins them and the
+userData hints to within 1 mm of these values.
 
-| knife | tris | size | `socket_grip` | `socket_tip` | pivots | `socket_ring` |
-|---|---:|---:|---|---|---|---|
-| bayonet | 6,282 | 116 KB | -62, 18 | 180, 16.5 | | |
-| m9_bayonet | 3,998 | 94 KB | -63, 19 | 190, 17 | | |
-| karambit | 3,818 | 96 KB | -43, 6.3 | 71.3, -30.7 | | -99.8, -22.4 (inner r 11.5) |
-| butterfly | 6,514 | 161 KB | -64, 11.5 | 102, 10.5 | safe -6.5, 18.2; bite -6.5, 4.7 | |
-| flip | 3,870 | 103 KB | -62, 14.5 | 100, 13.5 | -9, 15.9 | |
-| gut | 3,132 | 77 KB | -58, 16 | 100, 12 | | |
-| huntsman | 4,010 | 90 KB | -62, 19 | 155, 18 | | |
-| falchion | 4,658 | 113 KB | -66, 13.8 | 128, 30 | -8, 14.7 | |
-| shadow_daggers | 3,074 | 82 KB | -24, 13 | 66, 13 | tee -24, 13 | |
-| bowie | 2,936 | 54 KB | -60, 20 | 185, 19 | | |
-| navaja | 3,918 | 72 KB | -62, 9.4 | 105, 13 | -8, 9.5 | |
-| stiletto | 4,222 | 77 KB | -70, 8 | 125, 8 | -11, 8.6 | |
-| talon | 4,974 | 115 KB | -42, 7.9 | 64.3, -24.4 | -8, 11.5 | -95.5, -15.3 (inner r 11.5) |
-| ursus | 4,052 | 106 KB | -62, 16 | 108, 16.5 | -9, 17.1 | |
-| classic | 4,832 | 98 KB | -63, 19 | 200, 17 | | |
-| paracord | 3,428 | 64 KB | -52, 16 | 130, 19.5 | | |
-| survival | 4,054 | 96 KB | -66, 17 | 130, 13 | | |
-| nomad | 4,658 | 115 KB | -62, 15.5 | 104, 20 | -8, 15.8 | |
-| skeleton | 3,300 | 86 KB | -44, 14 | 100, 12 | | -97, 14 (inner r 11) |
-| kukri | 4,252 | 62 KB | -62, 17 | 250, -14 | | |
+| knife | `socket_grip` | `socket_tip` | pivots | `socket_ring` |
+|---|---|---|---|---|
+| bayonet | -62, 18 | 180, 16.5 |  |  |
+| m9_bayonet | -63, 19 | 190, 17 |  |  |
+| karambit | -43, 6.3 | 71.3, -30.7 |  | -99.8, -22.4 (inner r 11.5) |
+| butterfly | -64, 11.5 | 102, 10.5 | safe -6.5, 18.2; bite -6.5, 4.7 |  |
+| flip | -62, 14.5 | 100, 13.5 | -9, 15.9 |  |
+| gut | -58, 16 | 100, 12 |  |  |
+| huntsman | -62, 19 | 155, 18 |  |  |
+| falchion | -66, 13.8 | 128, 30 | -8, 14.7 |  |
+| shadow_daggers | -24, 13 | 66, 13 | tee -24, 13 |  |
+| bowie | -60, 20 | 185, 19 |  |  |
+| navaja | -62, 9.4 | 105, 13 | -8, 9.5 |  |
+| stiletto | -70, 8 | 125, 8 | -11, 8.6 |  |
+| talon | -42, 7.9 | 64.3, -24.4 | -8, 11.5 | -95.5, -15.3 (inner r 11.5) |
+| ursus | -62, 16 | 108, 16.5 | -9, 17.1 |  |
+| classic | -63, 19 | 200, 17 |  |  |
+| paracord | -52, 16 | 130, 19.5 |  |  |
+| survival | -66, 17 | 130, 13 |  |  |
+| nomad | -62, 15.5 | 104, 20 | -8, 15.8 |  |
+| skeleton | -44, 14 | 100, 12 |  | -97, 14 (inner r 11) |
+| kukri | -62, 17 | 250, -14 |  |  |
+
+### Budgets
+
+LOD0 is at most 15,000 triangles and 1.5 MB, LOD1 at most 400 KB with under
+half the triangles. "handle px" is the handle normal map's size.
+
+| knife | LOD0 tris | handle px | LOD0 textures | LOD0 file | LOD1 tris | LOD1 textures | LOD1 file |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| bayonet | 13,750 | 2048 | 827 KB | 948 KB | 5,500 | 142 KB | 205 KB |
+| flip | 10,376 | 2048 | 1360 KB | 1481 KB | 4,148 | 90 KB | 155 KB |
+| gut | 6,060 | 2048 | 836 KB | 899 KB | 2,424 | 149 KB | 184 KB |
+| karambit | 10,194 | 2048 | 1170 KB | 1279 KB | 4,076 | 123 KB | 182 KB |
+| m9_bayonet | 9,410 | 1024 | 881 KB | 975 KB | 3,764 | 213 KB | 265 KB |
+| huntsman | 7,644 | 2048 | 952 KB | 1030 KB | 3,056 | 180 KB | 225 KB |
+| butterfly | 9,730 | 1024 | 400 KB | 529 KB | 3,890 | 104 KB | 167 KB |
+| falchion | 12,996 | 2048 | 1289 KB | 1437 KB | 5,198 | 81 KB | 160 KB |
+| shadow_daggers | 5,656 | 2048 | 842 KB | 908 KB | 2,262 | 146 KB | 182 KB |
+| bowie | 5,844 | 2048 | 653 KB | 716 KB | 2,336 | 99 KB | 136 KB |
+| navaja | 10,920 | 2048 | 610 KB | 733 KB | 4,366 | 93 KB | 161 KB |
+| stiletto | 10,510 | 2048 | 553 KB | 670 KB | 4,202 | 88 KB | 154 KB |
+| talon | 13,802 | 2048 | 355 KB | 507 KB | 5,518 | 104 KB | 182 KB |
+| ursus | 10,838 | 2048 | 1390 KB | 1517 KB | 4,334 | 92 KB | 161 KB |
+| classic | 9,396 | 2048 | 997 KB | 1087 KB | 3,758 | 110 KB | 158 KB |
+| paracord | 6,248 | 1024 | 930 KB | 1014 KB | 2,498 | 319 KB | 376 KB |
+| survival | 7,614 | 2048 | 1311 KB | 1389 KB | 3,044 | 125 KB | 169 KB |
+| nomad | 11,954 | 2048 | 1339 KB | 1477 KB | 4,780 | 94 KB | 168 KB |
+| skeleton | 7,524 | 2048 | 363 KB | 437 KB | 3,008 | 71 KB | 112 KB |
+| kukri | 8,402 | 2048 | 753 KB | 830 KB | 3,360 | 93 KB | 136 KB |
 
 Folder tips are given open; closed, a tip lands at `(2px - x, 2py - y)`.
+
+Close-ups at 2560x1440 (stored at 1280 px) of every knife in Blender are in
+`docs/screenshots/knives/hq/blender_<id>.png`. The same models in three.js,
+through the game's loader, lights and ACES tone mapping
+(`tools/knife-model-preview.html`), plus LOD1 and two finishes:
+
+![All 20 in three.js](../screenshots/knives/models_threejs.png)
+![Karambit LOD1 in three.js](../screenshots/knives/hq/threejs_karambit_lod1.png)
+![Karambit, Case Hardened](../screenshots/knives/hq/threejs_karambit_case_hardened.png)
+![M9 bayonet, Doppler](../screenshots/knives/hq/threejs_m9_doppler.png)
 
 ![All 20 knives, side view, one scale](../screenshots/knives/models_side.png)
 ![3/4 view, one camera distance](../screenshots/knives/models_34.png)
 ![Folders half open and closed, the balisong half closed and closed](../screenshots/knives/models_folding.png)
+
+## Grips in the game
+
+`tools/assets/gripFit.ts` fits each knife's finger curls offline and writes
+`src/viewmodel/knifeHandPoses.json`. The running game is the authority though:
+
+```bash
+# every knife through idle, draw, slashes, stab, backstab and inspect, live finger
+# bones against the live knife meshes (both hands on the push daggers)
+GPU=1 node tools/qa/grip-check.mjs http://<lan ip>:5173 report.json
+STEP=0.00833 GPU=1 node tools/qa/grip-check.mjs ...      # every clip at 1/120 s
+BYPASS_FILE=~/.config/webstrafe/vercel-bypass.txt ...    # against a vercel preview
+# refit in the game when a knife fails: finger curls, and the thumb's way to an opener
+node tools/qa/grip-tune.mjs http://<lan ip>:5173 karambit middle,ring
+node tools/qa/grip-tune-opener.mjs http://<lan ip>:5173 stiletto
+```
+
+The tuners print `engine`, `opener` and `openerVia` entries for the pose table;
+`gripFit.ts` keeps them when it's rerun. The push daggers' t-grip is authored
+in `knifeGrips.ts` (the rig can't spread fingers in the fitter). Close-ups from
+the first person camera for every knife are in
+`docs/screenshots/knives/grips/ingame/`.
 
 ## Knife by knife
 
@@ -321,5 +413,7 @@ Close-ups:
   non-crossing direction.
 - **Hidden mechanisms** (liner and back locks, detents, springs inside
   handles) are only shown where they are visible from outside.
-- **Textures.** Handles use small generated normal or colour maps with tiling
-  UVs, which the optimizer keeps as float UVs (a few KB more per knife).
+- **Detail is baked from procedural height fields,** not from sculpted
+  high-poly meshes. Everything with a silhouette (teeth, jimping, screws with
+  torx and hex sockets, pivots, cut-outs, cord wraps) is real geometry; only
+  surface texture lives in the normal maps.

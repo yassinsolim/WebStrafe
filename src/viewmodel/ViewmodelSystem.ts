@@ -1,15 +1,16 @@
-import { Euler, Group, Matrix4, Object3D, Quaternion, Vector3 } from 'three';
+import { Euler, Group, Matrix4, Mesh, MeshBasicMaterial, Object3D, Quaternion, SphereGeometry, Vector3 } from 'three';
 import { sharedGltfLoader } from '../assets/gltfLoader';
 import { DEFAULT_KNIFE_ID, getKnife, isKnifeId, type KnifeId } from '../combat/knives';
 import { buildProceduralKnife, disposeProceduralKnife, KNIFE_NODES } from '../cosmetics/ProceduralKnife';
 import { disposeKnifeModel, isKnifeModel, loadKnifeModel } from '../cosmetics/knifeAssets';
 import { applyKnifeFinish, type KnifeFinishSelection } from '../cosmetics/finishes/applyFinish';
-import { ArmsRig } from './ArmsRig';
+import { ArmsRig, type DigitSpread } from './ArmsRig';
+import { checkGrip, type GripCheck } from './gripCheck';
 import { FirstPersonArmor } from '../characters/fpArmor';
 import type { CharacterLook } from '../characters/look';
 import { sampleClip, retime, type Clip } from './clips';
-import { blendHandPose, createHandPose, HAND_POSES, type HandPoseName } from './handPoses';
-import { frameFromAxes, frameFromXZ, frameFromYZ } from './ik';
+import { blendHandPose, createHandPose, HAND_POSES, type HandPose, type HandPoseName } from './handPoses';
+import { frameFromXZ, frameFromYZ } from './ik';
 import { alignRingGrip, fittedGripSpec, gripKindFor, knifeGripSpec, measureHandleDiameter, type KnifeGripKind, type KnifeGripSpec } from './knifeGrips';
 import {
   AWP_CLIPS,
@@ -34,11 +35,6 @@ interface HandGrip {
   pose: HandPoseName;
 }
 
-function grip(x: Vector3, y: Vector3, z: Vector3, wrist: Vector3, pose: HandPoseName): HandGrip {
-  const q = frameFromAxes(x.normalize(), y.normalize(), z.normalize(), new Quaternion());
-  return { matrix: new Matrix4().compose(wrist, q, new Vector3(1, 1, 1)), pose };
-}
-
 function gripYZ(y: Vector3, zHint: Vector3, wrist: Vector3, pose: HandPoseName): HandGrip {
   const q = frameFromYZ(y, zHint, new Quaternion());
   return { matrix: new Matrix4().compose(wrist, q, new Vector3(1, 1, 1)), pose };
@@ -46,18 +42,39 @@ function gripYZ(y: Vector3, zHint: Vector3, wrist: Vector3, pose: HandPoseName):
 
 const v = (x: number, y: number, z: number): Vector3 => new Vector3(x, y, z);
 
-// the fist closes around a channel 9.3 cm along the hand bone and 2 cm to the
-// palm side of it, running along the knuckle line (local x). right hand on a
-// pistol grip: thumb side up the grip, back of the hand to the gun's right.
-const RIGHT_PISTOL = grip(v(0, -1, 0), v(0, 0, -1), v(1, 0, 0), v(0.024, -0.004, 0.1), 'pistol');
-// support hand wraps the front of the right hand, thumb forward along the frame
-const LEFT_PISTOL = gripYZ(v(0.35, -0.55, -0.75), v(-1, 0.1, 0.2), v(-0.035, 0.03, 0.075), 'pistolSupport');
+// gun grips (hand bone y along the hand, z out of the back of the hand) were
+// fitted offline with their poses in handPoses.ts, so the padded glove rests on
+// the real surfaces. deagle firing hand: web under the beavertail, knuckles at
+// the front corner of the grip, back of the hand to the right.
+const DEAGLE_RIGHT = gripYZ(v(0, 0, -1), v(0.9945, 0.1045, 0), v(0.041, -0.011, 0.079), 'deagle');
+// support hand around the firing fingers, on socket_grip_l
+const DEAGLE_SUPPORT = gripYZ(v(0.3522, -0.6048, -0.7143), v(-0.935, -0.2608, -0.2402), v(-0.0714, 0.0273, 0.0661), 'deagleSupport');
+// awp firing hand pitched up the raked grip so the index meets the trigger and
+// the web sits under the stock bar, clear of the bolt knob
+const AWP_RIGHT = gripYZ(v(0.0623, 0.273, -0.96), v(0.9848, 0.1392, 0.1035), v(0.046, -0.022, 0.086), 'awp');
 // palm up under the forend, fingers wrapping up the right side
-const LEFT_FOREND = gripYZ(v(0.8, 0.3, -0.35), v(0, -1, 0), v(-0.07, -0.035, 0.035), 'forend');
-// pinching the bolt knob from above and behind
-const RIGHT_BOLT = gripYZ(v(-0.25, -0.35, -0.9), v(1, 0.6, 0.1), v(0.03, 0.035, 0.085), 'pinch');
-// palm cupping a magazine baseplate
-const LEFT_MAG = gripYZ(v(0.5, 0.2, -0.8), v(0, -1, 0), v(-0.035, -0.03, 0.06), 'cupMag');
+const AWP_FOREND = gripYZ(v(0.8664, 0.3249, -0.3791), v(0.2977, -0.9457, -0.1302), v(-0.0655, -0.0492, 0.033), 'awpForend');
+// fingers round the bolt knob from above and behind
+const AWP_BOLT = gripYZ(v(-0.2506, -0.3509, -0.9023), v(0.8347, 0.3938, -0.385), v(0.0492, 0.0441, 0.0761), 'awpBolt');
+// palm cupping the magazine floorplate, on socket_mag_bottom
+const DEAGLE_MAG = gripYZ(v(0.5, 0.2, -0.8), v(0, -1, 0), v(-0.035, -0.03, 0.06), 'deagleMag');
+const AWP_MAG = gripYZ(v(0.5, 0.2, -0.8), v(0, -1, 0), v(-0.0341, -0.0378, 0.0586), 'awpMag');
+const GUN_GRIPS: Readonly<Record<'deagle' | 'awp', { right: HandGrip; support: HandGrip; mag: HandGrip }>> = {
+  deagle: { right: DEAGLE_RIGHT, support: DEAGLE_SUPPORT, mag: DEAGLE_MAG },
+  awp: { right: AWP_RIGHT, support: AWP_FOREND, mag: AWP_MAG },
+};
+// between the grip and the bolt knob the hand opens and swings out along this
+// gun space direction (metres at the midpoint), so it never cuts through the stock
+const BOLT_REACH = v(0.07, 0.005, 0.02);
+// thumb angles the swing passes through
+const BOLT_THUMB = [0, 0, 0] as const;
+const REACH_EXP = 1.5;
+const THUMB_RATE = 5;
+// extra index curl (degrees per joint) at full trigger pull, so the pad follows the blade back
+const TRIGGER_PULL: Readonly<Record<'deagle' | 'awp', readonly [number, number, number]>> = {
+  deagle: [0, 14, 0],
+  awp: [0, 14, 0],
+};
 
 interface ItemBase {
   position: Vector3;
@@ -89,9 +106,9 @@ const HAND_TWEAK_DEG: Readonly<Record<KnifeGripKind, [number, number, number]>> 
 // grip styles that need a different idle hand: given as the knuckle direction
 // (hand +y) and the back of the hand (+z), camera space
 const HAND_OVERRIDE: Partial<Record<KnifeGripKind, Quaternion>> = {
-  // knuckles forward, back of the hand to the right: the little finger side
-  // faces down, so the claw comes out under the fist and curves forward
-  reverse_ring: frameFromYZ(v(-0.35, 0.25, -0.9), v(0.9, 0.3, 0.15), new Quaternion()),
+  // ring knives: little finger side down and forward, back of the hand toward the
+  // camera, so the ring sits on top and the claw curves out under the fist (cs2 view)
+  reverse_ring: frameFromXZ(v(0.1, -0.75, -0.65), v(0.35, 0.5, 0.8), new Quaternion()),
   // push daggers: knuckles up and forward so the blades rise out of the fists
   tee: frameFromYZ(v(-0.15, 0.82, -0.55), v(0.3, 0.55, 0.8), new Quaternion()),
 };
@@ -116,10 +133,10 @@ function knifeBaseFor(spec: KnifeGripSpec): ItemBase {
 const LEFT_LOW = { position: v(-0.25, -0.5, -0.12), rotation: frameFromYZ(v(0.3, 0.6, -0.7), v(-0.6, 0.3, 0.2), new Quaternion()) };
 const LEFT_WATCH = { position: v(0.0, -0.085, -0.27), rotation: frameFromYZ(v(0.96, 0.12, -0.25), v(-0.1, 0.5, 0.86), new Quaternion()) };
 
-// the shoulders sit behind the camera; sliding them is invisible and keeps the
-// long rifle reachable
+// the shoulders sit behind the camera; sliding them is invisible. the awp's
+// keep the long rifle reachable, the deagle's straighten the wrists
 const ARMS_OFFSET: Readonly<Record<ViewItem, Vector3>> = {
-  deagle: v(0, 0, 0),
+  deagle: v(0, 0, 0.08),
   awp: v(0, 0.01, -0.1),
   knife: v(0, 0, 0),
 };
@@ -130,6 +147,9 @@ const SCALE_PIVOT = v(0.12, -0.15, -0.32);
 
 const POLE_R = v(0.55, -0.7, 0.05);
 const POLE_L = v(-0.55, -0.7, 0.05);
+// elbows out wider on the guns so the forearms line up with the gripping hands
+const GUN_POLE_R = v(0.8, -0.5, 0.2);
+const GUN_POLE_L = v(-0.8, -0.5, 0.2);
 
 const GUN_DEFAULTS: Readonly<Record<string, number>> = { leftAttach: 1 };
 const KNIFE_DEFAULTS: Readonly<Record<string, number>> = { knifeOpen: 1 };
@@ -176,9 +196,19 @@ const pC = new Vector3();
 const qA = new Quaternion();
 const qB = new Quaternion();
 const qC = new Quaternion();
+const qRoll = new Quaternion();
+const pairPos = new Vector3();
+const pairRot = new Quaternion();
+// how far the fingers loosen at the middle of an in hand roll
+const ROLL_LOOSEN = 0.6;
+// how far down the straightened index a ring starts before it slides onto it
+const RING_THREAD_M = 0.05;
+const LOOK_AHEAD_S = 0.08;
+const AXIS_X = new Vector3(1, 0, 0);
 const sA = new Vector3();
 const eA = new Euler(0, 0, 0, 'YXZ');
 const poleWorld = new Vector3();
+const poleBlend = new Vector3();
 
 export interface ViewmodelPresentationState {
   active: ViewItem;
@@ -228,6 +258,31 @@ export class ViewmodelSystem {
   private readonly poseR = createHandPose();
   private readonly poseL = createHandPose();
   private readonly poseTmp = createHandPose();
+  private readonly spreadTmp: DigitSpread = {};
+  private gripOpenNow = 0;
+  /** knuckle angle the free fingers flare back to while a knife spins on the index (public for tuning) */
+  public ringSpinFlare = -50;
+  /** how much the hooked index's outer joints uncurl mid spin, degrees (public for tuning) */
+  public ringSpinIndexRelax = 10;
+  /** thumb while a knife spins on the index, out of the spin's plane (public for tuning) */
+  public ringSpinThumb: [number, number, number] = [0, 2, 0];
+  /** how much of a toss goes up the screen against out of the palm (public for tuning) */
+  public tossUp = 0.6;
+  /** how fast the fingers let go as a balisong handle leaves shut (public for tuning) */
+  public baliLetGo = 16;
+  /** knuckle angle the fingers flare back to while balisong handles swing (public for tuning) */
+  public baliFlare = -50;
+  /** how far out both handles are before the last fingers tuck into the palm (public for tuning) */
+  public baliTuckFrom = 0.6;
+  public baliTuck: HandPose = createHandPose({ ...HAND_POSES.fist, ring: [70, 80, 40], pinky: [70, 80, 40] });
+  /** default via point offset for the thumb's way to a folder's opener, degrees (public for tuning) */
+  public thumbOpenerLift: [number, number, number] = [-30, -35, 0];
+  private readonly ringSpinTmp = createHandPose(HAND_POSES.open);
+  /** thumb curl change that takes it off the spine, degrees (public for tuning in engine) */
+  public thumbAway: [number, number, number] = [-50, -35, 0];
+  /** thumb change while the hand slides between a handle and its ring (public for tuning) */
+  public thumbSlide: [number, number, number] = [10, -35, 0];
+  public thumbSlideGain = 16;
   private clockOverride: Date | null = null;
 
   constructor() {
@@ -517,22 +572,42 @@ export class ViewmodelSystem {
     this.itemPivot.updateMatrixWorld(true);
 
     // right hand: grip, or the bolt knob during a bolt cycle
+    const grips = GUN_GRIPS[id];
     const onBolt = this.channel('rightOnBolt');
-    this.socketTarget(gun.gripR, RIGHT_PISTOL, pA, qA);
-    blendHandPose(HAND_POSES.pistol, HAND_POSES.pistol, 0, this.poseR);
+    const gripPose = HAND_POSES[grips.right.pose];
+    this.socketTarget(gun.gripR, grips.right, pA, qA);
+    blendHandPose(gripPose, gripPose, 0, this.poseR);
     if (onBolt > 0 && gun.boltKnob) {
-      this.socketTarget(gun.boltKnob, RIGHT_BOLT, pB, qB);
+      this.socketTarget(gun.boltKnob, AWP_BOLT, pB, qB);
       pA.lerp(pB, onBolt);
       qA.slerp(qB, onBolt);
-      blendHandPose(HAND_POSES.pistol, HAND_POSES.pinch, onBolt, this.poseR);
+      // the thumb swings back out of the thumbhole first, then the hand travels out and up
+      const arc = Math.sin(Math.PI * onBolt);
+      const reach = arc ** REACH_EXP;
+      const thumbOut = Math.min(1, arc * THUMB_RATE);
+      pC.copy(BOLT_REACH).transformDirection(this.itemPivot.matrixWorld).multiplyScalar(BOLT_REACH.length() * this.content.scale.x * reach);
+      pA.add(pC);
+      // the grasp changes with the lift: over the knob while it's down, wrapped once it's up
+      blendHandPose(HAND_POSES.awpBoltClosed, HAND_POSES[AWP_BOLT.pose], this.channel('boltLift'), this.poseTmp);
+      blendHandPose(gripPose, this.poseTmp, onBolt, this.poseR);
+      // fingers open in transit and the thumb swings back out through the thumbhole
+      const [t0, t1, t2] = this.poseR.thumb;
+      blendHandPose(this.poseR, HAND_POSES.open, reach * 0.8, this.poseR);
+      this.poseR.thumb[0] = t0 + (BOLT_THUMB[0] - t0) * thumbOut;
+      this.poseR.thumb[1] = t1 + (BOLT_THUMB[1] - t1) * thumbOut;
+      this.poseR.thumb[2] = t2 + (BOLT_THUMB[2] - t2) * thumbOut;
     }
-    this.poseR.index[1] += this.channel('trigger') * 14;
+    const pull = TRIGGER_PULL[id];
+    const trigger = this.channel('trigger') * (1 - onBolt);
+    this.poseR.index[0] += pull[0] * trigger;
+    this.poseR.index[1] += pull[1] * trigger;
+    this.poseR.index[2] += pull[2] * trigger;
     arms.setArmVisible('r', true);
-    arms.solveArm('r', pA, qA, this.pole(POLE_R));
+    arms.solveArm('r', pA, qA, this.pole(GUN_POLE_R));
     arms.applyHandPose('r', this.poseR);
 
     // left hand: low -> support grip -> magazine -> watch
-    const leftGrip = id === 'deagle' ? LEFT_PISTOL : LEFT_FOREND;
+    const leftGrip = grips.support;
     this.cameraTarget(LEFT_LOW, pA, qA);
     blendHandPose(HAND_POSES.relaxed, HAND_POSES.relaxed, 0, this.poseL);
     const attach = this.channel('leftAttach');
@@ -541,17 +616,21 @@ export class ViewmodelSystem {
       pA.lerp(pB, attach);
       qA.slerp(qB, attach);
       blendHandPose(HAND_POSES.relaxed, HAND_POSES[leftGrip.pose], attach, this.poseL);
+      // open on the way in so the fingers close onto the grip only as the hand arrives
+      if (attach < 1) blendHandPose(this.poseL, HAND_POSES.open, Math.sin(Math.PI * attach) * 0.8, this.poseL);
     }
     const onMag = this.channel('leftOnMag');
     if (onMag > 0 && gun.magBottom) {
-      this.socketTarget(gun.magBottom, LEFT_MAG, pB, qB);
+      this.socketTarget(gun.magBottom, grips.mag, pB, qB);
       pA.lerp(pB, onMag);
       qA.slerp(qB, onMag);
-      blendHandPose(this.poseL, HAND_POSES.cupMag, onMag, this.poseL);
+      blendHandPose(this.poseL, HAND_POSES[grips.mag.pose], onMag, this.poseL);
     }
-    this.blendWatch(pA, qA, this.poseL);
+    this.blendWatch(pA, qA, this.poseL, HAND_POSES.watchGun);
     arms.setArmVisible('l', true);
-    arms.solveArm('l', pA, qA, this.pole(POLE_L));
+    // the watch check keeps the knife's elbow so it reads the same everywhere
+    const pole = poleBlend.copy(GUN_POLE_L).lerp(POLE_L, this.channel('watch'));
+    arms.solveArm('l', pA, qA, this.pole(pole));
     arms.applyHandPose('l', this.poseL);
   }
 
@@ -567,40 +646,123 @@ export class ViewmodelSystem {
     rig.holder.updateMatrixWorld(true);
 
     this.holderTarget(rig, pA, qA);
-    const open = this.channel('gripOpen');
-    blendHandPose(rig.grip.pose, HAND_POSES.open, open, this.poseR);
+    // rolling the knife over about its length (rollX) turns the handle in the
+    // fingers, so they loosen through the middle of each half turn
+    const rolling = Math.abs(Math.sin(this.channel('rollX') * DEG));
+    const open = Math.max(this.channel('gripOpen'), ROLL_LOOSEN * rolling);
+    this.gripOpenNow = open;
     const ringHold = rig.ringHold ? this.channel('ringHold') : 0;
+    // a knife spinning on the index sweeps a disc across the index's first joint:
+    // straight fingers would cross it, so they flare back at the knuckle instead
+    const onRing = rig.grip.kind === 'reverse_ring' || ringHold > 0;
+    const letGo = onRing ? this.ringSpinPose() : HAND_POSES.open;
+    blendHandPose(rig.grip.pose, letGo, open, this.poseR);
+    // the thumb comes off the spine whenever the blade moves past it or the hand opens
+    let thumbAway = Math.max(rolling, Math.min(1, open * 2));
     if (rig.ringHold && ringHold > 0) {
       // the hand slides to the ring and hooks the index through it
       mB.compose(rig.ringHold.anchorLocal, qB.identity(), sA.set(1, 1, 1));
       mA.multiplyMatrices(rig.holder.matrixWorld, mB).multiply(rig.ringHold.spec.handInAnchor);
       mA.decompose(pB, qB, sA);
-      pA.lerp(pB, ringHold);
-      qA.slerp(qB, ringHold);
+      // the ring goes onto the index end first: the hand first lines the ring
+      // up just past the straightened fingertip, then slides it down the finger
+      pC.set(0, 0, 1).applyQuaternion(rig.ringHold.spec.knifeInHand).applyQuaternion(qB);
+      const thread = Math.min(1, ringHold * 2);
+      const slide = Math.max(0, ringHold * 2 - 1);
+      pB.addScaledVector(pC, -RING_THREAD_M * (1 - slide) * this.content.scale.x);
+      pA.lerp(pB, thread);
+      qA.slerp(qB, thread);
       blendHandPose(this.poseR, rig.ringHold.spec.pose, ringHold, this.poseR);
-      blendHandPose(this.poseR, HAND_POSES.open, open, this.poseTmp);
-      this.poseR.middle = this.poseTmp.middle;
-      this.poseR.ring = this.poseTmp.ring;
-      this.poseR.pinky = this.poseTmp.pinky;
+      blendHandPose(this.poseR, letGo, open, this.poseTmp);
+      for (const d of ['middle', 'ring', 'pinky', 'thumb'] as const) copyDigit(this.poseTmp[d], this.poseR[d]);
     }
-    const opener = rig.grip.openerThumb ? this.channel('thumbOpener') : 0;
+    const opener = rig.grip.openerThumb ? Math.min(1, this.channel('thumbOpener')) : 0;
     if (rig.grip.openerThumb && opener > 0) {
-      for (let i = 0; i < 3; i += 1) this.poseR.thumb[i] += (rig.grip.openerThumb[i] - this.poseR.thumb[i]) * opener;
+      // rest -> via -> opener, so the thumb goes round the handle and bolster
+      // instead of straight through them (the via is fitted per knife in engine)
+      const to = rig.grip.openerThumb;
+      const th = this.poseR.thumb;
+      for (let i = 0; i < 3; i += 1) {
+        const via = rig.grip.openerVia ? rig.grip.openerVia[i] : (th[i] + to[i]) / 2 + this.thumbOpenerLift[i];
+        th[i] = opener < 0.5 ? th[i] + (via - th[i]) * opener * 2 : via + (to[i] - via) * (opener * 2 - 1);
+      }
     }
-    if (rig.grip.kind === 'reverse_ring' || ringHold > 0.5) {
+    for (let i = 0; i < 3; i += 1) this.poseR.thumb[i] += this.thumbAway[i] * thumbAway;
+    const hookWeight = rig.grip.kind === 'reverse_ring' ? 1 : ringHold;
+    if (hookWeight > 0) {
       // spins hang off the index finger, so it stays hooked through the ring
       const hooked = rig.grip.kind === 'reverse_ring' ? rig.grip.pose : rig.ringHold!.spec.pose;
-      this.poseR.index[0] = hooked.index[0];
-      this.poseR.index[1] = hooked.index[1];
-      this.poseR.index[2] = hooked.index[2];
+      // the tip uncurls a little while it spins so the handle passes under it
+      const idx = this.poseR.index;
+      idx[0] += (hooked.index[0] - idx[0]) * hookWeight;
+      idx[1] += (hooked.index[1] - this.ringSpinIndexRelax * open - idx[1]) * hookWeight;
+      idx[2] += (hooked.index[2] - this.ringSpinIndexRelax * 0.8 * open - idx[2]) * hookWeight;
+    }
+    // threading the ring: the index straightens past the knuckle while the ring
+    // slides down it and only curls round once the ring is seated
+    if (rig.ringHold && ringHold > 0 && ringHold < 1) {
+      const straight = Math.min(1, ringHold * 2) * Math.min(1, (1 - ringHold) * 6);
+      this.poseR.index[1] *= 1 - straight;
+      this.poseR.index[2] *= 1 - straight;
+      // the thumb stays off the frame until the hand has nearly settled
+      const away = Math.min(1, Math.sin(Math.PI * ringHold) * this.thumbSlideGain);
+      for (let i = 0; i < 3; i += 1) this.poseR.thumb[i] += this.thumbSlide[i] * away;
+    }
+    // a folding blade mid swing and a balisong handle away from shut pass where
+    // the fingers are, so the hand lets go while they move. looking a little
+    // ahead gets the fingers clear before the blade gets there
+    const swing = (v: number) => Math.sin(Math.PI * Math.min(1, Math.max(0, v)));
+    const moving = Math.max(
+      rig.bladePivot ? 3 * Math.max(swing(this.channel('knifeOpen')), swing(this.ahead('knifeOpen'))) * this.moving('knifeOpen') : 0,
+      rig.handleSafe ? this.baliLetGo * Math.max(this.channel('baliSafe'), this.ahead('baliSafe')) : 0,
+      rig.handleBite ? this.baliLetGo * Math.max(this.channel('baliBite'), this.ahead('baliBite')) : 0,
+    );
+    this.gripOpenNow = Math.max(this.gripOpenNow, Math.min(1, moving));
+    if (moving > 0.03) {
+      // the tip of a folding blade and a swinging balisong handle both sweep
+      // the finger side, so the fingers flare back out of the way
+      const m = Math.min(1, moving);
+      blendHandPose(this.poseR, this.ringSpinPose(rig.handleSafe ? this.baliFlare : this.ringSpinFlare), m, this.poseTmp);
+      for (const d of ['index', 'middle', 'ring', 'pinky'] as const) copyDigit(this.poseTmp[d], this.poseR[d]);
+      if (rig.handleSafe && rig.handleBite) {
+        // both balisong handles out: the palm is empty, so the last two fingers
+        // tuck into it instead of sitting in the spinning knife's way
+        const out = Math.min(this.channel('baliSafe'), this.channel('baliBite'));
+        const tuck = Math.min(1, Math.max(0, (out - this.baliTuckFrom) / (1 - this.baliTuckFrom)));
+        if (tuck > 0) {
+          blendHandPose(this.poseR, this.baliTuck, tuck, this.poseTmp);
+          copyDigit(this.poseTmp.ring, this.poseR.ring);
+          copyDigit(this.poseTmp.pinky, this.poseR.pinky);
+        }
+      }
+      // a thumb pressing a folder's opener stays on it while the blade goes
+      // (until the blade itself starts to move under it)
+      const onOpener = rig.grip.openerThumb
+        ? Math.min(1, this.channel('thumbOpener')) * (1 - Math.min(1, swing(this.channel('knifeOpen')) * 4))
+        : 0;
+      for (let i = 0; i < 3; i += 1) this.poseR.thumb[i] += this.thumbAway[i] * m * (1 - onOpener);
+    }
+    if (rig.bladePivot) {
+      // a folding blade held part open crosses in front of the index and
+      // middle fingers, so they stay off it even while the blade is still
+      const held = Math.min(1, 3 * swing(this.channel('knifeOpen')));
+      if (held > 0.03) {
+        blendHandPose(this.poseR, this.ringSpinPose(), held, this.poseTmp);
+        copyDigit(this.poseTmp.index, this.poseR.index);
+        copyDigit(this.poseTmp.middle, this.poseR.middle);
+      }
     }
     arms.setArmVisible('r', true);
     arms.solveArm('r', pA, qA, this.pole(POLE_R));
-    arms.applyHandPose('r', this.poseR);
+    arms.applyHandPose('r', this.poseR, this.knifeSpread(rig, open));
+    // the left dagger mirrors the right one as placed, before the right hand's reach fix
+    pairPos.copy(rig.holder.position);
+    pairRot.copy(rig.holder.quaternion);
+    if (ringHold <= 0) this.keepKnifeInHand(rig, arms.getHandBone('r'), pA, qA);
 
     if (pair && this.knifeLeft) {
       const left = this.knifeLeft;
-      mirrorRootPose(rig.holder.position, rig.holder.quaternion, left.holder.position, left.holder.quaternion, MIRROR_KNIFE);
+      mirrorRootPose(pairPos, pairRot, left.holder.position, left.holder.quaternion, MIRROR_KNIFE);
       this.applyKnifeParts(left);
       left.holder.updateMatrixWorld(true);
       // the left hand is the right hand's target mirrored in camera space
@@ -613,7 +775,8 @@ export class ViewmodelSystem {
       blendHandPose(rig.grip.pose, HAND_POSES.open, open, this.poseL);
       arms.setArmVisible('l', true);
       arms.solveArm('l', pA, qA, this.pole(POLE_L));
-      arms.applyHandPose('l', this.poseL);
+      arms.applyHandPose('l', this.poseL, this.knifeSpread(rig, open));
+      this.keepKnifeInHand(left, arms.getHandBone('l'), pA, qA);
       return;
     }
 
@@ -629,20 +792,80 @@ export class ViewmodelSystem {
     }
   }
 
-  private blendWatch(pos: Vector3, rot: Quaternion, pose: ReturnType<typeof createHandPose>): void {
+  /** a channel's value a moment ahead in the current clip */
+  private ahead(name: string, by = LOOK_AHEAD_S): number {
+    const now = this.channel(name);
+    return this.clip ? sampleClip(this.clip, name, Math.max(0, this.time + by), now) : now;
+  }
+
+  /** 0..1, whether a channel is changing around now (a held half open blade isn't) */
+  private moving(name: string): number {
+    const now = this.channel(name);
+    const change = Math.abs(this.ahead(name) - now) + Math.abs(now - this.ahead(name, -LOOK_AHEAD_S));
+    return Math.min(1, change * 12);
+  }
+
+  private ringSpinPose(f = this.ringSpinFlare): HandPose {
+    const p = this.ringSpinTmp;
+    p.middle[0] = f; p.middle[1] = 4; p.middle[2] = 2;
+    p.ring[0] = f - 2; p.ring[1] = 4; p.ring[2] = 2;
+    p.pinky[0] = f - 4; p.pinky[1] = 4; p.pinky[2] = 2;
+    p.thumb[0] = this.ringSpinThumb[0]; p.thumb[1] = this.ringSpinThumb[1]; p.thumb[2] = this.ringSpinThumb[2];
+    return p;
+  }
+
+  private knifeSpread(rig: KnifeRig, open: number): DigitSpread | undefined {
+    const spread = rig.grip.spread;
+    if (!spread) return undefined;
+    const k = 1 - Math.min(1, open);
+    this.spreadTmp.middle = (spread.middle ?? 0) * k;
+    this.spreadTmp.ring = (spread.ring ?? 0) * k;
+    this.spreadTmp.pinky = (spread.pinky ?? 0) * k;
+    this.spreadTmp.index = (spread.index ?? 0) * k;
+    return this.spreadTmp;
+  }
+
+  private blendWatch(pos: Vector3, rot: Quaternion, pose: ReturnType<typeof createHandPose>, fingers: HandPose = HAND_POSES.relaxed): void {
     const watch = this.channel('watch');
     if (watch <= 0) return;
     this.cameraTarget(LEFT_WATCH, pC, qC);
     pos.lerp(pC, watch);
     rot.slerp(qC, watch);
-    blendHandPose(pose, HAND_POSES.relaxed, watch, this.poseTmp);
+    blendHandPose(pose, fingers, watch, this.poseTmp);
     blendHandPose(this.poseTmp, this.poseTmp, 0, pose);
+  }
+
+  /**
+   * when a clip pushes the knife past the arm's reach the ik stops the hand
+   * short; move the knife by the same miss so it stays in the fingers instead
+   * of sliding through them.
+   */
+  private keepKnifeInHand(rig: KnifeRig, hand: Object3D, targetPos: Vector3, targetRot: Quaternion): void {
+    hand.updateWorldMatrix(true, false);
+    hand.matrixWorld.decompose(pC, qC, sA);
+    if (pC.distanceToSquared(targetPos) < 1e-10 && qC.angleTo(targetRot) < 1e-5) return;
+    // miss = actual * inverse(target), both without scale
+    mB.compose(targetPos, targetRot, sA.set(1, 1, 1)).invert();
+    mA.compose(pC, qC, sA.set(1, 1, 1)).multiply(mB);
+    // holder world = content world * holder local; apply the miss in world space
+    this.content.updateWorldMatrix(true, false);
+    rig.holder.updateMatrix();
+    mB.multiplyMatrices(this.content.matrixWorld, rig.holder.matrix);
+    mA.multiply(mB);
+    mB.copy(this.content.matrixWorld).invert().multiply(mA);
+    mB.decompose(rig.holder.position, rig.holder.quaternion, sA);
+    rig.holder.scale.set(1, 1, 1);
+    rig.holder.updateMatrixWorld(true);
   }
 
   private placeHolder(rig: KnifeRig, gripPos: Vector3, rotation: Quaternion): void {
     // local root position so the grip socket lands on gripPos
     rig.holder.quaternion.copy(rotation);
-    pC.copy(rig.anchorLocal).applyQuaternion(rotation);
+    // holdRoll turns the knife about its length with the hand closed on it (the
+    // wrist rolls), unlike rollX which turns it inside the fingers
+    const roll = this.channel('holdRoll');
+    if (roll !== 0) rig.holder.quaternion.multiply(qRoll.setFromAxisAngle(AXIS_X, roll * DEG));
+    pC.copy(rig.anchorLocal).applyQuaternion(rig.holder.quaternion);
     rig.holder.position.copy(gripPos).sub(pC);
   }
 
@@ -658,9 +881,12 @@ export class ViewmodelSystem {
     rig.spin.position.copy(rig.pivotLocal);
     const toss = this.channel('tossY');
     if (toss !== 0) {
-      // the toss goes straight up the screen, whatever way the knife points
+      // the knife leaves out of the palm (the way the open fingers aren't) and
+      // up the screen
       qC.copy(rig.holder.quaternion).invert();
-      rig.spin.position.addScaledVector(pC.set(0, 1, 0.25).normalize().applyQuaternion(qC), toss);
+      pC.set(0, 1, 0.25).normalize().applyQuaternion(qC).multiplyScalar(this.tossUp);
+      pB.set(0, 0, -1).applyQuaternion(qB.copy(rig.grip.knifeInHand).invert());
+      rig.spin.position.addScaledVector(pC.add(pB).normalize(), toss);
     }
     eA.set(this.channel('rollX') * DEG, 0, this.channel('spinZ') * DEG, 'XYZ');
     rig.spin.quaternion.setFromEuler(eA);
@@ -813,6 +1039,76 @@ export class ViewmodelSystem {
   /** hook for the finish system to repaint freshly built knives */
   public onKnifeRigsChanged: (() => void) | null = null;
 
+  /** debug: where the right wrist is versus where the grip wants it, and what knife rig is live */
+  public debugGrip(): Record<string, unknown> | null {
+    const rig = this.knife;
+    if (!rig || !this.arms) return null;
+    this.content.updateWorldMatrix(true, true);
+    this.holderTarget(rig, pA, qA);
+    const wrist = this.arms.getHandBone('r').getWorldPosition(new Vector3());
+    const handQ = this.arms.getHandBone('r').getWorldQuaternion(new Quaternion());
+    return {
+      source: isKnifeModel(rig.knife) ? 'glb' : 'procedural',
+      kind: rig.grip.kind,
+      anchor: rig.grip.anchor,
+      wristErrorMm: Math.round(wrist.distanceTo(pA) * 10000) / 10,
+      handAngleErrorDeg: Math.round((handQ.angleTo(qA) * 180) / Math.PI * 10) / 10,
+      pose: rig.grip.pose,
+    };
+  }
+
+  /** debug: the current value of an animation channel */
+  public debugChannel(name: string): number {
+    return this.channel(name);
+  }
+
+  /** how open the knife hand was on the last pose, after rolls loosen it (0 closed) */
+  public debugGripOpen(): number {
+    return this.gripOpenNow;
+  }
+
+  /** debug: the right wrist in world space (preview cameras aim at it) */
+  public getHandWorldPosition(): Vector3 {
+    const out = new Vector3();
+    if (!this.arms) return out;
+    this.content.updateWorldMatrix(true, true);
+    // a little up the hand from the wrist, the middle of the fist
+    const hand = this.arms.getHandBone('r');
+    return out.set(0, 0.07, -0.02).applyMatrix4(hand.matrixWorld);
+  }
+
+  /** debug: small spheres on every finger joint and tip of the right hand */
+  public showFingerMarkers(on: boolean): void {
+    if (!this.arms) return;
+    const digits = this.arms.getDigits('r');
+    for (const bones of Object.values(digits)) {
+      for (const bone of bones) {
+        const old = bone.getObjectByName('fingerMarker');
+        if (old) old.removeFromParent();
+        if (!on) continue;
+        const m = new Mesh(new SphereGeometry(0.0035, 10, 8), new MeshBasicMaterial({ color: 0xff2266, depthTest: false }));
+        m.name = 'fingerMarker';
+        m.renderOrder = 50;
+        bone.add(m);
+      }
+    }
+  }
+
+  /** in-engine finger check against the knife in hand (see gripCheck.ts) */
+  public checkKnifeGrip(side: 'r' | 'l' = 'r'): GripCheck | null {
+    const rig = side === 'r' ? this.knife : this.knifeLeft;
+    if (!rig || !this.arms) return null;
+    this.content.updateWorldMatrix(true, true);
+    const ring = rig.grip.kind === 'reverse_ring' ? rig.pivotLocal : null;
+    return checkGrip(rig.knife, this.arms.getDigits(side), ring);
+  }
+
+  /** length of the current knife's clip for an action, seconds */
+  public knifeActionDuration(action: ViewAction): number {
+    if (action === 'idle') return 0;
+    return knifeClip(getKnife(this.knifeId), action as KnifeClipName)?.duration ?? 0;
+  }
+
   /** the knife objects currently in hand (one, or two for the push daggers) */
   public getKnifeObjects(): Object3D[] {
     return [this.knife?.knife, this.knifeLeft?.knife].filter((k): k is Group => !!k);
@@ -902,6 +1198,12 @@ const MIRROR_KNIFE = new Matrix4().makeScale(1, 1, -1);
 const MIRROR_HAND = new Matrix4().makeScale(-1, 1, 1);
 
 /** mirrors a camera space pose across the view's vertical centre plane */
+function copyDigit(from: readonly number[], to: number[]): void {
+  to[0] = from[0];
+  to[1] = from[1];
+  to[2] = from[2];
+}
+
 function mirrorRootPose(pos: Vector3, rot: Quaternion, outPos: Vector3, outRot: Quaternion, local: Matrix4): void {
   outPos.set(-pos.x, pos.y, pos.z);
   mirrorTmp.makeRotationFromQuaternion(rot);

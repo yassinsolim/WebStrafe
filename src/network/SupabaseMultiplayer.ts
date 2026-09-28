@@ -17,7 +17,8 @@ import { HostSimulation, type HostBotRow, type HostEmitter } from './HostSimulat
 import { SendCadence } from '../netcode/SendCadence';
 import { broadcastRateHz, DEFAULT_BUDGET, MAX_ROOM_PLAYERS, type BudgetOptions } from '../netcode/RateBudget';
 import { RESPAWN_DELAY_MS } from '../combat/CombatState';
-import { decodeCosmetics, encodeCosmetics, sameCosmetics, type PlayerCosmetics } from './cosmetics';
+import { decodeCosmetics, encodeCosmetics, type PlayerCosmetics } from './cosmetics';
+import { CosmeticsPublisher } from './cosmeticsPublisher';
 
 const SESSION_KEY = 'webstrafe:session-id:v1';
 /**
@@ -128,6 +129,10 @@ interface RemoteRecord {
   lastSeen: number;
 }
 
+/** quiet time before a cosmetics change is tracked, and the least time between two tracks */
+export const COSMETICS_DEBOUNCE_MS = 1000;
+export const COSMETICS_MIN_INTERVAL_MS = 10000;
+
 /**
  * Serverless multiplayer over Supabase Realtime broadcast + presence.
  *
@@ -181,7 +186,14 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   private carrierTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly detachVisibility: (() => void) | null;
   private localWeapon: string | null = null;
+  /** cosmetics peers have been told (what presence carries) */
   private localCosmetics: PlayerCosmetics | null = null;
+  // presence track costs ~N events per room and is capped at 5 per client per
+  // 30 s, so changes are collapsed and spaced out; joins carry the latest
+  private readonly cosmeticsPublisher = new CosmeticsPublisher((cosmetics) => {
+    this.localCosmetics = cosmetics;
+    if (this.channel && this.subscribed) void this.channel.track(this.presencePayload());
+  }, { debounceMs: COSMETICS_DEBOUNCE_MS, minIntervalMs: COSMETICS_MIN_INTERVAL_MS, now: () => this.now() });
   /** Date.now() when the local player respawns, while dead */
   private localDeadUntil: number | null = null;
   /** our claim epoch while hosting, and the highest epoch seen in this room */
@@ -219,6 +231,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   }
 
   disconnect(): void {
+    this.cosmeticsPublisher.dispose();
     this.localCombatReady = false;
     this.stopPump();
     this.stopHost();
@@ -297,6 +310,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     channel.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         this.subscribed = true;
+        this.localCosmetics = this.cosmeticsPublisher.joined();
         void channel.track(this.presencePayload());
         this.cadence.flush();
         this.startPump();
@@ -447,13 +461,9 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     };
   }
 
-  /** re-tracks presence only when the choice actually changed (presence is rate limited) */
+  /** re-tracks presence when the choice changed, debounced and spaced out (presence is rate limited) */
   setCosmetics(cosmetics: PlayerCosmetics | null): void {
-    if (sameCosmetics(this.localCosmetics ?? undefined, cosmetics ?? undefined)) return;
-    this.localCosmetics = cosmetics;
-    if (this.channel && this.subscribed) {
-      void this.channel.track(this.presencePayload());
-    }
+    this.cosmeticsPublisher.set(cosmetics);
   }
 
   /**
