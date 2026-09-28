@@ -41,7 +41,11 @@ function gpuBytes(info: KtxInfo): number {
   return info.width * info.height * (info.levels > 1 ? 4 / 3 : 1);
 }
 
-const maps = readdirSync(path.join(ROOT, 'public/maps')).filter((id) => statSync(path.join(ROOT, 'public/maps', id, 'scene.glb'), { throwIfNoEntry: false }));
+// only map folders: stat('manifest.json/scene.glb') throws ENOTDIR on linux
+const maps = readdirSync(path.join(ROOT, 'public/maps'), { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .filter((id) => statSync(path.join(ROOT, 'public/maps', id, 'scene.glb'), { throwIfNoEntry: false }));
 
 describe.each(maps)('map %s', (id) => {
   it('ships every texture as ktx2 and stays inside the texture memory budget', () => {
