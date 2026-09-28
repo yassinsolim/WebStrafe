@@ -255,7 +255,9 @@ finger pointed down into the bottom of the guard. The Deagle also has its own
 right hand pose, `deagle` in `src/viewmodel/handPoses.ts`. Its trigger sits
 close in front of the deep grip, so the first index segment lies along the
 frame and the finger bends in at the middle joint onto the trigger face. The
-AWP keeps `pistol`.
+AWP has its own grip, forend and bolt poses in the same file. All gun poses
+were fitted offline against the shipped meshes, so each finger segment rests
+within about 1 mm of the surface it touches.
 
 Animation hints (`userData`):
 
