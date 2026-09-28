@@ -30,6 +30,7 @@ export class MultiplayerClient implements MultiplayerTransport {
   private localId: string | null = null;
   private activeMapId = '';
   private combatReady = false;
+  private pvp = true;
   private latestSnapshotServerTimeMs: number | null = null;
   private readonly sendCadence = new SendCadence(WS_STATE_SEND_HZ);
   private pingSentAtMs: number | null = null;
@@ -56,6 +57,7 @@ export class MultiplayerClient implements MultiplayerTransport {
   public onRespawn: ((event: { playerId: string; position: [number, number, number] }) => void) | null = null;
   public onShot: ((event: ShotEvent) => void) | null = null;
   public onConnectedChange: ((connected: boolean) => void) | null = null;
+  public onScoreboard: ((rows: Array<{ id: string; kills: number; deaths: number }>) => void) | null = null;
 
   constructor(url = buildDefaultWsUrl()) {
     this.url = url;
@@ -105,6 +107,15 @@ export class MultiplayerClient implements MultiplayerTransport {
     }
 
     this.connect();
+  }
+
+  /** pvp opt-in, the server enforces it (see server/index.ts 'pvp') */
+  public setPvp(on: boolean): void {
+    if (this.pvp === on) return;
+    this.pvp = on;
+    if (this.activeMapId && this.localId) {
+      this.send({ type: 'pvp', on });
+    }
   }
 
   public setCombatReady(ready: boolean): void {
@@ -243,7 +254,21 @@ export class MultiplayerClient implements MultiplayerTransport {
           if (typeof payload.mapId === 'string') {
             this.activeMapId = payload.mapId;
             this.send({ type: 'combat-ready', ready: this.combatReady });
+            if (!this.pvp) this.send({ type: 'pvp', on: false });
           }
+          break;
+        }
+        case 'scoreboard': {
+          if (payload.mapId !== this.activeMapId || !Array.isArray(payload.rows)) {
+            return;
+          }
+          const rows = (payload.rows as unknown[]).flatMap((row) => {
+            if (!Array.isArray(row) || typeof row[0] !== 'string') return [];
+            const kills = Number(row[1]);
+            const deaths = Number(row[2]);
+            return Number.isFinite(kills) && Number.isFinite(deaths) ? [{ id: row[0], kills, deaths }] : [];
+          });
+          this.onScoreboard?.(rows);
           break;
         }
         case 'snapshot': {
