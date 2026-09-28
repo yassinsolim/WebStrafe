@@ -95,6 +95,7 @@ export class ArmorCharacter {
     this.look = look;
     this.team = team;
     this.root.name = 'ArmorCharacter';
+    this.material.setAtlas(library.atlas);
     this.bones = buildSkeleton(ALL_JOINTS);
     const pelvis = this.bones.get('pelvis')!;
     this.root.add(pelvis);

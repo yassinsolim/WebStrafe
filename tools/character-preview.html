@@ -31,6 +31,8 @@
       const team = params.get('team') === 'ct' ? 'counterterrorist' : 'terrorist';
       const view = params.get('view') ?? 'front';
       const lod = params.has('lod') ? Number(params.get('lod')) : 0;
+      // ?lods=0,1,2 pins a level per character (side by side lod comparisons)
+      const lods = params.get('lods') ? params.get('lods').split(',').map(Number) : null;
       const bind = params.get('bind') === '1';
       const looks = params.get('looks')
         ? params.get('looks').split(',').map((w) => decodeLook(w, defaultLook(team)) ?? defaultLook(team))
@@ -65,7 +67,7 @@
       const spacing = 1.05;
       const chars = [];
       for (const [i, look] of looks.entries()) {
-        const ch = await createCharacter(look, i % 2 === 0 ? team : (team === 'terrorist' ? 'counterterrorist' : 'terrorist'), { pose: bind ? 'none' : 'stance', lod });
+        const ch = await createCharacter(look, i % 2 === 0 ? team : (team === 'terrorist' ? 'counterterrorist' : 'terrorist'), { pose: bind ? 'none' : 'stance', lod: lods ? lods[i % lods.length] : lod });
         ch.root.position.x = (i - (looks.length - 1) / 2) * spacing;
         const yaw = { front: 0, back: Math.PI, side: Math.PI / 2, quarter: 0.6 }[view] ?? 0;
         ch.root.rotation.y = yaw;

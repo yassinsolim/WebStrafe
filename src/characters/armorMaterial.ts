@@ -1,4 +1,4 @@
-import { Color, MeshStandardMaterial, Vector3, type WebGLProgramParametersWithUniforms } from 'three';
+import { Color, DataTexture, MeshStandardMaterial, Vector2, Vector3, type Texture, type WebGLProgramParametersWithUniforms } from 'three';
 import { FINISH_INFO, TEAM_LIGHT, type FinishId } from './catalog';
 import type { CharacterLook } from './look';
 import { MATERIAL_SLOTS } from './library';
@@ -6,6 +6,9 @@ import type { PlayerModel } from '../network/types';
 
 const SLOT_COUNT = MATERIAL_SLOTS.length;
 const S = Object.fromEntries(MATERIAL_SLOTS.map((name, i) => [name, i])) as Record<(typeof MATERIAL_SLOTS)[number], number>;
+
+const NEUTRAL_ORM = new DataTexture(new Uint8Array([255, 128, 0, 255]), 1, 1);
+NEUTRAL_ORM.needsUpdate = true;
 
 /**
  * one material for a whole character: every vertex carries its material slot
@@ -21,6 +24,8 @@ export class ArmorMaterial extends MeshStandardMaterial {
   public readonly slotPbr: Vector3[] = Array.from({ length: SLOT_COUNT }, () => new Vector3(0.6, 0, 0));
   public readonly wear = { value: 0 };
   public readonly team = { value: new Color(TEAM_LIGHT.terrorist) };
+  /** r ao, g roughness detail around 0.5, b edge wear; neutral until an atlas is set */
+  public readonly orm = { value: NEUTRAL_ORM as Texture };
 
   constructor() {
     super({ color: 0xffffff, roughness: 1, metalness: 0 });
@@ -30,7 +35,16 @@ export class ArmorMaterial extends MeshStandardMaterial {
 
   // one program for every character, the look lives in uniforms
   override customProgramCacheKey(): string {
-    return 'armor-v1';
+    return this.normalMap ? 'armor-v2-atlas' : 'armor-v2';
+  }
+
+  /** the library's baked atlas; only for geometry that carries atlas uvs */
+  setAtlas(atlas: { normal: Texture; orm: Texture } | null): void {
+    this.normalMap = atlas?.normal ?? null;
+    // gltf-style textures without vertex tangents: three flips green for these
+    this.normalScale = new Vector2(1, -1);
+    this.orm.value = atlas?.orm ?? NEUTRAL_ORM;
+    this.needsUpdate = true;
   }
 
   applyLook(look: CharacterLook, team: PlayerModel): void {
@@ -48,10 +62,11 @@ export class ArmorMaterial extends MeshStandardMaterial {
     this.slotColor[S.secondary].copy(secondary);
     this.slotColor[S.accent].copy(accent);
     // the undersuit is charcoal with a hint of the secondary paint
-    this.slotColor[S.suit].set(0.028, 0.03, 0.034).lerp(secondary.clone().multiplyScalar(0.3), 0.3);
+    this.slotColor[S.suit].set(0.028, 0.03, 0.034).lerp(secondary.clone().multiplyScalar(0.3), 0.15);
     this.slotColor[S.dark].set(0.032, 0.034, 0.038);
     this.slotColor[S.light].set(teamColor.r, teamColor.g, teamColor.b);
-    this.slotColor[S.visor].set(0.006, 0.007, 0.009);
+    // tinted glass: the accent paint, deep and glossy, so reflections take its colour
+    this.slotColor[S.visor].copy(accent).multiplyScalar(0.22).addScalar(0.004);
     this.slotColor[S.metal].set(0.6, 0.61, 0.63);
     this.slotColor[S.cloth].copy(secondary).multiplyScalar(0.85);
     this.slotColor[S.trim].copy(accent).multiplyScalar(0.9);
@@ -64,7 +79,7 @@ export class ArmorMaterial extends MeshStandardMaterial {
     this.slotPbr[S.suit].set(0.86, 0, 0);
     this.slotPbr[S.dark].set(0.5, 0.25, 0);
     this.slotPbr[S.light].set(0.35, 0, 3.2);
-    this.slotPbr[S.visor].set(0.06, 0.0, 0);
+    this.slotPbr[S.visor].set(0.07, 0.55, 0);
     this.slotPbr[S.metal].set(0.3, 1, 0);
     this.slotPbr[S.cloth].set(0.92, 0, 0);
     this.slotPbr[S.trim].set(0.88, 0, 0);
@@ -76,6 +91,7 @@ export class ArmorMaterial extends MeshStandardMaterial {
     shader.uniforms.uSlotPbr = { value: this.slotPbr };
     shader.uniforms.uWear = this.wear;
     shader.uniforms.uTeam = this.team;
+    shader.uniforms.uOrm = this.orm;
 
     shader.vertexShader = shader.vertexShader
       .replace(
@@ -103,6 +119,7 @@ uniform vec3 uSlotColor[${SLOT_COUNT}];
 uniform vec3 uSlotPbr[${SLOT_COUNT}];
 uniform float uWear;
 uniform vec3 uTeam;
+uniform sampler2D uOrm;
 flat varying float vSlot;
 varying vec2 vOcc;
 varying vec3 vBindPos;
@@ -131,15 +148,23 @@ float armorRough = armorPbr.x;
 float armorMetal = armorPbr.y;
 float armorGlow = armorPbr.z;
 vec3 armorColor = uSlotColor[armorSlot];
-float armorAo = vOcc.x;
+#ifdef USE_NORMALMAP
+vec3 armorOrm = texture2D(uOrm, vNormalMapUv).rgb;
+#else
+vec3 armorOrm = vec3(1.0, 0.5, 0.0);
+#endif
+float armorAo = vOcc.x * armorOrm.r;
+float armorEdge = max(vOcc.y, armorOrm.b);
 bool armorPaint = armorSlot <= 2;
 bool armorFabric = armorSlot == 3 || armorSlot >= 8;
+// baked micro roughness: cc0 paint, fabric and leather detail
+armorRough = clamp(armorRough + (armorOrm.g - 0.5) * (armorPaint ? 0.55 : 0.8), 0.04, 1.0);
 if (armorPaint) {
   float n1 = armorNoise(vBindPos * 60.0);
   float n2 = armorNoise(vBindPos * 210.0);
-  armorRough = clamp(armorRough + (n1 - 0.5) * 0.08, 0.05, 1.0);
+  armorRough = clamp(armorRough + (n1 - 0.5) * 0.05, 0.04, 1.0);
   // worn finish: paint chips off along the sharp edges, a few scratches elsewhere
-  float edge = smoothstep(0.45, 0.85, vOcc.y);
+  float edge = smoothstep(0.35, 0.8, armorEdge);
   float chip = edge * smoothstep(0.35, 0.6, armorNoise(vBindPos * 150.0) + (n1 - 0.5) * 0.3) * uWear;
   float scuff = smoothstep(0.86, 0.95, n2) * 0.3 * uWear;
   float bare = max(chip, scuff);
@@ -147,6 +172,8 @@ if (armorPaint) {
   armorMetal = mix(armorMetal, 0.85, bare);
   armorRough = mix(armorRough, 0.34, bare);
   armorColor *= mix(1.0, 0.72 + 0.28 * armorAo, uWear);
+  // every finish: a faint lighter rim on the bevels catches light like real edge wear
+  armorColor *= 1.0 + 0.12 * smoothstep(0.4, 0.9, armorEdge);
 } else if (armorFabric) {
   float weave = armorNoise(vBindPos * 380.0);
   armorColor *= 0.9 + 0.2 * weave;
@@ -168,9 +195,9 @@ metalnessFactor = armorMetal;`,
         `#include <emissivemap_fragment>
 totalEmissiveRadiance = armorColor * armorGlow;
 if (armorSlot == 6) {
-  // visor glass: dark, with a faint team tint that rises at glancing angles
+  // visor glass: tinted, with a faint team glow behind it and a brighter rim at glancing angles
   float vf = pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), 2.0);
-  totalEmissiveRadiance = uTeam * (0.012 + 0.07 * vf);
+  totalEmissiveRadiance = armorColor * 0.35 + uTeam * (0.015 + 0.08 * vf);
 }
 if (armorFabric) {
   // soft sheen at grazing angles so cloth reads as cloth

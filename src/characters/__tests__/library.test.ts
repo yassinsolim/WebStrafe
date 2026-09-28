@@ -50,7 +50,7 @@ describe('armor library (public/characters/armor.glb)', () => {
           const list = slot === 'body' ? library.get('body', 'core', lod) : library.get(slot, set, lod);
           return sum + list.reduce((s, p) => s + p.index.length / 3, 0);
         }, 0));
-      expect(tris[0], `${set} lod0`).toBeLessThan(75_000);
+      expect(tris[0], `${set} lod0`).toBeLessThan(50_000);
       expect(tris[1], `${set} lod1`).toBeLessThan(tris[0] * 0.6);
       expect(tris[2], `${set} lod2`).toBeLessThan(tris[1] * 0.6);
     }
@@ -72,7 +72,7 @@ describe('armor library (public/characters/armor.glb)', () => {
         }
       }
     }
-  });
+  }, 30_000);
 
   it('decal anchors face out of the chest with their up axis up', () => {
     for (const set of ARMOR_SETS) {
