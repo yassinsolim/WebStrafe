@@ -870,6 +870,11 @@ export class GameApp {
       }
 
       this.activateLoadedMap(this.loadedMap);
+      // compile the map's shaders behind the loading screen, not in the first frames of play
+      await this.precompileShaders();
+      if (loadToken !== this.currentLoadToken) {
+        return;
+      }
       if (this.combatEnabled) {
         this.resetLocalCombatState();
       }
@@ -912,6 +917,17 @@ export class GameApp {
       this.playing = false;
       this.menu.setVisible(true);
       this.setCrosshairVisible(false);
+    }
+  }
+
+  /** parallel shader compile where the browser supports it, a failure just means compiling on first draw */
+  private async precompileShaders(): Promise<void> {
+    try {
+      await this.renderer.compileAsync(this.worldScene, this.worldCamera);
+      await this.renderer.compileAsync(this.viewmodelRenderer.scene, this.viewmodelRenderer.camera);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('[GameApp] shader precompile failed, compiling on first draw', error);
     }
   }
 

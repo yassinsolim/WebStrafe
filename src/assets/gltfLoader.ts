@@ -13,6 +13,22 @@ let ktx2: KTX2Loader | null = null;
 export function configureTextureTranscoder(renderer: WebGLRenderer): void {
   if (ktx2) return;
   ktx2 = new KTX2Loader().setTranscoderPath('/basis/').detectSupport(renderer);
+  if (isSoftwareRenderer(renderer)) {
+    // software gl decodes compressed blocks on every texture sample, plain rgba is far faster there
+    const config = (ktx2 as unknown as { workerConfig: Record<string, boolean> }).workerConfig;
+    for (const key of Object.keys(config)) config[key] = false;
+  }
+}
+
+function isSoftwareRenderer(renderer: WebGLRenderer): boolean {
+  try {
+    const gl = renderer.getContext();
+    const info = gl.getExtension('WEBGL_debug_renderer_info');
+    const name = String(info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+    return /swiftshader|llvmpipe|softpipe|software/i.test(name);
+  } catch {
+    return false;
+  }
 }
 
 /** the configured ktx2 loader, for textures that don't come from a glb (lightmaps) */
