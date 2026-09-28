@@ -67,7 +67,8 @@ export async function packageMap(mapId: string): Promise<void> {
   if (await exists(path.join(tmp, 'thumb.png'))) {
     await writeThumbnail(path.join(tmp, 'thumb.png'), path.join(out, 'thumbnail.webp'));
   }
-  for (const view of ['overview', 'eye']) {
+  // arena: optional extra shot for maps with a combat area
+  for (const view of ['overview', 'eye', 'arena']) {
     const src = path.join(tmp, `${view}.png`);
     if (await exists(src)) {
       await sharp(src).png({ compressionLevel: 9, adaptiveFiltering: true, palette: true, quality: 95, dither: 0.6 })

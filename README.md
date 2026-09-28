@@ -113,7 +113,7 @@ npm run build
 
 - All 20 selectable knives are original procedural models generated in code (`src/cosmetics/ProceduralKnife.ts`); no external assets
 
-- All maps (Prismline, Emberdrift, Ochre Cut and the Movement Test Scene) are original, built by scripts in `tools/blender/maps/` and `tools/generate-sample-assets.ts` with procedural textures; see `docs/assets/maps.md`
+- All maps (Prismline, Lumen, Cascade, Vanta, Emberdrift, Ochre Cut and the Movement Test Scene) are original, built by scripts in `tools/blender/maps/` and `tools/generate-sample-assets.ts` with procedural textures; see `docs/assets/maps.md`
 - Both player models (T and CT) are original low-poly models generated in code (`src/multiplayer/ProceduralPlayer.ts`); no external assets
 - The first-person arms, gloves, wristwatch, Deagle and AWP are original models built by scripts in `tools/blender/arms/` and `tools/blender/weapons/`; every viewmodel animation is authored in code (`src/viewmodel/`). See `docs/assets/arms.md` and `docs/assets/weapons.md`
 - Deagle/AWP shots and reloads use the CC0 Freesound recordings documented in `public/audio/README.md`. Every other sound (footsteps, knife, bolt and slide, confirms, UI) is original procedural Web Audio synthesized at runtime. Valve/CS2 proprietary audio is not bundled.

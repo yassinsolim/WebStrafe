@@ -44,6 +44,8 @@ interface ClientState {
   hasState: boolean;
   /** True only while the player has pointer-locked active gameplay. */
   combatReady: boolean;
+  /** opted into pvp. off means immune and harmless; old clients never send it and stay on */
+  pvp: boolean;
   hasEnteredCombat: boolean;
   combatPausedAtMs: number | null;
   lastCombatAtMs: number;
@@ -201,6 +203,7 @@ wss.on('connection', (ws, req) => {
     cosmeticsDirty: false,
     hasState: false,
     combatReady: false,
+    pvp: true,
     hasEnteredCombat: false,
     combatPausedAtMs: null,
     lastCombatAtMs: Date.now(),
@@ -289,7 +292,17 @@ wss.on('connection', (ws, req) => {
         // everyone already in the map, once
         sendWs(ws, { type: 'cosmetics', players: cosmeticsRoster(mapId, client.id) });
         arena.addPlayer(client.id, mapId, 'knife');
+        arena.setPvp(client.id, client.pvp);
         botManager.resetTargeting(mapId);
+        break;
+      }
+      case 'pvp': {
+        if (!client.joined || typeof payload.on !== 'boolean' || client.pvp === payload.on) {
+          return;
+        }
+        client.pvp = payload.on;
+        arena.setPvp(client.id, client.pvp);
+        botManager.resetTargeting(client.mapId);
         break;
       }
       case 'cosmetics': {
@@ -553,6 +566,8 @@ function snapshotTick(): void {
     health: number;
     alive: boolean;
     t: number;
+    /** bots leave it out, they're always pvp */
+    pvp?: boolean;
   }>>();
 
   for (const client of clients.values()) {
@@ -579,6 +594,7 @@ function snapshotTick(): void {
       health: arena.getHealth(client.id) ?? 100,
       alive: arena.isAlive(client.id),
       t: client.sampleT,
+      pvp: client.pvp,
     });
     groupedByMap.set(client.mapId, list);
   }
@@ -637,6 +653,7 @@ if (ENABLE_BOTS) {
       if (
         !client.hasState
         || !client.combatReady
+        || !client.pvp
         || arena.isSpawnProtected(client.id, Date.now())
       ) {
         // Menu/map-loading clients either still have the [0,0,0] sentinel or
@@ -1148,6 +1165,38 @@ function isOriginAllowed(origin: string | undefined): boolean {
   return originAllowed(origin, originPolicy);
 }
 
+/** kills and deaths per map for the live room board, sent every 2 s */
+const roomScores = new Map<string, Map<string, { kills: number; deaths: number }>>();
+
+function recordRoomKill(mapId: string, killerId: string, victimId: string): void {
+  const scores = roomScores.get(mapId) ?? new Map<string, { kills: number; deaths: number }>();
+  roomScores.set(mapId, scores);
+  const victim = scores.get(victimId) ?? { kills: 0, deaths: 0 };
+  victim.deaths += 1;
+  scores.set(victimId, victim);
+  if (killerId && killerId !== victimId) {
+    const killer = scores.get(killerId) ?? { kills: 0, deaths: 0 };
+    killer.kills += 1;
+    scores.set(killerId, killer);
+  }
+}
+
+setInterval(() => {
+  for (const [mapId, scores] of roomScores) {
+    const present = new Set([...clients.values()].filter((c) => c.joined && c.mapId === mapId).map((c) => c.id));
+    if (present.size === 0) {
+      roomScores.delete(mapId);
+      continue;
+    }
+    const rows = [...scores.entries()]
+      .filter(([id]) => present.has(id) || id.startsWith('bot:'))
+      .sort((a, b) => b[1].kills - a[1].kills || a[1].deaths - b[1].deaths)
+      .slice(0, 16)
+      .map(([id, score]) => [id, score.kills, score.deaths]);
+    broadcastToMap(mapId, { type: 'scoreboard', mapId, rows });
+  }
+}, 2000).unref?.();
+
 /** every joined player's cosmetics in a map, for a client that just joined it */
 function cosmeticsRoster(mapId: string, except: string): Array<{ id: string; c?: WireCosmetics }> {
   const out: Array<{ id: string; c?: WireCosmetics }> = [];
@@ -1210,6 +1259,7 @@ function broadcastFireOutcome(mapId: string, outcome: FireOutcome): void {
     });
   }
   if (outcome.death) {
+    recordRoomKill(mapId, outcome.death.killerId, outcome.death.victimId);
     broadcastToMap(mapId, { type: 'death', ...outcome.death });
   }
 }

@@ -14,5 +14,9 @@
       ],
       "yawDeg": 0
     }
+  ],
+  "modes": [
+    "surf",
+    "combat"
   ]
 }

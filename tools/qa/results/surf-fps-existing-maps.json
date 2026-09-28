@@ -1,0 +1,77 @@
+{
+  "base": "http://127.0.0.1:4180",
+  "viewport": "1600x900",
+  "maps": [
+    {
+      "map": "surf_prismline",
+      "minFps": 85.5,
+      "meanFps": 112.9,
+      "samples": [
+        {
+          "view": "spawn",
+          "fps": 119.5,
+          "p95FrameMs": 9.2
+        },
+        {
+          "view": "stage2",
+          "fps": 118.8,
+          "p95FrameMs": 9.3
+        },
+        {
+          "view": "stage3",
+          "fps": 120.3,
+          "p95FrameMs": 9.3
+        },
+        {
+          "view": "stage4",
+          "fps": 120.5,
+          "p95FrameMs": 9.3
+        },
+        {
+          "view": "finish",
+          "fps": 85.5,
+          "p95FrameMs": 24.9
+        }
+      ]
+    },
+    {
+      "map": "bhop_emberdrift",
+      "minFps": 108.3,
+      "meanFps": 117.8,
+      "samples": [
+        {
+          "view": "spawn",
+          "fps": 120.3,
+          "p95FrameMs": 9.2
+        },
+        {
+          "view": "cp1",
+          "fps": 120.3,
+          "p95FrameMs": 9.3
+        },
+        {
+          "view": "cp2",
+          "fps": 120.5,
+          "p95FrameMs": 9.3
+        },
+        {
+          "view": "cp3",
+          "fps": 108.3,
+          "p95FrameMs": 16.8
+        },
+        {
+          "view": "cp4",
+          "fps": 117,
+          "p95FrameMs": 9.3
+        },
+        {
+          "view": "finish",
+          "fps": 120.5,
+          "p95FrameMs": 9.3
+        }
+      ]
+    }
+  ],
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "errors": []
+}

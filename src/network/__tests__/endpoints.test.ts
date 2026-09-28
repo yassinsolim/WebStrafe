@@ -39,3 +39,12 @@ describe('pickTransport', () => {
     expect(pickTransport('nonsense', true)).toBe('supabase');
   });
 });
+
+describe('qaRoomPrefix', () => {
+  it('only splits lobbies on dev and preview builds', async () => {
+    const { qaRoomPrefix } = await import('../createMultiplayer');
+    expect(qaRoomPrefix('webstrafe_room_v1', '?room=Surf-QA_42', true)).toBe('webstrafe_room_v1_qasurfqa42');
+    expect(qaRoomPrefix('webstrafe_room_v1', '?room=Surf-QA_42', false)).toBe('webstrafe_room_v1');
+    expect(qaRoomPrefix('webstrafe_room_v1', '?shot=x', true)).toBe('webstrafe_room_v1');
+  });
+});

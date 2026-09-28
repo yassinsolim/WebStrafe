@@ -1,0 +1,194 @@
+{
+  "base": "https://webstrafe-git-surf-timing-pvp-boards-yassins-projects-11732a5e.vercel.app",
+  "map": "surf_lumen",
+  "room": "sd31bti9",
+  "checks": {
+    "join and see each other": {
+      "ok": true,
+      "detail": {
+        "ids": [
+          "p_yo3zga6lix4z",
+          "p_hz3il9puizfo",
+          "p_mjgeqzamj1me"
+        ]
+      }
+    },
+    "surf map is timed, peaceful by default, toggleable": {
+      "ok": true,
+      "detail": {
+        "modes": [
+          "surf"
+        ],
+        "pvp": false
+      }
+    },
+    "pvp flags reach other clients": {
+      "ok": true,
+      "detail": {
+        "rosterOnC": [
+          {
+            "id": "p_mjgeqzamj1me",
+            "name": "Player_214",
+            "pvp": false,
+            "isBot": false
+          },
+          {
+            "id": "p_yo3zga6lix4z",
+            "name": "Player_919",
+            "pvp": true,
+            "isBot": false
+          },
+          {
+            "id": "p_hz3il9puizfo",
+            "name": "Player_497",
+            "pvp": true,
+            "isBot": false
+          }
+        ]
+      }
+    },
+    "the peaceful player shows as peaceful": {
+      "ok": true,
+      "detail": {
+        "rosterOnA": [
+          {
+            "id": "p_yo3zga6lix4z",
+            "name": "Player_919",
+            "pvp": true,
+            "isBot": false
+          },
+          {
+            "id": "p_hz3il9puizfo",
+            "name": "Player_497",
+            "pvp": true,
+            "isBot": false
+          },
+          {
+            "id": "p_mjgeqzamj1me",
+            "name": "Player_214",
+            "pvp": false,
+            "isBot": false
+          }
+        ]
+      }
+    },
+    "no host bots on a surf only map": {
+      "ok": true,
+      "detail": {
+        "modes": [
+          "surf"
+        ]
+      }
+    },
+    "pvp badge shows each player their mode": {
+      "ok": true,
+      "detail": {
+        "badgeA": "PvP onP to surf in peace",
+        "badgeC": "PeacefulP to fight"
+      }
+    },
+    "pvp players can kill each other": {
+      "ok": true,
+      "detail": {
+        "sightAB": true,
+        "bHealth": 37
+      }
+    },
+    "nameplates show pvp state": {
+      "ok": true,
+      "detail": {
+        "platesPvp": [
+          "Player_497PVP",
+          "Player_214PEACEFUL"
+        ],
+        "platesPeace": [
+          "Player_497PVP",
+          "Player_214PEACEFUL"
+        ]
+      }
+    },
+    "a peaceful player takes no damage from a pvp player": {
+      "ok": true,
+      "detail": {
+        "sightAC": true,
+        "health": 100,
+        "alive": true
+      }
+    },
+    "a peaceful player cannot damage a pvp player": {
+      "ok": true,
+      "detail": {
+        "sightCA": true,
+        "before": 100,
+        "health": 100
+      }
+    },
+    "room kills from the host reach every client": {
+      "ok": true,
+      "detail": {
+        "scores": [
+          {
+            "id": "p_yo3zga6lix4z",
+            "kills": 1,
+            "deaths": 0
+          },
+          {
+            "id": "p_hz3il9puizfo",
+            "kills": 0,
+            "deaths": 1
+          }
+        ]
+      }
+    },
+    "hold tab shows the live room board": {
+      "ok": true,
+      "detail": {
+        "boardText": "Room killslive · this room01Player_919PVP1 / 002Player_497PVP0 / 1Map timesRanked times need the new database tables"
+      }
+    },
+    "timed run: armed, runs, records a split per checkpoint and finishes ranked": {
+      "ok": true,
+      "detail": {
+        "ready": "ready",
+        "running": "running",
+        "phase": "finished",
+        "finish": {
+          "ticks": 422,
+          "timeMs": 3297,
+          "splits": [],
+          "ranked": true,
+          "unrankedReason": null,
+          "pvp": false
+        }
+      }
+    },
+    "finish overlay shows the time": {
+      "ok": true,
+      "detail": {
+        "overlay": "Finished in 3.297, new personal best"
+      }
+    },
+    "without the migration the ranked boards stay off and skip closes the overlay": {
+      "ok": true,
+      "detail": {
+        "boardsAvailable": false
+      }
+    },
+    "no console errors": {
+      "ok": true,
+      "detail": []
+    }
+  },
+  "errors": {
+    "A": [
+      "Failed to load resource: the server responded with a status of 404 ()"
+    ],
+    "B": [
+      "Failed to load resource: the server responded with a status of 404 ()"
+    ],
+    "C": [
+      "Failed to load resource: the server responded with a status of 404 ()"
+    ]
+  },
+  "bHealth": 37
+}

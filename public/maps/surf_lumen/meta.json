@@ -1,0 +1,278 @@
+{
+  "id": "surf_lumen",
+  "name": "Lumen",
+  "author": "WebStrafe Team",
+  "source": "Original map built in Blender by tools/blender/maps/build_surf_lumen.py",
+  "license": "Original work (MIT, same as the project)",
+  "attribution": "Original layout and procedural textures made for WebStrafe.",
+  "spawns": [
+    {
+      "position": [
+        0.0,
+        0.05,
+        6.0
+      ],
+      "yawDeg": 0.0
+    },
+    {
+      "position": [
+        -4.0,
+        0.05,
+        6.0
+      ],
+      "yawDeg": 0.0
+    },
+    {
+      "position": [
+        4.0,
+        0.05,
+        6.0
+      ],
+      "yawDeg": 0.0
+    }
+  ],
+  "triggers": [
+    {
+      "id": "start",
+      "type": "start",
+      "min": [
+        -13.2,
+        -0.5,
+        -11.2
+      ],
+      "max": [
+        13.2,
+        3.0,
+        11.2
+      ],
+      "target": {
+        "position": [
+          0.0,
+          0.05,
+          6.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "finish",
+      "type": "finish",
+      "min": [
+        -17.2,
+        -101.5,
+        -588.2
+      ],
+      "max": [
+        17.2,
+        -87.0,
+        -541.5
+      ]
+    },
+    {
+      "id": "fall1",
+      "type": "teleport",
+      "stage": 1,
+      "min": [
+        -35.426,
+        -83.5,
+        -100.5
+      ],
+      "max": [
+        35.426,
+        -27.5,
+        -2.0
+      ],
+      "target": {
+        "position": [
+          0.0,
+          0.05,
+          6.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "fall2",
+      "type": "teleport",
+      "stage": 1,
+      "min": [
+        -36.171,
+        -98.0,
+        -190.0
+      ],
+      "max": [
+        36.171,
+        -42.0,
+        -95.5
+      ],
+      "target": {
+        "position": [
+          0.0,
+          0.05,
+          6.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "fall3",
+      "type": "teleport",
+      "stage": 1,
+      "min": [
+        -36.454,
+        -112.0,
+        -276.0
+      ],
+      "max": [
+        36.454,
+        -56.0,
+        -185.0
+      ],
+      "target": {
+        "position": [
+          0.0,
+          0.05,
+          6.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "fall4",
+      "type": "teleport",
+      "stage": 1,
+      "min": [
+        -36.694,
+        -127.5,
+        -362.0
+      ],
+      "max": [
+        36.694,
+        -71.5,
+        -271.0
+      ],
+      "target": {
+        "position": [
+          0.0,
+          0.05,
+          6.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "fall5",
+      "type": "teleport",
+      "stage": 1,
+      "min": [
+        -36.894,
+        -143.0,
+        -446.0
+      ],
+      "max": [
+        36.894,
+        -87.0,
+        -357.0
+      ],
+      "target": {
+        "position": [
+          0.0,
+          0.05,
+          6.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "fall6",
+      "type": "teleport",
+      "stage": 1,
+      "min": [
+        -37.176,
+        -161.0,
+        -546.0
+      ],
+      "max": [
+        37.176,
+        -105.0,
+        -441.0
+      ],
+      "target": {
+        "position": [
+          0.0,
+          0.05,
+          6.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "void",
+      "type": "teleport",
+      "min": [
+        -418.0,
+        -562.6,
+        -989.0
+      ],
+      "max": [
+        418.0,
+        -162.6,
+        412.0
+      ]
+    }
+  ],
+  "cvars": {
+    "sv_airaccelerate": 150
+  },
+  "modes": [
+    "surf"
+  ],
+  "difficulty": "beginner",
+  "parTimeMs": 26900,
+  "notes": "Beginner surf. One stage, six wide ramps from 50 to 56 degrees. Falling off teleports you back to the start.",
+  "environment": {
+    "sky": {
+      "zenith": "#6aa9e4",
+      "horizon": "#fbe9d4",
+      "ground": "#f6ecdf",
+      "exponent": 0.55,
+      "sunSizeDeg": 2.0,
+      "sunGlow": 0.42,
+      "sunHaze": 0.2,
+      "clouds": {
+        "color": "#fffaf3",
+        "shadow": "#cdbfb4",
+        "coverage": 0.32,
+        "scale": 0.65,
+        "speed": 0.005,
+        "height": 0.2
+      }
+    },
+    "sun": {
+      "direction": [
+        -0.2882,
+        0.7314,
+        0.6181
+      ],
+      "color": "#fff3de",
+      "intensity": 4.0
+    },
+    "hemi": {
+      "sky": "#d6e6f5",
+      "ground": "#e9ddc8",
+      "intensity": 2.3
+    },
+    "fog": {
+      "color": "#f6e8d7",
+      "near": 170.0,
+      "far": 1150.0
+    },
+    "exposure": 1.0,
+    "lightmaps": [
+      {
+        "path": "/maps/surf_lumen/lightmap.ktx2"
+      }
+    ],
+    "lightMapIntensity": 11.781
+  }
+}

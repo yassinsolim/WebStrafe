@@ -27,12 +27,13 @@ const SESSION_KEY = 'webstrafe:session-id:v1';
  * message format never share a room with this one. p4 (v2): knife swings are
  * flagged melee with the cs knife damage table and backstabs, hits carry
  * melee/backstab, and fires carry the shooter's weapon. a p3 host would resolve
- * those differently, so p3 and p4 tabs must never share a room.
- * p6: hit capsules follow the cs2 hull (72 u standing, 54 u crouched, rounded
- * ends at the feet and the top of the head) and states carry the crouch (`k`),
- * so a p5 host resolves the same shot differently.
+ * those differently, so p3 and p4 tabs must never share a room. p5 moves fires
+ * and combat events onto state messages. p6 (knives, #51) swaps in the cs2 hull
+ * hit capsules (72 u standing, 54 u crouched, rounded ends at the feet and the top
+ * of the head) and crouch on the wire (`k`). p7 adds per player pvp opt-in (an
+ * older host would let peaceful players be hit) and the host's room scoreboard.
  */
-export const SUPABASE_PROTOCOL = 'p6';
+export const SUPABASE_PROTOCOL = 'p7';
 const PLAYER_STALE_MS = 8000;
 /** idle/paused clients only need to prove they are still here */
 const KEEPALIVE_MS = 1000;
@@ -79,6 +80,12 @@ interface WireState {
   f?: WireFire[];
   /** combat events, only from the elected host */
   ev?: CombatWireEvent[];
+  /** pvp off (0); omitted means on */
+  pv?: 0;
+  /** own kills/deaths from the last host scoreboard */
+  sc?: [number, number];
+  /** room scoreboard [id, kills, deaths], only from the elected host */
+  sb?: Array<[string, number, number]>;
   /** crouch 0..1 in hundredths, only while crouching (sizes the host's hit capsule) */
   k?: number;
 }
@@ -130,11 +137,24 @@ interface RemoteRecord {
   hostEpoch: number | null;
   weapon: string | null;
   deadForMs: number | null;
+  /** opted into pvp; false = immune and harmless */
+  pvp: boolean;
+  /** kills/deaths this peer last saw for itself, seeds a new host */
+  score: { kills: number; deaths: number } | null;
   cosmetics: PlayerCosmetics | undefined;
   joinedAt: number;
   lastSeen: number;
 }
 
+/** room kills/deaths as published by the host */
+export interface RoomScore {
+  id: string;
+  kills: number;
+  deaths: number;
+}
+
+/** how often the host republishes the room scoreboard on its state */
+const SCOREBOARD_EVERY_MS = 2000;
 /** quiet time before a cosmetics change is tracked, and the least time between two tracks */
 export const COSMETICS_DEBOUNCE_MS = 1000;
 export const COSMETICS_MIN_INTERVAL_MS = 10000;
@@ -163,6 +183,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   public onConnectedChange: ((connected: boolean) => void) | null = null;
   /** fired when the room already holds MAX_ROOM_PLAYERS and this client backed out */
   public onRoomFull: (() => void) | null = null;
+  /** live room kills/deaths from the elected host (or our own sim while hosting) */
+  public onScoreboard: ((rows: RoomScore[]) => void) | null = null;
 
   private readonly localId: string;
   private channel: RealtimeChannel | null = null;
@@ -192,6 +214,10 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   private carrierTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly detachVisibility: (() => void) | null;
   private localWeapon: string | null = null;
+  private localPvp = true;
+  private roomScores: RoomScore[] = [];
+  private roomScoresKey = '';
+  private lastScoreboardSentAt = 0;
   /** cosmetics peers have been told (what presence carries) */
   private localCosmetics: PlayerCosmetics | null = null;
   // presence track costs ~N events per room and is capped at 5 per client per
@@ -438,6 +464,38 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.broadcast('equip', { id: this.localId, weaponId });
   }
 
+  /**
+   * Opt in or out of pvp. Enforced by the host: off means immune and unable to
+   * damage anyone (players or bots). Goes out on the next pump tick.
+   */
+  setPvp(on: boolean): void {
+    if (this.localPvp === on) return;
+    this.localPvp = on;
+    // the next pump tick sends it, one message instead of two
+    this.cadence.flush();
+  }
+
+  getPvp(): boolean {
+    return this.localPvp;
+  }
+
+  getRoomScores(): RoomScore[] {
+    return this.roomScores.map((r) => ({ ...r }));
+  }
+
+  private ownScore(): { kills: number; deaths: number } | null {
+    const row = this.roomScores.find((r) => r.id === this.localId);
+    return row ? { kills: row.kills, deaths: row.deaths } : null;
+  }
+
+  private setRoomScores(rows: RoomScore[]): void {
+    const key = JSON.stringify(rows);
+    if (key === this.roomScoresKey) return;
+    this.roomScoresKey = key;
+    this.roomScores = rows;
+    this.onScoreboard?.(this.getRoomScores());
+  }
+
   setRoomContext(context: RoomContext | null): void {
     this.roomContext = context;
     // eligibility rides on state, tell the room right away
@@ -631,6 +689,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         t: this.localState.t,
         weapon: this.localWeapon ?? undefined,
         deadForMs: this.localDeadUntil !== null ? Math.max(0, this.localDeadUntil - now) : undefined,
+        pvp: this.localPvp,
+        score: this.ownScore() ?? undefined,
         combatReady: this.localCombatReady,
         yaw: this.localState.yaw,
         pitch: this.localState.pitch,
@@ -648,6 +708,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
           t: record.t ?? undefined,
           weapon: record.weapon ?? undefined,
           deadForMs: record.deadForMs ?? undefined,
+          pvp: record.pvp,
+          score: record.score ?? undefined,
           combatReady: record.combatReady,
           yaw: record.state.yaw,
           pitch: record.state.pitch,
@@ -660,6 +722,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     while (this.hostAccumulatorMs >= HOST_STEP_MS) {
       this.hostAccumulatorMs -= HOST_STEP_MS;
       this.botRows = this.hostSim.tick(HOST_STEP_MS);
+      this.setRoomScores(this.hostSim.scoreboard());
       stepped = true;
     }
     if (stepped) {
@@ -698,6 +761,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (this.hostSim) payload.h = this.hostEpoch;
     if (this.localWeapon) payload.w = this.localWeapon;
     if (this.localDeadUntil !== null) payload.d = Math.max(0, Math.round(this.localDeadUntil - now));
+    if (!this.localPvp) payload.pv = 0;
+    const own = this.ownScore();
+    if (own) payload.sc = [own.kills, own.deaths];
+    if (this.hostSim && now - this.lastScoreboardSentAt >= SCOREBOARD_EVERY_MS) {
+      payload.sb = this.roomScores.slice(0, 16).map((r) => [r.id, r.kills, r.deaths] as [string, number, number]);
+      this.lastScoreboardSentAt = now;
+    }
     const duck = Math.round(clampDuck(s?.duck) * 100) / 100;
     if (duck > 0) payload.k = duck;
     if (this.hostSim && this.botRows.length > 0) {
@@ -750,6 +820,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (record.hostEpoch !== null) this.maxEpochSeen = Math.max(this.maxEpochSeen, record.hostEpoch);
     record.weapon = typeof p.w === 'string' ? p.w : record.weapon;
     record.deadForMs = typeof p.d === 'number' && Number.isFinite(p.d) ? p.d : null;
+    record.pvp = p.pv !== 0;
+    if (Array.isArray(p.sc) && p.sc.length === 2) {
+      record.score = { kills: Number(p.sc[0]) || 0, deaths: Number(p.sc[1]) || 0 };
+    }
+    if (Array.isArray(p.sb) && p.id === this.electedHostId() && !this.hostSim) {
+      this.setRoomScores(parseScores(p.sb));
+    }
     if (Array.isArray(p.s) && p.s.length === 8 && (record.t === null || p.t > record.t)) {
       record.state = { ...unpack(p.s), duck: clampDuck(p.k) };
       record.t = p.t;
@@ -961,6 +1038,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         velocity: this.localState.velocity,
         yaw: this.localState.yaw,
         pitch: this.localState.pitch,
+        pvp: this.localPvp,
       });
     }
     for (const [id, record] of this.remotes) {
@@ -977,18 +1055,31 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         pitch: record.state.pitch,
         t: record.t ?? undefined,
         clock: id,
+        pvp: record.pvp,
         ...(record.cosmetics ? { cosmetics: record.cosmetics } : {}),
       });
     }
 
     if (now - this.botRowsAt <= PLAYER_STALE_MS) {
       for (const bot of this.botRows) {
-        players.push({ ...bot, t: this.botRowsT, clock: this.botRowsClock });
+        players.push({ ...bot, t: this.botRowsT, clock: this.botRowsClock, pvp: true });
       }
     }
 
     this.onSnapshot({ mapId: this.activeMapId, players, serverTimeMs: now });
   }
+}
+
+function parseScores(raw: unknown[]): RoomScore[] {
+  const out: RoomScore[] = [];
+  for (const row of raw.slice(0, 16)) {
+    if (!Array.isArray(row) || typeof row[0] !== 'string') continue;
+    const kills = Number(row[1]);
+    const deaths = Number(row[2]);
+    if (!Number.isFinite(kills) || !Number.isFinite(deaths)) continue;
+    out.push({ id: row[0], kills: Math.max(0, Math.floor(kills)), deaths: Math.max(0, Math.floor(deaths)) });
+  }
+  return out;
 }
 
 function newRecord(name: string, model: PlayerModel, now: number): RemoteRecord {
@@ -1003,6 +1094,8 @@ function newRecord(name: string, model: PlayerModel, now: number): RemoteRecord 
     weapon: null,
     cosmetics: undefined,
     deadForMs: null,
+    pvp: true,
+    score: null,
     // unknown join time sorts last, so an unseen peer never bumps a seated one
     joinedAt: Number.MAX_SAFE_INTEGER,
     lastSeen: now,

@@ -1,0 +1,99 @@
+{
+  "base": "http://127.0.0.1:4180",
+  "viewport": "1600x900",
+  "maps": [
+    {
+      "map": "surf_lumen",
+      "minFps": 29,
+      "meanFps": 42.3,
+      "samples": [
+        {
+          "view": "spawn",
+          "fps": 29,
+          "p95FrameMs": 99.7
+        },
+        {
+          "view": "finish",
+          "fps": 55.5,
+          "p95FrameMs": 141.7
+        }
+      ]
+    },
+    {
+      "map": "surf_cascade",
+      "minFps": 44.5,
+      "meanFps": 109.5,
+      "samples": [
+        {
+          "view": "spawn",
+          "fps": 120.3,
+          "p95FrameMs": 10.2
+        },
+        {
+          "view": "stage2",
+          "fps": 120.3,
+          "p95FrameMs": 10.1
+        },
+        {
+          "view": "stage3",
+          "fps": 120.3,
+          "p95FrameMs": 10.2
+        },
+        {
+          "view": "stage4",
+          "fps": 44.5,
+          "p95FrameMs": 75
+        },
+        {
+          "view": "stage5",
+          "fps": 120.3,
+          "p95FrameMs": 10.2
+        },
+        {
+          "view": "stage6",
+          "fps": 120.3,
+          "p95FrameMs": 10.3
+        },
+        {
+          "view": "finish",
+          "fps": 120.3,
+          "p95FrameMs": 10.3
+        }
+      ]
+    },
+    {
+      "map": "surf_vanta",
+      "minFps": 112,
+      "meanFps": 117.1,
+      "samples": [
+        {
+          "view": "spawn",
+          "fps": 119.8,
+          "p95FrameMs": 10.3
+        },
+        {
+          "view": "stage2",
+          "fps": 117.8,
+          "p95FrameMs": 10.3
+        },
+        {
+          "view": "stage3",
+          "fps": 116.8,
+          "p95FrameMs": 10.3
+        },
+        {
+          "view": "stage4",
+          "fps": 119,
+          "p95FrameMs": 10.3
+        },
+        {
+          "view": "finish",
+          "fps": 112,
+          "p95FrameMs": 10.4
+        }
+      ]
+    }
+  ],
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "errors": []
+}

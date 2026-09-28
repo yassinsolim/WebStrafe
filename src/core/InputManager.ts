@@ -9,6 +9,10 @@ import type { WeaponCycleDirection, WeaponSlot } from './GameplayWeaponInput';
 export interface InputActions {
   inspectPressed: boolean;
   resetPressed: boolean;
+  /** back to the start zone, also in combat builds where R reloads */
+  restartRunPressed: boolean;
+  togglePvpPressed: boolean;
+  toggleGhostPressed: boolean;
   toggleGridPressed: boolean;
   toggleDebugCameraPressed: boolean;
   toggleSurfNormalPressed: boolean;
@@ -30,6 +34,9 @@ export class InputManager {
   private jumpQueued = false;
   private inspectQueued = false;
   private resetQueued = false;
+  private restartRunQueued = false;
+  private togglePvpQueued = false;
+  private toggleGhostQueued = false;
   private toggleGridQueued = false;
   private toggleDebugCameraQueued = false;
   private toggleSurfNormalQueued = false;
@@ -164,6 +171,9 @@ export class InputManager {
     const actions = {
       inspectPressed: this.inspectQueued,
       resetPressed: this.resetQueued,
+      restartRunPressed: this.restartRunQueued,
+      togglePvpPressed: this.togglePvpQueued,
+      toggleGhostPressed: this.toggleGhostQueued,
       toggleGridPressed: this.toggleGridQueued,
       toggleDebugCameraPressed: this.toggleDebugCameraQueued,
       toggleSurfNormalPressed: this.toggleSurfNormalQueued,
@@ -174,6 +184,9 @@ export class InputManager {
     };
     this.inspectQueued = false;
     this.resetQueued = false;
+    this.restartRunQueued = false;
+    this.togglePvpQueued = false;
+    this.toggleGhostQueued = false;
     this.toggleGridQueued = false;
     this.toggleDebugCameraQueued = false;
     this.toggleSurfNormalQueued = false;
@@ -255,6 +268,11 @@ export class InputManager {
     if (firstPress && event.code === 'KeyR') {
       this.resetQueued = true;
     }
+    if (firstPress && !isEditableGameplayTarget(event.target)) {
+      if (event.code === 'KeyT') this.restartRunQueued = true;
+      if (event.code === 'KeyP') this.togglePvpQueued = true;
+      if (event.code === 'KeyH') this.toggleGhostQueued = true;
+    }
     if (firstPress && event.code === 'KeyG') {
       this.toggleGridQueued = true;
     }
@@ -297,6 +315,9 @@ export class InputManager {
     this.jumpQueued = false;
     this.inspectQueued = false;
     this.resetQueued = false;
+    this.restartRunQueued = false;
+    this.togglePvpQueued = false;
+    this.toggleGhostQueued = false;
     this.toggleGridQueued = false;
     this.toggleDebugCameraQueued = false;
     this.toggleSurfNormalQueued = false;

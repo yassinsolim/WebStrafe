@@ -1,13 +1,16 @@
 # Maps
 
-WebStrafe v2 ships three original maps plus the generated practice range:
+WebStrafe v2 ships six original maps plus the generated practice range:
 
-| id | name | mode | cvars |
-|----|------|------|-------|
-| `surf_prismline` | Prismline | surf, 4 stages | `sv_airaccelerate` 150 |
-| `bhop_emberdrift` | Emberdrift | bhop, 33 jumps | `sv_airaccelerate` 1000 |
-| `aim_ochrecut` | Ochre Cut | AWP and Deagle duels, bots | none |
-| `movement_test_scene` | Movement Test Scene | combat practice range | none |
+| id | name | mode | modes / difficulty | cvars |
+|----|------|------|--------------------|-------|
+| `surf_prismline` | Prismline | surf, 4 stages | surf / intermediate | `sv_airaccelerate` 150 |
+| `surf_lumen` | Lumen | surf, 1 stage, 6 ramps | surf / beginner | `sv_airaccelerate` 150 |
+| `surf_cascade` | Cascade | surf, 6 stages | surf / intermediate | `sv_airaccelerate` 150 |
+| `surf_vanta` | Vanta | surf, 4 stages with transfers, plus a combat deck | surf, combat / advanced | `sv_airaccelerate` 150 |
+| `bhop_emberdrift` | Emberdrift | bhop, 33 jumps | surf / intermediate | `sv_airaccelerate` 1000 |
+| `aim_ochrecut` | Ochre Cut | AWP and Deagle duels, bots | combat | none |
+| `movement_test_scene` | Movement Test Scene | combat practice range | surf, combat | none |
 
 All maps and textures are original. The layouts were designed for WebStrafe,
 the geometry is built by the scripts in `tools/blender/maps/` (and
@@ -22,6 +25,9 @@ Default map: Prismline outside combat, Ochre Cut with `VITE_ENABLE_COMBAT=true`.
 ```bash
 # one map (about 3 to 4 minutes, most of it the Cycles bake on the M5 GPU)
 blender -b --factory-startup --python-exit-code 1 -P tools/blender/maps/build_surf_prismline.py
+blender -b --factory-startup --python-exit-code 1 -P tools/blender/maps/build_surf_lumen.py
+blender -b --factory-startup --python-exit-code 1 -P tools/blender/maps/build_surf_cascade.py
+blender -b --factory-startup --python-exit-code 1 -P tools/blender/maps/build_surf_vanta.py
 blender -b --factory-startup --python-exit-code 1 -P tools/blender/maps/build_bhop_emberdrift.py
 blender -b --factory-startup --python-exit-code 1 -P tools/blender/maps/build_aim_ochrecut.py
 
@@ -46,11 +52,15 @@ A build writes scratch files to `.blender-tmp/maps/<id>/` and then
 - `public/maps/<id>/thumbnail.webp`: 480x270 menu card image (`thumbnailPath` in the manifest)
 - `public/maps/<id>/meta.json`: spawns, triggers, cvars, environment
 - `tools/blender/maps/layouts/<id>.json`: platform and ramp data the tests check against
-- `docs/screenshots/maps/<id>_overview.png` and `<id>_eye.png`
+- `docs/screenshots/maps/<id>_overview.png` and `<id>_eye.png` (plus `<id>_arena.png`
+  for a map whose build renders an `arena` view)
 
 ## How the pipeline works
 
-`tools/blender/maps/maplib.py` is shared by the three build scripts.
+`tools/blender/maps/maplib.py` is shared by every build script.
+`tools/blender/maps/surflib.py` holds what the newer surf maps (Lumen, Cascade,
+Vanta) share on top of it: stage frames, prism ramps and forks, gated platform
+walls, trigger volumes and the layout file. Prismline keeps its own copies.
 
 - **Parts.** Render geometry is grouped by chunk (a course section, a stage, a
   lane) and material, one object each. That keeps draw calls low and keeps each
@@ -114,6 +124,9 @@ A build writes scratch files to `.blender-tmp/maps/<id>/` and then
     { "id": "finish", "type": "finish", "min": [..], "max": [..] }
   ],
   "cvars": { "sv_airaccelerate": 1000 },
+  "modes": ["surf"],
+  "difficulty": "intermediate",
+  "parTimeMs": 112200,
   "environment": {
     "sky": { "zenith": "#28305f", "horizon": "#f2a36e", "ground": "#7a3326", "exponent": 0.55,
              "sunSizeDeg": 2.2, "sunGlow": 0.45, "sunHaze": 0.3,
@@ -146,6 +159,13 @@ A build writes scratch files to `.blender-tmp/maps/<id>/` and then
   enemies (`src/world/SpawnPoints.ts`). When spawns have a `side`, bots gather
   at the first spawn on the other side (node server and Supabase host).
 - `cvars` is only data here; the movement workstream applies it.
+- `modes` (`surf`, `combat` or both), `difficulty` (`beginner`, `intermediate`,
+  `advanced`) and `parTimeMs` are optional metadata; the manifest repeats
+  `modes` and `difficulty` for the menu. `parTimeMs` is the time the fastest
+  headless full-run rider (`src/world/__tests__/surfRiders.ts`: walks out of
+  each gate, holds a line into every face with keyboard input, never
+  bhops or strafes with the mouse) needs from leaving the start zone to the
+  finish, rounded to 100 ms. A good human run is well under it.
 
 ## Prismline (`surf_prismline`)
 
@@ -179,6 +199,112 @@ start platform, a checkpoint on each stage platform, a teleport volume under
 each stage back to that stage's start (it stops short of the next stage so it
 can never catch a rider on course), the finish pad 164 m below the start, and
 a void catch.
+
+## Lumen (`surf_lumen`)
+
+Beginner surf on a calm, bright morning: pearl limestone plazas with gold trim,
+six wide sea-glass ramps whose pastel tint shifts from aqua to peach along the
+line, round lantern arches standing in a turquoise lagoon over every gap, sand
+islets and a striped lighthouse by the finish.
+
+One stage in a straight line. You drop through the arched gate onto the first
+ramp, ride all six and land on a walled 48 m finish plaza 101 m below the start
+(its end wall is 11 m tall because the line arrives fast). The faces are wide
+(13.4 to 15.2 m from ridge to foot) and carry faint depth lines a quarter, half
+and three quarters of the way down. Every follow-up ramp is wider than the one
+before and 9 to 10 m lower after a 5.5 to 6 m gap, and most of them descend
+along their length, so the line keeps flowing.
+
+| ramp | angle | length | face height | gap after previous |
+|-----:|------:|-------:|------------:|-------------------:|
+| 1 | 50 | 88 m | 16 m | |
+| 2 | 51 | 84 m (descends 4 m) | 17.5 m | 5.5 m, 9 m drop |
+| 3 | 52 | 80 m (descends 4 m) | 18.5 m | 5.5 m, 9 m drop |
+| 4 | 53 | 80 m (descends 5 m) | 19.5 m | 6 m, 9.5 m drop |
+| 5 | 54 | 78 m (descends 5 m) | 20.5 m | 6 m, 9.5 m drop |
+| 6 | 56 | 92 m (descends 6 m) | 22.5 m | 6 m, 10 m drop |
+
+Triggers: start plaza, finish plaza (the volume reaches 14 m up), one catch
+volume under each ramp stepping down with the line (each ends a metre before
+the next ramp), all sending you back to the start, and a void catch. Par time
+26.9 s.
+
+## Cascade (`surf_cascade`)
+
+Six short stages stepping down a canyon of waterfalls at dusk: flagstone
+ledges walled in red cliff stone with lanterns, carved granite ramps whose
+colour cools from ochre through rose and plum to teal slate as you drop, water
+pouring off the back of every ledge and off the canyon walls into a misty
+basin. The low sun sits in the west-north-west; the canyon wall on its side is
+kept low so it still reaches the ramps.
+
+Each stage is a chain of two or three ramps ending on a walled 40 m ledge,
+which is the next stage's start and a checkpoint. The stages zigzag (right,
+left, right, left, right) so the canyon runs diagonally and no stage sits over
+another. The finish ledge is 234.5 m below the start.
+
+| stage | ramp | angle | length | face height | gap after previous |
+|------:|-----:|------:|-------:|------------:|-------------------:|
+| 1 | 1 | 55 | 72 m | 14 m | |
+| 1 | 2 | 56 | 64 m | 16.5 m | 4 m, 8.5 m drop |
+| 2 | 1 | 56 | 68 m | 14.5 m | |
+| 2 | 2 | 57 | 62 m | 17 m | 4 m, 8.5 m drop |
+| 3 | 1 | 57 | 58 m | 14 m | |
+| 3 | 2 | 57 | 56 m | 16.5 m | 4 m, 8.5 m drop |
+| 3 | 3 | 58 | 54 m | 18.5 m | 4 m, 9 m drop |
+| 4 | 1 | 58 | 76 m (descends 5 m) | 15 m | |
+| 4 | 2 | 58 | 60 m | 17.5 m | 4.5 m, 9 m drop |
+| 5 | 1 | 59 | 66 m | 15 m | |
+| 5 | 2 | 59 | 62 m | 17.5 m | 4.5 m, 9 m drop |
+| 6 | 1 | 59 | 60 m | 15 m | |
+| 6 | 2 | 60 | 58 m | 17.5 m | 4.5 m, 9 m drop |
+| 6 | 3 | 60 | 72 m (descends 4 m) | 19.5 m | 4.5 m, 9.5 m drop |
+
+Triggers: start, checkpoints `stage2` to `stage6` on the ledges, a teleport
+under each stage back to its start (`fall1` to `fall6`), the finish ledge and a
+void catch. Par time 88.1 s (most of it the rider walking across five ledges).
+
+## Vanta (`surf_vanta`)
+
+Advanced surf at night high above a city of lights, plus a combat deck at
+spawn. Graphite ramps edged in neon (cyan, magenta, lime and amber by stage)
+float on glowing lift pods, the decks are dark steel with neon trim, storm
+clouds drift past a big pale moon and lit towers rise out of the city below.
+
+Surf: four stages turning right, left, left, 58 to 64 degrees, 6 to 7 m gaps
+and 9 to 10 m drops. Stages two and three each have a transfer: the line splits
+into two mirrored ramps 9 to 9.5 m either side of it that form a valley under a
+neon frame, so a rider on the right face of the ramp before lands on the left
+face of the right half, then comes back onto the right face of the ramp after
+it (mirrored on the left). The finish deck is 225 m below the start.
+
+| stage | ramp | angle | length | face height | gap after previous |
+|------:|-----:|------:|-------:|------------:|-------------------:|
+| 1 | 1 | 58 | 90 m | 16 m | |
+| 1 | 2 | 59 | 80 m | 18 m | 6 m, 9.5 m drop |
+| 1 | 3 | 60 | 72 m (descends 4 m) | 19.5 m | 6.5 m, 9.5 m drop |
+| 2 | 1 | 60 | 70 m | 16 m | |
+| 2 | 2 (fork) | 61 | 62 m | 18 m | 6 m, 9 m drop |
+| 2 | 3 | 61 | 70 m (descends 4 m) | 19.5 m | 6 m, 9.5 m drop |
+| 3 | 1 | 62 | 76 m | 16.5 m | |
+| 3 | 2 | 62 | 60 m | 18.5 m | 6.5 m, 9.5 m drop |
+| 3 | 3 (fork) | 63 | 58 m | 19.5 m | 6 m, 9 m drop |
+| 3 | 4 | 63 | 64 m | 20.5 m | 6.5 m, 9.5 m drop |
+| 4 | 1 | 63 | 72 m | 17 m | |
+| 4 | 2 | 64 | 66 m (descends 4 m) | 19 m | 7 m, 10 m drop |
+| 4 | 3 | 64 | 80 m (descends 6 m) | 21 m | 7 m, 10 m drop |
+
+Combat: the start pad's back wall has a 12 m doorway onto a walled, flat
+64 x 48 m deck. Cover is point symmetric about the deck centre: a 7 m centre
+block, L shaped walls, 5 m pillars, low walls, crate stacks and a long side
+block. Four spawns per side (side a by the pad, side b across the deck) face
+the other side; `spawns[0]` is the run start on the pad (side a), so bots
+gather at side b. Team colours: cyan for side a, pink for side b. Surf triggers
+cover only the pad, the stage platforms and the space under the stages, so
+fights on the deck never touch the run.
+
+Triggers: start pad, checkpoints `stage2` to `stage4`, `fall1` to `fall4`, the
+finish deck and a void catch. Par time 72.8 s.
 
 ## Emberdrift (`bhop_emberdrift`)
 
@@ -226,13 +352,22 @@ enforces at most 150 draw calls, 250k triangles and 8 MB per map).
 | map | triangles | draw calls | collision tris | scene.glb | lightmap | collision | thumbnail | total |
 |-----|----------:|-----------:|---------------:|----------:|---------:|----------:|----------:|------:|
 | surf_prismline | 11,576 | 67 | 476 | 601 KB | 192 KB | 7 KB | 11 KB | 0.79 MB |
+| surf_lumen | 11,480 | 49 | 192 | 490 KB | 183 KB | 3 KB | 11 KB | 0.67 MB |
+| surf_cascade | 19,480 | 61 | 676 | 1127 KB | 318 KB | 10 KB | 11 KB | 1.43 MB |
+| surf_vanta | 9,792 | 58 | 924 | 887 KB | 165 KB | 13 KB | 13 KB | 1.05 MB |
 | bhop_emberdrift | 27,068 | 53 | 1,624 | 1157 KB | 491 KB | 22 KB | 20 KB | 1.65 MB |
 | aim_ochrecut | 10,272 | 39 | 1,412 | 524 KB | 243 KB | 20 KB | 21 KB | 0.79 MB |
 
 The sky is a shader, so there is no sky download. Lightmap texel density on
-walkable tops: 18 texels per metre on Emberdrift, 12 on Ochre Cut, 10 on Prismline
-(ramp faces 4.5, they are planar and evenly lit). Bakes take 130 to 210 s each at
-384 samples on the M5 GPU.
+walkable tops: 18 texels per metre on Emberdrift, 12 on Ochre Cut, 11 on Lumen,
+10 on Prismline, 9 on Vanta, 7.5 on Cascade (ramp faces 3.5 to 5.3, they are
+planar and evenly lit). Bakes take 130 to 210 s each at 384 samples on the M5
+GPU when it is free; with other Blender jobs running they took 6 to 20 minutes.
+
+Low suns and night skies leave the faces turned away from the key light nearly
+black in the bake, which you can't surf, so Cascade and Vanta add a soft fill
+sun from roughly the opposite side (`surflib.add_fill_light`, bake only; the
+game draws lit meshes from the lightmap alone).
 
 ## Retired
 
@@ -256,8 +391,12 @@ walkable tops: 18 texels per metre on Emberdrift, 12 on Ochre Cut, 10 on Prismli
   budgets, plain collision, cvars, bhop jump reachability, and headless runs with
   the real MovementController: spawn and fall to the ground on every map, the
   first five bhop jumps, a surf ride that stays in surf mode and gains speed,
-  every surf stage ridden onto its landing platform from both faces at 12, 18
-  and 26 m/s, walking up the nest stairs, the AWP line and the spawn shield.
+  every surf stage of every surf map ridden onto its landing platform from both
+  faces at 12, 18 and 26 m/s (through the forks on Vanta), full runs on Lumen,
+  Cascade and Vanta from the spawn through every checkpoint to the finish with
+  the time checked against `parTimeMs`, the Vanta deck (flat, mostly open,
+  four grounded spawns per side, walkable from the run spawn), walking up the
+  nest stairs, the AWP line, the spawn shield, and `modes` on every manifest map.
 - `npx vitest run server/mapCollision.test.ts`: the node server loads each map's
   collision and meta, seats every spawn, and stages arena bots on side B.
 
@@ -275,3 +414,8 @@ walkable tops: 18 texels per metre on Emberdrift, 12 on Ochre Cut, 10 on Prismli
   tab during this work, so the in-game look (exposure, lightmap brightness,
   clouds) still needs a live screenshot pass. Sky, fog, exposure and light
   values live in meta.json and can be tuned without a rebuild.
+- Lumen, Cascade and Vanta were built and checked the same way (Blender
+  previews and headless riders), not yet in a browser. Vanta's night look
+  depends most on that pass.
+- `parTimeMs` comes from a bot that only walks on platforms and holds a line
+  with the strafe key, so it is a relaxed reference, not a target time.

@@ -15,6 +15,7 @@ interface SampleMapSpec {
   spawn: [number, number, number];
   yawDeg: number;
   attribution: string;
+  modes: ('surf' | 'combat')[];
 }
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -39,10 +40,12 @@ async function generateSampleMaps(): Promise<void> {
       spawn: [0, 0.04, 56],
       yawDeg: 0,
       attribution: 'Original movement and firearm practice geometry shipped with WebStrafe.',
+      // a surf ramp to practise on and a firearm lane with a bot pad
+      modes: ['surf', 'combat'],
     },
   ];
 
-  const manifestMaps: Array<Record<string, string>> = [];
+  const manifestMaps: Array<Record<string, unknown>> = [];
 
   for (const mapSpec of mapSpecs) {
     const mapDir = path.join(publicDir, 'maps', mapSpec.id);
@@ -70,6 +73,7 @@ async function generateSampleMaps(): Promise<void> {
           yawDeg: mapSpec.yawDeg,
         },
       ],
+      modes: mapSpec.modes,
     };
     await fs.writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
 
@@ -82,13 +86,14 @@ async function generateSampleMaps(): Promise<void> {
       scenePath: `/maps/${mapSpec.id}/scene.glb`,
       collisionPath: `/maps/${mapSpec.id}/collision.glb`,
       metaPath: `/maps/${mapSpec.id}/meta.json`,
+      modes: mapSpec.modes,
     });
   }
 
   const manifestPath = path.join(publicDir, 'maps', 'manifest.json');
-  const existing = await readJsonFile<{ maps?: Array<Record<string, string>> }>(manifestPath);
-  const generatedIds = new Set(manifestMaps.map((map) => map.id));
-  const preservedMaps = (existing.maps ?? []).filter((map) => !generatedIds.has(map.id ?? ''));
+  const existing = await readJsonFile<{ maps?: Array<Record<string, unknown>> }>(manifestPath);
+  const generatedIds = new Set(manifestMaps.map((map) => String(map.id)));
+  const preservedMaps = (existing.maps ?? []).filter((map) => !generatedIds.has(String(map.id ?? '')));
 
   const manifest = {
     maps: [...preservedMaps, ...manifestMaps],
