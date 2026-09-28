@@ -17,6 +17,7 @@ import { HostSimulation, type HostBotRow, type HostEmitter } from './HostSimulat
 import { SendCadence } from '../netcode/SendCadence';
 import { broadcastRateHz, DEFAULT_BUDGET, MAX_ROOM_PLAYERS, type BudgetOptions } from '../netcode/RateBudget';
 import { RESPAWN_DELAY_MS } from '../combat/CombatState';
+import { decodeLook, isPlausibleLookWire } from '../characters/look';
 
 const SESSION_KEY = 'webstrafe:session-id:v1';
 /**
@@ -25,6 +26,8 @@ const SESSION_KEY = 'webstrafe:session-id:v1';
  * flagged melee with the cs knife damage table and backstabs, hits carry
  * melee/backstab, and fires carry the shooter's weapon. a p3 host would resolve
  * those differently, so p3 and p4 tabs must never share a room.
+ * the optional presence look `c` doesn't need a bump: p4 peers from before
+ * looks ignore it and send none, so they just show default looks.
  */
 export const SUPABASE_PROTOCOL = 'p4';
 const PLAYER_STALE_MS = 8000;
@@ -37,6 +40,12 @@ const HOST_STEP_MS = 1000 / 60;
 export const HOST_STALE_MS = 3000;
 /** after joining, wait this long for an existing host's claim before self-electing */
 export const JOIN_GRACE_MS = 2500;
+/**
+ * supabase closes a channel that makes more than 5 presence calls in 30 s (the
+ * count restarts on every channel join), so stay one under it in a rolling window
+ */
+export const PRESENCE_TRACK_LIMIT = 4;
+export const PRESENCE_TRACK_WINDOW_MS = 30_000;
 
 type Packed = [number, number, number, number, number, number, number, number];
 
@@ -90,6 +99,8 @@ export interface SupabaseMultiplayerOptions {
 interface RemoteRecord {
   name: string;
   model: PlayerModel;
+  /** look wire string from presence, null if the peer sent none or junk */
+  cosmetics: string | null;
   state: OutgoingState | null;
   t: number | null;
   combatReady: boolean;
@@ -132,6 +143,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   private activeMapId = '';
   private localName = '';
   private localModel: PlayerModel = 'terrorist';
+  private localCosmetics: string | null = null;
   private localState: OutgoingState | null = null;
   private localStateAtMs = 0;
   private localCombatReady = false;
@@ -161,6 +173,10 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   /** set once the paused pose went out with zero velocity */
   private restSent = false;
   private roomFull = false;
+  /** when our presence tracks on this channel join went out, oldest first */
+  private trackTimes: number[] = [];
+  /** the one late track waiting for budget, it sends whatever is current then */
+  private trackTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Messages this client has broadcast, by event (diagnostics/bench). */
   public readonly sentCounts = new Map<string, number>();
@@ -192,6 +208,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.localCombatReady = false;
     this.stopPump();
     this.stopHost();
+    this.cancelTrack();
     if (this.channel) {
       void this.client.removeChannel(this.channel);
       this.channel = null;
@@ -216,16 +233,18 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     return broadcastRateHz(this.remotes.size + 1, this.budget);
   }
 
-  join(mapId: string, name: string, model: PlayerModel): void {
-    const profileChanged = name !== this.localName || model !== this.localModel;
+  join(mapId: string, name: string, model: PlayerModel, cosmetics?: string): void {
+    const look = parseLook(cosmetics);
+    const profileChanged = name !== this.localName || model !== this.localModel || look !== this.localCosmetics;
     this.localName = name;
     this.localModel = model;
+    this.localCosmetics = look;
 
     // Same map: refresh presence only when the profile actually changed
     // (presence track is limited to 5 calls per client per 30 s).
     if (this.channel && mapId === this.activeMapId) {
       if (profileChanged && this.subscribed) {
-        void this.channel.track(this.presencePayload());
+        this.trackPresence();
       }
       return;
     }
@@ -234,6 +253,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       void this.client.removeChannel(this.channel);
       this.channel = null;
     }
+    this.cancelTrack();
     this.stopPump();
     this.stopHost();
     this.botRows = [];
@@ -267,7 +287,11 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     channel.subscribe((status) => {
       if (status === 'SUBSCRIBED') {
         this.subscribed = true;
-        void channel.track(this.presencePayload());
+        // every channel join (and rejoin) gets a fresh presence budget on the
+        // server, and we aren't in presence until this track lands
+        this.cancelTrack();
+        this.trackTimes = [];
+        this.trackPresence();
         this.cadence.flush();
         this.startPump();
         this.onConnectedChange?.(true);
@@ -381,7 +405,37 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       name: this.localName,
       model: this.localModel,
       j: this.joinedChannelAt,
+      ...(this.localCosmetics ? { c: this.localCosmetics } : {}),
     };
+  }
+
+  /**
+   * tracks our presence, at most PRESENCE_TRACK_LIMIT times per rolling window.
+   * over budget, one late track goes out at the earliest allowed time with
+   * whatever the profile is by then, so a burst of edits costs one call
+   */
+  private trackPresence(): void {
+    if (!this.channel || !this.subscribed || this.trackTimer) {
+      return;
+    }
+    const now = this.now();
+    this.trackTimes = this.trackTimes.filter((t) => now - t < PRESENCE_TRACK_WINDOW_MS);
+    if (this.trackTimes.length >= PRESENCE_TRACK_LIMIT) {
+      this.trackTimer = setTimeout(() => {
+        this.trackTimer = null;
+        this.trackPresence();
+      }, this.trackTimes[0] + PRESENCE_TRACK_WINDOW_MS - now);
+      return;
+    }
+    this.trackTimes.push(now);
+    void this.channel.track(this.presencePayload());
+  }
+
+  private cancelTrack(): void {
+    if (this.trackTimer) {
+      clearTimeout(this.trackTimer);
+      this.trackTimer = null;
+    }
   }
 
   /**
@@ -764,6 +818,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       name: string;
       model: PlayerModel;
       j?: number;
+      c?: unknown;
     }>();
     const present = new Set<string>();
     for (const entries of Object.values(state)) {
@@ -775,6 +830,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         const existing = this.remotes.get(entry.id) ?? newRecord(entry.name, entry.model, this.now());
         existing.name = entry.name;
         existing.model = entry.model;
+        existing.cosmetics = parseLook(entry.c);
         existing.joinedAt = typeof entry.j === 'number' ? entry.j : existing.joinedAt;
         this.remotes.set(entry.id, existing);
       }
@@ -804,6 +860,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       this.roomFull = true;
       this.stopPump();
       this.stopHost();
+      this.cancelTrack();
       if (this.channel) {
         void this.client.removeChannel(this.channel);
         this.channel = null;
@@ -840,6 +897,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         velocity: this.localState.velocity,
         yaw: this.localState.yaw,
         pitch: this.localState.pitch,
+        ...(this.localCosmetics ? { cosmetics: this.localCosmetics } : {}),
       });
     }
     for (const [id, record] of this.remotes) {
@@ -856,6 +914,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         pitch: record.state.pitch,
         t: record.t ?? undefined,
         clock: id,
+        ...(record.cosmetics ? { cosmetics: record.cosmetics } : {}),
       });
     }
 
@@ -873,6 +932,7 @@ function newRecord(name: string, model: PlayerModel, now: number): RemoteRecord 
   return {
     name,
     model,
+    cosmetics: null,
     state: null,
     t: null,
     combatReady: false,
@@ -904,6 +964,11 @@ function unpack(s: Packed): OutgoingState {
     yaw: s[6],
     pitch: s[7],
   };
+}
+
+/** a look string we'd pass on to the renderer, or null for none or junk */
+function parseLook(value: unknown): string | null {
+  return isPlausibleLookWire(value) && decodeLook(value) !== null ? value : null;
 }
 
 /** a malformed melee field drops the whole fire instead of guessing */
