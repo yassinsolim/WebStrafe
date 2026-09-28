@@ -27,6 +27,8 @@ export interface QualityPreset {
   bloomLevels: number;
   /** bullet holes alive at once, the oldest is reused */
   maxDecals: number;
+  /** largest generated normal map for world textures, 0 on low (no normal maps) */
+  normalMapSize: number;
 }
 
 export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
@@ -45,6 +47,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
     effectDensity: 0.4,
     bloomLevels: 0,
     maxDecals: 24,
+    normalMapSize: 0,
   },
   // the default: the lit look without msaa or ao, aimed at 60 fps on a typical laptop
   medium: {
@@ -61,6 +64,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
     effectDensity: 0.75,
     bloomLevels: 4,
     maxDecals: 48,
+    normalMapSize: 512,
   },
   // strong gpus: 4x msaa, ao, sharper shadows and a wider bloom
   high: {
@@ -77,6 +81,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
     effectDensity: 1,
     bloomLevels: 6,
     maxDecals: 96,
+    normalMapSize: 1024,
   },
 };
 

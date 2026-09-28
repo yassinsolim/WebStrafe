@@ -15,7 +15,7 @@
       } from 'three';
       import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
       import { ViewmodelRenderer } from '/src/cosmetics/ViewmodelRenderer.ts';
-      import { createGltfLoader } from '/src/assets/gltfLoader.ts';
+      import { configureTextureTranscoder, createGltfLoader } from '/src/assets/gltfLoader.ts';
 
       const params = new URLSearchParams(location.search);
       const id = params.get('weapon') ?? 'deagle';
@@ -29,6 +29,7 @@
       renderer.outputColorSpace = SRGBColorSpace;
       renderer.toneMapping = ACESFilmicToneMapping;
       document.body.appendChild(renderer.domElement);
+      configureTextureTranscoder(renderer);
 
       // same lights, fov and environment as the in-game viewmodel pass
       const vm = new ViewmodelRenderer(68, width / height);

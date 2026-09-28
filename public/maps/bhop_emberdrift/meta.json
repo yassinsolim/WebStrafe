@@ -289,7 +289,7 @@
     "exposure": 1.12,
     "lightmaps": [
       {
-        "path": "/maps/bhop_emberdrift/lightmap.webp"
+        "path": "/maps/bhop_emberdrift/lightmap.ktx2"
       }
     ],
     "lightMapIntensity": 10.9956,

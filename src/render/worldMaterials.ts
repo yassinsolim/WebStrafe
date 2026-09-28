@@ -127,7 +127,7 @@ export function buildBakedMaterial(source: MeshStandardMaterial, options: WorldM
     return lambert;
   }
   const normalMap = options.normals && source.map && profile.normal > 0
-    ? options.normals.get(source.map, profile.normal)
+    ? options.normals.get(source.map, profile.normal, options.preset.normalMapSize)
     : null;
   const standard = new MeshStandardMaterial({
     ...common,

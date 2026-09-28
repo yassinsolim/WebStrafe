@@ -94,7 +94,7 @@ describe.each(MAPS)('%s meta', (id) => {
   });
 
   it('keeps the download and draw budgets', async () => {
-    const files = ['scene.glb', 'collision.glb', 'lightmap.webp', 'thumbnail.webp'];
+    const files = ['scene.glb', 'collision.glb', 'lightmap.ktx2', 'thumbnail.webp'];
     const total = files.reduce((sum, f) => sum + fileSize(mapFile(id, f)), 0);
     expect(total).toBeLessThan(8 * MB);
     expect(fileSize(mapFile(id, 'thumbnail.webp'))).toBeGreaterThan(0);

@@ -39,6 +39,7 @@ import { AdaptiveResolution } from './AdaptiveResolution';
 import { RenderPipeline } from '../render/RenderPipeline';
 import { readRendererName, resolveQuality, type QualityPreset } from '../render/quality';
 import { EFFECTS_LAYER } from '../render/layers';
+import { configureTextureTranscoder } from '../assets/gltfLoader';
 import { ViewmodelProbe } from '../render/ViewmodelProbe';
 import type { LoadoutSelection } from '../cosmetics/types';
 import { HUD } from '../ui/HUD';
@@ -274,6 +275,7 @@ export class GameApp {
     this.renderer.toneMapping = NoToneMapping;
     this.renderer.autoClear = false;
     this.renderer.shadowMap.type = PCFSoftShadowMap;
+    configureTextureTranscoder(this.renderer);
     this.container.appendChild(this.renderer.domElement);
     this.pipeline = new RenderPipeline(this.renderer);
     this.viewmodelProbe = new ViewmodelProbe(this.renderer);

@@ -288,7 +288,7 @@
     "exposure": 1.0,
     "lightmaps": [
       {
-        "path": "/maps/surf_prismline/lightmap.webp"
+        "path": "/maps/surf_prismline/lightmap.ktx2"
       }
     ],
     "lightMapIntensity": 8.6394,

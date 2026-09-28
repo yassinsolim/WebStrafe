@@ -26,6 +26,7 @@ import {
 } from 'three';
 import type { LoadedMap, MapEnvironmentConfig, MapLightmapConfig, MapMeta } from './types';
 import { DEFAULT_GRADE, inverseGrade, resolveGrade, type ColorGrade } from '../render/grade';
+import { textureTranscoder } from '../assets/gltfLoader';
 import { NormalFromAlbedo } from '../render/NormalFromAlbedo';
 import { QUALITY_PRESETS, type QualityPreset } from '../render/quality';
 import { buildBakedMaterial, buildFullBakeMaterial } from '../render/worldMaterials';
@@ -221,9 +222,17 @@ export async function loadMapLightmaps(
   const loader = useBitmap
     ? new ImageBitmapLoader(manager).setOptions({ imageOrientation: 'none', premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
     : new TextureLoader(manager);
+  const ktx2 = textureTranscoder();
   const textures = await Promise.all(entries.map(async (entry) => {
     const url = resolveMapAssetPath(entry.path, metaPath);
     try {
+      if (url.endsWith('.ktx2') && ktx2) {
+        // gpu compressed, srgb rgb and linear alpha come from the file itself
+        const compressed = await ktx2.loadAsync(url);
+        compressed.name = entry.path;
+        compressed.channel = 1;
+        return compressed;
+      }
       const loaded = await loader.loadAsync(url);
       const texture = loaded instanceof Texture ? loaded : new Texture(loaded as ImageBitmap);
       texture.name = entry.path;
@@ -464,7 +473,15 @@ export class MapEnvironment {
       this.skyMaterial.needsUpdate = true;
     }
     this.syncShadows();
-    if (previous.detailedMaterials !== preset.detailedMaterials || previous.reflections !== preset.reflections) {
+    if (previous.normalMapSize !== preset.normalMapSize) {
+      // drop normal maps built at the old size so they don't sit in gpu memory
+      this.normals.clear();
+    }
+    if (
+      previous.detailedMaterials !== preset.detailedMaterials
+      || previous.reflections !== preset.reflections
+      || previous.normalMapSize !== preset.normalMapSize
+    ) {
       this.applyWorldMaterials();
     }
   }
