@@ -139,7 +139,7 @@ const arenaOf = (p: SupabaseMultiplayer) => (p as any).hostSim.arena;
 const statesFrom = (bus: FakeBus, id: string, since = 0) =>
   bus.sent.filter((m) => m.from === id && m.event === 'st' && m.at >= since).map((m) => m.payload);
 
-describe('SupabaseMultiplayer (p4 protocol)', () => {
+describe('SupabaseMultiplayer (p5 protocol)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
@@ -208,7 +208,8 @@ describe('SupabaseMultiplayer (p4 protocol)', () => {
       guest.sendState({ position: [0, 0, 0], velocity: [0, 0, 0], yaw: 0, pitch: 0, t: now });
     }
     guest.sendFire([0, 1.6, 0], [0, 0, -1], undefined, 'secondary');
-    vi.advanceTimersByTime(50);
+    // the stab rides the guest's next state, the result rides the host's
+    vi.advanceTimersByTime(120);
 
     expect(guestHits).toContainEqual(expect.objectContaining({
       shooterId: 'p_b',
@@ -411,6 +412,95 @@ describe('SupabaseMultiplayer (p4 protocol)', () => {
     bus.events = 0;
     tickAll(peers, 5000);
     expect(bus.events / 5).toBeLessThan(SUPABASE_FREE_EVENTS_PER_SEC);
+    for (const p of peers) p.disconnect();
+  });
+
+  it('fires and combat results ride on state messages, not their own broadcasts', () => {
+    const bus = new FakeBus();
+    const host = makePeer(bus, 'p_a');
+    const guest = makePeer(bus, 'p_b');
+    enter(host);
+    enter(guest);
+    tickAll([host, guest], JOIN_GRACE_MS + 1000);
+    expect(host.isHosting()).toBe(true);
+    guest.sendEquip('deagle');
+    tickAll([host, guest], 300);
+    const since = Date.now();
+    guest.sendFire([0, 1.6, 0], [1, 0, 0], { targets: {} });
+    tickAll([host, guest], 300);
+    expect(bus.byEvent.get('fire') ?? 0).toBe(0);
+    expect(bus.byEvent.get('cb') ?? 0).toBe(0);
+    const carried = statesFrom(bus, 'p_b', since).filter((st) => Array.isArray(st.f));
+    expect(carried).toHaveLength(1);
+    expect(carried[0].f[0].dir).toEqual([1, 0, 0]);
+    // the host resolved it and the shot came back on the host's state
+    expect(statesFrom(bus, 'p_a', since).some((st) => Array.isArray(st.ev) && st.ev.some((e: any) => e.k === 'shot'))).toBe(true);
+    host.disconnect();
+    guest.disconnect();
+  });
+
+  it('a carried fire replaces a scheduled send instead of adding one', () => {
+    const run = (fireEveryMs: number | null) => {
+      const bus = new FakeBus();
+      const peers = ['p_a', 'p_b', 'p_c', 'p_d', 'p_e', 'p_f'].map((id) => makePeer(bus, id));
+      for (const p of peers) enter(p);
+      tickAll(peers, JOIN_GRACE_MS + 1000);
+      const since = Date.now();
+      let next = since;
+      const step = 1000 / 128;
+      for (let t = 0; t < 6000; t += step) {
+        vi.advanceTimersByTime(step);
+        const now = Date.now();
+        for (const [i, p] of peers.entries()) {
+          p.sendState({ position: [i, 0, now / 1000], velocity: [0, 0, 1], yaw: 0, pitch: 0, t: now });
+        }
+        if (fireEveryMs !== null && now >= next) {
+          peers[1].sendFire([0, 1.6, 0], [1, 0, 0], { targets: {} });
+          next += fireEveryMs;
+        }
+      }
+      const out = statesFrom(bus, 'p_b', since).length;
+      for (const p of peers) p.disconnect();
+      return out;
+    };
+    const quiet = run(null);
+    const firing = run(1500);
+    // 4 fires in 6 s at 1.8 Hz: each one moves a send earlier, it doesn't add a full one
+    expect(firing - quiet).toBeLessThanOrEqual(2);
+  });
+
+  it.each([
+    // [shots per second across the room, events/s ceiling]
+    [0, 70],
+    [2, 76],
+    [4, 88],
+  ])('a full room with bots at %i shots/s stays under %i events/s', (shotsPerSec, ceiling) => {
+    const bus = new FakeBus();
+    const peers = ['p_a', 'p_b', 'p_c', 'p_d', 'p_e', 'p_f'].map((id) => makePeer(bus, id));
+    for (const p of peers) {
+      enter(p);
+      p.sendEquip('deagle');
+    }
+    tickAll(peers, JOIN_GRACE_MS + 1000);
+    bus.events = 0;
+    const step = 1000 / 128;
+    let next = Date.now();
+    let shooter = 0;
+    for (let t = 0; t < 10_000; t += step) {
+      vi.advanceTimersByTime(step);
+      const now = Date.now();
+      for (const [i, p] of peers.entries()) {
+        p.sendState({ position: [i, 0, now / 1000], velocity: [0, 0, 1], yaw: 0, pitch: 0, t: now });
+      }
+      if (shotsPerSec > 0 && now >= next) {
+        peers[shooter % peers.length].sendFire([0, 1.6, 0], [1, 0, 0], { targets: {} });
+        shooter += 1;
+        next += 1000 / shotsPerSec;
+      }
+    }
+    expect(bus.events / 10).toBeLessThan(ceiling);
+    expect(bus.byEvent.get('fire') ?? 0).toBe(0);
+    expect(bus.byEvent.get('cb') ?? 0).toBe(0);
     for (const p of peers) p.disconnect();
   });
 });

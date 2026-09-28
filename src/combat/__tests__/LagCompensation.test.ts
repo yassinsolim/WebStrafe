@@ -100,4 +100,25 @@ describe('lag compensated hits', () => {
     });
     expect(accepted.hit?.targetId).toBe('target');
   });
+
+  it('reaches what a full-room client renders: 1.8 Hz samples seen ~700 ms back', () => {
+    const arena = new CombatArena();
+    arena.addPlayer('shooter', 'm', 'deagle');
+    arena.addPlayer('target', 'm', 'knife');
+    arena.setPosition('shooter', [0, 0, 10], 'm', 0);
+    const interval = 1000 / 1.8;
+    // keep the target within ~15 m so weapon spread isn't what's being tested
+    const near = (t: number): [number, number, number] => [((t - 2500) / 1000) * SPEED, 0, 0];
+    for (let t = 0; t <= 3000; t += interval) {
+      arena.setPosition('target', near(t), 'm', t, [SPEED, 0, 0]);
+    }
+    const newest = Math.floor(3000 / interval) * interval;
+    // render delay at 1.8 Hz is ~616 ms, plus ~80 ms of latency
+    const seenAt = newest - 700;
+    const { origin, dir } = aimAt(near(seenAt)[0]);
+    const outcome = arena.handleFire('shooter', origin, dir, 10_000, undefined, undefined, {
+      targetTimes: { target: seenAt },
+    });
+    expect(outcome.hit?.targetId).toBe('target');
+  });
 });
