@@ -2,6 +2,7 @@ import { Euler, Group, Matrix4, Object3D, Quaternion, Vector3 } from 'three';
 import { sharedGltfLoader } from '../assets/gltfLoader';
 import { DEFAULT_KNIFE_ID, getKnife, isKnifeId, type KnifeId } from '../combat/knives';
 import { buildProceduralKnife, disposeProceduralKnife, KNIFE_NODES } from '../cosmetics/ProceduralKnife';
+import { disposeKnifeModel, isKnifeModel, loadKnifeModel } from '../cosmetics/knifeAssets';
 import { ArmsRig } from './ArmsRig';
 import { sampleClip, retime, type Clip } from './clips';
 import { blendHandPose, createHandPose, HAND_POSES, type HandPoseName } from './handPoses';
@@ -727,27 +728,54 @@ export class ViewmodelSystem {
   }
 
   private rebuildKnife(): void {
+    const id = this.knifeId;
+    this.installKnife(null, null);
+    // swap in the blender model once it's loaded (if one exists for this knife)
+    void Promise.all([loadKnifeModel(id), getKnife(id).shape.pair ? loadKnifeModel(id) : Promise.resolve(null)])
+      .then(([model, second]) => {
+        if (!model) return;
+        if (this.knifeId !== id) {
+          disposeKnifeModel(model);
+          if (second) disposeKnifeModel(second);
+          return;
+        }
+        this.installKnife(model, second);
+      });
+  }
+
+  /** builds the knife rigs from the given models, or procedural knives when null */
+  private installKnife(model: Group | null, second: Group | null): void {
     for (const rig of [this.knife, this.knifeLeft]) {
       if (rig) {
         rig.holder.removeFromParent();
-        disposeProceduralKnife(rig.knife);
+        if (isKnifeModel(rig.knife)) disposeKnifeModel(rig.knife);
+        else disposeProceduralKnife(rig.knife);
       }
     }
     this.knife = null;
     this.knifeLeft = null;
     const def = getKnife(this.knifeId);
-    this.knife = this.makeKnifeRig();
+    this.knife = this.makeKnifeRig(model);
     if (def.shape.pair) {
-      this.knifeLeft = this.makeKnifeRig();
+      this.knifeLeft = this.makeKnifeRig(second);
     }
     const visible = this.active === 'knife';
     this.knife.holder.visible = visible;
     if (this.knifeLeft) this.knifeLeft.holder.visible = visible;
+    this.onKnifeRigsChanged?.();
   }
 
-  private makeKnifeRig(): KnifeRig {
+  /** hook for the finish system to repaint freshly built knives */
+  public onKnifeRigsChanged: (() => void) | null = null;
+
+  /** the knife objects currently in hand (one, or two for the push daggers) */
+  public getKnifeObjects(): Object3D[] {
+    return [this.knife?.knife, this.knifeLeft?.knife].filter((k): k is Group => !!k);
+  }
+
+  private makeKnifeRig(model: Group | null = null): KnifeRig {
     const def = getKnife(this.knifeId);
-    const knife = buildProceduralKnife(def);
+    const knife = model ?? buildProceduralKnife(def);
     knife.traverse((node) => {
       node.frustumCulled = false;
     });
