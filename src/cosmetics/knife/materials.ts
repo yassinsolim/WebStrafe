@@ -52,8 +52,9 @@ export function createKnifeMaterials(shape: KnifeShape): KnifeMaterials {
     roughness: 0.16,
   });
   const accentMetal = saturation(shape.accentColor) < 0.5;
+  // metal accents are the guards, bolsters, pommels and rings the finishes paint (knife-contract.md)
   const accent = new MeshStandardMaterial({
-    name: 'knife_accent',
+    name: accentMetal ? 'knife_metal' : 'knife_accent',
     color: shape.accentColor,
     metalness: accentMetal ? (luma(shape.accentColor) < 0.05 ? 0.5 : 0.9) : 0.0,
     roughness: accentMetal ? 0.36 : 0.55,
@@ -62,7 +63,11 @@ export function createKnifeMaterials(shape: KnifeShape): KnifeMaterials {
   const liner = accentMetal
     ? new MeshStandardMaterial({ name: 'knife_liner', color: 0x8d939b, metalness: 1.0, roughness: 0.4 })
     : new MeshStandardMaterial({ name: 'knife_liner', color: shape.accentColor, metalness: 0.0, roughness: 0.5 });
-  return { blade, edge, handle: handleMaterial(shape.handle, shape.handleColor), accent, pin, liner };
+  const handle = handleMaterial(shape.handle, shape.handleColor);
+  // contract names for the finish system: a skeleton frame is bare metal like its blade
+  handle.name = shape.handle === 'skeleton' ? 'knife_metal' : 'knife_handle';
+  handle.userData.handleStyle = shape.handle;
+  return { blade, edge, handle, accent, pin, liner };
 }
 
 function handleMaterial(style: HandleStyle, color: number): MeshStandardMaterial {
