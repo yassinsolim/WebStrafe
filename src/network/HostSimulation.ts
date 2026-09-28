@@ -61,6 +61,8 @@ export interface HostFireLag {
   attackTimeMs?: number;
   /** weapon the shooter had out when they fired (p4 fire messages carry it) */
   weapon?: string;
+  /** rounds the shooter's client had before the shot (p5 fires may carry it) */
+  clientAmmo?: number;
 }
 
 export interface HostBotRow {
@@ -197,7 +199,7 @@ export class HostSimulation {
         this.humanWeapons.set(h.id, h.weapon);
       }
       if (!isNew && isWeaponId(h.weapon) && this.arena.getActiveWeapon(h.id) !== h.weapon) {
-        this.arena.equip(h.id, h.weapon);
+        this.arena.equip(h.id, h.weapon, now);
       }
       this.arena.setPosition(h.id, h.position, MAP_ID, h.t ?? now, h.velocity, h.yaw);
       this.humanPositions.set(h.id, new Vector3(h.position[0], h.position[1], h.position[2]));
@@ -275,7 +277,7 @@ export class HostSimulation {
 
   applyEquip(id: string, weaponId: string): void {
     if (weaponId === 'awp' || weaponId === 'deagle' || weaponId === 'knife') {
-      this.arena.equip(id, weaponId);
+      this.arena.equip(id, weaponId, Date.now());
     }
   }
 
@@ -333,7 +335,7 @@ export class HostSimulation {
       now,
       worldImpact?.distance,
       observedAtMs,
-      lag,
+      lag && { ...lag, clientAmmo: Number.isFinite(lag.clientAmmo) ? lag.clientAmmo : undefined },
     );
     if (outcome.fired && this.humanPositions.has(shooterId)) {
       this.humanLastCombatAtMs.set(shooterId, now);
@@ -499,6 +501,7 @@ export class HostSimulation {
       }
     }
 
+    this.arena.tickWeapons(now);
     for (const ev of this.arena.tickRespawns(now, (id) => this.spawnFor(id))) {
       this.onRespawn(ev.playerId, ev.position);
     }

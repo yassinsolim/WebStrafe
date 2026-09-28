@@ -90,7 +90,12 @@ interface WireFire {
   t: number;
   w?: string;
   melee?: AttackKind;
+  /** shooter's magazine before the shot; older p5 peers omit it */
+  a?: number;
 }
+
+/** fires waiting for a carrier past this many are stale, drop the oldest */
+export const MAX_PENDING_FIRES = 16;
 
 /**
  * Fires and combat batches ride on an immediate state message instead of
@@ -373,9 +378,14 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         targetTimes: fireView.targets,
         shooterTimeMs: shooterT,
         attackTimeMs: Date.now(),
+        clientAmmo: fireView.ammo,
         weapon: this.localWeapon ?? undefined,
       }, melee);
       this.flushCombat();
+      return;
+    }
+    if (this.roomFull) {
+      // turned away by a full room: nobody hosts for us, nothing to send
       return;
     }
     this.pendingFires.push({
@@ -385,7 +395,11 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       t: shooterT,
       ...(this.localWeapon ? { w: this.localWeapon } : {}),
       ...(melee ? { melee } : {}),
+      ...(Number.isFinite(fireView.ammo) ? { a: fireView.ammo } : {}),
     });
+    if (this.pendingFires.length > MAX_PENDING_FIRES) {
+      this.pendingFires.splice(0, this.pendingFires.length - MAX_PENDING_FIRES);
+    }
     this.requestCarrier();
   }
 
@@ -873,6 +887,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       t?: number;
       w?: unknown;
       melee?: unknown;
+      a?: unknown;
     };
     const melee = p.melee === undefined ? undefined : parseMelee(p.melee);
     if (melee === null) {
@@ -883,6 +898,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         targetTimes: sanitizeTargets(p.targets),
         shooterTimeMs: Number.isFinite(p.t) ? p.t : undefined,
         weapon: typeof p.w === 'string' ? p.w : undefined,
+        clientAmmo: typeof p.a === 'number' && Number.isFinite(p.a) ? p.a : undefined,
       }, melee);
       this.flushCombat();
     }
@@ -949,6 +965,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     const seat = roster.findIndex((r) => r.id === this.localId);
     if (seat >= MAX_ROOM_PLAYERS) {
       this.roomFull = true;
+      this.pendingFires = [];
       this.stopPump();
       this.stopHost();
       if (this.channel) {
