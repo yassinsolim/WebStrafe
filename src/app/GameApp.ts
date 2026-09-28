@@ -37,6 +37,7 @@ import { FramePerf } from './FramePerf';
 import { AdaptiveResolution } from './AdaptiveResolution';
 import type { LoadoutSelection } from '../cosmetics/types';
 import { HUD } from '../ui/HUD';
+import { LoadingScreen } from '../ui/LoadingScreen';
 import { MainMenu } from '../ui/MainMenu';
 import { defaultSettings, loadSettings, saveSettings, type GameSettings } from '../ui/SettingsStore';
 import { LeaderboardService, sanitizeLeaderboardName } from '../network/LeaderboardService';
@@ -174,7 +175,7 @@ export class GameApp {
   private readonly loadingTitle: HTMLDivElement;
   private readonly loadingProgress: HTMLDivElement;
   private readonly loadingDetail: HTMLPreElement;
-  private loadProgressSpinnerIndex = 0;
+  private readonly loadingScreen: LoadingScreen;
   private currentLoadToken = 0;
   private readonly timerLabel: HTMLDivElement;
   private readonly runInfoLabel: HTMLDivElement;
@@ -278,6 +279,7 @@ export class GameApp {
     this.loadingTitle = loadingOverlay.title;
     this.loadingProgress = loadingOverlay.progress;
     this.loadingDetail = loadingOverlay.detail;
+    this.loadingScreen = loadingOverlay.screen;
     const runHud = this.createRunHud();
     this.timerLabel = runHud.timer;
     this.runInfoLabel = runHud.info;
@@ -1915,27 +1917,19 @@ export class GameApp {
   }
 
   private showLoadingOverlay(mapName: string): void {
-    this.loadingOverlay.classList.remove('loading-overlay-error');
-    this.loadingOverlay.style.display = 'grid';
-    this.loadingTitle.textContent = `Loading ${mapName} ...`;
-    this.loadingProgress.textContent = '0%';
-    this.loadingDetail.textContent = '';
-    this.loadProgressSpinnerIndex = 0;
+    // startPlaySession sets selectedMapId first, so its entry carries the thumbnail and author
+    const entry = this.mapSources.get(this.selectedMapId)?.entry;
+    this.loadingScreen.show(
+      entry && entry.name === mapName ? entry : { id: this.selectedMapId, name: mapName },
+      { combat: this.combatEnabled },
+    );
   }
 
-  private updateLoadingOverlay(mapName: string, percent: number | null, detail?: string): void {
-    if (this.loadingOverlay.style.display === 'none') {
+  private updateLoadingOverlay(_mapName: string, percent: number | null, detail?: string): void {
+    if (!this.loadingScreen.isVisible()) {
       return;
     }
-    this.loadingTitle.textContent = `Loading ${mapName} ...`;
-    if (percent === null) {
-      const spinnerFrames = ['|', '/', '-', '\\'];
-      const spinner = spinnerFrames[this.loadProgressSpinnerIndex % spinnerFrames.length];
-      this.loadProgressSpinnerIndex += 1;
-      this.loadingProgress.textContent = `${spinner} loading`;
-    } else {
-      this.loadingProgress.textContent = `${percent.toFixed(0)}%`;
-    }
+    this.loadingScreen.setProgress(percent, detail);
     if (detail) {
       this.appendLoadingDetail(detail);
     }
@@ -1957,8 +1951,7 @@ export class GameApp {
   }
 
   private hideLoadingOverlay(): void {
-    this.loadingOverlay.style.display = 'none';
-    this.loadingDetail.textContent = '';
+    this.loadingScreen.hide();
   }
 
   private showLoadingError(error: unknown, assetUrl: string): void {
@@ -2001,31 +1994,11 @@ export class GameApp {
     title: HTMLDivElement;
     progress: HTMLDivElement;
     detail: HTMLPreElement;
+    screen: LoadingScreen;
   } {
-    const root = document.createElement('div');
-    root.className = 'loading-overlay';
-    root.style.display = 'none';
-
-    const panel = document.createElement('div');
-    panel.className = 'loading-panel';
-
-    const title = document.createElement('div');
-    title.className = 'loading-title';
-    title.textContent = 'Loading map ...';
-
-    const progress = document.createElement('div');
-    progress.className = 'loading-progress';
-    progress.textContent = '0%';
-
-    const detail = document.createElement('pre');
-    detail.className = 'loading-detail';
-    detail.textContent = '';
-
-    panel.append(title, progress, detail);
-    root.appendChild(panel);
-    this.container.appendChild(root);
-
-    return { root, title, progress, detail };
+    // map themed screen; title, progress and detail keep their roles for the error path
+    const screen = new LoadingScreen(this.container);
+    return { root: screen.root, title: screen.title, progress: screen.progress, detail: screen.detail, screen };
   }
 
   private createRunHud(): { timer: HTMLDivElement; info: HTMLDivElement } {
