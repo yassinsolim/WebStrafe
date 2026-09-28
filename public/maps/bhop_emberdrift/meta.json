@@ -248,6 +248,10 @@
   "cvars": {
     "sv_airaccelerate": 150
   },
+  "modes": [
+    "surf"
+  ],
+  "difficulty": "intermediate",
   "notes": "33 jumps, checkpoints every six, lava teleports to the last checkpoint.",
   "environment": {
     "sky": {

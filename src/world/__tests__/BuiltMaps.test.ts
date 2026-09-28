@@ -1,11 +1,12 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { Box3, Texture, Vector3, type Mesh } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { MovementController } from '../../movement/MovementController';
 import type { CollisionWorld } from '../CollisionWorld';
 import { MapTriggers, sanitizeTriggers } from '../MapTriggers';
 import { applyLightmaps, resolveEnvironment, resolveMapAssetPath } from '../MapEnvironment';
-import type { MapMeta } from '../types';
+import { resolveBotAnchor } from '../SpawnPoints';
+import type { MapManifest, MapMeta } from '../types';
 import {
   ROOT,
   fileSize,
@@ -20,8 +21,9 @@ import {
   vec,
   type Triangle,
 } from './mapTestUtils';
+import { fullRun, rideStage, type SurfLayout, type SurfRamp } from './surfRiders';
 
-const MAPS = ['bhop_emberdrift', 'surf_prismline', 'aim_ochrecut'] as const;
+const MAPS = ['bhop_emberdrift', 'surf_prismline', 'aim_ochrecut', 'surf_lumen', 'surf_cascade', 'surf_vanta'] as const;
 const CAPSULE = { height: 1.76, radius: 0.34 };
 const DT = 1 / 128;
 const MB = 1024 * 1024;
@@ -161,8 +163,49 @@ describe.each(MAPS)('%s meta', (id) => {
 describe('map cvars', () => {
   it('bhop and surf maps carry their air acceleration, the arena none', () => {
     expect((readMeta('bhop_emberdrift').cvars as Record<string, number>).sv_airaccelerate).toBe(150);
-    expect((readMeta('surf_prismline').cvars as Record<string, number>).sv_airaccelerate).toBe(100);
+    for (const id of ['surf_prismline', 'surf_lumen', 'surf_cascade', 'surf_vanta']) {
+      expect((readMeta(id).cvars as Record<string, number>).sv_airaccelerate, id).toBe(100);
+    }
     expect(readMeta('aim_ochrecut').cvars).toBeUndefined();
+  });
+});
+
+describe('map manifest', () => {
+  const manifest = JSON.parse(readFileSync(`${ROOT}/public/maps/manifest.json`, 'utf8')) as MapManifest;
+  const MODES = ['surf', 'combat'];
+  const DIFFICULTIES = ['beginner', 'intermediate', 'advanced'];
+
+  it('sets modes on every map and matches each meta', () => {
+    expect(manifest.maps.length).toBeGreaterThan(0);
+    for (const entry of manifest.maps) {
+      expect(entry.modes?.length ?? 0, `${entry.id} has modes`).toBeGreaterThan(0);
+      expect(new Set(entry.modes).size, `${entry.id} lists a mode once`).toBe(entry.modes!.length);
+      for (const mode of entry.modes!) {
+        expect(MODES, `${entry.id} mode ${mode}`).toContain(mode);
+      }
+      if (entry.difficulty !== undefined) {
+        expect(DIFFICULTIES).toContain(entry.difficulty);
+      }
+      const meta = JSON.parse(readFileSync(`${ROOT}/public${entry.metaPath}`, 'utf8')) as MapMeta;
+      expect(meta.id).toBe(entry.id);
+      if (meta.modes) expect(meta.modes, `${entry.id} meta modes`).toEqual(entry.modes);
+      expect(meta.difficulty, `${entry.id} meta difficulty`).toBe(entry.difficulty);
+    }
+  });
+
+  it('lists the built maps with files that exist', () => {
+    for (const id of MAPS) {
+      const entry = manifest.maps.find((m) => m.id === id);
+      expect(entry, `${id} in the manifest`).toBeDefined();
+      for (const p of [entry!.scenePath, entry!.collisionPath!, entry!.metaPath, entry!.thumbnailPath!]) {
+        expect(existsSync(`${ROOT}/public${p}`), `${p} exists`).toBe(true);
+      }
+    }
+    const modes = (id: string) => manifest.maps.find((m) => m.id === id)!.modes;
+    expect(modes('surf_lumen')).toEqual(['surf']);
+    expect(modes('surf_cascade')).toEqual(['surf']);
+    expect(modes('surf_vanta')).toEqual(['surf', 'combat']);
+    expect(modes('aim_ochrecut')).toEqual(['combat']);
   });
 });
 
@@ -291,26 +334,23 @@ describe('bhop_emberdrift course', () => {
 // ---------------------------------------------------------------------------
 // surf
 
-interface SurfRamp {
-  stage: number;
-  index: number;
-  side: 'left' | 'right';
-  angleDeg: number;
-  length: number;
-  height: number;
-  s0: number;
-  s1: number;
-  lateral: number;
-  ridgeStart: number;
-  ridgeEnd: number;
-  forward: [number, number, number];
-  quad: Array<[number, number, number]>;
+interface SurfSpec {
+  stages: [number, number];
+  /** distinct ramps (a fork counts as two) */
+  ramps?: [number, number];
+  angle: [number, number];
+  length: [number, number];
+  height: [number, number];
 }
 
-interface SurfLayout {
-  stages: Array<{ index: number; origin: [number, number, number]; forward: [number, number, number]; right: [number, number, number]; landing: { s0: number; s1: number; top: number } }>;
-  ramps: SurfRamp[];
-}
+const SURF: Record<string, SurfSpec> = {
+  surf_prismline: { stages: [3, 4], angle: [55, 62], length: [30, 120], height: [10, 20] },
+  surf_lumen: { stages: [1, 1], ramps: [5, 7], angle: [50, 56], length: [30, 120], height: [10, 24] },
+  surf_cascade: { stages: [5, 6], angle: [55, 60], length: [30, 120], height: [10, 20] },
+  surf_vanta: { stages: [3, 4], angle: [58, 64], length: [30, 120], height: [10, 22] },
+};
+const SURF_MAPS = Object.keys(SURF);
+const NEW_SURF_MAPS = ['surf_lumen', 'surf_cascade', 'surf_vanta'];
 
 function facePlane(ramp: SurfRamp) {
   const [rs, re, , fs] = ramp.quad.map(vec);
@@ -343,37 +383,54 @@ function trianglesOnFace(tris: Triangle[], ramp: SurfRamp, tolerance: number): T
     && Math.abs(Math.abs(t.normal.dot(normal)) - 1) < 1e-3);
 }
 
-describe('surf_prismline ramps', () => {
-  const meta = readMeta('surf_prismline');
-  const layout = readLayout<SurfLayout>('surf_prismline');
+describe.each(SURF_MAPS)('%s ramps', (id) => {
+  const spec = SURF[id];
+  const meta = readMeta(id);
+  const layout = readLayout<SurfLayout>(id);
 
-  it('has 3 or 4 stages with start, checkpoints, a teleport under each stage and a finish', () => {
-    expect(layout.stages.length).toBeGreaterThanOrEqual(3);
-    expect(layout.stages.length).toBeLessThanOrEqual(4);
+  it('has its stages with start, checkpoints, a teleport under each stage and a finish', () => {
+    expect(layout.stages.length).toBeGreaterThanOrEqual(spec.stages[0]);
+    expect(layout.stages.length).toBeLessThanOrEqual(spec.stages[1]);
     const triggers = meta.triggers ?? [];
-    expect(triggers.filter((t) => t.type === 'start')).toHaveLength(1);
+    const start = triggers.filter((t) => t.type === 'start');
+    expect(start).toHaveLength(1);
     expect(triggers.filter((t) => t.type === 'finish')).toHaveLength(1);
-    expect(triggers.filter((t) => t.type === 'checkpoint')).toHaveLength(layout.stages.length - 1);
+    const checkpoints = triggers.filter((t) => t.type === 'checkpoint');
+    expect(checkpoints.map((t) => t.stage)).toEqual(layout.stages.slice(1).map((s) => s.index));
+    for (const t of checkpoints) {
+      expect(inBox(vec(t.target!.position), t.min, t.max), `${t.id} contains its target`).toBe(true);
+    }
+    // the start of each stage: the spawn for the first, its checkpoint target after that
+    const starts = [start[0].target!, ...checkpoints.map((t) => t.target!)];
     for (const stage of layout.stages) {
       const fall = triggers.find((t) => t.type === 'teleport' && t.stage === stage.index);
       expect(fall, `teleport under stage ${stage.index}`).toBeDefined();
-      expect(fall!.target, `stage ${stage.index} teleport goes to its start`).toBeDefined();
+      expect(fall!.target, `stage ${stage.index} teleport goes to its start`).toEqual(starts[stage.index - 1]);
     }
+    const lowest = Math.min(...layout.ramps.map((r) => Math.min(...r.quad.map((q) => q[1]))), ...layout.stages.map((s) => s.landing.top));
+    const voids = triggers.filter((t) => t.type === 'teleport' && t.stage === undefined);
+    expect(voids.length, 'a void catch under everything').toBeGreaterThan(0);
+    for (const t of voids) expect(t.max[1]).toBeLessThan(lowest - 4);
   });
 
   it('builds ramps in the classic surf range', () => {
     for (const r of layout.ramps) {
-      expect(r.angleDeg).toBeGreaterThanOrEqual(55);
-      expect(r.angleDeg).toBeLessThanOrEqual(62);
-      expect(r.length).toBeGreaterThanOrEqual(30);
-      expect(r.length).toBeLessThanOrEqual(120);
-      expect(r.height).toBeGreaterThanOrEqual(10);
-      expect(r.height).toBeLessThanOrEqual(20);
+      expect(r.angleDeg).toBeGreaterThanOrEqual(spec.angle[0]);
+      expect(r.angleDeg).toBeLessThanOrEqual(spec.angle[1]);
+      expect(r.length).toBeGreaterThanOrEqual(spec.length[0]);
+      expect(r.length).toBeLessThanOrEqual(spec.length[1]);
+      expect(r.height).toBeGreaterThanOrEqual(spec.height[0]);
+      expect(r.height).toBeLessThanOrEqual(spec.height[1]);
+    }
+    if (spec.ramps) {
+      const prisms = layout.ramps.filter((r) => r.side === 'right').length;
+      expect(prisms).toBeGreaterThanOrEqual(spec.ramps[0]);
+      expect(prisms).toBeLessThanOrEqual(spec.ramps[1]);
     }
   });
 
   it('keeps every ramp face one planar quad in the collision mesh', { timeout: 30000 }, async () => {
-    const tris = trianglesOf((await loadCollisionWorld('surf_prismline')).root);
+    const tris = trianglesOf((await loadCollisionWorld(id)).root);
     for (const r of layout.ramps) {
       const face = trianglesOnFace(tris, r, 0.01);
       expect(face, `stage ${r.stage} ramp ${r.index} ${r.side} is two triangles`).toHaveLength(2);
@@ -394,7 +451,7 @@ describe('surf_prismline ramps', () => {
   });
 
   it('keeps every ramp face one planar quad in the render mesh', { timeout: 30000 }, async () => {
-    const scene = await loadGlbScene(mapFile('surf_prismline', 'scene.glb'));
+    const scene = await loadGlbScene(mapFile(id, 'scene.glb'));
     const tris = trianglesOf(scene, (name) => name.includes('__ramp_'));
     for (const r of layout.ramps) {
       // quantized render positions sit within a few millimetres of the plane
@@ -430,7 +487,7 @@ describe('surf_prismline ramps', () => {
   });
 
   it('keeps a rider holding into a ramp in surf mode and speeds them up', () => {
-    const w = world('surf_prismline');
+    const w = world(id);
     const ramp = layout.ramps[0];
     const { rs, re, fs, normal } = facePlane(ramp);
     const f = vec(ramp.forward).normalize();
@@ -457,7 +514,7 @@ describe('surf_prismline ramps', () => {
   }, 30000);
 
   it('carries a rider through every stage onto its landing platform', () => {
-    const w = world('surf_prismline');
+    const w = world(id);
     for (const stage of layout.stages) {
       for (const side of ['left', 'right'] as const) {
         for (const [depthFrac, speed] of [[0.25, 12], [0.5, 18], [0.75, 26]]) {
@@ -465,64 +522,139 @@ describe('surf_prismline ramps', () => {
         }
       }
     }
-  }, 120000);
+  }, 240000);
 });
 
-/**
- * a surfer bot: starts on the first ramp of a stage, holds its line by pushing
- * into the face only as much as it needs (slowly drifting down for speed) and
- * lets go between ramps. true when it lands on the stage's landing platform.
- */
-function rideStage(w: CollisionWorld, layout: SurfLayout, stageIndex: number, side: 'left' | 'right', depthFrac: number, speed: number): boolean {
-  const stage = layout.stages[stageIndex - 1];
-  const origin = vec(stage.origin);
-  const fwd = vec(stage.forward).normalize();
-  const right = vec(stage.right).normalize();
-  const ramps = layout.ramps.filter((r) => r.stage === stageIndex && r.side === side);
-  const first = ramps[0];
-  const depth0 = first.height * depthFrac;
-  const sign = side === 'right' ? 1 : -1;
-  const start = origin.clone().addScaledVector(fwd, first.s0 + 8)
-    .addScaledVector(right, first.lateral + sign * depth0 / Math.tan((first.angleDeg * Math.PI) / 180));
-  start.y = first.ridgeStart + (first.ridgeEnd - first.ridgeStart) * (8 / first.length) - depth0 + 0.3;
-  const player = new MovementController();
-  player.setCvar('sv_airaccelerate', 100);
-  player.reset(start, (Math.atan2(-fwd.x, -fwd.z) * 180) / Math.PI);
-  player.setVelocity(fwd.clone().multiplyScalar(speed));
-  let current = -1;
-  let target = depth0;
-  for (let t = 0; t < 128 * 40; t += 1) {
-    const feet = player.getFeetPosition();
-    const rel = feet.clone().sub(origin);
-    const s = rel.dot(fwd);
-    const lat = rel.dot(right);
-    const idx = ramps.findIndex((r) => s >= r.s0 - 0.5 && s <= r.s1);
-    let push = 0;
-    if (idx >= 0) {
-      const r = ramps[idx];
-      const ridge = r.ridgeStart + (r.ridgeEnd - r.ridgeStart) * ((s - r.s0) / r.length);
-      const depth = ridge - feet.y;
-      const onRight = lat - r.lateral > 0;
-      if (idx !== current && player.getDebugState().surfing) {
-        current = idx;
-        target = Math.min(r.height * 0.6, Math.max(depth, r.height * 0.25));
+describe.each(NEW_SURF_MAPS)('%s full run', (id) => {
+  const meta = readMeta(id);
+  const layout = readLayout<SurfLayout>(id);
+
+  it('tags its modes, difficulty and par time', () => {
+    expect(meta.modes).toContain('surf');
+    expect(['beginner', 'intermediate', 'advanced']).toContain(meta.difficulty);
+    expect(meta.parTimeMs).toBeGreaterThan(10000);
+    expect(Number.isInteger(meta.parTimeMs)).toBe(true);
+  });
+
+  it('rides from the spawn through every checkpoint to the finish with the real movement code', () => {
+    const w = world(id);
+    const times: number[] = [];
+    for (const side of ['left', 'right'] as const) {
+      for (const entryOffset of [2, 3]) {
+        const run = fullRun(w, meta, layout, { side, entryOffset });
+        const label = `${side} rider, gate offset ${entryOffset} m`;
+        expect(run.teleports, `${label}: ${run.reason}`).toEqual([]);
+        expect(run.finished, `${label}: ${run.reason}`).toBe(true);
+        expect(run.checkpoints, label).toEqual(layout.stages.slice(1).map((s) => s.index));
+        times.push(run.timeMs);
       }
-      const a = (r.angleDeg * Math.PI) / 180;
-      const up = right.clone().multiplyScalar((onRight ? -1 : 1) * Math.cos(a)).add(new Vector3(0, Math.sin(a), 0));
-      const wantUp = -0.8 + 0.5 * (depth - target);
-      push = Math.min(1, Math.max(0, 0.6 * (wantUp - player.getVelocity().dot(up)))) * (onRight ? -1 : 1);
     }
-    player.tick(DT, { forwardMove: 0, sideMove: push, jumpPressed: false, jumpHeld: false }, w);
-    const d = player.getDebugState();
-    if (s >= stage.landing.s0 && d.grounded && Math.abs(player.getFeetPosition().y - stage.landing.top) < 1) {
-      return true;
-    }
-    if (feet.y < stage.landing.top - 40) {
-      return false;
-    }
-  }
-  return false;
+    // parTimeMs is the fastest of these runs, rounded
+    const fastest = Math.min(...times);
+    expect(Math.abs(fastest - meta.parTimeMs!), `fastest run ${fastest.toFixed(0)} ms`).toBeLessThan(meta.parTimeMs! * 0.1);
+  }, 240000);
+});
+
+// ---------------------------------------------------------------------------
+// vanta combat deck
+
+interface ArenaLayout {
+  origin: [number, number, number];
+  forward: [number, number, number];
+  right: [number, number, number];
+  halfLat: number;
+  halfFwd: number;
+  wallThickness: number;
+  spawns: { a: number[]; b: number[] };
 }
+
+describe('surf_vanta combat deck', () => {
+  const meta = readMeta('surf_vanta') as MapMeta;
+  const arena = readLayout<SurfLayout & { arena: ArenaLayout }>('surf_vanta').arena;
+  const origin = vec(arena.origin);
+  const fwd = vec(arena.forward).normalize();
+  const right = vec(arena.right).normalize();
+  const local = (p: Vector3) => {
+    const rel = p.clone().sub(origin);
+    return { x: rel.dot(right), y: rel.dot(fwd) };
+  };
+
+  it('is tagged for surf and combat', () => {
+    expect(meta.modes).toEqual(['surf', 'combat']);
+    expect(meta.difficulty).toBe('advanced');
+  });
+
+  it('has a flat, mostly open floor of at least 50 x 40 m', () => {
+    const w = world('surf_vanta');
+    expect(arena.halfLat * 2).toBeGreaterThanOrEqual(50);
+    expect(arena.halfFwd * 2).toBeGreaterThanOrEqual(40);
+    const inset = arena.wallThickness + 0.5;
+    let samples = 0;
+    let open = 0;
+    for (let x = -arena.halfLat + inset; x <= arena.halfLat - inset; x += 2) {
+      for (let y = -arena.halfFwd + inset; y <= arena.halfFwd - inset; y += 2) {
+        // from above the corner light masts, the tallest things on the deck
+        const top = origin.clone().addScaledVector(right, x).addScaledVector(fwd, y).add(new Vector3(0, 12, 0));
+        const hit = w.raycastGeometry(top, new Vector3(0, -1, 0), 16);
+        samples += 1;
+        expect(hit, `deck under ${x}, ${y}`).not.toBeNull();
+        // floor and cover tops are all flat, no slopes on the deck
+        expect(hit!.normal.y, `flat at ${x}, ${y}`).toBeGreaterThan(0.999);
+        if (Math.abs(hit!.point.y - origin.y) < 0.02) open += 1;
+      }
+    }
+    expect(open / samples).toBeGreaterThan(0.85);
+    expect(open * 4, 'open floor in m2').toBeGreaterThan(1800);
+  });
+
+  it('has four or more grounded spawns per side, facing the other side', () => {
+    const w = world('surf_vanta');
+    for (const [side, other] of [['a', 'b'], ['b', 'a']] as const) {
+      const own = arena.spawns[side].map((i) => meta.spawns![i]);
+      expect(own.length).toBeGreaterThanOrEqual(4);
+      const otherCenter = arena.spawns[other].map((i) => vec(meta.spawns![i].position))
+        .reduce((acc, p) => acc.add(p), new Vector3()).multiplyScalar(1 / arena.spawns[other].length);
+      for (const s of own) {
+        expect(s.side).toBe(side);
+        const p = vec(s.position);
+        const { x, y } = local(p);
+        expect(Math.abs(x)).toBeLessThan(arena.halfLat - arena.wallThickness);
+        expect(Math.abs(y)).toBeLessThan(arena.halfFwd - arena.wallThickness);
+        expectGrounded(w, p, `${side} spawn`);
+        const yaw = ((s.yawDeg ?? 0) * Math.PI) / 180;
+        const facing = new Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+        const toOther = otherCenter.clone().sub(p).setY(0).normalize();
+        expect(facing.dot(toOther), `${side} spawn faces side ${other}`).toBeGreaterThan(0.5);
+      }
+    }
+    // runs start on the pad (side a), bots stage across the deck on side b
+    const run = meta.spawns![0];
+    const start = meta.triggers!.find((t) => t.type === 'start')!;
+    expect(inBox(vec(run.position), start.min, start.max)).toBe(true);
+    expect(run.side).toBe('a');
+    const anchor = resolveBotAnchor(meta)!;
+    const b0 = meta.spawns![arena.spawns.b[0]];
+    expect(anchor.position.distanceTo(vec(b0.position))).toBeLessThan(1e-6);
+  });
+
+  it('lets a player walk from the run spawn through the doorway onto the deck', () => {
+    const w = world('surf_vanta');
+    const spawn = meta.spawns![0];
+    const goal = origin.clone().addScaledVector(fwd, arena.halfFwd * 0.5);
+    const player = new MovementController();
+    player.applyMapCvars(meta.cvars);
+    player.reset(vec(spawn.position), spawn.yawDeg ?? 0);
+    let reached = false;
+    for (let t = 0; t < 128 * 6 && !reached; t += 1) {
+      const to = goal.clone().sub(player.getFeetPosition()).setY(0);
+      player.setView(Math.atan2(-to.x, -to.z), 0);
+      player.tick(DT, { forwardMove: 1, sideMove: 0, jumpPressed: false, jumpHeld: false }, w);
+      reached = to.length() < 1.5 && player.getDebugState().grounded;
+    }
+    expect(reached).toBe(true);
+    expect(Math.abs(player.getFeetPosition().y - origin.y)).toBeLessThan(0.1);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // aim arena

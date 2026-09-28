@@ -77,6 +77,11 @@ export interface MapMeta {
   source: string;
   license: string;
   attribution?: string;
+  /** what the map is built for: movement runs, fights, or both */
+  modes?: ('surf' | 'combat')[];
+  difficulty?: 'beginner' | 'intermediate' | 'advanced';
+  /** full run time of the headless test rider, a reference for the run timer */
+  parTimeMs?: number;
   goalY?: number;
   goalPad?: {
     center: [number, number, number];
@@ -105,6 +110,8 @@ export interface MapManifestEntry {
   collisionPath?: string;
   metaPath: string;
   thumbnailPath?: string;
+  modes?: ('surf' | 'combat')[];
+  difficulty?: 'beginner' | 'intermediate' | 'advanced';
 }
 
 export interface MapManifest {

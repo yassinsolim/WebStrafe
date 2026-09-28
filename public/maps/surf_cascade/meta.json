@@ -1,0 +1,393 @@
+{
+  "id": "surf_cascade",
+  "name": "Cascade",
+  "author": "WebStrafe Team",
+  "source": "Original map built in Blender by tools/blender/maps/build_surf_cascade.py",
+  "license": "Original work (MIT, same as the project)",
+  "attribution": "Original layout and procedural textures made for WebStrafe.",
+  "spawns": [
+    {
+      "position": [
+        0.0,
+        0.05,
+        5.0
+      ],
+      "yawDeg": 0.0
+    },
+    {
+      "position": [
+        -4.0,
+        0.05,
+        5.0
+      ],
+      "yawDeg": 0.0
+    },
+    {
+      "position": [
+        4.0,
+        0.05,
+        5.0
+      ],
+      "yawDeg": 0.0
+    }
+  ],
+  "triggers": [
+    {
+      "id": "start",
+      "type": "start",
+      "min": [
+        -12.2,
+        -0.5,
+        -10.2
+      ],
+      "max": [
+        12.2,
+        3.0,
+        10.2
+      ],
+      "target": {
+        "position": [
+          0.0,
+          0.05,
+          5.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "stage2",
+      "type": "checkpoint",
+      "stage": 2,
+      "min": [
+        -14.2,
+        -34.0,
+        -188.2
+      ],
+      "max": [
+        14.2,
+        -27.5,
+        -149.0
+      ],
+      "target": {
+        "position": [
+          -4.0,
+          -33.45,
+          -169.0
+        ],
+        "yawDeg": -90.0
+      }
+    },
+    {
+      "id": "stage3",
+      "type": "checkpoint",
+      "stage": 3,
+      "min": [
+        147.0,
+        -69.0,
+        -183.2
+      ],
+      "max": [
+        186.2,
+        -62.5,
+        -154.8
+      ],
+      "target": {
+        "position": [
+          167.0,
+          -68.45,
+          -165.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "stage4",
+      "type": "checkpoint",
+      "stage": 4,
+      "min": [
+        152.8,
+        -113.5,
+        -397.2
+      ],
+      "max": [
+        181.2,
+        -107.0,
+        -358.0
+      ],
+      "target": {
+        "position": [
+          163.0,
+          -112.95,
+          -378.0
+        ],
+        "yawDeg": -90.0
+      }
+    },
+    {
+      "id": "stage5",
+      "type": "checkpoint",
+      "stage": 5,
+      "min": [
+        320.5,
+        -151.5,
+        -392.2
+      ],
+      "max": [
+        359.7,
+        -145.0,
+        -363.8
+      ],
+      "target": {
+        "position": [
+          340.5,
+          -150.95,
+          -374.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "stage6",
+      "type": "checkpoint",
+      "stage": 6,
+      "min": [
+        326.3,
+        -188.5,
+        -562.7
+      ],
+      "max": [
+        354.7,
+        -182.0,
+        -523.5
+      ],
+      "target": {
+        "position": [
+          336.5,
+          -187.95,
+          -543.5
+        ],
+        "yawDeg": -90.0
+      }
+    },
+    {
+      "id": "finish",
+      "type": "finish",
+      "min": [
+        553.0,
+        -235.0,
+        -558.7
+      ],
+      "max": [
+        597.7,
+        -222.5,
+        -528.3
+      ]
+    },
+    {
+      "id": "fall1",
+      "type": "teleport",
+      "stage": 1,
+      "min": [
+        -33.129,
+        -93.5,
+        -154.0
+      ],
+      "max": [
+        33.129,
+        -37.5,
+        -1.0
+      ],
+      "target": {
+        "position": [
+          0.0,
+          0.05,
+          5.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "fall2",
+      "type": "teleport",
+      "stage": 2,
+      "min": [
+        5.0,
+        -128.5,
+        -202.04
+      ],
+      "max": [
+        152.0,
+        -72.5,
+        -135.96
+      ],
+      "target": {
+        "position": [
+          -4.0,
+          -33.45,
+          -169.0
+        ],
+        "yawDeg": -90.0
+      }
+    },
+    {
+      "id": "fall3",
+      "type": "teleport",
+      "stage": 3,
+      "min": [
+        133.44,
+        -173.0,
+        -363.0
+      ],
+      "max": [
+        200.56,
+        -117.0,
+        -174.0
+      ],
+      "target": {
+        "position": [
+          167.0,
+          -68.45,
+          -165.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "fall4",
+      "type": "teleport",
+      "stage": 4,
+      "min": [
+        172.0,
+        -211.0,
+        -410.935
+      ],
+      "max": [
+        325.5,
+        -155.0,
+        -345.065
+      ],
+      "target": {
+        "position": [
+          163.0,
+          -112.95,
+          -378.0
+        ],
+        "yawDeg": -90.0
+      }
+    },
+    {
+      "id": "fall5",
+      "type": "teleport",
+      "stage": 5,
+      "min": [
+        307.985,
+        -248.0,
+        -528.5
+      ],
+      "max": [
+        373.015,
+        -192.0,
+        -383.0
+      ],
+      "target": {
+        "position": [
+          340.5,
+          -150.95,
+          -374.0
+        ],
+        "yawDeg": 0.0
+      }
+    },
+    {
+      "id": "fall6",
+      "type": "teleport",
+      "stage": 6,
+      "min": [
+        345.5,
+        -294.5,
+        -576.758
+      ],
+      "max": [
+        557.5,
+        -238.5,
+        -510.242
+      ],
+      "target": {
+        "position": [
+          336.5,
+          -187.95,
+          -543.5
+        ],
+        "yawDeg": -90.0
+      }
+    },
+    {
+      "id": "void",
+      "type": "teleport",
+      "min": [
+        -415.0,
+        -696.1,
+        -963.5
+      ],
+      "max": [
+        998.5,
+        -296.1,
+        411.0
+      ]
+    }
+  ],
+  "cvars": {
+    "sv_airaccelerate": 100
+  },
+  "modes": [
+    "surf"
+  ],
+  "difficulty": "intermediate",
+  "parTimeMs": 88100,
+  "notes": "Six surf stages, 14 ramps from 55 to 60 degrees. Each ledge is a checkpoint, falling under a stage teleports you to its start.",
+  "environment": {
+    "sky": {
+      "zenith": "#2b3571",
+      "horizon": "#eaa684",
+      "ground": "#3d3142",
+      "exponent": 0.42,
+      "sunSizeDeg": 2.4,
+      "sunGlow": 0.55,
+      "sunHaze": 0.4,
+      "clouds": {
+        "color": "#ffbc9c",
+        "shadow": "#5c4b74",
+        "coverage": 0.44,
+        "scale": 0.8,
+        "speed": 0.004,
+        "height": 0.18
+      }
+    },
+    "sun": {
+      "direction": [
+        -0.9069,
+        0.2079,
+        -0.3664
+      ],
+      "color": "#ffb073",
+      "intensity": 4.2
+    },
+    "hemi": {
+      "sky": "#9a97cc",
+      "ground": "#6b4b4b",
+      "intensity": 2.1
+    },
+    "fog": {
+      "color": "#dea286",
+      "near": 170.0,
+      "far": 1250.0
+    },
+    "exposure": 1.05,
+    "lightmaps": [
+      {
+        "path": "/maps/surf_cascade/lightmap.webp"
+      }
+    ],
+    "lightMapIntensity": 6.2832
+  }
+}
