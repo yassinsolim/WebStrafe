@@ -189,6 +189,10 @@ export interface KnifeHandFit {
   opener?: [number, number, number];
   /** ring knives: index curl and turn about the ring */
   ring?: RingFit;
+  /** per finger curls measured in the running game, applied over `pose` */
+  engine?: Partial<Record<'index' | 'middle' | 'ring' | 'pinky' | 'thumb', [number, number, number]>>;
+  /** thumb curls on the way to the opener that clear the handle, measured in the game */
+  openerVia?: [number, number, number];
 }
 
 export async function gripScene(

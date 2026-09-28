@@ -621,11 +621,14 @@ def shadow_daggers():
                     metal=(0x9aa0a8, 0.34, 1.0), accent=(0x6d737b, 0.4, 0.9))
     L, H, T = 66.0, 26.0, 4.6
     cy = H / 2
-    edge = path(quad((-6, 7.0), (-1.5, 0.6), (8, 0.3), 6), line((8, 0.3), (38, 1.4), 4), quad((38, 1.4), (58, 3.5), (L, cy), 8))
+    # narrow neck where the blade passes between the middle and ring fingers,
+    # the leaf only flares once it is clear of the fist
+    edge = path(quad((-6, cy - 3.5), (3, cy - 3.8), (13, 0.6), 8), line((13, 0.6), (38, 1.4), 4),
+                quad((38, 1.4), (58, 3.5), (L, cy), 8))
     spine = [(x, H - y) for x, y in edge]
     b, tip, info = K.blade("blade", edge, spine, M, T, stations=36, grind="flat", grind_h=0.47, ricasso=6,
                            double_from=0.0, taper=0.5)
-    stem = K.plate("stem", [(-19.0, cy - 5.5, 1.5), (-4.0, cy - 5.8, 2.0), (-4.0, cy + 5.8, 2.0), (-19.0, cy + 5.5, 1.5)],
+    stem = K.plate("stem", [(-19.0, cy - 3.2, 1.2), (-4.0, cy - 3.4, 1.5), (-4.0, cy + 3.4, 1.5), (-19.0, cy + 3.2, 1.2)],
                    T * 0.9, M["blade"])
     k.add_blade(b, stem)
     # t-bar across the palm: lofted along the bar, finger grooves on the blade side

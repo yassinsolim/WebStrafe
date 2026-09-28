@@ -2,6 +2,7 @@ import { Box3, Matrix4, Mesh, Quaternion, Vector3, type Object3D } from 'three';
 import type { KnifeDef, KnifeId } from '../combat/knives';
 import FITTED from './knifeHandPoses.json';
 import { blendHandPose, createHandPose, HAND_POSES, type HandPose, type MutableHandPose } from './handPoses';
+import type { DigitSpread } from './ArmsRig';
 
 /**
  * how each knife sits in the right hand, written as the knife's frame in the
@@ -34,9 +35,20 @@ export interface KnifeGripSpec {
   handInAnchor: Matrix4;
   /** folders: thumb curls that put it on the opener, blended in while opening */
   openerThumb?: [number, number, number];
+  /** folders: thumb curls it passes through on its way to the opener */
+  openerVia?: [number, number, number];
   /** ring knives: extra turn about the ring axis after the handle is aimed into the fist */
   ringTwistDeg?: number;
+  /** fingers spread apart at the knuckles (push daggers part the middle and ring fingers) */
+  spread?: DigitSpread;
 }
+
+// push daggers: the neck passes between the middle and ring fingers
+const TEE_SPREAD: DigitSpread = { middle: 6, ring: -8, pinky: -8 };
+const TEE_POSE: HandPose = {
+  index: [54.6, 75.4, 33.8], middle: [71.8, 84.6, 38.6], ring: [65.6, 77.1, 36.1], pinky: [46.2, 50.6, 23.1],
+  thumb: [...HAND_POSES.fist.thumb],
+};
 
 export function gripKindFor(def: KnifeDef): KnifeGripKind {
   const hint = (def as { grip?: unknown }).grip;
@@ -89,8 +101,8 @@ function anchorFor(kind: KnifeGripKind, handleDiameter: number): Vector3 {
     case 'reverse_ring':
       return ringSeat(INDEX_CURL_DEG).centre;
     case 'tee':
-      // between the middle (x 0) and ring (x 0.021) fingers
-      return new Vector3(0.011, 0.098, -0.022);
+      // bar in the fist channel, neck between the middle (x 0) and ring (x 0.021) fingers
+      return new Vector3(0.0115, 0.09, -0.028);
     default:
       return new Vector3(0, 0.1 + extra * 0.3, -0.024 - extra * 0.5);
   }
@@ -116,8 +128,9 @@ export function wrapPose(kind: KnifeGripKind, handleDiameter: number, out: Mutab
     out.index[0] -= 6;
     out.thumb[1] = Math.max(out.thumb[1], 30);
   } else if (kind === 'tee') {
-    // tight fist around the bar
-    blendHandPose(HAND_POSES.fist, HAND_POSES.fist, 0, out);
+    // fist around the bar, tuned in engine against the live meshes: the index
+    // wraps the bar's front end, the pinky rides the rounded far end
+    blendHandPose(TEE_POSE, TEE_POSE, 0, out);
   }
   return out;
 }
@@ -150,6 +163,7 @@ export function knifeGripSpec(
     pose,
     handInAnchor,
     ringTwistDeg: ring?.twist,
+    spread: kind === 'tee' ? { ...TEE_SPREAD } : undefined,
   };
 }
 
@@ -222,6 +236,8 @@ interface FittedEntry {
   offset: [number, number, number];
   opener?: [number, number, number];
   ring?: RingFit;
+  engine?: Partial<Record<keyof HandPose, [number, number, number]>>;
+  openerVia?: [number, number, number];
 }
 const FITTED_POSES = FITTED as unknown as Partial<Record<KnifeId, FittedEntry>>;
 
@@ -231,9 +247,12 @@ const FITTED_POSES = FITTED as unknown as Partial<Record<KnifeId, FittedEntry>>;
  * rests on the handle without sinking into it or the blade.
  */
 export function fittedGripSpec(id: KnifeId, kind: KnifeGripKind, handleDiameter: number): KnifeGripSpec {
-  const fit = FITTED_POSES[id];
+  // the tee grip is authored: the fitter can't spread fingers, so it would
+  // rather slide the bar out of the fist than close them around the neck
+  const fit = kind === 'tee' ? undefined : FITTED_POSES[id];
   const spec = knifeGripSpec(kind, handleDiameter, fit?.offset, fit?.ring);
-  if (fit) spec.pose = createHandPose(fit.pose);
+  if (fit) spec.pose = createHandPose({ ...fit.pose, ...fit.engine });
   if (fit?.opener) spec.openerThumb = [...fit.opener];
+  if (fit?.openerVia) spec.openerVia = [...fit.openerVia];
   return spec;
 }

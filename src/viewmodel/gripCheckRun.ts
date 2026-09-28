@@ -11,8 +11,23 @@ export const GRIP_CHECK_FRAMES: ReadonlyArray<readonly [ViewAction, number]> = [
   ['inspect', 0.6], ['inspect', 1.0], ['inspect', 1.6], ['inspect', 2.2], ['inspect', 2.9],
 ];
 
+/** clips swept end to end when a step is given */
+const SWEPT: readonly ViewAction[] = ['draw', 'slashA', 'slashB', 'stab', 'backstab', 'inspect'];
+
+function framesFor(vm: ViewmodelSystem, step: number): ReadonlyArray<readonly [ViewAction, number]> {
+  if (step <= 0) return GRIP_CHECK_FRAMES;
+  const frames: Array<readonly [ViewAction, number]> = [['idle', 0]];
+  for (const action of SWEPT) {
+    const duration = vm.knifeActionDuration(action);
+    for (let t = 0; t <= duration + 1e-6; t += step) frames.push([action, Math.round(t * 1000) / 1000]);
+  }
+  return frames;
+}
+
 export interface GripFrameReport {
   knife: KnifeId;
+  /** which hand, the push daggers check both */
+  side: 'r' | 'l';
   action: ViewAction;
   t: number;
   /** 0 when the hand is closed on the knife, up to 1 while the fingers let go (spins, tosses) */
@@ -35,29 +50,36 @@ async function waitForModel(vm: ViewmodelSystem): Promise<void> {
  * poses every knife through GRIP_CHECK_FRAMES in the running engine and
  * measures the live finger bones against the live knife meshes.
  */
-export async function runGripCheck(vm: ViewmodelSystem): Promise<GripFrameReport[]> {
+export async function runGripCheck(vm: ViewmodelSystem, step = 0): Promise<GripFrameReport[]> {
   const out: GripFrameReport[] = [];
   vm.equip('knife');
   vm.setPaused(true);
   for (const def of KNIVES) {
     vm.setKnife(def.id);
     await waitForModel(vm);
-    for (const [action, t] of GRIP_CHECK_FRAMES) {
+    const sides = def.shape.pair ? (['r', 'l'] as const) : (['r'] as const);
+    for (const [action, t] of framesFor(vm, step)) {
       vm.seek(action, t);
       const debug = vm.debugGrip();
-      const check = vm.checkKnifeGrip();
-      if (!debug || !check) continue;
-      out.push({
-        knife: def.id,
-        action,
-        t,
-        gripOpen: vm.debugChannel('gripOpen'),
-        ringHold: vm.debugChannel('ringHold'),
-        kind: String(debug.kind),
-        source: String(debug.source),
-        check,
-      });
+      if (!debug) continue;
+      for (const side of sides) {
+        const check = vm.checkKnifeGrip(side);
+        if (!check) continue;
+        out.push({
+          knife: def.id,
+          side,
+          action,
+          t,
+          gripOpen: vm.debugGripOpen(),
+          ringHold: vm.debugChannel('ringHold'),
+          kind: String(debug.kind),
+          source: String(debug.source),
+          check,
+        });
+      }
     }
+    // let the page breathe between knives
+    await new Promise((r) => setTimeout(r, 0));
   }
   return out;
 }

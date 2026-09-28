@@ -39,6 +39,8 @@ export interface ShotRequest {
   qa: boolean;
   /** runs the in-engine grip check over every knife and frame (window.__gripReport) */
   gripCheck: boolean;
+  /** grip check: sweep every clip at this step (seconds) instead of the key frames */
+  gripStep: number;
 }
 
 export function parseShotRequest(search: string, enabled = devToolsEnabled()): ShotRequest | null {
@@ -79,6 +81,7 @@ export function parseShotRequest(search: string, enabled = devToolsEnabled()): S
     adaptiveLowFps: num('adaptiveLow'),
     qa: params.get('qa') === '1',
     gripCheck: params.get('gripcheck') === '1',
+    gripStep: Math.max(0, Number(params.get('gripstep') ?? 0) || 0),
     adaptive: params.has('adaptive') ? params.get('adaptive') !== '0' : null,
   };
 }

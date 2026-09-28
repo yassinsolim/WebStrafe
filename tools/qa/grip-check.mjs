@@ -2,7 +2,8 @@
 // route in chromium: every knife is posed through idle, draw, attack and inspect
 // frames and the live finger bones are measured against the live knife meshes.
 //   node tools/qa/grip-check.mjs <base url of a dev or preview build> [report.json]
-// env: PLAYWRIGHT_MODULE, CHROME, GPU=1 (real gpu, headed), BYPASS_FILE (vercel previews)
+// env: PLAYWRIGHT_MODULE, CHROME, GPU=1 (real gpu, headed), BYPASS_FILE (vercel previews),
+//   STEP=0.0333 sweeps every clip frame by frame instead of the key frames
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const [base, out] = process.argv.slice(2);
@@ -28,7 +29,8 @@ if (process.env.BYPASS_FILE) {
   });
 }
 const page = await context.newPage();
-await page.goto(`${base}/?shot=aim_ochrecut&weapon=knife&hud=0&gripcheck=1`, { timeout: 90000 });
+const step = process.env.STEP ? `&gripstep=${Number(process.env.STEP)}` : '';
+await page.goto(`${base}/?shot=aim_ochrecut&weapon=knife&hud=0&gripcheck=1${step}`, { timeout: 90000 });
 await page.waitForFunction(() => window.__gripReport, null, { timeout: 300000, polling: 500 });
 const report = await page.evaluate(() => window.__gripReport);
 await browser.close();
@@ -37,19 +39,23 @@ await browser.close();
 const LIMITS = {
   bladeClearance: 0.0075, // closer and the finger cuts into the blade
   handleClearance: 0.005, // closer (with the hand closed) and the glove sinks into the handle
+  handleClearanceOpen: 0.003, // hand open for a spin or toss: the knife may brush the glove, not pass through
   ringSeat: 0.0115, // index first phalanx within the ring's inner radius of its centre
   wrapTip: 0.016, // closed fingertips at idle rest on the handle
   wrapTipRing: 0.022,
 };
 const failures = [];
-const fail = (f, why) => failures.push(`${f.knife} ${f.action}@${f.t}: ${why}`);
+const fail = (f, why) => failures.push(`${f.knife}${f.side === 'l' ? ' (left)' : ''} ${f.action}@${f.t}: ${why}`);
 for (const f of report) {
   if (f.source !== 'glb') fail(f, `knife model not loaded (${f.source})`);
   const closed = f.gripOpen < 0.3;
   for (const d of f.check.digits) {
-    if (d.inside > 0 && closed) fail(f, `${d.digit} has ${d.inside} samples inside the knife`);
+    if (![d.tipToHandle, d.bladeClearance, d.handleClearance].every(Number.isFinite)) fail(f, `${d.digit} measured nothing (bad pose)`);
+    if (d.inside > 0) fail(f, `${d.digit} has ${d.inside} samples inside the knife`);
     if (d.bladeClearance < LIMITS.bladeClearance) fail(f, `${d.digit} ${(d.bladeClearance * 1000).toFixed(1)} mm from the blade`);
-    if (closed && d.digit !== 'thumb' && d.handleClearance < LIMITS.handleClearance) {
+    // an open hand only lets the knife turn past it, it must not pass through the glove
+    const handleLimit = closed ? LIMITS.handleClearance : LIMITS.handleClearanceOpen;
+    if (d.digit !== 'thumb' && d.handleClearance < handleLimit) {
       fail(f, `${d.digit} ${(d.handleClearance * 1000).toFixed(1)} mm into the handle`);
     }
   }

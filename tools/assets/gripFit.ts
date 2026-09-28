@@ -6,14 +6,14 @@
  * part of the finger would sink into the handle or touch the blade.
  *   npx tsx tools/assets/gripFit.ts
  */
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Vector3 } from 'three';
 import { KNIVES, type KnifeId } from '../../src/combat/knives';
 import { DIGIT_NAMES } from '../../src/viewmodel/ArmsRig';
 import { createHandPose, type MutableHandPose } from '../../src/viewmodel/handPoses';
-import type { RingFit } from '../../src/viewmodel/knifeGrips';
+import { gripKindFor, type RingFit } from '../../src/viewmodel/knifeGrips';
 import { digitSamples, distanceTo, gripScene, isInside, palmSamples, poseScene, setHandOffset, type GripScene, type KnifeHandFit } from './gripProbe';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -170,12 +170,19 @@ function fitThumb(scene: GripScene, pose: MutableHandPose, target: () => Vector3
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  const file = path.join(ROOT, 'src/viewmodel/knifeHandPoses.json');
+  const old = existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as Record<string, KnifeHandFit>) : {};
   const table: Record<string, KnifeHandFit> = {};
   for (const def of KNIVES) {
+    // push daggers are authored (knifeGrips.ts), the fitter can't spread fingers
+    if (gripKindFor(def) === 'tee') continue;
     table[def.id] = await fitKnife(def.id);
+    // per finger fixes measured in the running game (tools/qa/grip-tune.mjs) stay
+    // until that tool is rerun on the new fit
+    if (old[def.id]?.engine) table[def.id].engine = old[def.id].engine;
+    if (old[def.id]?.openerVia) table[def.id].openerVia = old[def.id].openerVia;
     console.log(def.id.padEnd(16), JSON.stringify(table[def.id]));
   }
-  const file = path.join(ROOT, 'src/viewmodel/knifeHandPoses.json');
   writeFileSync(file, `${JSON.stringify(table, null, 2)}\n`);
   console.log(`wrote ${path.relative(ROOT, file)}`);
 }

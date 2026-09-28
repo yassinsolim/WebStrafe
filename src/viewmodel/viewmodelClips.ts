@@ -171,7 +171,8 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
       px: [[0, 0.06], [0.45, 0, 'out']],
       rx: [[0, -70], [0.45, 0, 'out']],
       rz: [[0, 35], [0.45, -8, 'out'], [0.7, 0]],
-      rollX: [[0, -120], [0.55, 0, 'out']],
+      // the wrist rolls the knife up into view, the fingers stay closed on it
+      holdRoll: [[0, -120], [0.55, 0, 'out']],
     },
     events: [[0.3, 'sound:knife_draw']],
   },
@@ -263,7 +264,7 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
       py: [[0, -0.22], [0.5, 0, 'out']],
       rx: [[0, -45], [0.5, 0, 'out']],
       rz: [[0, 20], [0.5, 0, 'out']],
-      rollX: [[0, -90], [0.55, 0, 'out']],
+      holdRoll: [[0, -90], [0.55, 0, 'out']],
     },
     events: [[0.3, 'sound:knife_draw']],
   },
@@ -361,7 +362,8 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
       ry: [[0, 0], [0.4, 30], [3.2, 30], [3.6, 0]],
       rz: [[0, 0], [0.4, 45], [1.0, 45], [1.3, 20], [3.2, 20], [3.6, 0]],
       py: [[0, 0], [0.4, 0.05], [3.2, 0.05], [3.6, 0]],
-      rollX: [[0, 0], [0.5, 0], [0.9, 180, 'inOut'], [1.2, 360, 'inOut']],
+      // the flat skeleton frame can't turn in the fingers, the wrist shows the other side
+      holdRoll: [[0, 0], [0.5, 0], [0.85, 75, 'inOut'], [1.2, 0, 'inOut']],
       ringHold: [[0, 0], [1.25, 0], [1.5, 1, 'inOut'], [2.95, 1], [3.2, 0, 'inOut']],
       gripOpen: [[0, 0], [1.3, 0], [1.5, 0.95], [2.95, 0.95], [3.15, 0]],
       spinZ: [[0, 0], [1.5, 0], [2.2, 360, 'inOut'], [2.9, 720, 'inOut']],
@@ -379,9 +381,10 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
       py: [[0, 0], [0.45, 0.03], [0.7, -0.015, 'inOut'], [0.85, 0.04, 'out'], [1.45, 0.05], [1.6, 0.02, 'out'], [2.2, 0.04], [2.6, 0]],
       rx: [[0, 0], [0.7, -12], [0.85, 10, 'out'], [1.5, 0], [1.62, -8, 'out'], [1.9, 0]],
       tossY: [[0, 0], [0.85, 0], [1.17, 0.13, 'out'], [1.5, 0.015, 'in'], [1.55, 0]],
-      spinZ: [[0, 0], [0.85, 0], [1.55, 360, 'linear']],
-      rollX: [[0, 0], [0.85, 0], [1.55, 180, 'inOut'], [2.2, 180], [2.55, 360, 'inOut']],
-      gripOpen: [[0, 0], [0.8, 0], [0.88, 1], [1.46, 1], [1.56, 0]],
+      // spins only once it has left the fingers and stops before they close on it
+      spinZ: [[0, 0], [1.0, 0], [1.42, 360, 'inOut']],
+      rollX: [[0, 0], [1.0, 0], [1.42, 180, 'inOut'], [2.2, 180], [2.55, 360, 'inOut']],
+      gripOpen: [[0, 0], [0.8, 0], [0.88, 1], [1.5, 1], [1.6, 0]],
       ...WATCH_TAIL(2.15),
     },
     events: [[0.86, 'sound:knife_toss'], [1.55, 'sound:knife_catch']],
@@ -416,7 +419,8 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
       ry: [[0, 0], [0.5, 25], [1.4, 25], [1.8, -15], [2.5, -15], [2.9, 0]],
       rz: [[0, 0], [0.5, 50], [1.4, 50], [1.8, -40], [2.5, -40], [2.9, 0]],
       py: [[0, 0], [0.5, 0.05], [2.5, 0.05], [2.9, 0]],
-      rollX: [[0, 0], [1.4, 0], [1.8, 180, 'inOut'], [2.5, 180], [2.9, 360, 'inOut']],
+      // a t-grip can't turn in the fist, so the wrist rolls each side into view
+      holdRoll: [[0, 0], [1.4, 0], [1.8, 70, 'inOut'], [2.1, 70], [2.5, -50, 'inOut'], [2.9, 0, 'inOut']],
     },
   },
 };
