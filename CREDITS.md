@@ -7,6 +7,18 @@ without an entry here are still credited in-game from their manifest fields.
 WebStrafe does not ship Valve or Counter-Strike assets. Anything not listed
 below is original WebStrafe work.
 
+## Weapon models and animation
+
+- [Scratches005 (scratch mask, bake source for the Deagle and AWP wear)](https://ambientcg.com/view?id=Scratches005) by ambientCG. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `tools/blender/weapons/textures/scratches.jpg`.
+  Opacity map downscaled to 1024 px, used only as a bake input.
+- [Metal009 (brushed steel roughness, bake source for the gun metal)](https://ambientcg.com/view?id=Metal009) by ambientCG. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `tools/blender/weapons/textures/brushed_steel_rough.jpg`.
+  Roughness map downscaled to 1024 px, used only as a bake input.
+- [Plastic012B (scratched plastic roughness, bake source for polymer, rubber and matte finishes)](https://ambientcg.com/view?id=Plastic012B) by ambientCG. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `tools/blender/weapons/textures/plastic_rough.jpg`.
+  Roughness map downscaled to 1024 px, used only as a bake input.
+
 ## Audio
 
 - [Magnum Research Desert Eagle](https://freesound.org/people/areniporgen/sounds/712310/) by areniporgen. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).

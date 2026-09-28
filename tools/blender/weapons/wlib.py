@@ -5,12 +5,19 @@ the barrel, +Z up. parts come from 2d outlines (extruded prisms, lofts, lathes),
 get cut with booleans, bevelled with hardened normals, then joined per node.
 moving parts end up as an empty on the pivot with the geometry in a child mesh
 called <part>_mesh (see pin_part for why).
+
+each gun is built twice from the same functions: the low poly that ships
+(set_hi(False)) and a high poly (set_hi(True)) with finer curves, rounder
+bevels and extra detail. the high poly is baked onto the uv atlas of the low
+poly (normal, ao, edge masks and material parameters), and compose_textures
+turns those bakes into the base colour, orm and normal maps.
 """
 
 import math
 import os
 import random
 import sys
+import time
 
 import bmesh
 import bpy
@@ -22,6 +29,35 @@ import common  # noqa: E402
 MM = 0.001
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 TMP = os.path.join(REPO, ".blender-tmp", "weapons")
+TEXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "textures")
+
+# detail level. tol is the largest gap (mm) a curve's chord may leave to the
+# true arc, so segment counts follow the radius instead of a fixed number
+LEVEL = {"hi": False, "tol_lo": 0.03, "tol_hi": 0.006, "fillet_lo": 0.05, "fillet_hi": 0.012}
+
+
+def set_hi(on):
+    LEVEL["hi"] = bool(on)
+
+
+def hi():
+    return LEVEL["hi"]
+
+
+def set_tolerance(lathe_mm=None, fillet_mm=None):
+    """chord tolerance of the low poly (the high poly is always finer)"""
+    if lathe_mm is not None:
+        LEVEL["tol_lo"] = lathe_mm
+    if fillet_mm is not None:
+        LEVEL["fillet_lo"] = fillet_mm
+
+
+def _segs_for(radius_mm, tol_mm):
+    """segments per full turn so the chord stays within tol of the arc"""
+    if radius_mm <= tol_mm:
+        return 4
+    theta = 2.0 * math.acos(max(-1.0, 1.0 - tol_mm / radius_mm))
+    return 2.0 * math.pi / max(theta, 1e-4)
 
 
 # ---------------------------------------------------------------- materials
@@ -53,44 +89,36 @@ def material(name, hex_color, roughness, metallic, normal_image=None, normal_str
     return mat
 
 
-def pebble_normal_map(name, size=256, count=1400, radius=(2.2, 4.2), seed=7):
-    """tileable pebbled rubber normal map, generated with numpy (no external images)"""
-    import numpy as np
+# a finish spec per material drives the flat preview material and every bake
+# pass. colours are 0xRRGGBB srgb. wear shows on convex edges and scratches,
+# grime sits in cavities, rvar is how much the roughness breaks up, detail
+# picks the micro roughness texture (brushed metal or plastic)
+SPEC_DEFAULTS = dict(base=0x808080, rough=0.5, metal=0.0, wear=0.0, wear_color=None, wear_rough=None,
+                     wear_metal=None, grime=0.5, rvar=0.06, scratch=0.3, detail="plastic", bump=None,
+                     bump_scale=1.0, bump_depth=1.0)
+SPECS = {}
 
-    rng = np.random.default_rng(seed)
-    height = np.zeros((size, size), dtype=np.float32)
-    yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
-    for _ in range(count):
-        cx, cy = rng.uniform(0, size, 2)
-        r = rng.uniform(*radius)
-        dx = (xx - cx + size / 2) % size - size / 2
-        dy = (yy - cy + size / 2) % size - size / 2
-        d2 = (dx * dx + dy * dy) / (r * r)
-        bump = np.clip(1.0 - d2, 0.0, None)
-        height = np.maximum(height, np.sqrt(bump) * rng.uniform(0.7, 1.0))
-    gx = (np.roll(height, -1, axis=1) - np.roll(height, 1, axis=1)) * 0.5
-    gy = (np.roll(height, -1, axis=0) - np.roll(height, 1, axis=0)) * 0.5
-    k = 2.5
-    nx, ny, nz = -gx * k, -gy * k, np.ones_like(height)
-    inv = 1.0 / np.sqrt(nx * nx + ny * ny + nz * nz)
-    rgba = np.stack([nx * inv * 0.5 + 0.5, ny * inv * 0.5 + 0.5, nz * inv * 0.5 + 0.5,
-                     np.ones_like(height)], axis=-1)
-    img = bpy.data.images.new(name, size, size, alpha=False, float_buffer=False)
-    img.colorspace_settings.name = "Non-Color"
-    img.pixels.foreach_set(rgba.astype(np.float32).ravel())
-    os.makedirs(TMP, exist_ok=True)
-    img.filepath_raw = os.path.join(TMP, f"{name}.png")
-    img.file_format = "PNG"
-    img.save()
-    img.pack()
-    return img
+
+def finish(name, **spec):
+    """registers a finish and returns its flat preview material"""
+    s = dict(SPEC_DEFAULTS)
+    s.update(spec)
+    if s["wear_color"] is None:
+        s["wear_color"] = s["base"]
+    if s["wear_rough"] is None:
+        s["wear_rough"] = s["rough"]
+    if s["wear_metal"] is None:
+        s["wear_metal"] = s["metal"]
+    SPECS[name] = s
+    return material(name, s["base"], s["rough"], s["metal"])
 
 
 # ---------------------------------------------------------------- 2d outlines
 
 def fillet(points, segs=4):
     """rounds polygon corners. points are (a, b) or (a, b, radius) in metres.
-    each corner gets an arc with about `segs` segments per 90 degrees."""
+    the arc gets enough segments to stay within the chord tolerance of the
+    current detail level, capped by `segs` (a hint, 1 keeps cutters coarse)."""
     pts = [(p[0], p[1], p[2] if len(p) > 2 else 0.0) for p in points]
     n = len(pts)
     out = []
@@ -126,9 +154,10 @@ def fillet(points, segs=4):
         a1 = math.atan2(t1.y - c.y, t1.x - c.x)
         a2 = math.atan2(t2.y - c.y, t2.x - c.x)
         da = (a2 - a1 + math.pi) % (2 * math.pi) - math.pi
-        # small radii get fewer segments, a 1 mm fillet doesn't need 4
-        per90 = min(segs, 1.0 + r * 1000.0 * 0.7)
-        k = max(1, int(round(per90 * abs(da) / (math.pi / 2))))
+        tol = LEVEL["fillet_hi"] if LEVEL["hi"] else LEVEL["fillet_lo"]
+        per90 = _segs_for(r * 1000.0, tol) / 4.0
+        per90 = max(1.0, min(per90, segs * (6.0 if LEVEL["hi"] else 2.0)))
+        k = max(1, int(math.ceil(per90 * abs(da) / (math.pi / 2) - 0.25)))
         for j in range(k + 1):
             a = a1 + da * j / k
             out.append((c.x + r * math.cos(a), c.y + r * math.sin(a)))
@@ -147,6 +176,22 @@ def arc(cx, cy, r, a0_deg, a1_deg, segs):
 def mm(points):
     """scales (a, b[, r]) tuples from millimetres to metres"""
     return [tuple(v * MM for v in p) for p in points]
+
+
+def smooth_curve(points, per_span):
+    """catmull-rom through (a, b) points (any units), per_span samples per gap"""
+    pts = [Vector(p) for p in points]
+    out = []
+    n = len(pts)
+    for i in range(n - 1):
+        p0, p1, p2, p3 = pts[max(0, i - 1)], pts[i], pts[i + 1], pts[min(n - 1, i + 2)]
+        for j in range(per_span):
+            t = j / per_span
+            t2, t3 = t * t, t * t * t
+            v = 0.5 * ((2 * p1) + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
+            out.append(tuple(v))
+    out.append(tuple(pts[-1]))
+    return out
 
 
 # ---------------------------------------------------------------- millimetre wrappers
@@ -183,25 +228,22 @@ def rod_y(name, x, z, prof, segs, mat, phase=0.0, ripple=None, closed=False):
                  phase=phase, ripple=ripple, closed=closed)
 
 
-def lathe_mm(name, prof, segs, mat, axis, center, ripple=None, closed=False, phase=0.0):
+def lathe_mm(name, prof, segs, mat, axis, center, ripple=None, closed=False, phase=0.0, ribs=None):
     """lathe with an (r, t) profile and centre in mm"""
     return lathe(name, [(r * MM, t * MM) for r, t in prof], segs, mat, axis=axis,
-                 center=tuple(c * MM for c in center), ripple=ripple, closed=closed, phase=phase)
+                 center=tuple(c * MM for c in center), ripple=ripple, closed=closed, phase=phase, ribs=ribs)
 
 
 def bevel_worn(obj, worn, width_mm, segs=1, angle=30.0):
-    """bevel whose convex faces get the worn steel material (bare edges)"""
-    obj.data.materials.append(worn)
-    idx = len(obj.data.materials) - 1
-    bevel(obj, width_mm * MM, segs=segs, angle=angle, material=idx)
-    wear_convex_only(obj, idx)
-    return obj
+    """bevel for metal parts. edge wear used to be a material on the convex
+    bevel faces; now it comes from the baked edge mask, so this is a bevel"""
+    return bevel(obj, width_mm * MM, segs=segs, angle=angle)
 
 
 def sx_range(sx, a, b):
     """(a, b) mirrored to the side given by sx, sorted"""
-    lo, hi = sorted((sx * a, sx * b))
-    return lo, hi
+    lo, hi_ = sorted((sx * a, sx * b))
+    return lo, hi_
 
 
 # ---------------------------------------------------------------- mesh building
@@ -232,15 +274,15 @@ def _to3(axis, a, b, t):
     return (a, b, t)
 
 
-def prism(name, pts, axis, lo, hi, mat, pts_hi=None):
+def prism(name, pts, axis, lo, hi_, mat, pts_hi=None):
     """extrudes a 2d outline along `axis` from lo to hi (metres).
     axis X: points are (y, z). axis Y: (x, z). axis Z: (x, y).
     pts_hi (same length) makes it a loft to a second outline at hi."""
-    top = pts_hi if pts_hi is not None else pts
-    assert len(top) == len(pts)
+    top_ = pts_hi if pts_hi is not None else pts
+    assert len(top_) == len(pts)
     bm = bmesh.new()
     va = [bm.verts.new(_to3(axis, p[0], p[1], lo)) for p in pts]
-    vb = [bm.verts.new(_to3(axis, p[0], p[1], hi)) for p in top]
+    vb = [bm.verts.new(_to3(axis, p[0], p[1], hi_)) for p in top_]
     n = len(pts)
     bm.faces.new(va)
     bm.faces.new(list(reversed(vb)))
@@ -265,13 +307,31 @@ def loft(name, sections, axis, mat, cap=True):
     return _finish_bm(bm, name, [mat])
 
 
+def lathe_segments(segs, prof, ripple=None, ribs=None):
+    """segment count for a lathe at the current detail level. 8 or fewer is
+    a polygon on purpose (hex nuts), knurled and ribbed lathes keep theirs"""
+    if segs <= 8 or ripple or ribs:
+        return segs
+    r = max((abs(p[0]) for p in prof), default=0.0) * 1000.0
+    if r <= 0:
+        return segs
+    if LEVEL["hi"]:
+        need, base, cap = _segs_for(r, LEVEL["tol_hi"]), segs * 2, 192
+    else:
+        need, base, cap = _segs_for(r, LEVEL["tol_lo"]), segs, 80
+    n = min(cap, max(base, need))
+    return int(math.ceil(n / 4.0)) * 4
+
+
 def lathe(name, prof, segs, mat, axis="Y", center=(0.0, 0.0, 0.0), phase=0.0, ripple=None, scale_xz=(1.0, 1.0),
-          closed=False):
+          closed=False, ribs=None):
     """revolves a (radius, t) profile around `axis` through `center`.
     radius 0 at an end makes a pole, otherwise the ends get n-gon caps.
     ripple=(depth_fraction) pulls every other vertex in for knurling.
+    ribs=(count, depth, flat) makes rounded ribs: the radius dips by depth
+    (metres) in a smooth cosine between ribs, flat is the share left round.
     closed=True treats the profile as a loop (rings, tubes) instead of capping."""
-    cx, cy, cz = center
+    segs = lathe_segments(segs, prof, ripple, ribs)
     bm = bmesh.new()
     rings = []
     for (r, t) in prof:
@@ -282,6 +342,13 @@ def lathe(name, prof, segs, mat, axis="Y", center=(0.0, 0.0, 0.0), phase=0.0, ri
         for k in range(segs):
             a = phase + 2 * math.pi * k / segs
             rr = r * (1.0 - ripple) if (ripple and k % 2 == 1) else r
+            if ribs:
+                count, depth, flat = ribs
+                u = (a * count / (2 * math.pi)) % 1.0
+                # 0 on the rib crest, 1 in the valley
+                w = 0.0 if u < flat * 0.5 or u > 1.0 - flat * 0.5 else 0.5 - 0.5 * math.cos(
+                    2 * math.pi * (u - flat * 0.5) / max(1e-6, 1.0 - flat))
+                rr = r - depth * w
             u = rr * math.cos(a) * scale_xz[0]
             v = rr * math.sin(a) * scale_xz[1]
             ring.append(bm.verts.new(_axis_point(axis, u, v, t, center)))
@@ -344,6 +411,7 @@ def tube(name, p0, p1, r0, r1, segs, mat, prof=None):
 
 
 def sphere(name, center, radius, segs, mat, rings=None, scale=(1.0, 1.0, 1.0)):
+    segs = lathe_segments(segs, [(radius, 0.0)])
     rings = rings or max(4, segs // 2)
     prof = [(radius * math.sin(math.pi * i / rings), -radius * math.cos(math.pi * i / rings)) for i in range(rings + 1)]
     prof[0] = (0.0, prof[0][1])
@@ -418,7 +486,7 @@ def boolean(target, cutters, op="DIFFERENCE", solver="EXACT", transfer_material=
         cutters = [cutters]
     if not cutters:
         return target
-    cutter = join(cutters, target.name + "_cutter") if len(cutters) > 1 else cutters[0]
+    cutter = join(cutters, target.name + "_cutter", sharp=False) if len(cutters) > 1 else cutters[0]
     mod = target.modifiers.new("bool", "BOOLEAN")
     mod.operation = op
     mod.solver = solver
@@ -433,10 +501,51 @@ def boolean(target, cutters, op="DIFFERENCE", solver="EXACT", transfer_material=
     return target
 
 
+def bevel_segments(width, segs):
+    """bevel segments at the current detail level: the low poly rounds the
+    bigger edges, the high poly rounds everything for the bake"""
+    w = width * 1000.0
+    if LEVEL["hi"]:
+        return max(3, segs * 2, 5 if w >= 1.2 else 3)
+    if w >= 2.0:
+        return max(segs, 3)
+    if w >= 0.8:
+        return max(segs, 2)
+    return segs
+
+
+def mark_creases(obj, bevel_angle, lo_deg=10.0, min_width_mm=2.5, steep_deg=18.0, steep_width_mm=1.2):
+    """creases under the bevel angle stay unbevelled. left smooth, a crease
+    between two wide flat faces bends the normals across both of them (the
+    deagle barrel's 28 degree flank shaded as a gradient that the bake then
+    turned into triangle shaped streaks), so those shade sharp. narrow strips
+    (fillet arcs, lathe segments) stay smooth"""
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    lo, hi_ = math.radians(lo_deg), math.radians(bevel_angle)
+    for e in bm.edges:
+        if len(e.link_faces) != 2:
+            continue
+        a = e.calc_face_angle(0.0)
+        if not lo < a < hi_:
+            continue
+        length = max(e.calc_length(), 1e-9)
+        # fillet segments steeper than steep_deg only happen on small radii,
+        # where the strips are narrower than steep_width_mm
+        need = steep_width_mm if a >= math.radians(steep_deg) else min_width_mm
+        wide = all(f.calc_area() / length > need * MM for f in e.link_faces)
+        if wide:
+            e.smooth = False
+    bm.to_mesh(obj.data)
+    bm.free()
+
+
 def bevel(obj, width, segs=2, angle=30.0, material=-1, profile=0.5, harden=True, clamp=True):
     """angle-limited bevel with hardened normals, applied right away"""
+    segs = bevel_segments(width, segs)
     for p in obj.data.polygons:
         p.use_smooth = True
+    mark_creases(obj, angle)
     mod = obj.modifiers.new("bevel", "BEVEL")
     mod.width = width
     mod.segments = segs
@@ -471,46 +580,22 @@ def mark_sharp_by_angle(obj, angle_deg=40.0):
     return obj
 
 
-def wear_convex_only(obj, worn_index):
-    """bevel faces tagged with the worn material stay worn only on convex edges"""
-    mesh = obj.data
-    bm = bmesh.new()
-    bm.from_mesh(mesh)
-    bm.faces.ensure_lookup_table()
-    changed = True
-    passes = 0
-    while changed and passes < 6:
-        changed = False
-        passes += 1
-        for f in bm.faces:
-            if f.material_index != worn_index:
-                continue
-            convex = concave = 0
-            neighbour_mat = None
-            for e in f.edges:
-                if len(e.link_faces) != 2:
-                    continue
-                other = e.link_faces[0] if e.link_faces[1] == f else e.link_faces[1]
-                if other.material_index != worn_index and neighbour_mat is None:
-                    neighbour_mat = other.material_index
-                if e.calc_face_angle(0.0) < math.radians(2.0):
-                    continue
-                if e.is_convex:
-                    convex += 1
-                else:
-                    concave += 1
-            if concave > convex and neighbour_mat is not None:
-                f.material_index = neighbour_mat
-                changed = True
-    bm.to_mesh(mesh)
-    bm.free()
-    return obj
+def auto_sharp(obj, angle_deg=40.0):
+    """parts that never got a bevel (so no custom normals) shade smooth with
+    sharp edges above an angle. without this a lathe's caps would shade as
+    one smooth blob with its sides"""
+    if obj.type != "MESH" or obj.data.has_custom_normals:
+        return obj
+    return mark_sharp_by_angle(obj, angle_deg)
 
 
 # ---------------------------------------------------------------- scene graph
 
-def join(objs, name):
+def join(objs, name, sharp=True):
     objs = [o for o in objs if o is not None]
+    if sharp:
+        for o in objs:
+            auto_sharp(o)
     if len(objs) == 1:
         objs[0].name = name
         objs[0].data.name = name
@@ -609,7 +694,7 @@ def mesh_objects():
     return [o for o in bpy.context.scene.objects if o.type == "MESH"]
 
 
-# ---------------------------------------------------------------- ambient occlusion
+# ---------------------------------------------------------------- cycles
 
 def use_cycles(device="GPU", samples=64):
     scene = bpy.context.scene
@@ -630,6 +715,736 @@ def use_cycles(device="GPU", samples=64):
     scene.cycles.samples = samples
     return scene
 
+
+# ---------------------------------------------------------------- uv atlas
+
+def _mode(mode):
+    if bpy.context.object is not None and bpy.context.object.mode != mode:
+        bpy.ops.object.mode_set(mode=mode)
+
+
+def _select_only(objs):
+    for o in bpy.context.scene.objects:
+        o.select_set(False)
+    for o in objs:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = objs[0]
+
+
+def uv_islands(bm, uv):
+    """faces grouped into uv islands (connected through edges whose two
+    corners match in uv on both faces)"""
+    parent = list(range(len(bm.faces)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    bm.faces.ensure_lookup_table()
+    for e in bm.edges:
+        if len(e.link_faces) != 2:
+            continue
+        f1, f2 = e.link_faces
+        ok = True
+        for v in e.verts:
+            l1 = next(lp for lp in f1.loops if lp.vert == v)
+            l2 = next(lp for lp in f2.loops if lp.vert == v)
+            if (l1[uv].uv - l2[uv].uv).length_squared > 1e-12:
+                ok = False
+                break
+        if ok:
+            a, b = find(f1.index), find(f2.index)
+            if a != b:
+                parent[a] = b
+    groups = {}
+    for f in bm.faces:
+        groups.setdefault(find(f.index), []).append(f)
+    return list(groups.values())
+
+
+def uv_atlas(objs, weight=None, margin=0.003, angle=66.0, concave=True):
+    """one uv atlas across several objects. smart project finds the islands,
+    they are re-unwrapped with minimum stretch, scaled to equal texel density
+    times weight(obj, centre_world, material_name), then packed together."""
+    t0 = time.time()
+    for o in objs:
+        me = o.data
+        while me.uv_layers:
+            me.uv_layers.remove(me.uv_layers[0])
+        me.uv_layers.new(name="UVMap")
+    _select_only(objs)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.mark_seam(clear=True)
+    bpy.ops.uv.smart_project(angle_limit=math.radians(angle), island_margin=0.0, area_weight=0.0,
+                             correct_aspect=True, scale_to_bounds=False)
+    bpy.ops.uv.select_all(action="SELECT")
+    bpy.ops.uv.seams_from_islands()
+    bpy.ops.uv.unwrap(method="ANGLE_BASED", fill_holes=True, margin=0.0)
+    bpy.ops.uv.select_all(action="SELECT")
+    bpy.ops.uv.average_islands_scale()
+    bpy.ops.object.mode_set(mode="OBJECT")
+    islands = 0
+    if weight is not None:
+        for o in objs:
+            bm = bmesh.new()
+            bm.from_mesh(o.data)
+            uv = bm.loops.layers.uv.active
+            mw = o.matrix_world
+            groups = uv_islands(bm, uv)
+            islands += len(groups)
+            for faces in groups:
+                area, c3, mats = 0.0, Vector(), {}
+                for f in faces:
+                    a = f.calc_area()
+                    area += a
+                    c3 += (mw @ f.calc_center_median()) * a
+                    m = o.data.materials[f.material_index] if f.material_index < len(o.data.materials) else None
+                    key = m.name if m is not None else ""
+                    mats[key] = mats.get(key, 0.0) + a
+                c3 /= max(area, 1e-12)
+                mat_name = max(mats.items(), key=lambda kv: kv[1])[0]
+                w = weight(o, c3, mat_name)
+                s = math.sqrt(max(w, 1e-3))
+                cu = Vector((0.0, 0.0))
+                n = 0
+                for f in faces:
+                    for lp in f.loops:
+                        cu += lp[uv].uv
+                        n += 1
+                cu /= max(n, 1)
+                for f in faces:
+                    for lp in f.loops:
+                        lp[uv].uv = cu + (lp[uv].uv - cu) * s
+            bm.to_mesh(o.data)
+            bm.free()
+    _select_only(objs)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.select_all(action="SELECT")
+    bpy.ops.uv.pack_islands(rotate=True, scale=True, margin_method="FRACTION", margin=margin,
+                            shape_method="CONCAVE" if concave else "CONVEX")
+    bpy.ops.object.mode_set(mode="OBJECT")
+    used = 0.0
+    for o in objs:
+        me = o.data
+        uvl = me.uv_layers.active.data
+        for p in me.polygons:
+            if len(p.loop_indices) < 3:
+                continue
+            pts = [uvl[li].uv for li in p.loop_indices]
+            a = 0.0
+            for i in range(len(pts)):
+                x1, y1 = pts[i]
+                x2, y2 = pts[(i + 1) % len(pts)]
+                a += x1 * y2 - x2 * y1
+            used += abs(a) * 0.5
+    print(f"[wlib] uv atlas: {islands} islands, {used * 100:.0f}% of the square used, {time.time() - t0:.1f} s")
+    return used
+
+
+def texel_density(objs, size):
+    """average texels per millimetre over the atlas"""
+    area3 = areauv = 0.0
+    for o in objs:
+        me = o.data
+        uvl = me.uv_layers.active.data
+        for p in me.polygons:
+            area3 += p.area
+            pts = [uvl[li].uv for li in p.loop_indices]
+            a = 0.0
+            for i in range(len(pts)):
+                x1, y1 = pts[i]
+                x2, y2 = pts[(i + 1) % len(pts)]
+                a += x1 * y2 - x2 * y1
+            areauv += abs(a) * 0.5
+    return math.sqrt(areauv * size * size / max(area3 * 1e6, 1e-12))
+
+
+# ---------------------------------------------------------------- bake shaders
+
+RAY_VIS = ("visible_camera", "visible_diffuse", "visible_glossy", "visible_transmission", "visible_volume_scatter",
+           "visible_shadow")
+
+
+def ray_visible(obj, on):
+    for a in RAY_VIS:
+        setattr(obj, a, on)
+
+
+def _group(name):
+    """node group lookup, None if it doesn't exist yet"""
+    return bpy.data.node_groups.get(name)
+
+
+def _img(path, colorspace="Non-Color"):
+    img = bpy.data.images.load(path, check_existing=True)
+    img.colorspace_settings.name = colorspace
+    return img
+
+
+def triplanar_group(name, image_path, scale):
+    """object space triplanar lookup of a grayscale texture. the x and z
+    facing projections run the texture's u along +y (the bore), so brushed
+    streaks follow the barrel on the sides and the top"""
+    ng = _group(name)
+    if ng is not None:
+        return ng
+    ng = bpy.data.node_groups.new(name, "ShaderNodeTree")
+    ng.interface.new_socket(name="Value", in_out="OUTPUT", socket_type="NodeSocketFloat")
+    n, lk = ng.nodes, ng.links
+    out = n.new("NodeGroupOutput")
+    tc = n.new("ShaderNodeTexCoord")
+    sep = n.new("ShaderNodeSeparateXYZ")
+    lk.new(tc.outputs["Object"], sep.inputs[0])
+    nsep = n.new("ShaderNodeSeparateXYZ")
+    lk.new(tc.outputs["Normal"], nsep.inputs[0])
+    img = _img(image_path)
+    weights = []
+    samples = []
+    # (normal axis, u axis, v axis)
+    for axis, ua, va in ((0, 1, 2), (1, 0, 2), (2, 1, 0)):
+        comb = n.new("ShaderNodeCombineXYZ")
+        lk.new(sep.outputs[ua], comb.inputs[0])
+        lk.new(sep.outputs[va], comb.inputs[1])
+        mp = n.new("ShaderNodeVectorMath")
+        mp.operation = "SCALE"
+        mp.inputs[3].default_value = scale
+        lk.new(comb.outputs[0], mp.inputs[0])
+        tex = n.new("ShaderNodeTexImage")
+        tex.image = img
+        tex.extension = "REPEAT"
+        lk.new(mp.outputs[0], tex.inputs["Vector"])
+        samples.append(tex)
+        ab = n.new("ShaderNodeMath")
+        ab.operation = "ABSOLUTE"
+        lk.new(nsep.outputs[axis], ab.inputs[0])
+        pw = n.new("ShaderNodeMath")
+        pw.operation = "POWER"
+        pw.inputs[1].default_value = 4.0
+        lk.new(ab.outputs[0], pw.inputs[0])
+        weights.append(pw)
+    s01 = n.new("ShaderNodeMath")
+    s01.operation = "ADD"
+    lk.new(weights[0].outputs[0], s01.inputs[0])
+    lk.new(weights[1].outputs[0], s01.inputs[1])
+    wsum = n.new("ShaderNodeMath")
+    wsum.operation = "ADD"
+    lk.new(s01.outputs[0], wsum.inputs[0])
+    lk.new(weights[2].outputs[0], wsum.inputs[1])
+    acc = None
+    for tex, w in zip(samples, weights):
+        m = n.new("ShaderNodeMath")
+        m.operation = "MULTIPLY"
+        lk.new(tex.outputs["Color"], m.inputs[0])
+        lk.new(w.outputs[0], m.inputs[1])
+        if acc is None:
+            acc = m
+        else:
+            a = n.new("ShaderNodeMath")
+            a.operation = "ADD"
+            lk.new(acc.outputs[0], a.inputs[0])
+            lk.new(m.outputs[0], a.inputs[1])
+            acc = a
+    div = n.new("ShaderNodeMath")
+    div.operation = "DIVIDE"
+    lk.new(acc.outputs[0], div.inputs[0])
+    lk.new(wsum.outputs[0], div.inputs[1])
+    lk.new(div.outputs[0], out.inputs["Value"])
+    return ng
+
+
+def _noise(n, lk, coord, scale, detail=6.0, roughness=0.55, distortion=0.0, stretch=None):
+    src = coord
+    if stretch is not None:
+        mp = n.new("ShaderNodeMapping")
+        mp.inputs["Scale"].default_value = stretch
+        lk.new(coord, mp.inputs["Vector"])
+        src = mp.outputs[0]
+    tex = n.new("ShaderNodeTexNoise")
+    tex.inputs["Scale"].default_value = scale
+    tex.inputs["Detail"].default_value = detail
+    tex.inputs["Roughness"].default_value = roughness
+    tex.inputs["Distortion"].default_value = distortion
+    lk.new(src, tex.inputs["Vector"])
+    return tex.outputs["Fac"]
+
+
+def _rgb(n, lk, r, g, b):
+    """combine three float sockets or constants into a colour socket"""
+    comb = n.new("ShaderNodeCombineColor")
+    for sock, v in zip(("Red", "Green", "Blue"), (r, g, b)):
+        if isinstance(v, (int, float)):
+            comb.inputs[sock].default_value = float(v)
+        else:
+            lk.new(v, comb.inputs[sock])
+    return comb.outputs[0]
+
+
+def _ao(n, lk, distance, inside=False, local=True, samples=16):
+    ao = n.new("ShaderNodeAmbientOcclusion")
+    ao.inputs["Distance"].default_value = distance
+    ao.inside = inside
+    ao.only_local = local
+    ao.samples = samples
+    return ao.outputs["AO"]
+
+
+def _one_minus(n, lk, sock):
+    m = n.new("ShaderNodeMath")
+    m.operation = "SUBTRACT"
+    m.inputs[0].default_value = 1.0
+    lk.new(sock, m.inputs[1])
+    return m.outputs[0]
+
+
+def _bump_height(n, lk, spec):
+    """height socket for a finish's micro surface, or None"""
+    kind = spec["bump"]
+    if not kind:
+        return None, 0.0
+    tc = n.new("ShaderNodeTexCoord")
+    s = spec["bump_scale"]
+    if kind == "stipple":
+        # raised pebbles about a millimetre across
+        vor = n.new("ShaderNodeTexVoronoi")
+        vor.feature = "F1"
+        vor.inputs["Scale"].default_value = 900.0 / s
+        vor.inputs["Randomness"].default_value = 0.85
+        lk.new(tc.outputs["Object"], vor.inputs["Vector"])
+        m = n.new("ShaderNodeMapRange")
+        m.inputs["From Min"].default_value = 0.05
+        m.inputs["From Max"].default_value = 0.55
+        m.inputs["To Min"].default_value = 1.0
+        m.inputs["To Max"].default_value = 0.0
+        lk.new(vor.outputs["Distance"], m.inputs["Value"])
+        p = n.new("ShaderNodeMath")
+        p.operation = "POWER"
+        p.inputs[1].default_value = 0.6
+        lk.new(m.outputs[0], p.inputs[0])
+        return p.outputs[0], 0.00022 * spec["bump_depth"]
+    if kind == "grain":
+        # fine moulded or rubber texture
+        return _noise(n, lk, tc.outputs["Object"], 2600.0 / s, detail=3.0, roughness=0.6), 0.00005 * spec["bump_depth"]
+    if kind == "cast":
+        return _noise(n, lk, tc.outputs["Object"], 700.0 / s, detail=4.0, roughness=0.5), 0.00003 * spec["bump_depth"]
+    raise ValueError(kind)
+
+
+def _reset_tree(mat):
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    return nt.nodes, nt.links, out
+
+
+def pass_shader(mat, kind, tex_paths):
+    """rebuilds a finish material's node tree for one bake pass"""
+    spec = SPECS.get(mat.name)
+    if spec is None:
+        spec = dict(SPEC_DEFAULTS, wear_color=0x808080, wear_rough=0.5, wear_metal=0.0)
+    n, lk, out = _reset_tree(mat)
+    if kind == "normal":
+        bsdf = n.new("ShaderNodeBsdfPrincipled")
+        lk.new(bsdf.outputs[0], out.inputs["Surface"])
+        h, dist = _bump_height(n, lk, spec)
+        if h is not None:
+            bump = n.new("ShaderNodeBump")
+            bump.inputs["Strength"].default_value = 1.0
+            bump.inputs["Distance"].default_value = dist
+            lk.new(h, bump.inputs["Height"])
+            lk.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+        return
+    em = n.new("ShaderNodeEmission")
+    em.inputs["Strength"].default_value = 1.0
+    lk.new(em.outputs[0], out.inputs["Surface"])
+    col = None
+    if kind == "cov":
+        col = _rgb(n, lk, 1.0, 1.0, 1.0)
+    elif kind == "base":
+        col = _rgb(n, lk, *srgb(spec["base"]))
+    elif kind == "wearc":
+        col = _rgb(n, lk, *srgb(spec["wear_color"]))
+    elif kind == "prm":
+        col = _rgb(n, lk, spec["rough"], spec["metal"], spec["wear"])
+    elif kind == "prm2":
+        col = _rgb(n, lk, spec["wear_rough"], spec["wear_metal"], spec["grime"])
+    elif kind == "prm3":
+        col = _rgb(n, lk, spec["rvar"], spec["scratch"], 1.0 if spec["detail"] == "brushed" else 0.0)
+    elif kind == "masks":
+        # r: ao against every part, g: convex edges (occlusion from inside),
+        # b: cavities (short range occlusion)
+        ao = _ao(n, lk, 0.012, local=False, samples=12)
+        edge = _one_minus(n, lk, _ao(n, lk, 0.0009, inside=True, samples=12))
+        cav = _one_minus(n, lk, _ao(n, lk, 0.0022, samples=12))
+        col = _rgb(n, lk, ao, edge, cav)
+    elif kind == "detail":
+        scr = n.new("ShaderNodeGroup")
+        scr.node_tree = triplanar_group("tri_scratches", tex_paths["scratches"], 1.0 / 0.16)
+        brushed = n.new("ShaderNodeGroup")
+        brushed.node_tree = triplanar_group("tri_brushed", tex_paths["brushed"], 1.0 / 0.09)
+        plastic = n.new("ShaderNodeGroup")
+        plastic.node_tree = triplanar_group("tri_plastic", tex_paths["plastic"], 1.0 / 0.12)
+        col = _rgb(n, lk, scr.outputs[0], brushed.outputs[0], plastic.outputs[0])
+    elif kind == "noise":
+        tc = n.new("ShaderNodeTexCoord")
+        o = tc.outputs["Object"]
+        grunge = _noise(n, lk, o, 28.0, detail=8.0, roughness=0.62)
+        smudge = _noise(n, lk, o, 55.0, detail=4.0, roughness=0.5, distortion=0.6, stretch=(1.0, 0.45, 1.0))
+        fine = _noise(n, lk, o, 420.0, detail=5.0, roughness=0.6)
+        col = _rgb(n, lk, grunge, smudge, fine)
+    else:
+        raise ValueError(kind)
+    lk.new(col, em.inputs["Color"])
+
+
+# ---------------------------------------------------------------- baking
+
+class Baker:
+    """bakes high poly parts onto the shared uv atlas of their low poly parts.
+    parts are (low, high, isolate): an isolated part (a magazine that drops
+    out) only occludes itself. low polys are hidden from rays while baking so
+    only the high poly casts ao."""
+
+    def __init__(self, parts, size, cage_mm=0.3, reach_mm=0.8, margin=8):
+        import numpy as np  # noqa: F401  (blender ships numpy)
+        self.parts = parts
+        self.size = size
+        self.cage = cage_mm * MM
+        self.reach = reach_mm * MM
+        self.margin = margin
+        self.target = bpy.data.materials.new("_bake_target")
+        n, lk, out = _reset_tree(self.target)
+        self.tex = n.new("ShaderNodeTexImage")
+        n.active = self.tex
+        self.saved_mats = {}
+        for low, _, _ in parts:
+            me = low.data
+            self.saved_mats[low.name] = [m for m in me.materials]
+            me.materials.clear()
+            me.materials.append(self.target)
+            for p in me.polygons:
+                p.material_index = 0
+            ray_visible(low, False)
+        scene = use_cycles("GPU", 16)
+        scene.render.bake.margin_type = "ADJACENT_FACES"
+        scene.cycles.use_denoising = False
+        self.high_mats = sorted({m for _, h, _ in parts for m in h.data.materials if m is not None},
+                                key=lambda m: m.name)
+        self.times = {}
+
+    def run(self, kind, samples, tex_paths=None):
+        import numpy as np
+        t0 = time.time()
+        for m in self.high_mats:
+            pass_shader(m, kind, tex_paths or {})
+        img = bpy.data.images.new(f"bake_{kind}", self.size, self.size, alpha=True, float_buffer=True)
+        img.colorspace_settings.name = "Non-Color"
+        self.tex.image = img
+        scene = bpy.context.scene
+        scene.cycles.samples = samples
+        bake_type = "NORMAL" if kind == "normal" else "EMIT"
+        highs = [h for _, h, _ in self.parts]
+        for i, (low, high, isolate) in enumerate(self.parts):
+            hidden = []
+            if isolate:
+                for h in highs:
+                    if h is not high:
+                        ray_visible(h, False)
+                        hidden.append(h)
+            _select_only([low, high])
+            bpy.context.view_layer.objects.active = low
+            kwargs = dict(type=bake_type, use_selected_to_active=True, cage_extrusion=self.cage,
+                          max_ray_distance=self.reach, margin=self.margin, margin_type="ADJACENT_FACES",
+                          use_clear=(i == 0),
+                          target="IMAGE_TEXTURES")
+            if bake_type == "NORMAL":
+                kwargs.update(normal_space="TANGENT", normal_r="POS_X", normal_g="POS_Y", normal_b="POS_Z")
+            bpy.ops.object.bake(**kwargs)
+            for h in hidden:
+                ray_visible(h, True)
+        px = np.array(img.pixels[:], dtype=np.float32).reshape(self.size, self.size, 4)
+        bpy.data.images.remove(img)
+        self.times[kind] = time.time() - t0
+        print(f"[wlib] baked {kind} in {self.times[kind]:.1f} s")
+        return px
+
+    def finish(self, atlas_mat):
+        for low, _, _ in self.parts:
+            ray_visible(low, True)
+            me = low.data
+            me.materials.clear()
+            me.materials.append(atlas_mat)
+            for p in me.polygons:
+                p.material_index = 0
+        bpy.data.materials.remove(self.target)
+
+
+def bake_all(parts, size, tex_paths, samples_ao=96, **kw):
+    """every pass compose_textures needs, as float arrays (blender row order)"""
+    b = Baker(parts, size, **kw)
+    passes = {}
+    for kind, samples in (("cov", 1), ("base", 6), ("wearc", 6), ("prm", 6), ("prm2", 6), ("prm3", 6),
+                          ("detail", 8), ("noise", 6), ("masks", samples_ao), ("normal", 16)):
+        passes[kind] = b.run(kind, samples, tex_paths)
+    return b, passes
+
+
+# ---------------------------------------------------------------- compositing
+
+def _smoothstep(e0, e1, x):
+    import numpy as np
+    t = np.clip((x - e0) / max(e1 - e0, 1e-6), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _to_srgb(c):
+    import numpy as np
+    c = np.clip(c, 0.0, 1.0)
+    return np.where(c <= 0.0031308, c * 12.92, 1.055 * np.power(c, 1.0 / 2.4) - 0.055)
+
+
+def _blur(x, radius):
+    """cheap separable box blur (edge clamped), radius in pixels"""
+    import numpy as np
+    if radius <= 0:
+        return x
+    k = 2 * radius + 1
+    for axis in (0, 1):
+        pad = [(0, 0)] * x.ndim
+        pad[axis] = (radius, radius)
+        p = np.pad(x, pad, mode="edge")
+        c = np.cumsum(p, axis=axis, dtype=np.float64)
+        zero = np.zeros_like(np.take(c, [0], axis=axis))
+        c = np.concatenate([zero, c], axis=axis)
+        hi_ = np.take(c, np.arange(k, c.shape[axis]), axis=axis)
+        lo = np.take(c, np.arange(0, c.shape[axis] - k), axis=axis)
+        x = ((hi_ - lo) / k).astype(np.float32)
+    return x
+
+
+def dilate(arr, mask, iters=48):
+    """grows the texels under mask outward into the empty ones (average of the
+    filled 4-neighbours per step), then fills whatever is left with the mean"""
+    import numpy as np
+    out = arr.copy()
+    filled = mask.copy()
+    for _ in range(iters):
+        acc = np.zeros_like(out)
+        cnt = np.zeros(filled.shape, dtype=np.float32)
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            f = np.roll(filled, (dy, dx), axis=(0, 1))
+            acc += np.roll(out, (dy, dx), axis=(0, 1)) * f[..., None]
+            cnt += f
+        grow = (~filled) & (cnt > 0)
+        if not grow.any():
+            break
+        out[grow] = acc[grow] / cnt[grow][..., None]
+        filled = filled | grow
+    out[~filled] = out[mask].mean(axis=0)
+    return out
+
+
+def compose_textures(P, name, look=None):
+    """turns the bake passes into (base colour srgb, orm, normal) float arrays.
+    look tweaks the wear, grime and breakup strengths for one gun"""
+    import numpy as np
+    L = dict(edge_lo=0.06, edge_hi=0.4, edge_gain=1.0, breakup=0.85, scratch_wear=0.45, grime=0.5, ao_albedo=0.3,
+             value_var=0.1, smudge=0.7, ao_floor=0.15, scratch_rough=0.12)
+    L.update(look or {})
+    cov = P["cov"][..., 0] > 0.5
+    base = P["base"][..., :3]
+    wearc = P["wearc"][..., :3]
+    rough0, metal0, wear_amt = (P["prm"][..., i] for i in range(3))
+    wrough, wmetal, grime = (P["prm2"][..., i] for i in range(3))
+    rvar, scr_amt, brushed_kind = (P["prm3"][..., i] for i in range(3))
+    ao, edge, cav = (P["masks"][..., i] for i in range(3))
+    scr, brushed, plastic = (P["detail"][..., i] for i in range(3))
+    grunge, smudge, fine = (P["noise"][..., i] for i in range(3))
+
+    def norm(x, lo=2.0, hi_=98.0):
+        a, b = np.percentile(x[cov], [lo, hi_])
+        return np.clip((x - a) / max(b - a, 1e-6), 0.0, 1.0)
+
+    grunge, smudge, fine = norm(grunge), norm(smudge), norm(fine)
+    brushed, plastic = norm(brushed), norm(plastic)
+    scr = np.clip(scr, 0.0, 1.0)
+    # the ao bake is a little noisy, soften it over a couple of texels
+    ao = np.clip(_blur(ao, 1), 0.0, 1.0)
+    edge = np.clip(_blur(edge, 1), 0.0, 1.0)
+    cav = np.clip(_blur(cav, 1), 0.0, 1.0)
+
+    # edge wear: convex edges broken up by low frequency noise, plus scratches
+    e = _smoothstep(L["edge_lo"], L["edge_hi"], edge) * L["edge_gain"]
+    breakup = _smoothstep(0.25, 0.75, grunge * 0.65 + fine * 0.35)
+    wear = np.clip(e * (1.0 - L["breakup"] + L["breakup"] * 1.6 * breakup), 0.0, 1.0)
+    wear = np.clip(wear + scr * scr_amt * L["scratch_wear"], 0.0, 1.0) * wear_amt
+    c = _smoothstep(0.08, 0.55, cav)
+
+    # finishes without grime (lens glass) stay clean: no ao or noise in the
+    # colour, and a smooth ao so a lens deep in its tube doesn't come out blotchy
+    dirt = np.clip(grime * 4.0, 0.0, 1.0)
+    clean = grime < 0.02
+    ao = np.where(clean, _blur(ao, 8), ao)
+    col = base * (1.0 - wear[..., None]) + wearc * wear[..., None]
+    col *= (1.0 - grime * L["grime"] * c)[..., None]
+    col *= (1.0 - L["ao_albedo"] * dirt + L["ao_albedo"] * dirt * ao)[..., None]
+    col *= (1.0 - (L["value_var"] * 0.5 - L["value_var"] * grunge) * dirt)[..., None]
+
+    det = np.where(brushed_kind > 0.5, brushed, plastic)
+    r = rough0 + rvar * 2.0 * (det - 0.5) + rvar * L["smudge"] * (smudge - 0.5)
+    r = r + scr * scr_amt * L["scratch_rough"] * (1.0 - 0.6 * metal0)
+    r = r * (1.0 - wear) + wrough * wear
+    r = r + grime * 0.12 * c
+    r = np.clip(r, 0.05, 1.0)
+    m = np.clip(metal0 * (1.0 - wear) + wmetal * wear, 0.0, 1.0)
+    occ = np.clip(L["ao_floor"] + (1.0 - L["ao_floor"]) * ao, 0.0, 1.0)
+
+    nrm = P["normal"][..., :3].copy()
+
+    # empty texels take their neighbours' values, so mips and ktx2 blocks that
+    # straddle an island edge don't pull in a foreign colour
+    base_srgb = dilate(_to_srgb(col), cov)
+    orm = dilate(np.stack([occ, r, m], axis=-1), cov)
+    nrm = dilate(nrm, cov)
+    stats = dict(coverage=float(cov.mean()), rough=(float(r[cov].min()), float(r[cov].mean()), float(r[cov].max())),
+                 wear=float((wear[cov] > 0.3).mean()), ao=float(ao[cov].mean()))
+    print(f"[wlib] {name} textures: {stats}")
+    return base_srgb, orm, nrm
+
+
+def downsample(arr, size, normal=False):
+    """box filter down to size x size. normal maps are averaged as vectors and
+    renormalised, so the bake at 2x resolution comes out antialiased"""
+    import numpy as np
+    k = arr.shape[0] // size
+    if k <= 1:
+        return arr
+    h, w, c = arr.shape
+    x = arr[..., :3].astype(np.float32)
+    if normal:
+        x = x * 2.0 - 1.0
+    x = x.reshape(size, k, size, k, 3).mean(axis=(1, 3))
+    if normal:
+        x /= np.maximum(np.linalg.norm(x, axis=-1, keepdims=True), 1e-6)
+        x = x * 0.5 + 0.5
+    return x
+
+
+def save_png(arr, name, colorspace):
+    """float rgb array (blender row order) -> 8 bit png in TMP, returns the image"""
+    import numpy as np
+    h, w = arr.shape[:2]
+    img = bpy.data.images.new(name, w, h, alpha=False, float_buffer=False)
+    img.colorspace_settings.name = colorspace
+    rgba = np.concatenate([arr[..., :3], np.ones((h, w, 1), dtype=np.float32)], axis=-1)
+    img.pixels.foreach_set(np.clip(rgba, 0.0, 1.0).astype(np.float32).ravel())
+    os.makedirs(TMP, exist_ok=True)
+    img.filepath_raw = os.path.join(TMP, f"{name}.png")
+    img.file_format = "PNG"
+    img.save()
+    img.pack()
+    return img
+
+
+def gltf_output_group():
+    """the node group the gltf exporter reads the occlusion texture from"""
+    ng = _group("glTF Material Output")
+    if ng is None:
+        ng = bpy.data.node_groups.new("glTF Material Output", "ShaderNodeTree")
+        ng.interface.new_socket(name="Occlusion", in_out="INPUT", socket_type="NodeSocketFloat")
+        ng.nodes.new("NodeGroupInput")
+    return ng
+
+
+def atlas_material(name, base_img, orm_img, normal_img):
+    """one pbr material with the baked maps, laid out the way the gltf
+    exporter maps it: orm r -> occlusion, g -> roughness, b -> metalness"""
+    mat = bpy.data.materials.new(name)
+    # closed solids: single sided keeps the gpu from shading back faces
+    mat.use_backface_culling = True
+    n, lk, out = _reset_tree(mat)
+    bsdf = n.new("ShaderNodeBsdfPrincipled")
+    lk.new(bsdf.outputs[0], out.inputs["Surface"])
+    uvn = n.new("ShaderNodeUVMap")
+    uvn.uv_map = "UVMap"
+    tb = n.new("ShaderNodeTexImage")
+    tb.image = base_img
+    lk.new(uvn.outputs["UV"], tb.inputs["Vector"])
+    lk.new(tb.outputs["Color"], bsdf.inputs["Base Color"])
+    to = n.new("ShaderNodeTexImage")
+    to.image = orm_img
+    lk.new(uvn.outputs["UV"], to.inputs["Vector"])
+    sep = n.new("ShaderNodeSeparateColor")
+    lk.new(to.outputs["Color"], sep.inputs["Color"])
+    lk.new(sep.outputs["Green"], bsdf.inputs["Roughness"])
+    lk.new(sep.outputs["Blue"], bsdf.inputs["Metallic"])
+    grp = n.new("ShaderNodeGroup")
+    grp.node_tree = gltf_output_group()
+    lk.new(sep.outputs["Red"], grp.inputs["Occlusion"])
+    tn = n.new("ShaderNodeTexImage")
+    tn.image = normal_img
+    lk.new(uvn.outputs["UV"], tn.inputs["Vector"])
+    nm = n.new("ShaderNodeNormalMap")
+    nm.uv_map = "UVMap"
+    lk.new(tn.outputs["Color"], nm.inputs["Color"])
+    lk.new(nm.outputs["Normal"], bsdf.inputs["Normal"])
+    return mat
+
+
+def triangulate(obj):
+    """triangles before the unwrap: the bake, the gltf tangents and three.js
+    then all see the same faces (n-gons can't get mikktspace tangents)"""
+    mod = obj.modifiers.new("tri", "TRIANGULATE")
+    mod.quad_method = "BEAUTY"
+    mod.ngon_method = "BEAUTY"
+    mod.keep_custom_normals = True
+    apply_modifiers(obj)
+    return obj
+
+
+def texture_set(lows, highs, name, size, weight, look=None, samples_ao=96, isolate=(), margin_px=3,
+                pack_margin=0.003, out_sizes=(1024, 1024, 512)):
+    """uv atlas for the low polys, bakes from the high polys, composed maps and
+    the atlas material on every low poly. highs maps low name -> high object.
+    bakes run at `size` and are box filtered down to out_sizes (base colour,
+    normal, orm), the sizes that ship"""
+    t0 = time.time()
+    if os.environ.get("WS_SAVE_LOW"):
+        bpy.ops.wm.save_as_mainfile(filepath=os.environ["WS_SAVE_LOW"])
+        raise SystemExit(0)
+    for lo in lows:
+        triangulate(lo)
+    uv_atlas(lows, weight=weight, margin=pack_margin)
+    print(f"[wlib] {name}: {texel_density(lows, size):.1f} texels per mm on average")
+    tex_paths = {
+        "scratches": os.path.join(TEXTURES, "scratches.jpg"),
+        "brushed": os.path.join(TEXTURES, "brushed_steel_rough.jpg"),
+        "plastic": os.path.join(TEXTURES, "plastic_rough.jpg"),
+    }
+    parts = [(lo, highs[lo.name], lo.name in isolate) for lo in lows]
+    baker, P = bake_all(parts, size, tex_paths, samples_ao=samples_ao, margin=margin_px)
+    base, orm, nrm = compose_textures(P, name, look)
+    base = downsample(base, out_sizes[0])
+    nrm = downsample(nrm, out_sizes[1], normal=True)
+    orm = downsample(orm, out_sizes[2])
+    base_img = save_png(base, f"{name}_basecolor", "sRGB")
+    orm_img = save_png(orm, f"{name}_orm", "Non-Color")
+    nrm_img = save_png(nrm, f"{name}_normal", "Non-Color")
+    mat = atlas_material(f"mat_{name}", base_img, orm_img, nrm_img)
+    baker.finish(mat)
+    print(f"[wlib] {name}: texture set done in {time.time() - t0:.0f} s")
+    return mat, P
+
+
+def delete_high(highs):
+    for h in list(highs.values()):
+        delete(h)
+
+
+# ---------------------------------------------------------------- ambient occlusion (vertex, --quick previews)
 
 def bake_ao(objs, distance, samples=96, strength=1.0, floor=0.18, isolate=False):
     """cycles ao bake into a corner colour attribute that exports as COLOR_0.
@@ -725,10 +1540,10 @@ def box_uv(obj, scale, material_names=None):
 
 # ---------------------------------------------------------------- export
 
-def export(path, root):
+def export(path, root, tangents=False):
     """exports the root empty and everything under it"""
     objs = [root] + list(root.children_recursive)
-    common.export_glb(path, objects=objs)
+    common.export_glb(path, objects=objs, tangents=tangents)
 
 
 # ---------------------------------------------------------------- previews
@@ -738,13 +1553,14 @@ STUDIO_HDRI = os.path.join(os.path.dirname(bpy.app.binary_path), "..", "Resource
 
 
 def preview_materials_with_ao():
-    """multiplies the baked ao into base colour so blender renders match three.js"""
+    """multiplies the baked vertex ao into base colour so blender renders match
+    three.js (flat --quick materials only, the atlas carries its own ao)"""
     for mat in bpy.data.materials:
         if not mat.use_nodes or mat.get("_ao_wired"):
             continue
         nodes, links = mat.node_tree.nodes, mat.node_tree.links
         bsdf = nodes.get("Principled BSDF")
-        if bsdf is None:
+        if bsdf is None or bsdf.inputs["Base Color"].is_linked:
             continue
         base = tuple(bsdf.inputs["Base Color"].default_value)
         attr = nodes.new("ShaderNodeVertexColor")
@@ -878,7 +1694,7 @@ def socket_markers(sockets, size=0.012, camera=None):
             rot = d.to_track_quat("Z", "Y").to_matrix().to_4x4()
             c.data.transform(Matrix.Translation(origin + d * size * 0.5) @ rot)
             made.append(c)
-        ball = lathe("_dbg", [(0.0, -1), (0.7, -0.7), (1.0, 0.0), (0.7, 0.7), (0.0, 1)], 12, white, axis="Z")
+        ball = lathe("_dbg", [(0.0, -1), (0.7, -0.7), (1.0, 0.0), (0.7, 0.7), (0.0, 1)], 8, white, axis="Z")
         ball.data.transform(Matrix.Translation(origin) @ Matrix.Scale(size * 0.18, 4))
         made.append(ball)
         curve = bpy.data.curves.new("_dbg_text", "FONT")

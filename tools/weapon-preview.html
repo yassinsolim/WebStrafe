@@ -34,8 +34,19 @@
       // same lights, fov and environment as the in-game viewmodel pass
       const vm = new ViewmodelRenderer(68, width / height);
       vm.scene.environment = new PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
-      const gltf = await createGltfLoader().loadAsync(`/viewmodels/v2/${id}.glb`);
+      // ?glb=<url> loads another file (a raw blender export), ?notangents=1 drops the
+      // tangent attribute so three.js derives the frame per pixel (for comparing)
+      const loader = createGltfLoader();
+      const gltf = await loader.loadAsync(params.get('glb') ?? `/viewmodels/v2/${id}.glb`);
       const weapon = gltf.scene;
+      if (params.get('notangents')) {
+        weapon.traverse((o) => {
+          if (!o.isMesh || !o.geometry.attributes.tangent) return;
+          o.geometry.deleteAttribute('tangent');
+          o.material = o.material.clone();
+          o.material.normalScale.y *= -1;
+        });
+      }
 
       const part = (name) => weapon.getObjectByName(name);
       const deg = (d) => (d * Math.PI) / 180;
