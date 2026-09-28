@@ -2,6 +2,11 @@ export type CrosshairStyle = 'classic' | 'dot' | 'circle-dot';
 
 export const CROSSHAIR_STYLES: readonly CrosshairStyle[] = ['classic', 'dot', 'circle-dot'];
 
+/** render preset; auto picks one from the gpu the first time the renderer starts */
+export type GraphicsQuality = 'auto' | 'low' | 'medium' | 'high';
+
+export const GRAPHICS_QUALITIES: readonly GraphicsQuality[] = ['auto', 'low', 'medium', 'high'];
+
 export interface CrosshairSettings {
   style: CrosshairStyle;
   /** arm length in css px (0 hides the arms of the classic style) */
@@ -29,6 +34,8 @@ export interface GameSettings {
   renderScale: number;
   /** lower the resolution automatically when frames drop under 55 fps */
   adaptiveResolution: boolean;
+  /** lighting, post processing and effects preset */
+  graphicsQuality: GraphicsQuality;
   masterVolume: number;
   effectsVolume: number;
   uiVolume: number;
@@ -88,6 +95,7 @@ export const defaultSettings: GameSettings = {
   viewmodelScale: 1,
   renderScale: 1,
   adaptiveResolution: true,
+  graphicsQuality: 'auto',
   masterVolume: 0.8,
   effectsVolume: 1,
   uiVolume: 0.7,
@@ -119,6 +127,7 @@ export function validateSettings(raw: unknown, base: GameSettings = defaultSetti
     viewmodelScale: clampNumber(src.viewmodelScale, limits.viewmodelScale, base.viewmodelScale),
     renderScale: clampNumber(src.renderScale, limits.renderScale, base.renderScale),
     adaptiveResolution: readBoolean(src.adaptiveResolution, base.adaptiveResolution),
+    graphicsQuality: isGraphicsQuality(src.graphicsQuality) ? src.graphicsQuality : base.graphicsQuality,
     masterVolume: clampNumber(src.masterVolume, limits.masterVolume, base.masterVolume),
     effectsVolume: clampNumber(src.effectsVolume, limits.effectsVolume, base.effectsVolume),
     uiVolume: clampNumber(src.uiVolume, limits.uiVolume, base.uiVolume),
@@ -226,6 +235,10 @@ export function normalizeHexColor(value: unknown): string | null {
 
 function isCrosshairStyle(value: unknown): value is CrosshairStyle {
   return typeof value === 'string' && (CROSSHAIR_STYLES as readonly string[]).includes(value);
+}
+
+function isGraphicsQuality(value: unknown): value is GraphicsQuality {
+  return typeof value === 'string' && (GRAPHICS_QUALITIES as readonly string[]).includes(value);
 }
 
 function clampNumber(value: unknown, limit: RangeLimit, fallback: number): number {
