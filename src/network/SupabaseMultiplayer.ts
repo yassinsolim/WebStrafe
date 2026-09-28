@@ -21,9 +21,12 @@ import { RESPAWN_DELAY_MS } from '../combat/CombatState';
 const SESSION_KEY = 'webstrafe:session-id:v1';
 /**
  * Wire protocol version, part of the channel name so clients running the old
- * message format never share a room with this one.
+ * message format never share a room with this one. p4 (v2): knife swings are
+ * flagged melee with the cs knife damage table and backstabs, hits carry
+ * melee/backstab, and fires carry the shooter's weapon. a p3 host would resolve
+ * those differently, so p3 and p4 tabs must never share a room.
  */
-export const SUPABASE_PROTOCOL = 'p3';
+export const SUPABASE_PROTOCOL = 'p4';
 const PLAYER_STALE_MS = 8000;
 /** idle/paused clients only need to prove they are still here */
 const KEEPALIVE_MS = 1000;
@@ -320,6 +323,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         targetTimes: fireView.targets,
         shooterTimeMs: shooterT,
         attackTimeMs: Date.now(),
+        weapon: this.localWeapon ?? undefined,
       }, melee);
       this.flushCombat();
       return;
@@ -330,6 +334,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       dir,
       targets: fireView.targets,
       t: shooterT,
+      ...(this.localWeapon ? { w: this.localWeapon } : {}),
       ...(melee ? { melee } : {}),
     });
   }
@@ -719,6 +724,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       dir?: [number, number, number];
       targets?: Record<string, number>;
       t?: number;
+      w?: unknown;
       melee?: unknown;
     };
     const melee = p.melee === undefined ? undefined : parseMelee(p.melee);
@@ -729,6 +735,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       this.hostSim.applyFire(p.id, p.origin, p.dir, undefined, {
         targetTimes: sanitizeTargets(p.targets),
         shooterTimeMs: Number.isFinite(p.t) ? p.t : undefined,
+        weapon: typeof p.w === 'string' ? p.w : undefined,
       }, melee);
       this.flushCombat();
     }

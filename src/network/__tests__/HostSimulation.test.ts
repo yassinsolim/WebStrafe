@@ -92,6 +92,46 @@ describe('HostSimulation', () => {
   });
 
 
+  it('never routes a gun shot into the knife path when this host thinks the shooter holds the knife', () => {
+    vi.useFakeTimers();
+    try {
+      const emit = makeEmitter();
+      const sim = new HostSimulation(makeWorld(), makeSpawn(), 1, emit);
+      const bot = sim.tick(16)[0];
+      // a fresh host after a handoff: the shooter's state hasn't said which weapon yet
+      sim.syncHumans([{ id: 'h1', name: 'H', model: 'terrorist', combatReady: true, position: [bot.position[0], bot.position[1], bot.position[2] + 30] }]);
+      vi.advanceTimersByTime(SPAWN_PROTECTION_MS + 100);
+      const origin: [number, number, number] = [bot.position[0], bot.position[1] + 1.6, bot.position[2] + 30];
+      const aim: [number, number, number] = [bot.position[0], bot.position[1] + 1.2, bot.position[2]];
+      // 30 m away: a knife could never reach, only the awp on the shot can hit
+      sim.applyFire('h1', origin, normalize(origin, aim), undefined, { weapon: 'awp' });
+      expect(emit.hit).toHaveBeenCalled();
+      expect(emit.hit.mock.calls[0][0].weaponId).toBe('awp');
+      expect(emit.hit.mock.calls[0][0].melee).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses the weapon a human last reported when the shot does not carry one', () => {
+    vi.useFakeTimers();
+    try {
+      const emit = makeEmitter();
+      const sim = new HostSimulation(makeWorld(), makeSpawn(), 1, emit);
+      const bot = sim.tick(16)[0];
+      const pos: [number, number, number] = [bot.position[0], bot.position[1], bot.position[2] + 30];
+      sim.syncHumans([{ id: 'h1', name: 'H', model: 'terrorist', combatReady: true, position: pos }]);
+      sim.syncHumans([{ id: 'h1', name: 'H', model: 'terrorist', combatReady: true, position: pos, weapon: 'deagle' }]);
+      vi.advanceTimersByTime(SPAWN_PROTECTION_MS + 100);
+      const origin: [number, number, number] = [pos[0], pos[1] + 1.6, pos[2]];
+      const aim: [number, number, number] = [bot.position[0], bot.position[1] + 1.2, bot.position[2]];
+      sim.applyFire('h1', origin, normalize(origin, aim));
+      expect(emit.hit.mock.calls[0]?.[0].weaponId).toBe('deagle');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('labels accepted miss, hit, and kill shots in authority order', () => {
     vi.useFakeTimers();
     try {

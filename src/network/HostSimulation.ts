@@ -49,6 +49,8 @@ export interface HostFireLag {
    * host's own attacks). Remote swings are mapped from `shooterTimeMs`.
    */
   attackTimeMs?: number;
+  /** weapon the shooter had out when they fired (p4 fire messages carry it) */
+  weapon?: string;
 }
 
 export interface HostBotRow {
@@ -104,6 +106,8 @@ export class HostSimulation {
   private readonly humanPausedAtMs = new Map<string, number>();
   private readonly humanLastCombatAtMs = new Map<string, number>();
   private readonly humanViews = new Map<string, { yaw: number; pitch: number }>();
+  /** latest weapon each human reported in their state */
+  private readonly humanWeapons = new Map<string, WeaponId>();
   /** maps each remote human's clock onto host time, for knife cooldowns */
   private readonly humanClocks = new Map<string, SourceClock>();
   private shotSequence = 1;
@@ -168,6 +172,9 @@ export class HostSimulation {
           this.humanPausedAtMs.set(h.id, now);
         }
       }
+      if (isWeaponId(h.weapon)) {
+        this.humanWeapons.set(h.id, h.weapon);
+      }
       if (!isNew && isWeaponId(h.weapon) && this.arena.getActiveWeapon(h.id) !== h.weapon) {
         this.arena.equip(h.id, h.weapon);
       }
@@ -212,6 +219,7 @@ export class HostSimulation {
         this.humanPausedAtMs.delete(id);
         this.humanLastCombatAtMs.delete(id);
         this.humanViews.delete(id);
+        this.humanWeapons.delete(id);
         this.humanClocks.delete(id);
         this.resetBotEngagement();
       }
@@ -270,8 +278,20 @@ export class HostSimulation {
     if (this.humanCombatReady.has(shooterId) && !this.humanCombatReady.get(shooterId)) {
       return;
     }
-    if (melee !== undefined || this.arena.getActiveWeapon(shooterId) === 'knife') {
-      this.applyMelee(shooterId, melee ?? 'primary', origin, dir, observedAtMs, lag);
+    if (melee !== undefined) {
+      this.applyMelee(shooterId, melee, origin, dir, observedAtMs, lag);
+      return;
+    }
+    // only a swing flagged melee is a knife attack. a gun shot right after a
+    // handoff can beat the shooter's state to this host, so trust the weapon on
+    // the shot (or the last one they reported) over the arena's stale view
+    const held = isWeaponId(lag?.weapon) ? lag.weapon : this.humanWeapons.get(shooterId);
+    if (held && held !== 'knife' && this.arena.getActiveWeapon(shooterId) !== held) {
+      this.arena.equip(shooterId, held);
+    }
+    if (this.arena.getActiveWeapon(shooterId) === 'knife') {
+      // bots, and peers that predate the melee field, still slash
+      this.applyMelee(shooterId, 'primary', origin, dir, observedAtMs, lag);
       return;
     }
     const now = Date.now();

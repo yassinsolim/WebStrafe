@@ -139,7 +139,7 @@ const arenaOf = (p: SupabaseMultiplayer) => (p as any).hostSim.arena;
 const statesFrom = (bus: FakeBus, id: string, since = 0) =>
   bus.sent.filter((m) => m.from === id && m.event === 'st' && m.at >= since).map((m) => m.payload);
 
-describe('SupabaseMultiplayer (p3 protocol)', () => {
+describe('SupabaseMultiplayer (p4 protocol)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
