@@ -1,0 +1,136 @@
+{
+  "base": "https://webstrafe-git-revamp-v2-yassins-projects-11732a5e.vercel.app",
+  "map": "bhop_emberdrift",
+  "checks": {
+    "join and see each other": {
+      "ok": true,
+      "detail": {
+        "ids": [
+          "p_xbgy4kt7n8cy",
+          "p_lbzut1p3nane",
+          "p_qv7avdvinciz"
+        ],
+        "seen": [
+          [
+            "bot:0",
+            "p_lbzut1p3nane",
+            "p_qv7avdvinciz"
+          ],
+          [
+            "p_xbgy4kt7n8cy",
+            "bot:0",
+            "p_qv7avdvinciz"
+          ],
+          [
+            "p_lbzut1p3nane",
+            "bot:0",
+            "p_xbgy4kt7n8cy"
+          ]
+        ]
+      }
+    },
+    "combat enabled on this build": {
+      "ok": true,
+      "detail": {
+        "weapon": "deagle"
+      }
+    },
+    "smooth remote movement": {
+      "ok": false,
+      "detail": {
+        "frozenRuns": [
+          8
+        ],
+        "truthMoved": 0.2,
+        "frames": 360,
+        "medianSpeed": 1.27,
+        "frozenPct": 2.2,
+        "jumpPct": 4.2
+      }
+    },
+    "awp line of sight": {
+      "ok": true
+    },
+    "awp kill by the shooter": {
+      "ok": true,
+      "detail": {
+        "line": "Player_706Player_968",
+        "newest": "Player_706Player_968"
+      }
+    },
+    "awp killfeed updates": {
+      "ok": true,
+      "detail": {
+        "before": 1,
+        "after": 2
+      }
+    },
+    "deagle line of sight": {
+      "ok": true
+    },
+    "deagle kill by the shooter": {
+      "ok": true,
+      "detail": {
+        "line": "Player_706Player_768",
+        "newest": "Player_706Player_768"
+      }
+    },
+    "deagle killfeed updates": {
+      "ok": true,
+      "detail": {
+        "before": 0,
+        "after": 1
+      }
+    },
+    "knife line of sight": {
+      "ok": true
+    },
+    "knife kill by the shooter": {
+      "ok": true,
+      "detail": {
+        "line": "Player_706Player_768",
+        "newest": "Player_706Player_768"
+      }
+    },
+    "knife killfeed updates": {
+      "ok": true,
+      "detail": {
+        "before": 1,
+        "after": 1
+      }
+    },
+    "scoreboard shows the players and kills": {
+      "ok": true,
+      "detail": {
+        "text": "EmberdriftBhop · 4 players · scores since you joinedPlayerKDPingAda (bot)BOT30BOTPlayer_70632--Player_76801--Player_96803--Your ping: not measured on this connection"
+      }
+    },
+    "one host elected": {
+      "ok": true,
+      "detail": {
+        "hosts": [
+          false,
+          true,
+          false
+        ]
+      }
+    },
+    "host handoff when the host tab is hidden": {
+      "ok": true,
+      "detail": {
+        "oldHost": "B",
+        "hostTab": "hidden (synthetic)",
+        "how": "visibilitychange",
+        "newHost": "C"
+      }
+    },
+    "no console errors": {
+      "ok": true
+    }
+  },
+  "errors": {
+    "A": [],
+    "B": [],
+    "C": []
+  }
+}

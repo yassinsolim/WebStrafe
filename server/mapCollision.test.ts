@@ -2,82 +2,70 @@ import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { computeBotSpawnCandidate } from './BotManager';
 import { loadHeadlessMap } from './mapCollision';
+import { groundBotSpawn } from '../src/combat/BotSpawn';
 
-// Loads the real surf map collision (public/maps/surf_skyworld_x/collision.glb) in Node.
-describe('loadHeadlessMap (real surf collision)', () => {
-  it('loads collision geometry and resolves a spawn', async () => {
-    const map = await loadHeadlessMap('surf_skyworld_x');
+const SERVER_CAPSULE = { radius: 0.42, height: 1.8 };
+const MAPS = ['surf_prismline', 'bhop_emberdrift', 'aim_ochrecut'];
+
+// Loads the shipped collision.glb + meta.json of each original map in Node.
+describe.each(MAPS)('loadHeadlessMap(%s)', (mapId) => {
+  it('loads collision geometry and seats the spawn on the ground', async () => {
+    const map = await loadHeadlessMap(mapId);
     expect(map).not.toBeNull();
     expect(map!.world.hasCollision()).toBe(true);
-    expect(Number.isFinite(map!.spawn.position.y)).toBe(true);
-  }, 30000);
-
-  it('caches: a second load returns the same instance', async () => {
-    const a = await loadHeadlessMap('surf_skyworld_x');
-    const b = await loadHeadlessMap('surf_skyworld_x');
-    expect(a).toBe(b);
-  }, 30000);
-
-  it('builds real, non-empty collision geometry', async () => {
-    const map = await loadHeadlessMap('surf_skyworld_x');
-    expect(map).not.toBeNull();
-    const mesh = map!.world.getCollisionMesh();
-    expect(mesh).not.toBeNull();
-    const position = mesh!.geometry.getAttribute('position');
-    expect(position).toBeDefined();
-    expect(position.count).toBeGreaterThan(1000);
-  }, 30000);
-
-  it('resolves a spawn inside the map bounding box', async () => {
-    const map = await loadHeadlessMap('surf_skyworld_x');
-    expect(map).not.toBeNull();
-    const mesh = map!.world.getCollisionMesh();
-    mesh!.geometry.computeBoundingBox();
-    const box = mesh!.geometry.boundingBox!;
-    const s = map!.spawn.position;
-    expect(s.x).toBeGreaterThanOrEqual(box.min.x - 1);
-    expect(s.x).toBeLessThanOrEqual(box.max.x + 1);
-    expect(s.z).toBeGreaterThanOrEqual(box.min.z - 1);
-    expect(s.z).toBeLessThanOrEqual(box.max.z + 1);
-  }, 30000);
-
-  it('matches browser scale and seats the player on collision', async () => {
-    const map = await loadHeadlessMap('surf_skyworld_x');
-    expect(map).not.toBeNull();
-    const mesh = map!.world.getCollisionMesh();
-    mesh!.geometry.computeBoundingBox();
-    expect(mesh!.geometry.boundingBox!.max.y).toBeGreaterThan(180);
-    const ground = map!.world.queryGround(
-      map!.spawn.position,
-      { radius: 0.42, height: 1.8 },
-      0.2,
-    );
+    const position = map!.world.getCollisionMesh()!.geometry.getAttribute('position');
+    expect(position.count).toBeGreaterThan(300);
+    const ground = map!.world.queryGround(map!.spawn.position, SERVER_CAPSULE, 0.2);
     expect(ground).not.toBeNull();
     expect(ground!.distance).toBeLessThan(0.1);
     expect(ground!.normal.y).toBeGreaterThan(0.9);
   }, 30000);
 
-  it('stages one bot on visible reachable ground ahead of the surf spawn', async () => {
-    const map = await loadHeadlessMap('surf_skyworld_x');
+  it('caches: a second load returns the same instance', async () => {
+    const a = await loadHeadlessMap(mapId);
+    const b = await loadHeadlessMap(mapId);
+    expect(a).toBe(b);
+  }, 30000);
+
+  it('seats every authored spawn inside the collision bounds', async () => {
+    const map = await loadHeadlessMap(mapId);
+    const mesh = map!.world.getCollisionMesh()!;
+    mesh.geometry.computeBoundingBox();
+    const box = mesh.geometry.boundingBox!;
+    expect(map!.spawns!.length).toBeGreaterThan(0);
+    for (const spawn of map!.spawns!) {
+      expect(box.containsPoint(spawn.position)).toBe(true);
+      const ground = map!.world.queryGround(spawn.position, SERVER_CAPSULE, 0.2);
+      expect(ground?.normal.y ?? 0).toBeGreaterThan(0.9);
+    }
+  }, 30000);
+});
+
+describe('loadHeadlessMap bots', () => {
+  it('stages arena bots on the far side, on the ground, facing the players', async () => {
+    const map = await loadHeadlessMap('aim_ochrecut');
     expect(map).not.toBeNull();
-    const candidate = computeBotSpawnCandidate(
-      map!.spawn.position,
-      map!.spawn.yawDeg,
-      0,
-      1,
-    );
-    const ground = map!.world.raycastGeometry(
-      candidate.clone().add(new Vector3(0, 12, 0)),
-      new Vector3(0, -1, 0),
-      64,
-    );
-    expect(ground).not.toBeNull();
-    expect(Math.abs(ground!.point.y - map!.spawn.position.y)).toBeLessThan(4);
-    expect(ground!.normal.y).toBeGreaterThan(0.9);
-    expect(map!.world.segmentIntersectsGeometry(
-      map!.spawn.position.clone().add(new Vector3(0, 1.4, 0)),
-      ground!.point.clone().add(new Vector3(0, 1.4, 0)),
-    )).toBe(false);
+    const anchor = map!.botAnchor!;
+    // side A spawns at three +z, side B at -z
+    expect(map!.spawn.position.z).toBeGreaterThan(40);
+    expect(anchor.position.z).toBeLessThan(-40);
+    for (let i = 0; i < 4; i += 1) {
+      const seat = groundBotSpawn(map!.world, computeBotSpawnCandidate(anchor.position, anchor.yawDeg, i, 4));
+      expect(Math.abs(seat.y - anchor.position.y)).toBeLessThan(0.5);
+      expect(seat.z).toBeLessThan(0);
+      const toPlayers = map!.spawn.position.clone().sub(seat).setY(0).normalize();
+      expect(toPlayers.z).toBeGreaterThan(0.9);
+    }
+  }, 30000);
+
+  it('stages bots on the start platform ahead of the spawn on run maps', async () => {
+    for (const mapId of ['surf_prismline', 'bhop_emberdrift']) {
+      const map = await loadHeadlessMap(mapId);
+      expect(map!.botAnchor!.position.distanceTo(map!.spawn.position)).toBeLessThan(1e-6);
+      const seat = groundBotSpawn(map!.world, computeBotSpawnCandidate(map!.spawn.position, map!.spawn.yawDeg, 0, 1));
+      const ground = map!.world.raycastGeometry(seat.clone().add(new Vector3(0, 2, 0)), new Vector3(0, -1, 0), 4);
+      expect(ground, `${mapId} bot seat has ground`).not.toBeNull();
+    }
   }, 30000);
 
   it('shares the authored Movement Test Scene lane, cover, and peek LOS', async () => {

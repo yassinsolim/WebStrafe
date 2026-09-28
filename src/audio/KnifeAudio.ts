@@ -1,100 +1,76 @@
+import type { Vec3Like } from './audioMath';
+import { getAudioEngine, type AudioEngine, type SfxName, type SoundHandle } from './AudioEngine';
+
 export type KnifeSwingSoundKind = 'primary' | 'secondary';
 export type KnifeSoundProfile = 'knifeGloves1' | 'knifeGloves2';
 
-interface AudioLaneConfig {
-  primary: string[];
-  secondary: string[];
+interface ProfileConfig {
   baseVolume: number;
+  /** recipe variant, shifts the whoosh pitch a little */
+  variant: number;
 }
 
-const SOUND_CONFIG: Record<KnifeSoundProfile, AudioLaneConfig> = {
-  knifeGloves1: {
-    primary: ['/audio/knife1_primary_1.ogg', '/audio/knife1_primary_2.ogg'],
-    secondary: ['/audio/knife1_secondary_1.ogg', '/audio/knife1_secondary_2.ogg'],
-    baseVolume: 0.32,
-  },
-  knifeGloves2: {
-    primary: ['/audio/knife2_primary_1.ogg', '/audio/knife2_primary_2.ogg'],
-    secondary: ['/audio/knife2_secondary_1.ogg', '/audio/knife2_secondary_2.ogg'],
-    baseVolume: 0.3,
-  },
+const PROFILE_CONFIG: Record<KnifeSoundProfile, ProfileConfig> = {
+  knifeGloves1: { baseVolume: 1, variant: 0 },
+  knifeGloves2: { baseVolume: 0.94, variant: 1 },
 };
 
-interface ProfilePool {
-  primary: HTMLAudioElement[];
-  secondary: HTMLAudioElement[];
-  primaryIndex: number;
-  secondaryIndex: number;
-}
+const SWING_SOUND: Record<KnifeSwingSoundKind, SfxName> = {
+  primary: 'knifeSwing',
+  secondary: 'knifeStab',
+};
 
+/**
+ * Knife swing whooshes, synthesized by the shared engine (no files). Primary
+ * is the quick slash, secondary the heavier stab. Profiles keep the two
+ * glove/arm sets sounding slightly different.
+ */
 export class KnifeAudio {
-  private readonly pools: Record<KnifeSoundProfile, ProfilePool>;
   private currentProfile: KnifeSoundProfile = 'knifeGloves1';
+  private readonly active = new Set<SoundHandle>();
 
-  constructor() {
-    this.pools = {
-      knifeGloves1: this.createProfilePool('knifeGloves1'),
-      knifeGloves2: this.createProfilePool('knifeGloves2'),
-    };
-  }
+  constructor(private readonly engine: AudioEngine = getAudioEngine()) {}
 
   public setProfile(profile: KnifeSoundProfile): void {
     this.currentProfile = profile;
   }
 
-  public play(kind: KnifeSwingSoundKind, volumeScale = 1, profileOverride?: KnifeSoundProfile): void {
-    const profile = profileOverride ?? this.currentProfile;
-    const pool = this.pools[profile];
-    const lane = kind === 'primary' ? 'primary' : 'secondary';
-
-    const index = lane === 'primary' ? pool.primaryIndex : pool.secondaryIndex;
-    const collection = lane === 'primary' ? pool.primary : pool.secondary;
-    const audio = collection[index % collection.length];
-
-    if (lane === 'primary') {
-      pool.primaryIndex = (index + 1) % collection.length;
-    } else {
-      pool.secondaryIndex = (index + 1) % collection.length;
+  /** `position` makes the swing positional (remote players) */
+  public play(
+    kind: KnifeSwingSoundKind,
+    volumeScale = 1,
+    profileOverride?: KnifeSoundProfile,
+    position?: Vec3Like,
+  ): void {
+    const profile = PROFILE_CONFIG[profileOverride ?? this.currentProfile];
+    const volume = Math.max(0, Math.min(1.5, profile.baseVolume * Math.max(0, volumeScale)));
+    const options = { volume, variant: profile.variant };
+    const handle = position
+      ? this.engine.playAt(SWING_SOUND[kind], position, options)
+      : this.engine.play(SWING_SOUND[kind], options);
+    if (handle) {
+      this.pruneFinished();
+      this.active.add(handle);
     }
-
-    const baseVolume = SOUND_CONFIG[profile].baseVolume;
-    const clampedVolume = Math.max(0, Math.min(1, baseVolume * Math.max(0, volumeScale)));
-    audio.volume = clampedVolume;
-    audio.currentTime = 0;
-    audio.playbackRate = 0.9 + Math.random() * 0.04;
-    void audio.play().catch(() => {
-      // Ignore autoplay/user-gesture restrictions; next user input usually succeeds.
-    });
   }
 
-
   public stopAll(): void {
-    for (const pool of Object.values(this.pools)) {
-      for (const audio of [...pool.primary, ...pool.secondary]) {
-        audio.pause();
-        audio.currentTime = 0;
-      }
+    for (const handle of this.active) {
+      handle.stop(0.03);
     }
+    this.active.clear();
   }
 
   public dispose(): void {
     this.stopAll();
   }
 
-  private createProfilePool(profile: KnifeSoundProfile): ProfilePool {
-    const config = SOUND_CONFIG[profile];
-    return {
-      primary: config.primary.map((path) => this.createAudio(path, config.baseVolume)),
-      secondary: config.secondary.map((path) => this.createAudio(path, config.baseVolume)),
-      primaryIndex: 0,
-      secondaryIndex: 0,
-    };
-  }
-
-  private createAudio(path: string, volume: number): HTMLAudioElement {
-    const audio = new Audio(path);
-    audio.preload = 'auto';
-    audio.volume = volume;
-    return audio;
+  private pruneFinished(): void {
+    const now = this.engine.currentTime();
+    for (const handle of this.active) {
+      if (handle.endTime < now) {
+        this.active.delete(handle);
+      }
+    }
   }
 }

@@ -12,6 +12,8 @@ export interface MoveInput {
   sideMove: number;
   jumpPressed: boolean;
   jumpHeld: boolean;
+  /** duck key held (left ctrl or C), missing means standing */
+  crouchHeld?: boolean;
 }
 
 export interface GroundProbe {
@@ -48,6 +50,8 @@ export interface SourceCvars {
   sv_gravity: number;
   sv_accelerate: number;
   sv_airaccelerate: number;
+  /** cap on the wishspeed air/surf accel can add along wishdir (source: 30 u/s) */
+  sv_air_max_wishspeed: number;
   sv_friction: number;
   sv_stopspeed: number;
   sv_maxspeed: number;
@@ -69,4 +73,6 @@ export interface MovementSnapshot {
   surfContactGraceTicks: number;
   yawRad: number;
   pitchRad: number;
+  /** 0 standing, 1 fully crouched. hull and eye height both follow it */
+  duckAmount: number;
 }

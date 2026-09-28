@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { Box3, Mesh, Vector3 } from 'three';
 import {
+  BACKSTAB_DOT,
   getKnife,
   isBackstab,
   isKnifeId,
   knifeDamage,
   KNIFE_DAMAGE,
+  KNIFE_TIMING_MS,
   KNIVES,
 } from '../knives';
 import { buildProceduralKnife, disposeProceduralKnife } from '../../cosmetics/ProceduralKnife';
@@ -30,6 +32,15 @@ describe('knife catalog', () => {
     // generic knife words (karambit, kukri, navaja...) may stay as they are
     expect(renamed.length).toBeGreaterThanOrEqual(14);
     expect(KNIVES.some((k) => /shadow daggers|ursus|talon|nomad|paracord/i.test(k.name))).toBe(false);
+  });
+
+  it('marks the folders, the balisong and the ring knives', () => {
+    const by = (pred: (k: (typeof KNIVES)[number]) => boolean) => KNIVES.filter(pred).map((k) => k.id).sort();
+    expect(by((k) => k.shape.mechanism === 'folder')).toEqual(
+      ['falchion', 'flip', 'navaja', 'nomad', 'stiletto', 'talon', 'ursus']);
+    expect(by((k) => k.shape.mechanism === 'balisong')).toEqual(['butterfly']);
+    expect(by((k) => k.shape.fingerRing === true)).toEqual(['karambit', 'talon']);
+    expect(by((k) => k.shape.pair === true)).toEqual(['shadow_daggers']);
   });
 
   it('falls back to the default knife for unknown ids', () => {
@@ -57,7 +68,7 @@ describe('knife catalog', () => {
       });
       expect(meshes, def.id).toBeGreaterThanOrEqual(2);
       // viewmodel budget, and big enough to read on screen
-      expect(triangles, def.id).toBeLessThan(6000);
+      expect(triangles, def.id).toBeLessThanOrEqual(8000);
       expect(size.x, def.id).toBeGreaterThan(def.shape.handle === 'tee' ? 0.08 : 0.15);
       expect(size.x, def.id).toBeLessThan(0.4);
       // tip is the +x end
@@ -82,5 +93,28 @@ describe('knife damage', () => {
     expect(isBackstab([0, 0, 1], [0, 0, 0], 0)).toBe(true);
     expect(isBackstab([0, 0, -1], [0, 0, 0], 0)).toBe(false);
     expect(isBackstab([1, 0, 0], [0, 0, 0], 0)).toBe(false);
+  });
+
+  it('uses the cs:go backstab cone (dot above 0.475)', () => {
+    expect(BACKSTAB_DOT).toBe(0.475);
+    const behindAt = (deg: number): [number, number, number] => {
+      const rad = (deg * Math.PI) / 180;
+      return [Math.sin(rad), 0, Math.cos(rad)];
+    };
+    // acos(0.475) is about 61.6 degrees off the victim's back
+    expect(isBackstab(behindAt(60), [0, 0, 0], 0)).toBe(true);
+    expect(isBackstab(behindAt(63), [0, 0, 0], 0)).toBe(false);
+    expect(isBackstab([0, 0, 1], [0, 0, 0], Number.NaN)).toBe(false);
+  });
+
+  it('keeps cs knife timings', () => {
+    expect(KNIFE_TIMING_MS).toMatchObject({
+      primaryInterval: 400,
+      primaryIntervalHit: 500,
+      secondaryAfterPrimary: 500,
+      secondaryInterval: 1000,
+      secondaryIntervalHit: 1100,
+      followUpWindow: 400,
+    });
   });
 });

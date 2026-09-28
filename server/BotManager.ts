@@ -158,6 +158,7 @@ export class BotManager {
           mapId,
           nowMs,
           toTuple(bot.controller.getVelocity()),
+          bot.controller.getYawRad(),
         );
       }
     }
@@ -295,13 +296,15 @@ export class BotManager {
       return;
     }
     const bots: Bot[] = [];
+    // arena maps stage bots around the far side's first spawn, other maps ahead of the player spawn
+    const anchor = world.botAnchor ?? world.spawn;
     for (let i = 0; i < this.botsPerMap; i += 1) {
       const id = `bot:${this.nextBotSeq++}`;
       const model: BotModel = i % 2 === 0 ? 'terrorist' : 'counterterrorist';
       const name = `${BOT_NAMES[i % BOT_NAMES.length]} (bot)`;
       const candidate = computeBotSpawnCandidate(
-        world.spawn.position,
-        world.spawn.yawDeg,
+        anchor.position,
+        anchor.yawDeg,
         i,
         this.botsPerMap,
       );

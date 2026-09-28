@@ -42,6 +42,10 @@ export interface HitEvent {
   damage: number;
   hitbox: 'body' | 'head';
   killed: boolean;
+  /** knife attack kind, on knife hits */
+  melee?: AttackKind;
+  /** knife hit from behind */
+  backstab?: boolean;
 }
 
 export interface DeathEvent {
@@ -109,13 +113,22 @@ export interface MultiplayerTransport {
   /** Called every fixed sim tick; the transport decides which ticks to send. */
   sendState(state: OutgoingState): void;
   sendAttack(kind: AttackKind): void;
+  /**
+   * `melee` marks a knife swing (primary slash or secondary stab). Omitted for
+   * guns; authorities that predate it treat a knife fire as a slash.
+   */
   sendFire(
     origin: [number, number, number],
     dir: [number, number, number],
     view?: FireView | number,
+    melee?: AttackKind,
   ): void;
   sendReload(): void;
   sendEquip(weaponId: string): void;
   /** Provides (or clears) the host-simulation context for the active map. */
   setRoomContext(context: RoomContext | null): void;
+  /** Smoothed round trip to the authority in ms, null when not measured. */
+  getPingMs?(): number | null;
+  /** peer-hosted transports: whether this client runs the host simulation */
+  isHosting?(): boolean;
 }

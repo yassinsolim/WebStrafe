@@ -169,10 +169,12 @@ function runAirStrafe(): number {
   const world = new SimWorld('none');
   const baseline = new MovementController();
   const strafing = new MovementController();
+  // moving along the view with D and turning right with it. D along the velocity
+  // gains nothing under the 30 u/s air cap, so that's not a strafe to measure.
   baseline.reset(new Vector3(0, 10, 0), 0);
   strafing.reset(new Vector3(0, 10, 0), 0);
-  baseline.setVelocity(new Vector3(6, 0, 0));
-  strafing.setVelocity(new Vector3(6, 0, 0));
+  baseline.setVelocity(new Vector3(0, 0, -6));
+  strafing.setVelocity(new Vector3(0, 0, -6));
 
   for (let i = 0; i < 150; i += 1) {
     tick(baseline, world, {
@@ -182,7 +184,7 @@ function runAirStrafe(): number {
       jumpPressed: false,
     });
 
-    strafing.applyLookDelta(-3, 0, 1);
+    strafing.applyLookDelta(3, 0, 1);
     tick(strafing, world, {
       forwardMove: 0,
       sideMove: 1,

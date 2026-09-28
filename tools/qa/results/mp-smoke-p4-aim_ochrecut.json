@@ -1,0 +1,134 @@
+{
+  "base": "https://webstrafe-git-revamp-v2-yassins-projects-11732a5e.vercel.app",
+  "map": "aim_ochrecut",
+  "checks": {
+    "join and see each other": {
+      "ok": true,
+      "detail": {
+        "ids": [
+          "p_hgklu9j1xqn4",
+          "p_z8f76cnyxspb",
+          "p_ev9573t0xuk0"
+        ],
+        "seen": [
+          [
+            "bot:0",
+            "p_z8f76cnyxspb",
+            "p_ev9573t0xuk0"
+          ],
+          [
+            "p_hgklu9j1xqn4",
+            "bot:0",
+            "p_ev9573t0xuk0"
+          ],
+          [
+            "p_hgklu9j1xqn4",
+            "bot:0",
+            "p_z8f76cnyxspb"
+          ]
+        ]
+      }
+    },
+    "combat enabled on this build": {
+      "ok": true,
+      "detail": {
+        "weapon": "deagle"
+      }
+    },
+    "smooth remote movement": {
+      "ok": true,
+      "detail": {
+        "frozenRuns": [],
+        "truthMoved": 20.3,
+        "frames": 363,
+        "medianSpeed": 9.15,
+        "frozenPct": 0,
+        "jumpPct": 0
+      }
+    },
+    "awp line of sight": {
+      "ok": true
+    },
+    "awp kill by the shooter": {
+      "ok": true,
+      "detail": {
+        "line": "Player_987Player_242",
+        "newest": "Ada (bot)Player_262"
+      }
+    },
+    "awp killfeed updates": {
+      "ok": true,
+      "detail": {
+        "before": 0,
+        "after": 2
+      }
+    },
+    "deagle line of sight": {
+      "ok": true
+    },
+    "deagle kill by the shooter": {
+      "ok": true,
+      "detail": {
+        "line": "Player_242Player_262",
+        "newest": "Player_242Player_262"
+      }
+    },
+    "deagle killfeed updates": {
+      "ok": true,
+      "detail": {
+        "before": 0,
+        "after": 1
+      }
+    },
+    "knife line of sight": {
+      "ok": true
+    },
+    "knife kill by the shooter": {
+      "ok": true,
+      "detail": {
+        "line": "Player_987Player_262",
+        "newest": "Player_987Player_262"
+      }
+    },
+    "knife killfeed updates": {
+      "ok": true,
+      "detail": {
+        "before": 0,
+        "after": 1
+      }
+    },
+    "scoreboard shows the players and kills": {
+      "ok": true,
+      "detail": {
+        "text": "Ochre CutAim · 4 players · scores since you joinedPlayerKDPingPlayer_98730--Ada (bot)BOT10BOTPlayer_24202--Player_26202--Your ping: not measured on this connection"
+      }
+    },
+    "one host elected": {
+      "ok": true,
+      "detail": {
+        "hosts": [
+          true,
+          false,
+          false
+        ]
+      }
+    },
+    "host handoff when the host tab is hidden": {
+      "ok": true,
+      "detail": {
+        "oldHost": "A",
+        "hostTab": "hidden (synthetic)",
+        "how": "visibilitychange",
+        "newHost": "C"
+      }
+    },
+    "no console errors": {
+      "ok": true
+    }
+  },
+  "errors": {
+    "A": [],
+    "B": [],
+    "C": []
+  }
+}

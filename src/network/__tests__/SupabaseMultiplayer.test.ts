@@ -139,7 +139,7 @@ const arenaOf = (p: SupabaseMultiplayer) => (p as any).hostSim.arena;
 const statesFrom = (bus: FakeBus, id: string, since = 0) =>
   bus.sent.filter((m) => m.from === id && m.event === 'st' && m.at >= since).map((m) => m.payload);
 
-describe('SupabaseMultiplayer (p3 protocol)', () => {
+describe('SupabaseMultiplayer (p4 protocol)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
@@ -178,6 +178,47 @@ describe('SupabaseMultiplayer (p3 protocol)', () => {
     expect(bot?.clock).toBe('p_a');
     expect(typeof bot?.t).toBe('number');
     expect(hostRow?.clock).toBe('p_a');
+    host.disconnect();
+    guest.disconnect();
+  });
+
+  it('resolves a guest knife stab on the host and reports it with weaponId knife', () => {
+    const bus = new FakeBus();
+    const host = makePeer(bus, 'p_a');
+    const guest = makePeer(bus, 'p_b');
+    const guestHits: unknown[] = [];
+    const guestDeaths: unknown[] = [];
+    guest.onHit = (e) => guestHits.push(e);
+    guest.onDeath = (e) => guestDeaths.push(e);
+    for (const p of [host, guest]) {
+      p.join('map1', 'Player', 'terrorist');
+      p.setRoomContext({
+        collisionWorld: new CollisionWorld(),
+        spawn: { position: new Vector3(0, 0, 0), yawDeg: 0 },
+        botCount: 0,
+      });
+      p.setCombatReady(true);
+    }
+    // host stands 1.1 m ahead of the guest, facing away from it
+    const step = 1000 / 128;
+    for (let t = 0; t < 4200; t += step) {
+      vi.advanceTimersByTime(step);
+      const now = Date.now();
+      host.sendState({ position: [0, 0, -1.1], velocity: [0, 0, 0], yaw: 0, pitch: 0, t: now });
+      guest.sendState({ position: [0, 0, 0], velocity: [0, 0, 0], yaw: 0, pitch: 0, t: now });
+    }
+    guest.sendFire([0, 1.6, 0], [0, 0, -1], undefined, 'secondary');
+    vi.advanceTimersByTime(50);
+
+    expect(guestHits).toContainEqual(expect.objectContaining({
+      shooterId: 'p_b',
+      targetId: 'p_a',
+      weaponId: 'knife',
+      melee: 'secondary',
+      backstab: true,
+      killed: true,
+    }));
+    expect(guestDeaths).toContainEqual({ victimId: 'p_a', killerId: 'p_b', weaponId: 'knife', headshot: false });
     host.disconnect();
     guest.disconnect();
   });

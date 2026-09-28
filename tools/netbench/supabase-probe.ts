@@ -169,7 +169,7 @@ function report(ep: Endpoint, expected: Record<string, number>): Record<string, 
 }
 
 async function presenceMode(): Promise<void> {
-  const maps = ['surf_skyworld_x', 'movement_test_scene', 'training_straight', 'training_switchback'];
+  const maps = ['surf_prismline', 'bhop_emberdrift', 'aim_ochrecut', 'movement_test_scene'];
   const client = makeClient();
   for (const map of maps) {
     const channel = client.channel(`webstrafe_room_v1_${map}`);

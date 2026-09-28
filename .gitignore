@@ -41,3 +41,8 @@ data/leaderboard.json
 public/config/webstrafe.config.json
 .vercel
 .env*.local
+
+# blender scratch output
+*.blend1
+__pycache__/
+/.blender-tmp/

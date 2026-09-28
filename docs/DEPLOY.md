@@ -43,7 +43,7 @@ and create a `CNAME strafe → cname.vercel-dns.com` on `yassin.app`.
 
 ## 3. Verify
 
-Open `https://strafe.yassin.app`, set a username, pick **surf_skyworld_x**, Play.
+Open `https://strafe.yassin.app`, set a username, pick **Prismline**, Play.
 Single-player surf works immediately; open a second tab/device to see the other
 player, and with combat on you'll see bots (run by whichever tab is host) surf
 and shoot. Submit a run to confirm the leaderboard writes to Supabase.

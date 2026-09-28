@@ -3,8 +3,10 @@ import {
   CylinderGeometry,
   DataTexture,
   DoubleSide,
+  Group,
   Mesh,
   MeshBasicMaterial,
+  NormalBlending,
   Object3D,
   Quaternion,
   RGBAFormat,
@@ -14,7 +16,8 @@ import {
   SpriteMaterial,
   Vector3,
 } from 'three';
-import type { GunId } from '../cosmetics/WeaponViewmodels';
+import type { FirearmId as GunId } from './FirearmTiming';
+import { ImpactDecals } from './ImpactDecals';
 
 export interface ShotEffectRequest {
   weaponId: GunId;
@@ -22,11 +25,96 @@ export interface ShotEffectRequest {
   to: Vector3;
   nowMs: number;
   impactNormal?: Vector3;
+  /**
+   * What `to` landed on: world geometry gets a bullet hole and a dust puff, a
+   * server-confirmed player endpoint a blood puff (with `impactEffects` on).
+   */
+  impactKind?: 'world' | 'player';
   /** Remote effects receive a modest readability boost at world distance. */
   remote?: boolean;
   /** Causative kill cue persists through the delayed death presentation. */
   fatal?: boolean;
 }
+
+export interface CombatEffectsOptions {
+  /** bullet holes, dust and blood puffs; off keeps bare instances to tracers, flashes and rings */
+  impactEffects?: boolean;
+  /**
+   * Real muzzle socket of the local first-person gun, in the space of the
+   * viewmodel layer's world (the layer passed as `localMuzzleParent`). Null
+   * falls back to the fixed camera-space anchors.
+   */
+  getLocalMuzzleWorldPosition?: (weapon: GunId) => Vector3 | null;
+  /** random source for decal spin and particles */
+  random?: () => number;
+}
+
+/** bullet hole size per weapon, metres (visual choice, .50 AE and .338 read larger than life) */
+export const DECAL_SIZE_M: Readonly<Record<GunId, number>> = {
+  deagle: 0.07,
+  awp: 0.09,
+};
+
+interface PuffStyle {
+  count: number;
+  color: number;
+  opacity: number;
+  additive: boolean;
+  startSize: number;
+  endSize: number;
+  minSpeed: number;
+  maxSpeed: number;
+  /** 0 = along the given direction only, 1 = anywhere in the hemisphere */
+  scatter: number;
+  gravity: number;
+  drag: number;
+  lifetimeMs: number;
+}
+
+const DUST_PUFF: PuffStyle = {
+  count: 5,
+  color: 0xb6a891,
+  opacity: 0.5,
+  additive: false,
+  startSize: 0.05,
+  endSize: 0.24,
+  minSpeed: 0.6,
+  maxSpeed: 1.6,
+  scatter: 0.55,
+  gravity: -0.6,
+  drag: 3.2,
+  lifetimeMs: 480,
+};
+
+const IMPACT_SPARKS: PuffStyle = {
+  count: 3,
+  color: 0xffd08a,
+  opacity: 0.95,
+  additive: true,
+  startSize: 0.03,
+  endSize: 0.012,
+  minSpeed: 2.5,
+  maxSpeed: 5,
+  scatter: 0.8,
+  gravity: -9,
+  drag: 1.5,
+  lifetimeMs: 160,
+};
+
+const BLOOD_PUFF: PuffStyle = {
+  count: 6,
+  color: 0x8e0f0f,
+  opacity: 0.8,
+  additive: false,
+  startSize: 0.05,
+  endSize: 0.17,
+  minSpeed: 0.5,
+  maxSpeed: 2.2,
+  scatter: 0.45,
+  gravity: -6,
+  drag: 2.5,
+  lifetimeMs: 420,
+};
 
 interface ShotEffectProfile {
   tracerColor: number;
@@ -138,17 +226,47 @@ function createFlashTexture(): DataTexture {
   return texture;
 }
 
+/** soft round particle, used by dust and blood */
+function createPuffTexture(): DataTexture {
+  const size = 16;
+  const pixels = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const dx = ((x + 0.5) / size) * 2 - 1;
+      const dy = ((y + 0.5) / size) * 2 - 1;
+      const falloff = Math.max(0, 1 - Math.hypot(dx, dy));
+      const offset = (y * size + x) * 4;
+      pixels[offset] = 255;
+      pixels[offset + 1] = 255;
+      pixels[offset + 2] = 255;
+      pixels[offset + 3] = Math.round(falloff ** 1.6 * 255);
+    }
+  }
+  const texture = new DataTexture(pixels, size, size, RGBAFormat);
+  texture.needsUpdate = true;
+  return texture;
+}
+
 /** Weapon-authored world feedback with deterministic expiry and disposal. */
 
 export class CombatEffects {
   private readonly active: ActiveEffect[] = [];
 
   private readonly flashTexture = createFlashTexture();
+  private puffTexture: DataTexture | null = null;
+  private readonly decals: ImpactDecals | null;
+  private readonly random: () => number;
 
   constructor(
     private readonly scene: Scene,
     private readonly localMuzzleParent: Object3D | null = null,
-  ) {}
+    private readonly options: CombatEffectsOptions = {},
+  ) {
+    this.random = options.random ?? Math.random;
+    this.decals = options.impactEffects
+      ? new ImpactDecals(scene, { random: this.random })
+      : null;
+  }
 
   public spawnShot(request: ShotEffectRequest): void {
     const profile = SHOT_EFFECT_PROFILES[request.weaponId];
@@ -164,6 +282,115 @@ export class CombatEffects {
     if (request.impactNormal) {
       this.spawnImpact(request, profile);
     }
+    if (!this.options.impactEffects) {
+      return;
+    }
+    if (request.impactKind === 'world' && request.impactNormal) {
+      this.spawnBulletHole(request.to, request.impactNormal, request.weaponId, request.nowMs);
+      this.spawnDust(request.to, request.impactNormal, request.nowMs);
+    } else if (request.impactKind === 'player') {
+      this.spawnBlood(request.to, direction, request.nowMs);
+    }
+  }
+
+  /** pooled bullet hole on world geometry (needs `impactEffects`) */
+  public spawnBulletHole(point: Vector3, normal: Vector3, weaponId: GunId, nowMs: number): void {
+    this.decals?.spawn(point, normal, DECAL_SIZE_M[weaponId], nowMs);
+  }
+
+  /** short dust and spark puff where a round hit the world */
+  public spawnDust(point: Vector3, normal: Vector3, nowMs: number): void {
+    this.spawnPuff('impact-dust', DUST_PUFF, point, normal, nowMs);
+    this.spawnPuff('impact-sparks', IMPACT_SPARKS, point, normal, nowMs);
+  }
+
+  /**
+   * Blood puff at a server-confirmed player hit. `direction` is the incoming
+   * shot; most of the spray carries on through, a little comes back out.
+   */
+  public spawnBlood(point: Vector3, direction: Vector3, nowMs: number): void {
+    if (direction.lengthSq() < 1e-10) {
+      return;
+    }
+    const through = direction.clone().normalize();
+    this.spawnPuff('blood', BLOOD_PUFF, point, through, nowMs);
+    this.spawnPuff('blood', { ...BLOOD_PUFF, count: 2, maxSpeed: 1 }, point, through.clone().negate(), nowMs);
+  }
+
+  /** removes every bullet hole (map changes); transient effects are untouched */
+  public clearDecals(): void {
+    this.decals?.clear();
+  }
+
+  public getDecalCount(): number {
+    return this.decals?.getActiveCount() ?? 0;
+  }
+
+  private spawnPuff(
+    effectType: string,
+    style: PuffStyle,
+    point: Vector3,
+    direction: Vector3,
+    nowMs: number,
+  ): void {
+    if (!Number.isFinite(point.x + point.y + point.z) || direction.lengthSq() < 1e-10) {
+      return;
+    }
+    this.puffTexture ??= createPuffTexture();
+    const axis = direction.clone().normalize();
+    const group = new Group();
+    group.userData.effectType = effectType;
+    group.position.copy(point).addScaledVector(axis, 0.02);
+    const materials: SpriteMaterial[] = [];
+    const particles: Array<{ sprite: Sprite; velocity: Vector3 }> = [];
+    for (let i = 0; i < style.count; i += 1) {
+      const material = new SpriteMaterial({
+        color: style.color,
+        map: this.puffTexture,
+        transparent: true,
+        opacity: style.opacity,
+        blending: style.additive ? AdditiveBlending : NormalBlending,
+        depthWrite: false,
+        depthTest: true,
+      });
+      material.rotation = this.random() * Math.PI * 2;
+      const sprite = new Sprite(material);
+      sprite.scale.setScalar(style.startSize);
+      sprite.frustumCulled = false;
+      sprite.renderOrder = 3;
+      const spray = randomUnit(this.random).multiplyScalar(style.scatter).add(axis).normalize();
+      const speed = style.minSpeed + (style.maxSpeed - style.minSpeed) * this.random();
+      particles.push({ sprite, velocity: spray.multiplyScalar(speed) });
+      materials.push(material);
+      group.add(sprite);
+    }
+    this.scene.add(group);
+    this.active.push({
+      object: group,
+      parent: this.scene,
+      bornMs: nowMs,
+      lifetimeMs: style.lifetimeMs,
+      baseOpacity: style.opacity,
+      holdRatio: 0.15,
+      fadePower: 1.3,
+      remote: false,
+      setOpacity: (opacity, ageMs) => {
+        const t = ageMs / 1000;
+        // closed-form drag and gravity so the puff is frame-rate independent
+        const travel = (1 - Math.exp(-style.drag * t)) / style.drag;
+        const growth = Math.min(1, ageMs / style.lifetimeMs);
+        for (let i = 0; i < particles.length; i += 1) {
+          const { sprite, velocity } = particles[i];
+          sprite.position.copy(velocity).multiplyScalar(travel);
+          sprite.position.y += 0.5 * style.gravity * t * t;
+          sprite.scale.setScalar(style.startSize + (style.endSize - style.startSize) * growth);
+          materials[i].opacity = opacity;
+        }
+      },
+      dispose: () => {
+        for (const material of materials) material.dispose();
+      },
+    });
   }
 
   private spawnTracer(
@@ -309,8 +536,19 @@ export class CombatEffects {
     const forwardOffset = request.remote ? 0.32 : 0.22;
     const overlayParent = request.remote ? null : this.localMuzzleParent;
     const parent = overlayParent ?? this.scene;
+    const socket = request.remote
+      ? null
+      : this.options.getLocalMuzzleWorldPosition?.(request.weaponId) ?? null;
+    const validSocket = socket && Number.isFinite(socket.x + socket.y + socket.z) ? socket : null;
     if (overlayParent) {
-      sprite.position.set(...LOCAL_MUZZLE_ANCHORS[request.weaponId]);
+      if (validSocket) {
+        overlayParent.updateWorldMatrix(true, false);
+        sprite.position.copy(overlayParent.worldToLocal(validSocket.clone()));
+      } else {
+        sprite.position.set(...LOCAL_MUZZLE_ANCHORS[request.weaponId]);
+      }
+    } else if (validSocket) {
+      sprite.position.copy(validSocket);
     } else {
       sprite.position.copy(request.from).addScaledVector(direction, forwardOffset);
     }
@@ -470,6 +708,7 @@ export class CombatEffects {
   }
 
   public update(nowMs: number): void {
+    this.decals?.update(nowMs);
     for (let i = this.active.length - 1; i >= 0; i -= 1) {
       const effect = this.active[i];
       if (nowMs < effect.bornMs) {
@@ -534,6 +773,17 @@ export class CombatEffects {
 
   public dispose(): void {
     this.clear();
+    this.decals?.dispose();
     this.flashTexture.dispose();
+    this.puffTexture?.dispose();
+    this.puffTexture = null;
   }
+}
+
+/** uniform direction on the unit sphere */
+function randomUnit(random: () => number): Vector3 {
+  const z = random() * 2 - 1;
+  const theta = random() * Math.PI * 2;
+  const ring = Math.sqrt(Math.max(0, 1 - z * z));
+  return new Vector3(ring * Math.cos(theta), ring * Math.sin(theta), z);
 }

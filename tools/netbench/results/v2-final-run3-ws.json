@@ -1,0 +1,306 @@
+[
+  {
+    "scenario": "lan",
+    "observer": {
+      "label": "observer",
+      "role": "observer",
+      "disconnects": 0,
+      "snapshots": {
+        "hz": 31.4,
+        "gapP50": 33.3,
+        "gapP99": 35.8,
+        "gapMax": 36.8,
+        "serverDeltaP50": 33,
+        "serverDeltaP99": 36
+      },
+      "presentation": {
+        "errorP50m": 1.198,
+        "errorP95m": 1.223,
+        "errorMaxm": 1.249,
+        "speedErrP50": 0.015,
+        "speedErrP95": 0.063,
+        "frozenPct": 0,
+        "jumpPct": 0
+      },
+      "combat": {
+        "shotsSent": 10,
+        "shotsAccepted": 10,
+        "hits": 10,
+        "hitRatePct": 100,
+        "aimVsTruthP50m": 1.198
+      },
+      "measuredSecs": 20
+    },
+    "movers": [
+      {
+        "label": "mover_a",
+        "role": "mover",
+        "disconnects": 0,
+        "snapshots": {
+          "hz": 31.4,
+          "gapP50": 33.3,
+          "gapP99": 35.6,
+          "gapMax": 36.4,
+          "serverDeltaP50": 33,
+          "serverDeltaP99": 36
+        },
+        "measuredSecs": 20
+      },
+      {
+        "label": "mover_b",
+        "role": "mover",
+        "disconnects": 0,
+        "snapshots": {
+          "hz": 31.4,
+          "gapP50": 33.3,
+          "gapP99": 35.7,
+          "gapMax": 36.4,
+          "serverDeltaP50": 33,
+          "serverDeltaP99": 36
+        },
+        "measuredSecs": 20
+      }
+    ],
+    "profile": {
+      "delayMs": 0,
+      "jitterMs": 0,
+      "loss": 0,
+      "rtoMs": 0
+    },
+    "bandwidth": {
+      "observerDownKBps": 21.26,
+      "observerDownMsgsPerSec": 33.9,
+      "moverUpKBps": 3.28,
+      "moverUpMsgsPerSec": 30.7,
+      "avgDownMsgBytes": 643
+    }
+  },
+  {
+    "scenario": "rtt60",
+    "observer": {
+      "label": "observer",
+      "role": "observer",
+      "disconnects": 0,
+      "snapshots": {
+        "hz": 31.4,
+        "gapP50": 33.4,
+        "gapP99": 36.2,
+        "gapMax": 36.6,
+        "serverDeltaP50": 33,
+        "serverDeltaP99": 36
+      },
+      "presentation": {
+        "errorP50m": 2.103,
+        "errorP95m": 2.131,
+        "errorMaxm": 2.16,
+        "speedErrP50": 0.016,
+        "speedErrP95": 0.06,
+        "frozenPct": 0,
+        "jumpPct": 0
+      },
+      "combat": {
+        "shotsSent": 11,
+        "shotsAccepted": 11,
+        "hits": 11,
+        "hitRatePct": 100,
+        "aimVsTruthP50m": 2.105
+      },
+      "measuredSecs": 20
+    },
+    "movers": [
+      {
+        "label": "mover_a",
+        "role": "mover",
+        "disconnects": 0,
+        "snapshots": {
+          "hz": 31.4,
+          "gapP50": 33.4,
+          "gapP99": 36.2,
+          "gapMax": 36.6,
+          "serverDeltaP50": 33,
+          "serverDeltaP99": 36
+        },
+        "measuredSecs": 20
+      },
+      {
+        "label": "mover_b",
+        "role": "mover",
+        "disconnects": 0,
+        "snapshots": {
+          "hz": 31.4,
+          "gapP50": 33.4,
+          "gapP99": 36.2,
+          "gapMax": 36.6,
+          "serverDeltaP50": 33,
+          "serverDeltaP99": 36
+        },
+        "measuredSecs": 20
+      }
+    ],
+    "profile": {
+      "delayMs": 30,
+      "jitterMs": 0,
+      "loss": 0,
+      "rtoMs": 0
+    },
+    "bandwidth": {
+      "observerDownKBps": 21.32,
+      "observerDownMsgsPerSec": 34,
+      "moverUpKBps": 3.27,
+      "moverUpMsgsPerSec": 30.6,
+      "avgDownMsgBytes": 643
+    }
+  },
+  {
+    "scenario": "rtt60_jitter_loss",
+    "observer": {
+      "label": "observer",
+      "role": "observer",
+      "disconnects": 0,
+      "snapshots": {
+        "hz": 31.4,
+        "gapP50": 31.3,
+        "gapP99": 236.1,
+        "gapMax": 255.4,
+        "serverDeltaP50": 33,
+        "serverDeltaP99": 36
+      },
+      "presentation": {
+        "errorP50m": 2.731,
+        "errorP95m": 4.232,
+        "errorMaxm": 4.929,
+        "speedErrP50": 0.07,
+        "speedErrP95": 0.148,
+        "frozenPct": 0,
+        "jumpPct": 0
+      },
+      "combat": {
+        "shotsSent": 11,
+        "shotsAccepted": 10,
+        "hits": 10,
+        "hitRatePct": 100,
+        "aimVsTruthP50m": 2.88
+      },
+      "measuredSecs": 20
+    },
+    "movers": [
+      {
+        "label": "mover_a",
+        "role": "mover",
+        "disconnects": 0,
+        "snapshots": {
+          "hz": 31.1,
+          "gapP50": 31.5,
+          "gapP99": 228.6,
+          "gapMax": 259.7,
+          "serverDeltaP50": 33,
+          "serverDeltaP99": 36
+        },
+        "measuredSecs": 20
+      },
+      {
+        "label": "mover_b",
+        "role": "mover",
+        "disconnects": 0,
+        "snapshots": {
+          "hz": 31.4,
+          "gapP50": 31.6,
+          "gapP99": 223.7,
+          "gapMax": 262.4,
+          "serverDeltaP50": 33,
+          "serverDeltaP99": 36
+        },
+        "measuredSecs": 20
+      }
+    ],
+    "profile": {
+      "delayMs": 30,
+      "jitterMs": 15,
+      "loss": 0.02,
+      "rtoMs": 200
+    },
+    "bandwidth": {
+      "observerDownKBps": 21.66,
+      "observerDownMsgsPerSec": 33.8,
+      "moverUpKBps": 3.27,
+      "moverUpMsgsPerSec": 30.6,
+      "avgDownMsgBytes": 655
+    }
+  },
+  {
+    "scenario": "rtt150_jitter_loss",
+    "observer": {
+      "label": "observer",
+      "role": "observer",
+      "disconnects": 0,
+      "snapshots": {
+        "hz": 31.3,
+        "gapP50": 31.6,
+        "gapP99": 262.1,
+        "gapMax": 368.2,
+        "serverDeltaP50": 33,
+        "serverDeltaP99": 36
+      },
+      "presentation": {
+        "errorP50m": 4.368,
+        "errorP95m": 5.979,
+        "errorMaxm": 7.567,
+        "speedErrP50": 0.081,
+        "speedErrP95": 0.161,
+        "frozenPct": 0.5,
+        "jumpPct": 0
+      },
+      "combat": {
+        "shotsSent": 10,
+        "shotsAccepted": 10,
+        "hits": 10,
+        "hitRatePct": 100,
+        "aimVsTruthP50m": 4.154
+      },
+      "measuredSecs": 20
+    },
+    "movers": [
+      {
+        "label": "mover_a",
+        "role": "mover",
+        "disconnects": 0,
+        "snapshots": {
+          "hz": 31.2,
+          "gapP50": 32.5,
+          "gapP99": 70.8,
+          "gapMax": 361.4,
+          "serverDeltaP50": 33,
+          "serverDeltaP99": 36
+        },
+        "measuredSecs": 20
+      },
+      {
+        "label": "mover_b",
+        "role": "mover",
+        "disconnects": 0,
+        "snapshots": {
+          "hz": 31.1,
+          "gapP50": 31.1,
+          "gapP99": 313.7,
+          "gapMax": 348.6,
+          "serverDeltaP50": 33,
+          "serverDeltaP99": 36
+        },
+        "measuredSecs": 20
+      }
+    ],
+    "profile": {
+      "delayMs": 75,
+      "jitterMs": 20,
+      "loss": 0.01,
+      "rtoMs": 300
+    },
+    "bandwidth": {
+      "observerDownKBps": 21.67,
+      "observerDownMsgsPerSec": 33.8,
+      "moverUpKBps": 3.27,
+      "moverUpMsgsPerSec": 30.6,
+      "avgDownMsgBytes": 656
+    }
+  }
+]

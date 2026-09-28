@@ -1,12 +1,13 @@
 import { MathUtils, Vector3 } from 'three';
-import { defaultCvars } from './cvars';
+import { defaultCvars, sanitizeMapCvars, type MapCvarResult } from './cvars';
+import { StrafeStatsTracker, type StrafeStats } from './StrafeStats';
 import {
   accelerate,
+  airAccelerate,
   applyFriction,
   clampHorizontalSpeed,
   clipVelocity,
   horizontalLength,
-  projectDirectionOnPlane,
 } from './MovementMath';
 import type { CapsuleShape, GroundProbe, MoveInput, MovementDebugState, MovementMode, MovementSnapshot, SourceCvars } from './types';
 import type { CollisionAdapter } from '../world/CollisionWorld';
@@ -17,6 +18,8 @@ const WALKABLE_MAX_ANGLE_DEG = 40;
 const GROUND_PROBE_DIST = 0.18;
 const SURF_PROBE_DIST = 0.55;
 const GROUND_SNAP_DIST = 0.08;
+// feet closer than this to the probed floor are touching it
+const GROUND_CONTACT_EPS = 0.01;
 const MAX_BUMPS = 4;
 const MAX_PLANES = 4;
 const PLANE_SIMILARITY_EPS = 0.99;
@@ -24,14 +27,27 @@ const SURF_CONTACT_GRACE_TICKS = 20;
 const SURF_EDGE_GROUND_OVERRIDE_MIN_ANGLE_DEG = 1;
 const SURF_EDGE_OVERRIDE_MIN_SPEED = 1.2;
 const SURF_EDGE_LAUNCH_MIN_SPEED = 5;
+const CROUCH_HEIGHT = 1.32;
+const CROUCH_EYE_HEIGHT = 1.12;
+// seconds for a full duck or unduck on the ground
+const DUCK_TIME = 0.12;
+// source's duck speed crop, ground only
+const DUCK_SPEED_SCALE = 0.34;
+// the stand-up check starts this far off the floor so touching it doesn't count
+const UNDUCK_CLEARANCE = 0.01;
 
 export class MovementController {
+  /** standing hull, what spawn checks use. the live hull shrinks while crouched */
   public readonly capsule: CapsuleShape = {
     height: 1.76,
     radius: 0.34,
   };
 
+  /** standing eye height, see getEyeHeight() for the live one */
   public readonly eyeHeight = 1.6;
+
+  private readonly hull: CapsuleShape = { ...this.capsule };
+  private duckAmount = 0;
 
   private readonly cvars: SourceCvars = { ...defaultCvars };
   private readonly position = new Vector3(0, 4, 0); // feet
@@ -40,6 +56,10 @@ export class MovementController {
   private surfContactGraceTicks = 0;
   private yawRad = 0;
   private pitchRad = 0;
+
+  // hud only, tick() never reads these for the simulation
+  private readonly strafeStats = new StrafeStatsTracker();
+  private statsYawRad = 0;
 
   private readonly debugState: MovementDebugState = {
     speed: 0,
@@ -76,6 +96,17 @@ export class MovementController {
     Object.assign(this.cvars, next);
   }
 
+  /**
+   * per-map physics: resets every cvar to its default, then applies the map's
+   * overrides that pass validation (known name, right type, inside
+   * mapCvarRules). anything else is skipped and listed in `rejected`.
+   */
+  public applyMapCvars(overrides: Partial<SourceCvars> | undefined): MapCvarResult {
+    const result = sanitizeMapCvars(overrides);
+    Object.assign(this.cvars, defaultCvars, result.applied);
+    return result;
+  }
+
   /** Everything tick() reads from the previous tick, for rollback and replay. */
   public captureState(): MovementSnapshot {
     return {
@@ -85,6 +116,7 @@ export class MovementController {
       surfContactGraceTicks: this.surfContactGraceTicks,
       yawRad: this.yawRad,
       pitchRad: this.pitchRad,
+      duckAmount: this.duckAmount,
     };
   }
 
@@ -95,6 +127,8 @@ export class MovementController {
     this.surfContactGraceTicks = state.surfContactGraceTicks;
     this.yawRad = state.yawRad;
     this.pitchRad = state.pitchRad;
+    this.setDuckAmount(state.duckAmount);
+    this.statsYawRad = state.yawRad;
   }
 
   /** Sets view angles directly (replaying a recorded input). */
@@ -110,6 +144,9 @@ export class MovementController {
     this.surfContactNormal.set(0, 1, 0);
     this.yawRad = MathUtils.degToRad(yawDeg);
     this.pitchRad = 0;
+    this.setDuckAmount(0);
+    this.strafeStats.reset();
+    this.statsYawRad = this.yawRad;
   }
 
   public applyLookDelta(deltaX: number, deltaY: number, sensitivity: number): void {
@@ -121,9 +158,13 @@ export class MovementController {
   }
 
   public tick(dt: number, input: MoveInput, world: CollisionAdapter): void {
+    const speedBefore = horizontalLength(this.velocity);
     const wish = this.computeWish(input);
-    let groundProbe = world.queryGround(this.position, this.capsule, GROUND_PROBE_DIST);
+    let groundProbe = world.queryGround(this.position, this.hull, GROUND_PROBE_DIST);
     let mode = this.pickMode(groundProbe);
+    if (mode === 'ground' && groundProbe && this.isOffGround(groundProbe)) {
+      mode = 'air';
+    }
     let activeSurfNormal = this.getSurfNormalFromProbe(groundProbe);
     const walkableAngle = this.getWalkableAngleDeg();
     const hasWalkableProbe = groundProbe !== null && groundProbe.slopeAngleDeg <= walkableAngle;
@@ -151,18 +192,28 @@ export class MovementController {
     if (preserveLaunchFromSurf) {
       mode = 'air';
     }
+    if (mode === 'ground' && groundProbe && groundProbe.distance > GROUND_CONTACT_EPS) {
+      // ground mode skips gravity, so the feet go onto the floor the probe found
+      // or they'd hover there (walking off a step)
+      this.position.copy(groundProbe.position);
+    }
     let frictionApplied = false;
     let contactPoint = groundProbe?.position.clone() ?? null;
 
     const jumpRequested =
       this.cvars.sv_bhop_enabled && (input.jumpPressed || (this.cvars.sv_autobhop_enabled && input.jumpHeld));
+    // autobhop is for landing hops. on a surf ramp only a fresh press jumps, holding
+    // it would re-apply the impulse on every tick the ramp is still under you
+    const surfJump = mode === 'surf' && this.cvars.sv_bhop_enabled && input.jumpPressed;
     let jumped = false;
 
-    if ((mode === 'ground' || mode === 'surf') && jumpRequested) {
+    if ((mode === 'ground' && jumpRequested) || surfJump) {
       this.velocity.y = this.cvars.sv_jump_impulse;
       mode = 'air';
       jumped = true;
     }
+    const accelMode = mode;
+    this.updateDuck(dt, input.crouchHeld === true, mode === 'ground', world);
 
     switch (mode) {
       case 'ground':
@@ -170,7 +221,11 @@ export class MovementController {
           this.applyGroundFriction(dt);
           frictionApplied = true;
         }
-        this.accelerateGround(wish.wishDir, wish.wishSpeed, dt);
+        this.accelerateGround(
+          wish.wishDir,
+          wish.wishSpeed * MathUtils.lerp(1, DUCK_SPEED_SCALE, this.duckAmount),
+          dt,
+        );
         if (this.velocity.y < 0) {
           this.velocity.y = 0;
         }
@@ -178,14 +233,11 @@ export class MovementController {
       case 'surf':
         if (activeSurfNormal) {
           const rampNormal = activeSurfNormal.clone().normalize();
-          this.velocity.copy(clipVelocity(this.velocity, rampNormal, this.cvars.overbounce));
+          this.clipIntoPlane(rampNormal);
           this.removeIntoRamp(rampNormal);
 
-          const surfWish = projectDirectionOnPlane(wish.wishDir, rampNormal);
-          if (surfWish.lengthSq() > 0) {
-            this.velocity.copy(
-              accelerate(this.velocity, surfWish, wish.wishSpeed, this.cvars.sv_airaccelerate, dt),
-            );
+          if (wish.wishDir.lengthSq() > 0) {
+            this.velocity.copy(this.airAccelerate(wish.wishDir, wish.wishSpeed, dt));
           }
           this.removeIntoRamp(rampNormal);
 
@@ -198,9 +250,7 @@ export class MovementController {
       case 'air':
       default:
         if (wish.wishDir.lengthSq() > 0) {
-          this.velocity.copy(
-            accelerate(this.velocity, wish.wishDir, wish.wishSpeed, this.cvars.sv_airaccelerate, dt),
-          );
+          this.velocity.copy(this.airAccelerate(wish.wishDir, wish.wishSpeed, dt));
         }
         break;
     }
@@ -216,7 +266,7 @@ export class MovementController {
     const dropWarnRatio = 0.5;
     let collisionDropWarn = collisionSpeedBefore > 0.2 && collisionSpeedAfter < collisionSpeedBefore * dropWarnRatio;
 
-    groundProbe = world.queryGround(this.position, this.capsule, GROUND_PROBE_DIST);
+    groundProbe = world.queryGround(this.position, this.hull, GROUND_PROBE_DIST);
     contactPoint = groundProbe?.position.clone() ?? contactPoint;
     const surfFromProbe = this.getSurfNormalFromProbe(groundProbe);
     const surfFromCollision = slideResult.surfCollisionNormal
@@ -233,7 +283,7 @@ export class MovementController {
     if (surfNormal) {
       this.surfContactNormal.copy(surfNormal);
       this.surfContactGraceTicks = SURF_CONTACT_GRACE_TICKS;
-      this.velocity.copy(clipVelocity(this.velocity, surfNormal, this.cvars.overbounce));
+      this.clipIntoPlane(surfNormal);
       this.removeIntoRamp(surfNormal);
       this.recoverSurfEdgeSpeed(preSlideVelocity, surfNormal, collisionSpeedBefore);
       collisionSpeedAfter = this.velocity.length();
@@ -274,14 +324,28 @@ export class MovementController {
       && this.velocity.y <= 0.9;
 
     const walkable = this.isWalkable(groundProbe);
-    if (!preserveRampLaunch && !jumped && walkable && groundProbe && groundProbe.distance <= GROUND_SNAP_DIST) {
+    const risingInAir = mode === 'air' && this.velocity.y > 0;
+    let snappedToGround = false;
+    if (
+      !preserveRampLaunch
+      && !jumped
+      && !risingInAir
+      && walkable
+      && groundProbe
+      && groundProbe.distance <= GROUND_SNAP_DIST
+    ) {
       this.position.copy(groundProbe.position);
       if (this.velocity.y < 0) {
         this.velocity.y = 0;
       }
+      snappedToGround = true;
     }
 
     mode = this.pickMode(groundProbe);
+    // the probe ran before the snap, so after one the feet are on the floor whatever vy says
+    if (mode === 'ground' && groundProbe && !snappedToGround && this.isOffGround(groundProbe)) {
+      mode = 'air';
+    }
     if (preserveRampLaunch && mode === 'ground') {
       mode = 'air';
     }
@@ -301,6 +365,28 @@ export class MovementController {
       collisionDropWarn,
       lastNormal,
     );
+
+    // yaw can come from applyLookDelta or setView, so diff against last tick's yaw
+    const yawDelta = this.yawRad - this.statsYawRad;
+    this.statsYawRad = this.yawRad;
+    this.strafeStats.record({
+      mode: accelMode,
+      jumped,
+      speedBefore,
+      speedAfter: horizontalLength(this.velocity),
+      yawDelta: Math.atan2(Math.sin(yawDelta), Math.cos(yawDelta)),
+      sideMove: input.sideMove,
+    });
+  }
+
+  /**
+   * per-jump strafe stats for the hud, see StrafeStats / JumpStats for the
+   * exact shape and definitions. returns a fresh plain object every call.
+   * presentation only: nothing here feeds back into the simulation, and ticks
+   * replayed after a rollback get counted again.
+   */
+  public getStrafeStats(): StrafeStats {
+    return this.strafeStats.getStats();
   }
 
   public getFeetPosition(): Vector3 {
@@ -319,8 +405,18 @@ export class MovementController {
     this.position.copy(position);
   }
 
+  /** live eye height above the feet, blends down to 1.12 m while crouched */
+  public getEyeHeight(): number {
+    return MathUtils.lerp(this.eyeHeight, CROUCH_EYE_HEIGHT, this.duckAmount);
+  }
+
+  /** 0 standing, 1 fully crouched */
+  public getDuckAmount(): number {
+    return this.duckAmount;
+  }
+
   public getCameraPosition(): Vector3 {
-    return this.position.clone().addScaledVector(UP, this.eyeHeight);
+    return this.position.clone().addScaledVector(UP, this.getEyeHeight());
   }
 
   public getYawRad(): number {
@@ -376,6 +472,62 @@ export class MovementController {
     );
   }
 
+  // source-style ducking. on the ground the hull and eye blend over DUCK_TIME with
+  // the feet planted. off the ground it's instant and the feet move instead so the
+  // head stays put, which is why ducking mid-jump clears higher ledges. standing
+  // back up only happens where the standing hull fits.
+  private updateDuck(dt: number, crouchHeld: boolean, onGround: boolean, world: CollisionAdapter): void {
+    const target = crouchHeld ? 1 : 0;
+    if (this.duckAmount === target) {
+      return;
+    }
+
+    if (!onGround) {
+      const feet = this.position.clone();
+      feet.y += this.hull.height - this.hullHeightAt(target);
+      if (target < this.duckAmount && !this.hullFits(feet, this.hullHeightAt(target), world)) {
+        return;
+      }
+      this.position.copy(feet);
+      this.setDuckAmount(target);
+      return;
+    }
+
+    const step = dt / DUCK_TIME;
+    const next = target > this.duckAmount
+      ? Math.min(target, this.duckAmount + step)
+      : Math.max(target, this.duckAmount - step);
+    if (next < this.duckAmount && !this.hullFits(this.position, this.hullHeightAt(next), world)) {
+      return;
+    }
+    this.setDuckAmount(next);
+  }
+
+  private hullFits(feet: Vector3, height: number, world: CollisionAdapter): boolean {
+    const start = feet.clone().addScaledVector(UP, UNDUCK_CLEARANCE);
+    return !world.resolveCapsulePosition(start, { radius: this.hull.radius, height }).collided;
+  }
+
+  private hullHeightAt(duckAmount: number): number {
+    return MathUtils.lerp(this.capsule.height, CROUCH_HEIGHT, duckAmount);
+  }
+
+  private setDuckAmount(duckAmount: number): void {
+    this.duckAmount = duckAmount;
+    this.hull.height = this.hullHeightAt(duckAmount);
+  }
+
+  private airAccelerate(wishDir: Vector3, wishSpeed: number, dt: number): Vector3 {
+    return airAccelerate(
+      this.velocity,
+      wishDir,
+      wishSpeed,
+      this.cvars.sv_airaccelerate,
+      dt,
+      this.cvars.sv_air_max_wishspeed,
+    );
+  }
+
   private accelerateGround(wishDir: Vector3, wishSpeed: number, dt: number): void {
     if (wishSpeed <= 0 || wishDir.lengthSq() <= 0) {
       return;
@@ -403,6 +555,19 @@ export class MovementController {
       groundProbe.distance <= GROUND_PROBE_DIST &&
       groundProbe.slopeAngleDeg <= walkableAngle
     );
+  }
+
+  // the probe reaches GROUND_PROBE_DIST under the feet so walking stays glued to
+  // slopes, but someone rising off the floor (a jump, a launch) or still falling
+  // toward it from further than the snap distance hasn't landed yet
+  private isOffGround(groundProbe: GroundProbe): boolean {
+    if (groundProbe.distance <= GROUND_CONTACT_EPS) {
+      return false;
+    }
+    if (this.velocity.y > 0) {
+      return true;
+    }
+    return this.velocity.y < 0 && groundProbe.distance > GROUND_SNAP_DIST;
   }
 
   private isSurfSlope(groundProbe: GroundProbe | null): boolean {
@@ -435,7 +600,7 @@ export class MovementController {
       }
 
       const end = this.position.clone().addScaledVector(this.velocity, remainingTime);
-      const trace = world.traceCapsule(this.position, end, this.capsule);
+      const trace = world.traceCapsule(this.position, end, this.hull);
       this.position.copy(trace.position);
 
       if (!trace.hit) {
@@ -509,7 +674,7 @@ export class MovementController {
           }
 
           // Small depenetration bias away from the lip keeps controller from re-hitting the exact edge.
-          this.position.addScaledVector(hitNormal, this.capsule.radius * 0.06);
+          this.position.addScaledVector(hitNormal, this.hull.radius * 0.06);
         }
 
         const fraction = MathUtils.clamp(trace.fraction, 0, 1);
@@ -596,7 +761,7 @@ export class MovementController {
       }
     }
 
-    const resolved = world.resolveCapsulePosition(this.position, this.capsule);
+    const resolved = world.resolveCapsulePosition(this.position, this.hull);
     this.position.copy(resolved.position);
     if (resolved.collided) {
       lastCollisionNormal = resolved.normal.clone();
@@ -604,7 +769,7 @@ export class MovementController {
 
     if (surfingTick) {
       const normal = surfNormal ?? resolved.normal;
-      this.velocity.copy(clipVelocity(this.velocity, normal, this.cvars.overbounce));
+      this.clipIntoPlane(normal);
       this.removeIntoRamp(normal);
     }
 
@@ -638,7 +803,7 @@ export class MovementController {
 
     this.debugState.speed = horizontalLength(this.velocity);
     this.debugState.feetPosition.copy(this.position);
-    this.debugState.cameraPosition.copy(this.position).addScaledVector(UP, this.eyeHeight);
+    this.debugState.cameraPosition.copy(this.position).addScaledVector(UP, this.getEyeHeight());
     this.debugState.velocity.copy(this.velocity);
     this.debugState.grounded = mode === 'ground';
     this.debugState.surfing = mode === 'surf';
@@ -658,6 +823,17 @@ export class MovementController {
       Math.acos(MathUtils.clamp(lastCollisionNormal.dot(UP), -1, 1)),
     );
     this.debugState.recommendedStrafe = recommendedStrafe;
+  }
+
+  /**
+   * only clip against a surf plane when moving into it. rolling off a convex ramp
+   * end reports contact normals that lean forward, and clipping against those
+   * while moving away eats forward speed.
+   */
+  private clipIntoPlane(normal: Vector3): void {
+    if (this.velocity.dot(normal) < 0) {
+      this.velocity.copy(clipVelocity(this.velocity, normal, this.cvars.overbounce));
+    }
   }
 
   private removeIntoRamp(normal: Vector3): void {

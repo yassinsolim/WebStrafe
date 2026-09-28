@@ -21,9 +21,12 @@ import { RESPAWN_DELAY_MS } from '../combat/CombatState';
 const SESSION_KEY = 'webstrafe:session-id:v1';
 /**
  * Wire protocol version, part of the channel name so clients running the old
- * message format never share a room with this one.
+ * message format never share a room with this one. p4 (v2): knife swings are
+ * flagged melee with the cs knife damage table and backstabs, hits carry
+ * melee/backstab, and fires carry the shooter's weapon. a p3 host would resolve
+ * those differently, so p3 and p4 tabs must never share a room.
  */
-export const SUPABASE_PROTOCOL = 'p3';
+export const SUPABASE_PROTOCOL = 'p4';
 const PLAYER_STALE_MS = 8000;
 /** idle/paused clients only need to prove they are still here */
 const KEEPALIVE_MS = 1000;
@@ -311,6 +314,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     origin: [number, number, number],
     dir: [number, number, number],
     view?: FireView | number,
+    melee?: AttackKind,
   ): void {
     const fireView: FireView = typeof view === 'number' ? { observedAtMs: view } : view ?? {};
     const shooterT = this.localState?.t ?? this.now();
@@ -318,7 +322,9 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       this.hostSim.applyFire(this.localId, origin, dir, fireView.observedAtMs, {
         targetTimes: fireView.targets,
         shooterTimeMs: shooterT,
-      });
+        attackTimeMs: Date.now(),
+        weapon: this.localWeapon ?? undefined,
+      }, melee);
       this.flushCombat();
       return;
     }
@@ -328,6 +334,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       dir,
       targets: fireView.targets,
       t: shooterT,
+      ...(this.localWeapon ? { w: this.localWeapon } : {}),
+      ...(melee ? { melee } : {}),
     });
   }
 
@@ -643,7 +651,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (Array.isArray(p.s) && p.s.length === 8 && (record.t === null || p.t > record.t)) {
       record.state = unpack(p.s);
       record.t = p.t;
-      this.hostSim?.recordHumanSample(p.id, record.state.position, p.t, record.state.velocity);
+      this.hostSim?.recordHumanSample(
+        p.id,
+        record.state.position,
+        p.t,
+        record.state.velocity,
+        record.state.yaw,
+      );
     }
 
     if (Array.isArray(p.b) && p.id === this.electedHostId() && !this.hostSim) {
@@ -710,12 +724,19 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       dir?: [number, number, number];
       targets?: Record<string, number>;
       t?: number;
+      w?: unknown;
+      melee?: unknown;
     };
+    const melee = p.melee === undefined ? undefined : parseMelee(p.melee);
+    if (melee === null) {
+      return;
+    }
     if (this.hostSim && p.id && p.origin && p.dir) {
       this.hostSim.applyFire(p.id, p.origin, p.dir, undefined, {
         targetTimes: sanitizeTargets(p.targets),
         shooterTimeMs: Number.isFinite(p.t) ? p.t : undefined,
-      });
+        weapon: typeof p.w === 'string' ? p.w : undefined,
+      }, melee);
       this.flushCombat();
     }
   }
@@ -883,6 +904,11 @@ function unpack(s: Packed): OutgoingState {
     yaw: s[6],
     pitch: s[7],
   };
+}
+
+/** a malformed melee field drops the whole fire instead of guessing */
+function parseMelee(value: unknown): AttackKind | null {
+  return value === 'primary' || value === 'secondary' ? value : null;
 }
 
 function sanitizeTargets(value: unknown): Record<string, number> | undefined {

@@ -46,48 +46,12 @@
   "knives": [
     {
       "id": "real_knife_viewmodel",
-      "name": "Imported Knife Viewmodel",
-      "author": "DJMaesen",
-      "license": "Creative Commons Attribution",
-      "source": "knife animated by DJMaesen",
-      "modelPath": "/viewmodels/knife/knife.glb",
-      "animationClips": [
-        "allanims"
-      ],
-      "defaultAttackClip": "allanims",
+      "name": "Terrorist kit",
+      "author": "WebStrafe Team",
+      "license": "Original work",
+      "source": "Original v2 arms rig",
+      "modelPath": "/viewmodels/v2/arms.glb",
       "includesHands": true,
-      "animationBehavior": {
-        "attackRangeSelection": "random",
-        "sourceClip": "allanims",
-        "equipRange": {
-          "startSec": 4.2,
-          "endSec": 4.5
-        },
-        "idleLoopRange": {
-          "startSec": 0,
-          "endSec": 1.35
-        },
-        "mouse1Ranges": [
-          {
-            "startSec": 1.35,
-            "endSec": 2.01
-          },
-          {
-            "startSec": 2.03,
-            "endSec": 2.67
-          }
-        ],
-        "mouse2Ranges": [
-          {
-            "startSec": 2.67,
-            "endSec": 3.34
-          },
-          {
-            "startSec": 3.35,
-            "endSec": 4
-          }
-        ]
-      },
       "variants": [
         {
           "id": "default",
@@ -97,43 +61,12 @@
     },
     {
       "id": "knife_animated_viewmodel",
-      "name": "Knife Animated",
-      "author": "DJMaesen",
-      "license": "Creative Commons Attribution",
-      "source": "knife animated by DJMaesen",
-      "modelPath": "/viewmodels/knife/knife_animated.glb",
-      "animationClips": [
-        "anims"
-      ],
-      "defaultAttackClip": "anims",
+      "name": "Counter-Terrorist kit",
+      "author": "WebStrafe Team",
+      "license": "Original work",
+      "source": "Original v2 arms rig",
+      "modelPath": "/viewmodels/v2/arms.glb",
       "includesHands": true,
-      "animationBehavior": {
-        "sourceClip": "anims",
-        "idleLoopRange": {
-          "startSec": 0,
-          "endSec": 1
-        },
-        "mouse1Ranges": [
-          {
-            "startSec": 1.4,
-            "endSec": 1.95
-          },
-          {
-            "startSec": 1.95,
-            "endSec": 2.5
-          }
-        ],
-        "mouse2Ranges": [
-          {
-            "startSec": 2.5,
-            "endSec": 3.325
-          },
-          {
-            "startSec": 3.325,
-            "endSec": 4.15
-          }
-        ]
-      },
       "variants": [
         {
           "id": "default",

@@ -1,8 +1,15 @@
 import type { CosmeticsManifest, LoadoutSelection } from '../cosmetics/types';
-import { KNIVES, type KnifeId } from '../combat/knives';
+import type { KnifeId } from '../combat/knives';
 import type { MapManifestEntry } from '../world/types';
 import type { GameSettings } from './SettingsStore';
 import { CharacterPreview } from './CharacterPreview';
+import { formatRunTime } from './hud/hudMath';
+import { CreditsPanel } from './menu/CreditsPanel';
+import { LoadoutPanel } from './menu/LoadoutPanel';
+import { attachMenuSounds } from './menu/menuSounds';
+import { MAP_TYPE_LABEL, mapTypeFromId } from './menu/menuInfo';
+import { PlayPanel } from './menu/PlayPanel';
+import { SettingsPanel } from './menu/SettingsPanel';
 
 interface MainMenuCallbacks {
   onPlay: (mapId: string) => void;
@@ -22,7 +29,7 @@ interface LoadoutPreset {
   selection: LoadoutSelection;
 }
 
-type TabId = 'maps' | 'character' | 'knives' | 'settings' | 'ranks';
+type TabId = 'play' | 'loadout' | 'character' | 'settings' | 'leaderboard' | 'credits';
 type TeamId = 'terrorist' | 'counterterrorist';
 
 const TEAM_LABEL: Record<TeamId, string> = {
@@ -30,24 +37,30 @@ const TEAM_LABEL: Record<TeamId, string> = {
   counterterrorist: 'Counter-Terrorist',
 };
 
+const TAB_DEFS: ReadonlyArray<[TabId, string]> = [
+  ['play', 'Play'],
+  ['loadout', 'Loadout'],
+  ['character', 'Character'],
+  ['settings', 'Settings'],
+  ['leaderboard', 'Leaderboard'],
+  ['credits', 'Credits'],
+];
+
 export class MainMenu {
   private readonly root: HTMLDivElement;
   private readonly nameInput: HTMLInputElement;
+  private readonly playMapLabel: HTMLSpanElement;
 
-  private readonly mapGrid: HTMLDivElement;
-  private readonly mapInfo: HTMLDivElement;
+  private readonly playPanel: PlayPanel;
+  private readonly loadoutPanel: LoadoutPanel;
+  private readonly settingsPanel: SettingsPanel;
+  private readonly creditsPanel: CreditsPanel;
   private readonly teamGrid: HTMLDivElement;
   private readonly leaderboardInfo: HTMLDivElement;
   private readonly leaderboardList: HTMLOListElement;
   private readonly stageName: HTMLDivElement;
   private readonly stageTeam: HTMLDivElement;
-
-  private readonly mouseSensitivityInput: HTMLInputElement;
-  private readonly worldFovInput: HTMLInputElement;
-  private readonly viewmodelFovInput: HTMLInputElement;
-  private readonly viewmodelScaleInput: HTMLInputElement;
-  private readonly autoBhopToggle: HTMLInputElement;
-  private readonly showHudToggle: HTMLInputElement;
+  private readonly detachSounds: () => void;
 
   private readonly tabs = new Map<TabId, HTMLButtonElement>();
   private readonly sections = new Map<TabId, HTMLElement>();
@@ -56,8 +69,6 @@ export class MainMenu {
   private selectedMapId = '';
   private settings: GameSettings;
   private loadoutPresets: LoadoutPreset[] = [];
-  private readonly knifeGrid: HTMLDivElement;
-  private selectedKnifeId: KnifeId | null = null;
   private activeTeam: TeamId = 'terrorist';
   private preview: CharacterPreview | null = null;
 
@@ -91,7 +102,7 @@ export class MainMenu {
     identity.className = 'menu-identity';
     const identityTag = document.createElement('span');
     identityTag.className = 'menu-identity-tag';
-    identityTag.textContent = 'OPERATOR';
+    identityTag.textContent = 'PLAYER';
     this.nameInput = document.createElement('input');
     this.nameInput.type = 'text';
     this.nameInput.className = 'menu-name-input';
@@ -112,12 +123,20 @@ export class MainMenu {
     const actions = document.createElement('div');
     actions.className = 'menu-actions';
     const playButton = document.createElement('button');
+    playButton.type = 'button';
     playButton.className = 'menu-play-btn';
-    playButton.innerHTML = '<span class="menu-play-glyph">▶</span> PLAY';
+    playButton.dataset.sfx = 'confirm';
+    const playLabel = document.createElement('span');
+    playLabel.className = 'menu-play-label';
+    playLabel.innerHTML = '<span class="menu-play-glyph">▶</span> PLAY';
+    this.playMapLabel = document.createElement('span');
+    this.playMapLabel.className = 'menu-play-map';
+    playButton.append(playLabel, this.playMapLabel);
     playButton.addEventListener('click', () => this.callbacks.onPlay(this.selectedMapId));
     const restartButton = document.createElement('button');
+    restartButton.type = 'button';
     restartButton.className = 'menu-restart-btn';
-    restartButton.textContent = 'RESTART RUN';
+    restartButton.textContent = 'Restart run';
     restartButton.addEventListener('click', () => this.callbacks.onReloadMap());
     actions.append(playButton, restartButton);
     left.appendChild(actions);
@@ -125,17 +144,13 @@ export class MainMenu {
     // Nav tabs ---------------------------------------------------------------
     const nav = document.createElement('nav');
     nav.className = 'menu-nav';
-    const tabDefs: Array<[TabId, string]> = [
-      ['maps', 'Maps'],
-      ['character', 'Character'],
-      ['knives', 'Knives'],
-      ['settings', 'Settings'],
-      ['ranks', 'Ranks'],
-    ];
-    for (const [id, label] of tabDefs) {
+    nav.setAttribute('role', 'tablist');
+    for (const [id, label] of TAB_DEFS) {
       const tab = document.createElement('button');
+      tab.type = 'button';
       tab.className = 'menu-tab';
       tab.textContent = label;
+      tab.setAttribute('role', 'tab');
       tab.addEventListener('click', () => this.setActiveTab(id));
       this.tabs.set(id, tab);
       nav.appendChild(tab);
@@ -147,13 +162,26 @@ export class MainMenu {
     panels.className = 'menu-panels';
     left.appendChild(panels);
 
-    const mapsSection = this.makeSection('maps');
-    this.mapGrid = document.createElement('div');
-    this.mapGrid.className = 'menu-map-grid';
-    this.mapInfo = document.createElement('div');
-    this.mapInfo.className = 'menu-map-info';
-    mapsSection.append(this.mapGrid, this.mapInfo);
-    panels.appendChild(mapsSection);
+    const playSection = this.makeSection('play');
+    this.playPanel = new PlayPanel(playSection, {
+      onSelect: (mapId) => {
+        this.selectedMapId = mapId;
+        this.refreshPlayLabel();
+        this.callbacks.onMapSelected(mapId);
+      },
+      onPlay: (mapId) => {
+        this.selectedMapId = mapId;
+        this.refreshPlayLabel();
+        this.callbacks.onPlay(mapId);
+      },
+    });
+    panels.appendChild(playSection);
+
+    const loadoutSection = this.makeSection('loadout');
+    this.loadoutPanel = new LoadoutPanel(loadoutSection, {
+      onKnifeSelected: (knifeId) => this.callbacks.onKnifeSelected?.(knifeId),
+    });
+    panels.appendChild(loadoutSection);
 
     const characterSection = this.makeSection('character');
     const teamHeading = document.createElement('p');
@@ -164,43 +192,45 @@ export class MainMenu {
     characterSection.append(teamHeading, this.teamGrid);
     panels.appendChild(characterSection);
 
-    const knivesSection = this.makeSection('knives');
-    const knifeHint = document.createElement('p');
-    knifeHint.className = 'menu-section-hint';
-    knifeHint.textContent = 'Pick your blade';
-    this.knifeGrid = document.createElement('div');
-    this.knifeGrid.className = 'menu-map-grid menu-knife-grid';
-    knivesSection.append(knifeHint, this.knifeGrid);
-    panels.appendChild(knivesSection);
-    this.renderKnifeCards();
-
     const settingsSection = this.makeSection('settings');
-    this.mouseSensitivityInput = this.makeRangeControl(settingsSection, 'Mouse Sensitivity', 0.1, 4, 0.05, this.settings.mouseSensitivity);
-    this.worldFovInput = this.makeRangeControl(settingsSection, 'World FOV', 70, 130, 1, this.settings.worldFov);
-    this.viewmodelFovInput = this.makeRangeControl(settingsSection, 'Viewmodel FOV', 45, 110, 1, this.settings.viewmodelFov);
-    this.viewmodelScaleInput = this.makeRangeControl(settingsSection, 'Viewmodel Scale', 0.25, 3, 0.05, this.settings.viewmodelScale);
-    this.autoBhopToggle = this.makeToggleControl(settingsSection, 'Auto-bhop', this.settings.autoBhop);
-    this.showHudToggle = this.makeToggleControl(settingsSection, 'Show HUD', this.settings.showHud);
-    this.attachSettingsListeners();
+    this.settingsPanel = new SettingsPanel(settingsSection, this.settings, {
+      onChange: (next) => {
+        this.settings = next;
+        this.callbacks.onSettingsChanged(next);
+      },
+    });
     panels.appendChild(settingsSection);
 
-    const ranksSection = this.makeSection('ranks');
+    const leaderboardSection = this.makeSection('leaderboard');
     this.leaderboardInfo = document.createElement('div');
     this.leaderboardInfo.className = 'menu-map-info';
     this.leaderboardInfo.textContent = 'Top runs for selected map';
     this.leaderboardList = document.createElement('ol');
     this.leaderboardList.className = 'menu-leaderboard';
-    ranksSection.append(this.leaderboardInfo, this.leaderboardList);
-    panels.appendChild(ranksSection);
+    leaderboardSection.append(this.leaderboardInfo, this.leaderboardList);
+    panels.appendChild(leaderboardSection);
+
+    const creditsSection = this.makeSection('credits');
+    this.creditsPanel = new CreditsPanel(creditsSection);
+    panels.appendChild(creditsSection);
 
     // Footer -----------------------------------------------------------------
     const footer = document.createElement('div');
     footer.className = 'menu-foot';
     const help = document.createElement('p');
     help.className = 'menu-help';
-    help.textContent = 'WASD + Mouse · Space jump · 1 AWP · 2 Deagle · 3 Knife · R reload · Esc menu';
+    help.innerHTML = [
+      '<kbd>WASD</kbd> move',
+      '<kbd>Space</kbd> jump',
+      '<kbd>1</kbd> AWP',
+      '<kbd>2</kbd> Deagle',
+      '<kbd>3</kbd> Knife',
+      '<kbd>R</kbd> reload',
+      '<kbd>Tab</kbd> scores',
+      '<kbd>F3</kbd> debug',
+      '<kbd>Esc</kbd> menu',
+    ].join('<span class="menu-help-sep"></span>');
     footer.appendChild(help);
-    footer.appendChild(this.buildCredits());
     left.appendChild(footer);
 
     // Character stage --------------------------------------------------------
@@ -223,10 +253,11 @@ export class MainMenu {
     try {
       this.preview = new CharacterPreview(stageMount);
     } catch {
-      this.preview = null; // WebGL unavailable — menu still works, just no 3D
+      this.preview = null; // WebGL unavailable, menu still works, just no 3D
     }
 
-    this.setActiveTab('maps');
+    this.detachSounds = attachMenuSounds(this.root);
+    this.setActiveTab('play');
     parent.appendChild(this.root);
   }
 
@@ -248,8 +279,9 @@ export class MainMenu {
   public setMaps(entries: MapManifestEntry[], selectedMapId: string): void {
     this.maps = entries;
     this.selectedMapId = selectedMapId;
-    this.renderMapCards();
-    this.refreshMapInfo();
+    this.playPanel.setMaps(entries, selectedMapId);
+    this.creditsPanel.setMaps(entries);
+    this.refreshPlayLabel();
   }
 
   public setCosmetics(manifest: CosmeticsManifest, selection: LoadoutSelection): void {
@@ -264,12 +296,7 @@ export class MainMenu {
 
   public updateSettings(settings: GameSettings): void {
     this.settings = { ...settings };
-    this.mouseSensitivityInput.value = settings.mouseSensitivity.toString();
-    this.worldFovInput.value = settings.worldFov.toString();
-    this.viewmodelFovInput.value = settings.viewmodelFov.toString();
-    this.viewmodelScaleInput.value = settings.viewmodelScale.toString();
-    this.autoBhopToggle.checked = settings.autoBhop;
-    this.showHudToggle.checked = settings.showHud;
+    this.settingsPanel.update(settings);
   }
 
   public setLeaderboard(entries: Array<{ name: string; timeMs: number; model: string }>, mapName: string): void {
@@ -278,12 +305,15 @@ export class MainMenu {
     if (entries.length === 0) {
       const empty = document.createElement('li');
       empty.className = 'menu-leaderboard-empty';
-      empty.textContent = 'No runs submitted yet';
+      empty.textContent = 'No runs yet. Finish the map to set the first time.';
       this.leaderboardList.appendChild(empty);
       return;
     }
     entries.slice(0, 10).forEach((entry, index) => {
       const line = document.createElement('li');
+      if (index < 3) {
+        line.classList.add(`is-top-${index + 1}`);
+      }
       const rank = document.createElement('span');
       rank.className = 'lb-rank';
       rank.textContent = String(index + 1).padStart(2, '0');
@@ -292,13 +322,15 @@ export class MainMenu {
       who.textContent = entry.name;
       const time = document.createElement('span');
       time.className = 'lb-time';
-      time.textContent = `${(entry.timeMs / 1000).toFixed(3)}s`;
+      time.textContent = formatRunTime(entry.timeMs);
       line.append(rank, who, time);
       this.leaderboardList.appendChild(line);
     });
   }
 
   public dispose(): void {
+    this.detachSounds();
+    this.settingsPanel.dispose();
     this.preview?.dispose();
     this.preview = null;
   }
@@ -312,6 +344,7 @@ export class MainMenu {
   private makeSection(id: TabId): HTMLElement {
     const section = document.createElement('section');
     section.className = 'menu-section';
+    section.dataset.tab = id;
     this.sections.set(id, section);
     return section;
   }
@@ -319,72 +352,24 @@ export class MainMenu {
   private setActiveTab(id: TabId): void {
     for (const [tabId, tab] of this.tabs) {
       tab.classList.toggle('is-active', tabId === id);
+      tab.setAttribute('aria-selected', String(tabId === id));
     }
     for (const [sectionId, section] of this.sections) {
       section.classList.toggle('is-active', sectionId === id);
     }
+    this.root.dataset.tab = id;
   }
 
   /** Reflects the stored knife choice without firing the callback. */
   public setSelectedKnife(knifeId: KnifeId | null): void {
-    this.selectedKnifeId = knifeId;
-    this.renderKnifeCards();
+    this.loadoutPanel.setSelectedKnife(knifeId);
   }
 
-  private renderKnifeCards(): void {
-    this.knifeGrid.innerHTML = '';
-    const entries: Array<{ id: KnifeId | null; name: string; detail: string }> = [
-      ...KNIVES.map((k) => ({ id: k.id, name: k.name, detail: k.referenceType })),
-      { id: null, name: 'Legacy Knife', detail: 'original imported model' },
-    ];
-    for (const entry of entries) {
-      const card = document.createElement('button');
-      card.className = 'menu-map-card';
-      card.classList.toggle('is-selected', entry.id === this.selectedKnifeId);
-      const name = document.createElement('span');
-      name.className = 'menu-map-name';
-      name.textContent = entry.name;
-      const detail = document.createElement('span');
-      detail.className = 'menu-map-author';
-      detail.textContent = entry.detail;
-      card.append(name, detail);
-      card.addEventListener('click', () => {
-        this.selectedKnifeId = entry.id;
-        this.renderKnifeCards();
-        this.callbacks.onKnifeSelected?.(entry.id);
-      });
-      this.knifeGrid.appendChild(card);
-    }
-  }
-
-  private renderMapCards(): void {
-    this.mapGrid.innerHTML = '';
-    for (const map of this.maps) {
-      const card = document.createElement('button');
-      card.className = 'menu-map-card';
-      card.classList.toggle('is-selected', map.id === this.selectedMapId);
-      const name = document.createElement('span');
-      name.className = 'menu-map-name';
-      name.textContent = map.name;
-      const author = document.createElement('span');
-      author.className = 'menu-map-author';
-      author.textContent = map.author;
-      card.append(name, author);
-      card.addEventListener('click', () => {
-        this.selectedMapId = map.id;
-        this.renderMapCards();
-        this.refreshMapInfo();
-        this.callbacks.onMapSelected(map.id);
-      });
-      this.mapGrid.appendChild(card);
-    }
-  }
-
-  private refreshMapInfo(): void {
+  private refreshPlayLabel(): void {
     const selected = this.maps.find((map) => map.id === this.selectedMapId);
-    this.mapInfo.textContent = selected
-      ? `${selected.source} · ${selected.license}`
-      : 'No map selected';
+    this.playMapLabel.textContent = selected
+      ? `${selected.name} · ${MAP_TYPE_LABEL[mapTypeFromId(selected.id)]}`
+      : 'Pick a map';
   }
 
   private renderTeamCards(): void {
@@ -419,98 +404,6 @@ export class MainMenu {
         this.callbacks.onLoadoutChanged({ ...preset.selection });
       }
     }
-  }
-
-  private buildCredits(): HTMLDetailsElement {
-    const details = document.createElement('details');
-    details.className = 'menu-credits';
-    const summary = document.createElement('summary');
-    summary.textContent = 'Credits & licenses';
-    details.appendChild(summary);
-    const lines = [
-      'Knife animated by DJMaesen — CC Attribution.',
-      'Player models and knives: original, generated in code.',
-      '"Desert Eagle | First Person Animations" rig by 1Matzh — CC Attribution.',
-      '"AWP with Anims" rig by Addison Ye (sketchfab.com/redethox) — CC Attribution.',
-    ];
-    for (const text of lines) {
-      const p = document.createElement('p');
-      p.className = 'menu-credit';
-      p.textContent = text;
-      details.appendChild(p);
-    }
-    return details;
-  }
-
-  private makeRangeControl(
-    parent: HTMLElement,
-    label: string,
-    min: number,
-    max: number,
-    step: number,
-    value: number,
-  ): HTMLInputElement {
-    const input = document.createElement('input');
-    input.type = 'range';
-    input.min = `${min}`;
-    input.max = `${max}`;
-    input.step = `${step}`;
-    input.value = `${value}`;
-
-    const field = document.createElement('div');
-    field.className = 'menu-field menu-field-range';
-    const labelEl = document.createElement('span');
-    labelEl.className = 'menu-field-label';
-    labelEl.textContent = label;
-    const readout = document.createElement('span');
-    readout.className = 'menu-field-value';
-    readout.textContent = value.toFixed(step >= 1 ? 0 : 2);
-    field.append(labelEl, readout, input);
-    input.addEventListener('input', () => {
-      readout.textContent = Number(input.value).toFixed(step >= 1 ? 0 : 2);
-    });
-    parent.appendChild(field);
-    return input;
-  }
-
-  private makeToggleControl(parent: HTMLElement, label: string, checked: boolean): HTMLInputElement {
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.checked = checked;
-    const field = this.makeField(label, input);
-    field.classList.add('menu-field-toggle');
-    parent.appendChild(field);
-    return input;
-  }
-
-  private makeField(label: string, control: HTMLElement): HTMLDivElement {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'menu-field';
-    const labelEl = document.createElement('span');
-    labelEl.className = 'menu-field-label';
-    labelEl.textContent = label;
-    wrapper.append(labelEl, control);
-    return wrapper;
-  }
-
-  private attachSettingsListeners(): void {
-    const emit = () => {
-      this.settings = {
-        mouseSensitivity: Number(this.mouseSensitivityInput.value),
-        worldFov: Number(this.worldFovInput.value),
-        viewmodelFov: Number(this.viewmodelFovInput.value),
-        viewmodelScale: Number(this.viewmodelScaleInput.value),
-        autoBhop: this.autoBhopToggle.checked,
-        showHud: this.showHudToggle.checked,
-      };
-      this.callbacks.onSettingsChanged({ ...this.settings });
-    };
-    this.mouseSensitivityInput.addEventListener('input', emit);
-    this.worldFovInput.addEventListener('input', emit);
-    this.viewmodelFovInput.addEventListener('input', emit);
-    this.viewmodelScaleInput.addEventListener('input', emit);
-    this.autoBhopToggle.addEventListener('change', emit);
-    this.showHudToggle.addEventListener('change', emit);
   }
 
   private buildLoadoutPresets(manifest: CosmeticsManifest): LoadoutPreset[] {

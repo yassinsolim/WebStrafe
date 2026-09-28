@@ -33,34 +33,12 @@ async function generateSampleMaps(): Promise<void> {
       id: 'movement_test_scene',
       name: 'Movement Test Scene',
       author: 'WebStrafe Team',
-      source: 'https://github.com/OuiSURF/Surf_Maps',
-      license: 'Original placeholder training geometry',
+      source: 'Original WebStrafe practice range',
+      license: 'MIT',
       obj: buildMovementTestObj(),
       spawn: [0, 0.04, 56],
       yawDeg: 0,
       attribution: 'Original movement and firearm practice geometry shipped with WebStrafe.',
-    },
-    {
-      id: 'training_straight',
-      name: 'Training Straight',
-      author: 'WebStrafe Team',
-      source: 'https://github.com/OuiSURF/Surf_Maps',
-      license: 'Original placeholder training geometry',
-      obj: buildStraightTrainingObj(),
-      spawn: [0, 4, 14],
-      yawDeg: 0,
-      attribution: 'Original geometry shipped with WebStrafe for legal-safe placeholder testing.',
-    },
-    {
-      id: 'training_switchback',
-      name: 'Training Switchback',
-      author: 'WebStrafe Team',
-      source: 'https://github.com/OuiSURF/Surf_Maps',
-      license: 'Original placeholder training geometry',
-      obj: buildSwitchbackTrainingObj(),
-      spawn: [0, 6, 20],
-      yawDeg: 180,
-      attribution: 'Original geometry shipped with WebStrafe for legal-safe placeholder testing.',
     },
   ];
 
@@ -277,34 +255,6 @@ async function writeSolidPng(
   await fs.writeFile(outputPath, PNG.sync.write(png));
 }
 
-function buildStraightTrainingObj(): string {
-  return [
-    '# training_straight',
-    'o floor',
-    quad([-40, 0, -40], [40, 0, -40], [40, 0, 40], [-40, 0, 40], 1),
-    'o ramp_a',
-    quad([-8, 11, -8], [1, -2.2, -8], [1, -2.2, 8], [-8, 11, 8], 5),
-    'o ramp_b',
-    quad([7, -2.2, -8], [16, 11, -8], [16, 11, 8], [7, -2.2, 8], 9),
-    'o platform',
-    quad([-4, 7, -16], [4, 7, -16], [4, 7, -8], [-4, 7, -8], 13),
-  ].join('\n');
-}
-
-function buildSwitchbackTrainingObj(): string {
-  return [
-    '# training_switchback',
-    'o floor',
-    quad([-50, 0, -50], [50, 0, -50], [50, 0, 50], [-50, 0, 50], 1),
-    'o ramp_left',
-    quad([-24, 12, -5], [-14, -2, -5], [-14, -2, 9], [-24, 12, 9], 5),
-    'o ramp_right',
-    quad([14, -2, -11], [24, 12, -11], [24, 12, 3], [14, -2, 3], 9),
-    'o center_ramp',
-    quad([-4, 9, 20], [8, -4, 20], [8, -4, 32], [-4, 9, 32], 13),
-  ].join('\n');
-}
-
 function buildMovementTestObj(): string {
   return [
     '# movement_test_scene',
@@ -354,25 +304,6 @@ function buildKnifeObj(): string {
     cuboid(-0.06, -0.05, -0.45, 0.06, 0.05, -0.05, 1),
     'o blade',
     prismBlade(-0.02, -0.01, -0.05, 0.02, 0.01, 0.52, 9),
-  ].join('\n');
-}
-
-function quad(
-  a: [number, number, number],
-  b: [number, number, number],
-  c: [number, number, number],
-  d: [number, number, number],
-  indexStart: number,
-): string {
-  return [
-    `v ${a[0]} ${a[1]} ${a[2]}`,
-    `v ${b[0]} ${b[1]} ${b[2]}`,
-    `v ${c[0]} ${c[1]} ${c[2]}`,
-    `v ${d[0]} ${d[1]} ${d[2]}`,
-    `f ${indexStart} ${indexStart + 1} ${indexStart + 2}`,
-    `f ${indexStart} ${indexStart + 2} ${indexStart + 3}`,
-    `f ${indexStart + 2} ${indexStart + 1} ${indexStart}`,
-    `f ${indexStart + 3} ${indexStart + 2} ${indexStart}`,
   ].join('\n');
 }
 

@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WebStrafe v2 weapon preview (dev only)</title>
+    <style>html, body { margin: 0; background: #1b1f26; } canvas { display: block; }</style>
+  </head>
+  <body>
+    <!-- dev tool: /tools/weapon-preview.html?weapon=deagle|awp&view=fp|side&sockets=1
+         pose params (0..1) drive the animation hints stored on the parts:
+         slide, hammer, trigger, mag, lift (bolt handle up), back (bolt pulled back) -->
+    <script type="module">
+      import {
+        ACESFilmicToneMapping, AxesHelper, PerspectiveCamera, PMREMGenerator, SRGBColorSpace, Vector3, WebGLRenderer,
+      } from 'three';
+      import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+      import { ViewmodelRenderer } from '/src/cosmetics/ViewmodelRenderer.ts';
+      import { createGltfLoader } from '/src/assets/gltfLoader.ts';
+
+      const params = new URLSearchParams(location.search);
+      const id = params.get('weapon') ?? 'deagle';
+      const view = params.get('view') ?? 'fp';
+      const num = (k) => Number(params.get(k) ?? 0);
+      const width = Number(params.get('width') ?? 1280);
+      const height = Math.round(width * 9 / 16);
+      const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setSize(width, height);
+      renderer.setClearColor(0x1b1f26);
+      renderer.outputColorSpace = SRGBColorSpace;
+      renderer.toneMapping = ACESFilmicToneMapping;
+      document.body.appendChild(renderer.domElement);
+
+      // same lights, fov and environment as the in-game viewmodel pass
+      const vm = new ViewmodelRenderer(68, width / height);
+      vm.scene.environment = new PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+      const gltf = await createGltfLoader().loadAsync(`/viewmodels/v2/${id}.glb`);
+      const weapon = gltf.scene;
+
+      const part = (name) => weapon.getObjectByName(name);
+      const deg = (d) => (d * Math.PI) / 180;
+      const slide = part('slide');
+      if (slide) slide.position.z += slide.userData.travel_m * num('slide');
+      const hammer = part('hammer');
+      if (hammer) hammer.rotation.x = deg(hammer.userData.fire_rot_x_deg) * num('hammer');
+      const trigger = part('trigger');
+      if (trigger) trigger.rotation.x = deg(trigger.userData.pull_rot_x_deg) * num('trigger');
+      const mag = part('mag');
+      if (mag) mag.position.addScaledVector(new Vector3(...mag.userData.drop_dir), mag.userData.drop_m * num('mag'));
+      const bolt = part('bolt');
+      if (bolt) {
+        bolt.rotation.z = deg(bolt.userData.lift_rot_z_deg) * num('lift');
+        bolt.position.z += bolt.userData.travel_m * num('back');
+      }
+      if (params.get('sockets')) {
+        weapon.traverse((o) => { if (o.name.startsWith('socket_')) o.add(new AxesHelper(id === 'awp' ? 0.04 : 0.02)); });
+      }
+
+      let camera = vm.camera;
+      if (view === 'fp') {
+        // grip socket placed like a cs viewmodel: right, low, in front of the eye
+        const offset = id === 'awp' ? [0.12, -0.2, -0.3] : [0.1, -0.15, -0.3];
+        weapon.position.set(...offset);
+        weapon.rotation.set(0.03, 0.05, 0);
+        vm.camera.add(weapon);
+      } else {
+        vm.scene.add(weapon);
+        camera = new PerspectiveCamera(30, width / height, 0.01, 10);
+        // ?center=x,y,z&dist=m zoom in on a part, e.g. the bolt
+        const c = params.get('center')?.split(',').map(Number);
+        const center = c ? new Vector3(...c) : id === 'awp' ? new Vector3(0, 0.05, -0.3) : new Vector3(0, 0.02, -0.1);
+        const dist = Number(params.get('dist') ?? (id === 'awp' ? 2.4 : 0.62));
+        camera.position.copy(center).add(new Vector3(dist * 0.8, dist * 0.25, dist * 0.35));
+        camera.lookAt(center);
+        vm.scene.add(camera);
+      }
+      renderer.render(vm.scene, camera);
+      window.__previewReady = true;
+    </script>
+  </body>
+</html>

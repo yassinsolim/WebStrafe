@@ -101,7 +101,9 @@ describe('Surf regression against triangle collision world', () => {
 
     const player = new MovementController();
     player.reset(new Vector3(13, 9.2, 0), -80);
-    player.setVelocity(new Vector3(7.5, -2.2, 0));
+    // needs real sideways speed to reach the ramp's side wall this test is about: with the
+    // 30 u/s air cap, holding A in the air can't build that on its own
+    player.setVelocity(new Vector3(7.5, -2.2, -11));
 
     let severeStops = 0;
     let minMovement = Number.POSITIVE_INFINITY;

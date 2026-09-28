@@ -19,6 +19,10 @@ export interface InputActions {
 }
 
 const JUMP_KEYS = new Set(['Space']);
+const CROUCH_KEYS = new Set(['ControlLeft', 'KeyC']);
+// ctrl is crouch, so ctrl + these would bookmark (D), save (S) or select all (A)
+// mid-strafe. on windows/linux a page can't block ctrl+W, that one still closes the tab.
+const CTRL_GUARDED_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyC', 'Space']);
 const MAX_MOUSE_DELTA_PER_EVENT = 512;
 
 export class InputManager {
@@ -152,6 +156,7 @@ export class InputManager {
       sideMove,
       jumpHeld,
       jumpPressed,
+      crouchHeld: this.anyDown(CROUCH_KEYS),
     };
   }
 
@@ -258,6 +263,9 @@ export class InputManager {
     }
     if (firstPress && event.code === 'KeyN') {
       this.toggleSurfNormalQueued = true;
+    }
+    if (event.ctrlKey && CTRL_GUARDED_KEYS.has(event.code) && this.isGameplayInputActive(event.target)) {
+      event.preventDefault();
     }
     if (firstPress && this.isGameplayInputActive(event.target)) {
       const slot = weaponSlotForKey(event);

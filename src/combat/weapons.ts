@@ -1,4 +1,5 @@
 import { FIREARM_TIMINGS } from './FirearmTiming';
+import { KNIFE_DAMAGE, KNIFE_RANGE_M, KNIFE_TIMING_MS } from './knives';
 
 export type WeaponId = 'awp' | 'deagle' | 'knife';
 
@@ -47,7 +48,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   },
   deagle: {
     id: 'deagle',
-    name: 'Desert Eagle',
+    name: 'Deagle',
     slot: 'secondary',
     damage: 63,
     headshotMultiplier: 2,
@@ -57,14 +58,17 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     reloadMs: FIREARM_TIMINGS.deagle.reloadMs,
     falloff: { start: 512, end: 3072, minMultiplier: 0.55 },
   },
+  // knife hits resolve through CombatArena.handleMelee with the knives.ts
+  // table; these mirror a front slash so older callers read sane numbers
   knife: {
     id: 'knife',
     name: 'Knife',
     slot: 'melee',
-    damage: 55,
-    headshotMultiplier: 1.6,
-    range: 1.45,
-    fireIntervalMs: 400,
+    damage: KNIFE_DAMAGE.primary,
+    // cs:go and cs2 knives ignore hitgroups
+    headshotMultiplier: 1,
+    range: KNIFE_RANGE_M.primary,
+    fireIntervalMs: KNIFE_TIMING_MS.primaryInterval,
     magazine: 0,
     reloadMs: 0,
   },

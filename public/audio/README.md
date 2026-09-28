@@ -1,4 +1,6 @@
-# Firearm audio
+# Audio
+
+## Firearm recordings
 
 The firearm shot and reload samples are Creative Commons 0 recordings from
 Freesound:
@@ -22,6 +24,19 @@ Freesound:
 All source pages designate the recordings under CC0 1.0:
 <https://creativecommons.org/publicdomain/zero/1.0/>
 
-The local files retain the Freesound preview encoding. Shot recordings play
-through overlap-safe pools. Reload recordings are split into natural-speed
-mechanical cues aligned to each authored magazine, hand, slide, and bolt event.
+The local files retain the Freesound preview encoding. They are decoded once
+into the shared Web Audio engine (`src/audio/AudioEngine.ts`). Local shots play
+in 2D, remote shots through a positional panner. Reload recordings are split
+into natural-speed mechanical cues aligned to each authored magazine, hand,
+slide and bolt event, scheduled on the audio clock.
+
+## Procedural sounds
+
+Everything else is synthesized at runtime in `src/audio/ProceduralSfx.ts`, with
+no sample files: footsteps, jump and landing, knife swings and stabs, knife
+hits on flesh and walls, backstabs, the AWP bolt cycle, Deagle slide rack and
+release, dry fire, scope zoom, hitmarker, headshot and kill confirms, UI
+sounds and the respawn cue. They are original WebStrafe work.
+
+The knife swing `.ogg` files that used to live here had no recorded source or
+licence and were removed.

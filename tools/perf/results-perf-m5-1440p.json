@@ -1,0 +1,1115 @@
+{
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "vsync": false,
+  "viewport": [
+    2560,
+    1440
+  ],
+  "results": [
+    {
+      "label": "surf_prismline knife",
+      "query": "shot=surf_prismline&weapon=knife&knife=karambit&perf=6",
+      "frames": 3856,
+      "fpsMedian": 476.19,
+      "fps1Low": 296.13,
+      "frameMsMedian": 2.1,
+      "frameMsP99": 3.2,
+      "cpuMsMedian": 1.9,
+      "cpuMsP99": 2.9,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          4,
+          5802
+        ],
+        [
+          3.7,
+          2878
+        ],
+        [
+          3.7,
+          3853
+        ],
+        [
+          3.7,
+          7137
+        ],
+        [
+          3.6,
+          1850
+        ],
+        [
+          3.6,
+          1961
+        ]
+      ],
+      "calls": 80,
+      "triangles": 54915,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "surf_prismline balisong inspect",
+      "query": "shot=surf_prismline&weapon=knife&knife=butterfly&clip=inspect&perf=6",
+      "frames": 3777,
+      "fpsMedian": 454.55,
+      "fps1Low": 300.4,
+      "frameMsMedian": 2.2,
+      "frameMsP99": 3.1,
+      "cpuMsMedian": 2,
+      "cpuMsP99": 2.8,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          5.3,
+          3792
+        ],
+        [
+          4.1,
+          5853
+        ],
+        [
+          3.8,
+          4870
+        ],
+        [
+          3.6,
+          7411
+        ],
+        [
+          3.5,
+          6542
+        ],
+        [
+          3.4,
+          3220
+        ]
+      ],
+      "calls": 81,
+      "triangles": 52871,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "surf_prismline toss inspect",
+      "query": "shot=surf_prismline&weapon=knife&knife=classic&clip=inspect&perf=6",
+      "frames": 3718,
+      "fpsMedian": 454.55,
+      "fps1Low": 286.79,
+      "frameMsMedian": 2.2,
+      "frameMsP99": 3.2,
+      "cpuMsMedian": 2,
+      "cpuMsP99": 2.8,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          4.1,
+          2655
+        ],
+        [
+          4,
+          7045
+        ],
+        [
+          3.9,
+          4704
+        ],
+        [
+          3.8,
+          3009
+        ],
+        [
+          3.8,
+          5319
+        ],
+        [
+          3.7,
+          3327
+        ]
+      ],
+      "calls": 77,
+      "triangles": 53743,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "surf_prismline deagle",
+      "query": "shot=surf_prismline&weapon=deagle&perf=6",
+      "frames": 3526,
+      "fpsMedian": 434.78,
+      "fps1Low": 281.25,
+      "frameMsMedian": 2.3,
+      "frameMsP99": 3.3,
+      "cpuMsMedian": 2.1,
+      "cpuMsP99": 3,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          4.1,
+          1543
+        ],
+        [
+          4,
+          6435
+        ],
+        [
+          3.9,
+          3349
+        ],
+        [
+          3.8,
+          2285
+        ],
+        [
+          3.8,
+          5511
+        ],
+        [
+          3.8,
+          5900
+        ]
+      ],
+      "calls": 90,
+      "triangles": 61739,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "surf_prismline deagle inspect",
+      "query": "shot=surf_prismline&weapon=deagle&clip=inspect&perf=6",
+      "frames": 3375,
+      "fpsMedian": 454.55,
+      "fps1Low": 260.94,
+      "frameMsMedian": 2.2,
+      "frameMsP99": 3.5,
+      "cpuMsMedian": 2,
+      "cpuMsP99": 3,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          5.4,
+          5282
+        ],
+        [
+          4.6,
+          7393
+        ],
+        [
+          4.4,
+          6965
+        ],
+        [
+          4.2,
+          5889
+        ],
+        [
+          4.1,
+          7117
+        ],
+        [
+          4,
+          7144
+        ]
+      ],
+      "calls": 90,
+      "triangles": 61739,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "surf_prismline awp",
+      "query": "shot=surf_prismline&weapon=awp&perf=6",
+      "frames": 3059,
+      "fpsMedian": 454.55,
+      "fps1Low": 252.44,
+      "frameMsMedian": 2.2,
+      "frameMsP99": 3.7,
+      "cpuMsMedian": 1.8,
+      "cpuMsP99": 3.2,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          6.3,
+          5897
+        ],
+        [
+          4.5,
+          5238
+        ],
+        [
+          4.3,
+          6726
+        ],
+        [
+          4.1,
+          4205
+        ],
+        [
+          4.1,
+          5198
+        ],
+        [
+          4.1,
+          6384
+        ]
+      ],
+      "calls": 94,
+      "triangles": 75887,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "surf_prismline awp scope1",
+      "query": "shot=surf_prismline&weapon=awp&scope=1&perf=6",
+      "frames": 4045,
+      "fpsMedian": 714.29,
+      "fps1Low": 286.11,
+      "frameMsMedian": 1.4,
+      "frameMsP99": 3.2,
+      "cpuMsMedian": 0.9,
+      "cpuMsP99": 2.7,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          5.5,
+          5648
+        ],
+        [
+          5.5,
+          6478
+        ],
+        [
+          4.3,
+          2560
+        ],
+        [
+          3.8,
+          2886
+        ],
+        [
+          3.8,
+          7039
+        ],
+        [
+          3.6,
+          2103
+        ]
+      ],
+      "calls": 36,
+      "triangles": 8348,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "surf_prismline awp scope2",
+      "query": "shot=surf_prismline&weapon=awp&scope=2&perf=6",
+      "frames": 4429,
+      "fpsMedian": 833.33,
+      "fps1Low": 315.35,
+      "frameMsMedian": 1.2,
+      "frameMsP99": 3,
+      "cpuMsMedian": 0.7,
+      "cpuMsP99": 2.5,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          4.8,
+          5364
+        ],
+        [
+          4.4,
+          5669
+        ],
+        [
+          3.4,
+          3149
+        ],
+        [
+          3.3,
+          1701
+        ],
+        [
+          3.3,
+          1803
+        ],
+        [
+          3.3,
+          4444
+        ]
+      ],
+      "calls": 30,
+      "triangles": 8172,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "bhop_emberdrift knife",
+      "query": "shot=bhop_emberdrift&weapon=knife&knife=karambit&perf=6",
+      "frames": 3317,
+      "fpsMedian": 555.56,
+      "fps1Low": 246.38,
+      "frameMsMedian": 1.8,
+      "frameMsP99": 3.7,
+      "cpuMsMedian": 1.2,
+      "cpuMsP99": 3.1,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          6.6,
+          5600
+        ],
+        [
+          5.4,
+          3847
+        ],
+        [
+          4.6,
+          5204
+        ],
+        [
+          4.4,
+          3249
+        ],
+        [
+          4.3,
+          3775
+        ],
+        [
+          4.1,
+          4721
+        ]
+      ],
+      "calls": 79,
+      "triangles": 70195,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "bhop_emberdrift balisong inspect",
+      "query": "shot=bhop_emberdrift&weapon=knife&knife=butterfly&clip=inspect&perf=6",
+      "frames": 3242,
+      "fpsMedian": 526.32,
+      "fps1Low": 251.91,
+      "frameMsMedian": 1.9,
+      "frameMsP99": 3.6,
+      "cpuMsMedian": 1.4,
+      "cpuMsP99": 3.1,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          6.2,
+          5432
+        ],
+        [
+          5.7,
+          4597
+        ],
+        [
+          4.5,
+          5715
+        ],
+        [
+          4.3,
+          3219
+        ],
+        [
+          4.3,
+          4587
+        ],
+        [
+          4.1,
+          6439
+        ]
+      ],
+      "calls": 80,
+      "triangles": 68151,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "bhop_emberdrift toss inspect",
+      "query": "shot=bhop_emberdrift&weapon=knife&knife=classic&clip=inspect&perf=6",
+      "frames": 3214,
+      "fpsMedian": 500,
+      "fps1Low": 254.63,
+      "frameMsMedian": 2,
+      "frameMsP99": 3.7,
+      "cpuMsMedian": 1.5,
+      "cpuMsP99": 3.2,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          5.3,
+          5356
+        ],
+        [
+          4.6,
+          4769
+        ],
+        [
+          4.2,
+          3659
+        ],
+        [
+          4.2,
+          4925
+        ],
+        [
+          4.1,
+          3320
+        ],
+        [
+          4.1,
+          3628
+        ]
+      ],
+      "calls": 76,
+      "triangles": 69023,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "bhop_emberdrift deagle",
+      "query": "shot=bhop_emberdrift&weapon=deagle&perf=6",
+      "frames": 3096,
+      "fpsMedian": 500,
+      "fps1Low": 239.75,
+      "frameMsMedian": 2,
+      "frameMsP99": 3.7,
+      "cpuMsMedian": 1.5,
+      "cpuMsP99": 3.2,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          7.4,
+          7236
+        ],
+        [
+          6,
+          6027
+        ],
+        [
+          5.4,
+          7228
+        ],
+        [
+          4.7,
+          4547
+        ],
+        [
+          4.3,
+          7476
+        ],
+        [
+          4.1,
+          1760
+        ]
+      ],
+      "calls": 89,
+      "triangles": 77019,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "bhop_emberdrift deagle inspect",
+      "query": "shot=bhop_emberdrift&weapon=deagle&clip=inspect&perf=6",
+      "frames": 3038,
+      "fpsMedian": 476.19,
+      "fps1Low": 250.61,
+      "frameMsMedian": 2.1,
+      "frameMsP99": 3.8,
+      "cpuMsMedian": 1.6,
+      "cpuMsP99": 3.2,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          4.7,
+          3039
+        ],
+        [
+          4.4,
+          3231
+        ],
+        [
+          4.3,
+          3458
+        ],
+        [
+          4.3,
+          6293
+        ],
+        [
+          4.2,
+          2951
+        ],
+        [
+          4.2,
+          3552
+        ]
+      ],
+      "calls": 89,
+      "triangles": 77019,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "bhop_emberdrift awp",
+      "query": "shot=bhop_emberdrift&weapon=awp&perf=6",
+      "frames": 2868,
+      "fpsMedian": 434.78,
+      "fps1Low": 239.47,
+      "frameMsMedian": 2.3,
+      "frameMsP99": 3.9,
+      "cpuMsMedian": 1.8,
+      "cpuMsP99": 3.3,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          5.1,
+          1585
+        ],
+        [
+          5,
+          4903
+        ],
+        [
+          4.6,
+          4088
+        ],
+        [
+          4.6,
+          6463
+        ],
+        [
+          4.5,
+          1848
+        ],
+        [
+          4.3,
+          7556
+        ]
+      ],
+      "calls": 93,
+      "triangles": 91167,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "bhop_emberdrift awp scope1",
+      "query": "shot=bhop_emberdrift&weapon=awp&scope=1&perf=6",
+      "frames": 3405,
+      "fpsMedian": 500,
+      "fps1Low": 274.73,
+      "frameMsMedian": 2,
+      "frameMsP99": 3.4,
+      "cpuMsMedian": 1.6,
+      "cpuMsP99": 2.9,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          4.5,
+          5562
+        ],
+        [
+          4.2,
+          5040
+        ],
+        [
+          3.9,
+          1943
+        ],
+        [
+          3.9,
+          2500
+        ],
+        [
+          3.8,
+          1714
+        ],
+        [
+          3.8,
+          1848
+        ]
+      ],
+      "calls": 51,
+      "triangles": 27624,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "bhop_emberdrift awp scope2",
+      "query": "shot=bhop_emberdrift&weapon=awp&scope=2&perf=6",
+      "frames": 3324,
+      "fpsMedian": 476.19,
+      "fps1Low": 254.68,
+      "frameMsMedian": 2.1,
+      "frameMsP99": 3.4,
+      "cpuMsMedian": 1.7,
+      "cpuMsP99": 2.8,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          7.3,
+          3503
+        ],
+        [
+          7,
+          5497
+        ],
+        [
+          5.1,
+          2416
+        ],
+        [
+          4.5,
+          3594
+        ],
+        [
+          4.3,
+          3455
+        ],
+        [
+          4.1,
+          3488
+        ]
+      ],
+      "calls": 33,
+      "triangles": 21356,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "aim_ochrecut knife",
+      "query": "shot=aim_ochrecut&weapon=knife&knife=karambit&perf=6",
+      "frames": 3530,
+      "fpsMedian": 476.19,
+      "fps1Low": 266.47,
+      "frameMsMedian": 2.1,
+      "frameMsP99": 3.5,
+      "cpuMsMedian": 1.9,
+      "cpuMsP99": 3.3,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          7.4,
+          2476
+        ],
+        [
+          4.4,
+          3674
+        ],
+        [
+          4.1,
+          5913
+        ],
+        [
+          4,
+          4761
+        ],
+        [
+          3.9,
+          6135
+        ],
+        [
+          3.8,
+          5996
+        ]
+      ],
+      "calls": 66,
+      "triangles": 54695,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "aim_ochrecut balisong inspect",
+      "query": "shot=aim_ochrecut&weapon=knife&knife=butterfly&clip=inspect&perf=6",
+      "frames": 3537,
+      "fpsMedian": 476.19,
+      "fps1Low": 267.26,
+      "frameMsMedian": 2.1,
+      "frameMsP99": 3.5,
+      "cpuMsMedian": 1.4,
+      "cpuMsP99": 3.3,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          5,
+          5537
+        ],
+        [
+          4.7,
+          1506
+        ],
+        [
+          4.5,
+          3708
+        ],
+        [
+          4.1,
+          6997
+        ],
+        [
+          4,
+          3160
+        ],
+        [
+          3.9,
+          5061
+        ]
+      ],
+      "calls": 65,
+      "triangles": 52583,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "aim_ochrecut toss inspect",
+      "query": "shot=aim_ochrecut&weapon=knife&knife=classic&clip=inspect&perf=6",
+      "frames": 3462,
+      "fpsMedian": 500,
+      "fps1Low": 267.99,
+      "frameMsMedian": 2,
+      "frameMsP99": 3.5,
+      "cpuMsMedian": 1.8,
+      "cpuMsP99": 3.3,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          4.4,
+          2554
+        ],
+        [
+          4.2,
+          3484
+        ],
+        [
+          4.1,
+          3505
+        ],
+        [
+          4,
+          4027
+        ],
+        [
+          4,
+          6494
+        ],
+        [
+          3.9,
+          4886
+        ]
+      ],
+      "calls": 61,
+      "triangles": 53455,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "aim_ochrecut deagle",
+      "query": "shot=aim_ochrecut&weapon=deagle&perf=6",
+      "frames": 3249,
+      "fpsMedian": 454.55,
+      "fps1Low": 256.21,
+      "frameMsMedian": 2.2,
+      "frameMsP99": 3.6,
+      "cpuMsMedian": 2.1,
+      "cpuMsP99": 3.4,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          6.8,
+          5472
+        ],
+        [
+          4.6,
+          5293
+        ],
+        [
+          4.3,
+          3080
+        ],
+        [
+          4.3,
+          3378
+        ],
+        [
+          4.2,
+          1853
+        ],
+        [
+          4.1,
+          6717
+        ]
+      ],
+      "calls": 74,
+      "triangles": 61451,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "aim_ochrecut deagle inspect",
+      "query": "shot=aim_ochrecut&weapon=deagle&clip=inspect&perf=6",
+      "frames": 3260,
+      "fpsMedian": 434.78,
+      "fps1Low": 252.87,
+      "frameMsMedian": 2.3,
+      "frameMsP99": 3.6,
+      "cpuMsMedian": 2.2,
+      "cpuMsP99": 3.4,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          5.6,
+          1780
+        ],
+        [
+          5.5,
+          3033
+        ],
+        [
+          4.8,
+          2906
+        ],
+        [
+          4.6,
+          5996
+        ],
+        [
+          4.3,
+          2054
+        ],
+        [
+          4.2,
+          2040
+        ]
+      ],
+      "calls": 75,
+      "triangles": 61463,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "aim_ochrecut awp",
+      "query": "shot=aim_ochrecut&weapon=awp&perf=6",
+      "frames": 2992,
+      "fpsMedian": 416.67,
+      "fps1Low": 248.34,
+      "frameMsMedian": 2.4,
+      "frameMsP99": 3.7,
+      "cpuMsMedian": 2.3,
+      "cpuMsP99": 3.5,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          4.7,
+          3661
+        ],
+        [
+          4.6,
+          4484
+        ],
+        [
+          4.6,
+          4927
+        ],
+        [
+          4.5,
+          1535
+        ],
+        [
+          4.5,
+          5896
+        ],
+        [
+          4.4,
+          5302
+        ]
+      ],
+      "calls": 78,
+      "triangles": 75599,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "aim_ochrecut awp scope1",
+      "query": "shot=aim_ochrecut&weapon=awp&scope=1&perf=6",
+      "frames": 3753,
+      "fpsMedian": 476.19,
+      "fps1Low": 296.41,
+      "frameMsMedian": 2.1,
+      "frameMsP99": 3.2,
+      "cpuMsMedian": 2,
+      "cpuMsP99": 2.9,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          4,
+          1656
+        ],
+        [
+          3.9,
+          1805
+        ],
+        [
+          3.9,
+          2563
+        ],
+        [
+          3.8,
+          7157
+        ],
+        [
+          3.7,
+          4758
+        ],
+        [
+          3.7,
+          6965
+        ]
+      ],
+      "calls": 36,
+      "triangles": 12056,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "aim_ochrecut awp scope2",
+      "query": "shot=aim_ochrecut&weapon=awp&scope=2&perf=6",
+      "frames": 3811,
+      "fpsMedian": 476.19,
+      "fps1Low": 281.79,
+      "frameMsMedian": 2.1,
+      "frameMsP99": 3.2,
+      "cpuMsMedian": 1.9,
+      "cpuMsP99": 2.9,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          5.8,
+          4345
+        ],
+        [
+          5,
+          3212
+        ],
+        [
+          4.7,
+          6886
+        ],
+        [
+          4.3,
+          5617
+        ],
+        [
+          4,
+          5311
+        ],
+        [
+          3.9,
+          3924
+        ]
+      ],
+      "calls": 30,
+      "triangles": 10376,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    }
+  ],
+  "errors": []
+}

@@ -1,5 +1,6 @@
 import { Vector3 } from 'three';
 import { PLAYER_CAPSULE_RADIUS } from './CombatArena';
+import { BACKSTAB_DOT } from './knives';
 import { getWeapon } from './weapons';
 
 export const BACKSTAB_READY_SURFACE_RANGE = getWeapon('knife').range + 0.35;
@@ -54,8 +55,9 @@ export function findBackstabOpportunity(
 
     const targetForwardX = -Math.sin(target.yaw);
     const targetForwardZ = -Math.cos(target.yaw);
-    const targetToAttackerDot = targetForwardX * -toTargetX + targetForwardZ * -toTargetZ;
-    if (targetToAttackerDot > -0.45) continue;
+    // same cone the authority uses for backstab damage (isBackstab)
+    const behindDot = targetForwardX * toTargetX + targetForwardZ * toTargetZ;
+    if (behindDot <= BACKSTAB_DOT) continue;
     if (query.hasLineOfSight && !query.hasLineOfSight(target)) continue;
 
     if (surfaceDistance < bestDistance) {

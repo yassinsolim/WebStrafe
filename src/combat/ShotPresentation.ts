@@ -1,5 +1,5 @@
 import { Vector3 } from 'three';
-import type { GunId } from '../cosmetics/WeaponViewmodels';
+import type { FirearmId as GunId } from './FirearmTiming';
 
 interface MuzzleOffset {
   forward: number;
