@@ -196,7 +196,8 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
       rx: [[0, -30], [0.3, 0, 'out']],
       ringHold: [[0, 1], [0.75, 1], [0.95, 0, 'inOut']],
       spinZ: [[0, 720], [0.8, 0, 'out']],
-      gripOpen: [[0, 0.95], [0.78, 0.95], [0.98, 0, 'out']],
+      // the fingers close on the handle once the hand has arrived from the ring
+      gripOpen: [[0, 0.95], [0.95, 0.95], [1.05, 0, 'out']],
     },
     events: [[0.3, 'sound:knife_spin']],
   },
@@ -242,7 +243,6 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
       rx: [[0, -30], [0.3, 0, 'out']],
       baliSafe: [[0, 1], [0.3, 1], [0.55, 0, 'out'], [0.75, 0], [0.95, 1, 'inOut'], [1.15, 0, 'out']],
       baliBite: [[0, 1], [0.45, 1], [0.75, 0, 'out']],
-      spinZ: [[0, 0], [0.3, 0], [0.8, -360, 'inOut']],
       rz: [[0, 0], [0.8, 0], [1.0, 12], [1.3, 0]],
     },
     events: [[0.55, 'sound:knife_open'], [1.15, 'sound:knife_open']],
@@ -318,8 +318,9 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
     events: [[1.26, 'sound:knife_open']],
   },
   balisong: {
-    // opens and closes in a rhythm: the safe handle swings over the spine, the
-    // bite handle under the edge, with the whole knife rolling between them
+    // opens and closes in a rhythm: the hand keeps the bite handle, the safe
+    // handle swings over the spine and the blade swings out round the bite pin,
+    // with the whole knife rolling between them
     duration: 4.6,
     tracks: {
       ry: [[0, 0], [0.4, 34], [3.2, 34], [3.6, 0]],
@@ -337,7 +338,6 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
         [1.6, 0], [1.75, 1, 'out'], [1.9, 0, 'in'],
         [2.5, 0], [2.62, 1, 'out'], [2.78, 1], [2.93, 0, 'in'],
       ],
-      spinZ: [[0, 0], [0.8, 0], [1.12, -180, 'inOut'], [1.45, -180], [1.9, -360, 'inOut'], [2.35, -360], [2.93, -720, 'inOut']],
       rollX: [[0, 0], [1.9, 0], [2.2, 180, 'inOut'], [2.93, 360, 'inOut']],
       ...WATCH_TAIL(3.2),
     },
@@ -366,7 +366,8 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
       // the flat skeleton frame can't turn in the fingers, the wrist shows the other side
       holdRoll: [[0, 0], [0.5, 0], [0.85, 75, 'inOut'], [1.2, 0, 'inOut']],
       ringHold: [[0, 0], [1.25, 0], [1.5, 1, 'inOut'], [2.95, 1], [3.2, 0, 'inOut']],
-      gripOpen: [[0, 0], [1.3, 0], [1.5, 0.95], [2.95, 0.95], [3.15, 0]],
+      // let go before the hand moves to the ring, close only once it is back on the handle
+      gripOpen: [[0, 0], [1.15, 0], [1.25, 0.95], [3.2, 0.95], [3.3, 0]],
       spinZ: [[0, 0], [1.5, 0], [2.2, 360, 'inOut'], [2.9, 720, 'inOut']],
       ...WATCH_TAIL(3.2),
     },

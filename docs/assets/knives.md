@@ -222,6 +222,12 @@ node tools/qa/grip-tune.mjs http://<lan ip>:5173 karambit middle,ring
 node tools/qa/grip-tune-opener.mjs http://<lan ip>:5173 stiletto
 ```
 
+The check also measures attachment: the knife's grip socket, on the part the
+hand holds (a balisong's bite handle), must stay within 5 mm of where the hand's
+grip puts it. Only two moments are allowed off the hand, each bounded and
+reported: the toss inspect, and the skeleton's hand moving between its handle
+and its ring (a finger stays on the knife once the ring is on it).
+
 The tuners print `engine`, `opener` and `openerVia` entries for the pose table;
 `gripFit.ts` keeps them when it's rerun. The push daggers' t-grip is authored
 in `knifeGrips.ts` (the rig can't spread fingers in the fitter). Close-ups from
