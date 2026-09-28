@@ -78,8 +78,11 @@ describes its gun.
 
 | material | used for |
 |----------|----------|
-| `mat_steel_dark` | black nitride: Deagle slide, barrel, rail, sights, magazine; AWP receiver, barrel, brake, rail, bipod |
-| `mat_gunmetal` | Deagle frame, guard, beavertail and grip core (a rougher black, the second tone) |
+| `mat_stainless` | satin stainless: Deagle slide, barrel, rail, magazine (the default finish) |
+| `mat_stainless_frame` | Deagle frame, guard, beavertail and grip core (rougher satin, the second tone) |
+| `mat_sight_black` | Deagle front and rear sights, matte black so the dots read |
+| `mat_steel_dark` | black nitride: AWP receiver, barrel, brake, rail, bipod; the Deagle's slide, barrel, sights and magazine with `--finish black` |
+| `mat_gunmetal` | the Deagle frame with `--finish black` |
 | `mat_steel` | pins, screws, levers, safety, hammer, trigger, Deagle bolt head and rear plate, polished AWP bolt |
 | `mat_steel_worn` | convex bevel faces on metal parts |
 | `mat_grip` | Deagle raised stippled grip fields |
@@ -139,11 +142,16 @@ the same scale and matched the outline to within 2 or 3 mm.
   the safety levers (the slide is 32 mm). The bore is 158 mm from the breech
   face to the muzzle.
 - Triangles: 16,406 (body 9,294, slide 5,274, hammer 554, trigger 200, mag
-  1,084). 14,478 vertices. The file is 241 KB optimized (758 KB raw). The
+  1,084). 14,478 vertices. The file is 244 KB optimized (760 KB raw). The
   earlier model was 11,040 triangles and 186 KB.
-- Materials: the metals are metallic 0.75 to 1 at roughness 0.26 to 0.46 with
-  dark base colours. The rubber is dielectric at roughness 0.62 (smooth) and
-  0.85 (stippled). None of it is tuned to one environment map.
+- Finish: satin stainless by default, with a rougher satin frame, darker steel
+  controls and matte black sights. `--finish black` builds the black nitride
+  version. The black one read as a near black shape against the bright maps
+  once the viewmodel took the world's light (a 0.03 reflectance metal
+  reflects almost nothing), so stainless is the shipped finish.
+- Materials: the metals are metallic 0.6 to 1 at roughness 0.22 to 0.5. The
+  rubber is dielectric at roughness 0.62 (smooth) and 0.85 (stippled). None
+  of it is tuned to one environment map.
 - Nodes: `deagle` (root), then `body` (static mesh), `slide`, `hammer`,
   `trigger`, `mag` (pivot empties with `_mesh` children), and the sockets.
 - The build prints a clearance check. It poses the hammer fired and the

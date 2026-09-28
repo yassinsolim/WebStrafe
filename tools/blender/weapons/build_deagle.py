@@ -33,6 +33,8 @@ def arg(name, default=None):
 
 
 QUICK = "--quick" in ARGS
+# stainless (default) or black
+FINISH = arg("--finish", "stainless")
 OUT = arg("--out", os.path.join(W.TMP, "deagle_raw.glb"))
 RENDERS = arg("--renders", None)
 
@@ -182,13 +184,30 @@ def inside_polygon(p, poly):
 
 def make_materials():
     pebble = W.pebble_normal_map("tex_grip_pebble", size=256, count=1500, seed=11)
-    return {
+    if FINISH == "black":
         # black nitride on the slide and barrel, a rougher black on the frame,
         # bare steel on the controls and on worn convex edges
-        "dark": W.material("mat_steel_dark", 0x34363a, 0.36, 0.8),
-        "frame": W.material("mat_gunmetal", 0x383a3e, 0.44, 0.75),
-        "steel": W.material("mat_steel", 0x55585e, 0.32, 1.0),
-        "worn": W.material("mat_steel_worn", 0x8a8e94, 0.26, 1.0),
+        metals = {
+            "dark": W.material("mat_steel_dark", 0x34363a, 0.36, 0.8),
+            "frame": W.material("mat_gunmetal", 0x383a3e, 0.44, 0.75),
+            "steel": W.material("mat_steel", 0x55585e, 0.32, 1.0),
+            "worn": W.material("mat_steel_worn", 0x8a8e94, 0.26, 1.0),
+        }
+        metals["sight"] = metals["dark"]
+    else:
+        # satin stainless slide and barrel, a rougher satin frame as the second
+        # tone, darker steel controls, polished edges and matte black sights.
+        # the black finish lost the gun against bright maps once the viewmodel
+        # took the world's light
+        metals = {
+            "dark": W.material("mat_stainless", 0xa3a7ad, 0.3, 1.0),
+            "frame": W.material("mat_stainless_frame", 0x8e9298, 0.38, 1.0),
+            "steel": W.material("mat_steel", 0x62666c, 0.3, 1.0),
+            "worn": W.material("mat_steel_worn", 0xc8ccd2, 0.22, 1.0),
+            "sight": W.material("mat_sight_black", 0x2a2b2e, 0.5, 0.6),
+        }
+    return {
+        **metals,
         "rubber": W.material("mat_rubber", 0x1c1c1e, 0.62, 0.0),
         "grip": W.material("mat_grip", 0x161617, 0.85, 0.0, normal_image=pebble, normal_strength=0.9),
         "dot": W.material("mat_sight_dot", 0xe9e6dc, 0.45, 0.0),
@@ -248,10 +267,11 @@ def build_slide(M):
 
     # rear sight: vertical back face with anti-glare lines, square notch, two dots
     rs0, rs1, rtop = 2.4, 14.5, 18.8
+    s = M["sight"]
     sight = side("rear_sight", [(rs0, DECK_Z - 0.5), (rs1, DECK_Z - 0.5), (rs0 + 6.0, rtop, 0.9), (rs0, rtop, 0.5)],
-                 -11.0, 11.0, d)
-    cuts = [cube("c", -1.9, 1.9, rs0 - 1.0, rs1 + 1.0, rtop - 3.0, rtop + 1.0, d)]
-    cuts += [cube("c", -12.0, 12.0, rs0 - 1.0, rs0 + 0.35, z - 0.28, z + 0.28, d) for z in (11.7, 12.9, 14.1)]
+                 -11.0, 11.0, s)
+    cuts = [cube("c", -1.9, 1.9, rs0 - 1.0, rs1 + 1.0, rtop - 3.0, rtop + 1.0, s)]
+    cuts += [cube("c", -12.0, 12.0, rs0 - 1.0, rs0 + 0.35, z - 0.28, z + 0.28, s) for z in (11.7, 12.9, 14.1)]
     W.boolean(sight, cuts)
     bevel_worn(sight, M["worn"], 0.3)
     dots = [rod_y("rear_dot", sx * 5.6, 16.4, [(1.0, rs0 - 0.25), (1.0, rs0 + 0.6)], 12, M["dot"]) for sx in (1, -1)]
@@ -353,10 +373,10 @@ def build_barrel(M):
     fs_top, fs_run = 21.5, 6.0
     blade = side("front_sight", [(y0, RAIL_TOP - 0.4), (y1, RAIL_TOP - 0.4), (y1, fs_top - 0.7, 0.5),
                                  (y1 - 0.8, fs_top, 0.4), (y0 + fs_run, fs_top, 1.0), (y0, RAIL_TOP + 0.8, 0.8)],
-                 -1.8, 1.8, d)
+                 -1.8, 1.8, M["sight"])
     bevel_worn(blade, M["worn"], 0.25)
     base = side("front_sight_base", [(y0 - 1.0, RAIL_TOP - 0.4), (y1 + 1.0, RAIL_TOP - 0.4), (y1 + 1.0, RAIL_TOP + 0.9, 0.5),
-                                     (y0 - 1.0, RAIL_TOP + 0.9, 0.5)], -6.0, 6.0, d)
+                                     (y0 - 1.0, RAIL_TOP + 0.9, 0.5)], -6.0, 6.0, M["sight"])
     bevel_worn(base, M["worn"], 0.25)
     slope = math.atan2(fs_top - RAIL_TOP - 0.8, fs_run)
     dot = rod_y("front_dot", 0, 0, [(0.85, -0.45), (0.85, 0.3)], 12, M["dot"])
