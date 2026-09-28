@@ -1,0 +1,364 @@
+{
+  "proxy": "headless swiftshader, chrome cpu throttle 4x, 1280x720, 3 s warm up, 8 s window (tools/shots/fps.mjs), same as results-polish-proxy-swiftshader.json",
+  "load": "load average 4.8 to 6.0 (1 min) at the start of every run; other agents shared the machine, so main and this branch were interleaved job by job",
+  "characters": "6 characters in a row facing the camera, 0.9 m apart, at 3.2 m and 6 m; main: its procedural soldiers; this branch: the heaviest kit (charlook=max)",
+  "main": "origin/main 40c88a2 plus a local, uncommitted ?chars= spawner",
+  "runs": {
+    "A: low 1.5/4, medium 3/9, presets drive the lod distances": {
+      "bal_0": [
+        {
+          "fpsMedian": 4.3,
+          "fps1Low": 3.5,
+          "frameMsP95": 282.8,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium"
+        },
+        {
+          "fpsMedian": 4.3,
+          "fps1Low": 3.1,
+          "frameMsP95": 316.4,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium"
+        }
+      ],
+      "bal_6": [
+        {
+          "fpsMedian": 3.7,
+          "fps1Low": 2.6,
+          "frameMsP95": 366.6,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        },
+        {
+          "fpsMedian": 3.6,
+          "fps1Low": 2.8,
+          "frameMsP95": 325.7,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        }
+      ],
+      "bal_6f": [
+        {
+          "fpsMedian": 3.9,
+          "fps1Low": 2.9,
+          "frameMsP95": 348.7,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium&chars=6&charlook=max&charspace=0.9&chardist=6"
+        },
+        {
+          "fpsMedian": 3.9,
+          "fps1Low": 3.2,
+          "frameMsP95": 300.1,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium&chars=6&charlook=max&charspace=0.9&chardist=6"
+        }
+      ],
+      "low_0": [
+        {
+          "fpsMedian": 10,
+          "fps1Low": 8,
+          "frameMsP95": 110.1,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low"
+        },
+        {
+          "fpsMedian": 9.9,
+          "fps1Low": 4.6,
+          "frameMsP95": 118.2,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low"
+        }
+      ],
+      "low_6": [
+        {
+          "fpsMedian": 8.1,
+          "fps1Low": 6.6,
+          "frameMsP95": 134.9,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        },
+        {
+          "fpsMedian": 8,
+          "fps1Low": 6.7,
+          "frameMsP95": 142.2,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        }
+      ],
+      "low_6f": [
+        {
+          "fpsMedian": 9.1,
+          "fps1Low": 6.7,
+          "frameMsP95": 127,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=6"
+        },
+        {
+          "fpsMedian": 9.1,
+          "fps1Low": 7.5,
+          "frameMsP95": 125.3,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=6"
+        }
+      ],
+      "main_0": [
+        {
+          "fpsMedian": 10.7,
+          "fps1Low": 7.1,
+          "frameMsP95": 116.7,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0"
+        },
+        {
+          "fpsMedian": 10,
+          "fps1Low": 8.1,
+          "frameMsP95": 110.2,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0"
+        }
+      ],
+      "main_6": [
+        {
+          "fpsMedian": 10,
+          "fps1Low": 8.1,
+          "frameMsP95": 116.8,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        },
+        {
+          "fpsMedian": 9.2,
+          "fps1Low": 7.9,
+          "frameMsP95": 125.3,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        }
+      ],
+      "main_6f": [
+        {
+          "fpsMedian": 9.9,
+          "fps1Low": 8,
+          "frameMsP95": 116.7,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&chars=6&charlook=max&charspace=0.9&chardist=6"
+        },
+        {
+          "fpsMedian": 9.9,
+          "fps1Low": 7,
+          "frameMsP95": 133.9,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&chars=6&charlook=max&charspace=0.9&chardist=6"
+        }
+      ]
+    },
+    "B: low 1.5/3, medium 2.5/7": {
+      "bal_0": [
+        {
+          "fpsMedian": 4.4,
+          "fps1Low": 3.6,
+          "frameMsP95": 266.7,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium"
+        },
+        {
+          "fpsMedian": 4.4,
+          "fps1Low": 2.8,
+          "frameMsP95": 324.5,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium"
+        }
+      ],
+      "bal_6": [
+        {
+          "fpsMedian": 3.8,
+          "fps1Low": 3,
+          "frameMsP95": 325,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        },
+        {
+          "fpsMedian": 3.5,
+          "fps1Low": 2.8,
+          "frameMsP95": 333.3,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        }
+      ],
+      "bal_6f": [
+        {
+          "fpsMedian": 3.7,
+          "fps1Low": 1.4,
+          "frameMsP95": 325.1,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium&chars=6&charlook=max&charspace=0.9&chardist=6"
+        },
+        {
+          "fpsMedian": 4,
+          "fps1Low": 1.6,
+          "frameMsP95": 309.1,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium&chars=6&charlook=max&charspace=0.9&chardist=6"
+        }
+      ],
+      "low_0": [
+        {
+          "fpsMedian": 9.9,
+          "fps1Low": 7.5,
+          "frameMsP95": 125.1,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low"
+        },
+        {
+          "fpsMedian": 7.5,
+          "fps1Low": 4.8,
+          "frameMsP95": 184.3,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low"
+        }
+      ],
+      "low_6": [
+        {
+          "fpsMedian": 8.1,
+          "fps1Low": 6.7,
+          "frameMsP95": 134.9,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        },
+        {
+          "fpsMedian": 8.5,
+          "fps1Low": 7,
+          "frameMsP95": 133.5,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        }
+      ],
+      "low_6f": [
+        {
+          "fpsMedian": 9.1,
+          "fps1Low": 6.3,
+          "frameMsP95": 126.6,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=6"
+        },
+        {
+          "fpsMedian": 9.2,
+          "fps1Low": 7,
+          "frameMsP95": 125.5,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=6"
+        }
+      ],
+      "main_0": [
+        {
+          "fpsMedian": 10,
+          "fps1Low": 4.3,
+          "frameMsP95": 125.7,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0"
+        },
+        {
+          "fpsMedian": 9.9,
+          "fps1Low": 7.1,
+          "frameMsP95": 117.3,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0"
+        }
+      ],
+      "main_6": [
+        {
+          "fpsMedian": 9.2,
+          "fps1Low": 6.7,
+          "frameMsP95": 133.2,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        },
+        {
+          "fpsMedian": 9.9,
+          "fps1Low": 8,
+          "frameMsP95": 117.6,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        }
+      ],
+      "main_6f": [
+        {
+          "fpsMedian": 9.9,
+          "fps1Low": 8,
+          "frameMsP95": 118.3,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&chars=6&charlook=max&charspace=0.9&chardist=6"
+        },
+        {
+          "fpsMedian": 10,
+          "fps1Low": 8,
+          "frameMsP95": 117.3,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&chars=6&charlook=max&charspace=0.9&chardist=6"
+        }
+      ]
+    },
+    "C (final): B plus low draws characters without the baked atlas": {
+      "bal_6": [
+        {
+          "fpsMedian": 3.7,
+          "fps1Low": 2.3,
+          "frameMsP95": 333.5,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        },
+        {
+          "fpsMedian": 3.7,
+          "fps1Low": 2.9,
+          "frameMsP95": 316.3,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        }
+      ],
+      "low_0": [
+        {
+          "fpsMedian": 9.9,
+          "fps1Low": 7.1,
+          "frameMsP95": 116.7,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low"
+        },
+        {
+          "fpsMedian": 9.4,
+          "fps1Low": 5.5,
+          "frameMsP95": 125.5,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low"
+        }
+      ],
+      "low_6": [
+        {
+          "fpsMedian": 8.6,
+          "fps1Low": 5.4,
+          "frameMsP95": 150,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        },
+        {
+          "fpsMedian": 8.5,
+          "fps1Low": 6,
+          "frameMsP95": 158.3,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        }
+      ],
+      "low_6f": [
+        {
+          "fpsMedian": 9.2,
+          "fps1Low": 5,
+          "frameMsP95": 133,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=6"
+        },
+        {
+          "fpsMedian": 8.7,
+          "fps1Low": 6.1,
+          "frameMsP95": 140.5,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=6"
+        }
+      ],
+      "main_0": [
+        {
+          "fpsMedian": 10.2,
+          "fps1Low": 8.5,
+          "frameMsP95": 109.7,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0"
+        },
+        {
+          "fpsMedian": 10,
+          "fps1Low": 7.1,
+          "frameMsP95": 132.6,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0"
+        }
+      ],
+      "main_6": [
+        {
+          "fpsMedian": 9.3,
+          "fps1Low": 7.4,
+          "frameMsP95": 118.7,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        },
+        {
+          "fpsMedian": 9.2,
+          "fps1Low": 6.7,
+          "frameMsP95": 125,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        }
+      ],
+      "main_6f": [
+        {
+          "fpsMedian": 10,
+          "fps1Low": 8,
+          "frameMsP95": 118.1,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&chars=6&charlook=max&charspace=0.9&chardist=6"
+        },
+        {
+          "fpsMedian": 9.9,
+          "fps1Low": 5.5,
+          "frameMsP95": 131.9,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&chars=6&charlook=max&charspace=0.9&chardist=6"
+        }
+      ]
+    }
+  }
+}

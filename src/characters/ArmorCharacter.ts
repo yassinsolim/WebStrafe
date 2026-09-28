@@ -30,8 +30,8 @@ export type CharacterDetail = 'high' | 'medium' | 'low';
  */
 export const LOD_DISTANCES: Record<CharacterDetail, [number, number]> = {
   high: [9, 24],
-  medium: [3, 9],
-  low: [1.5, 4],
+  medium: [2.5, 7],
+  low: [1.5, 3],
 };
 let detail: CharacterDetail = 'high';
 const live = new Set<ArmorCharacter>();
@@ -212,6 +212,10 @@ export class ArmorCharacter {
   }
 
   refreshLodDistances(): void {
+    // low draws plain shading without the baked atlas (like the low preset's world, no normal maps):
+    // on weak and software gl the per pixel atlas fetches cost more than the triangles
+    const atlas = detail === 'low' ? null : this.library.atlas;
+    if ((this.material.normalMap ?? null) !== (atlas?.normal ?? null)) this.material.setAtlas(atlas);
     const pinned = this.options.lod;
     this.lod.levels.length = 0;
     for (const mesh of this.meshes) mesh.removeFromParent();
