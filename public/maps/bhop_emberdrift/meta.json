@@ -246,7 +246,7 @@
     }
   ],
   "cvars": {
-    "sv_airaccelerate": 150
+    "sv_airaccelerate": 1000
   },
   "notes": "33 jumps, checkpoints every six, lava teleports to the last checkpoint.",
   "environment": {

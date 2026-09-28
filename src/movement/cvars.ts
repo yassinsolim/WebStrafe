@@ -12,8 +12,10 @@ export const defaultCvars: SourceCvars = {
   // cs2 sv_accelerate 5.5. only just above sv_friction, so running tops out at
   // wishspeed and ground strafing can't run away
   sv_accelerate: 5.5,
-  // typical cs bhop/surf server value. the 30 u/s air wishspeed cap below is
-  // what keeps this from being too strong, gain only comes from synced turning.
+  // cs2 ships 12. this is a movement game with autobhop on, so the default is the
+  // surf server value and bhop maps set 1000. with the 30 u/s cap below anything
+  // past about 15 (knife speed) only changes how hard wrong inputs hit, gain
+  // comes from synced turning
   sv_airaccelerate: 150.0,
   // cs2 sv_air_max_wishspeed 30 u/s
   sv_air_max_wishspeed: 30 * U,

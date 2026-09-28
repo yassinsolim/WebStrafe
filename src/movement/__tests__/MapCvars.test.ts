@@ -32,10 +32,10 @@ describe('per-map cvars', () => {
 
   it('takes the bhop and surf values the maps ship with', () => {
     const mc = new MovementController();
+    mc.applyMapCvars(fromJson('{"sv_airaccelerate": 1000}'));
+    expect(mc.getCvars().sv_airaccelerate).toBe(1000);
     mc.applyMapCvars(fromJson('{"sv_airaccelerate": 150}'));
     expect(mc.getCvars().sv_airaccelerate).toBe(150);
-    mc.applyMapCvars(fromJson('{"sv_airaccelerate": 100}'));
-    expect(mc.getCvars().sv_airaccelerate).toBe(100);
   });
 
   it('skips unknown names, wrong types, non-finite and out of range values', () => {

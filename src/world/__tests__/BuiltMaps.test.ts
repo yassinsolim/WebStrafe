@@ -169,9 +169,10 @@ describe.each(MAPS)('%s meta', (id) => {
 });
 
 describe('map cvars', () => {
-  it('bhop and surf maps carry their air acceleration, the arena none', () => {
-    expect((readMeta('bhop_emberdrift').cvars as Record<string, number>).sv_airaccelerate).toBe(150);
-    expect((readMeta('surf_prismline').cvars as Record<string, number>).sv_airaccelerate).toBe(100);
+  it('bhop and surf maps carry their community air acceleration, the arena none', () => {
+    // autobhop bhop servers run 1000 and surf servers 150, see docs/movement-cs2.md
+    expect((readMeta('bhop_emberdrift').cvars as Record<string, number>).sv_airaccelerate).toBe(1000);
+    expect((readMeta('surf_prismline').cvars as Record<string, number>).sv_airaccelerate).toBe(150);
     expect(readMeta('aim_ochrecut').cvars).toBeUndefined();
   });
 });
@@ -253,7 +254,7 @@ describe('bhop_emberdrift course', () => {
   it('runs the start of the course with the real movement code', () => {
     const w = world('bhop_emberdrift');
     const player = knifeRunner();
-    player.setCvar('sv_airaccelerate', 150);
+    player.applyMapCvars(meta.cvars);
     const spawn = meta.spawns![0];
     player.reset(vec(spawn.position), spawn.yawDeg ?? 0);
     const targets = layout.platforms.slice(1, 6).map((p) => top(p));
@@ -448,7 +449,7 @@ describe('surf_prismline ramps', () => {
     const f = vec(ramp.forward).normalize();
     const start = rs.clone().lerp(re, 0.1).add(fs.clone().sub(rs).multiplyScalar(0.15)).addScaledVector(normal, 0.3);
     const player = knifeRunner();
-    player.setCvar('sv_airaccelerate', 100);
+    player.applyMapCvars(meta.cvars);
     player.reset(start, (Math.atan2(-f.x, -f.z) * 180) / Math.PI);
     player.setVelocity(f.clone().multiplyScalar(12));
     const into = ramp.side === 'right' ? -1 : 1;
@@ -498,7 +499,7 @@ function rideStage(w: CollisionWorld, layout: SurfLayout, stageIndex: number, si
     .addScaledVector(right, first.lateral + sign * depth0 / Math.tan((first.angleDeg * Math.PI) / 180));
   start.y = first.ridgeStart + (first.ridgeEnd - first.ridgeStart) * (8 / first.length) - depth0 + 0.3;
   const player = knifeRunner();
-  player.setCvar('sv_airaccelerate', 100);
+  player.applyMapCvars(readMeta('surf_prismline').cvars);
   player.reset(start, (Math.atan2(-fwd.x, -fwd.z) * 180) / Math.PI);
   player.setVelocity(fwd.clone().multiplyScalar(speed));
   let current = -1;
