@@ -31,9 +31,9 @@ interface SwatchJob {
 }
 
 /**
- * Small 3D inspect view for the loadout: the selected knife with its finish on
- * a slow turntable that can be dragged. Renders only while the menu shows it,
- * and renders the finish swatches through the same WebGL context.
+ * small 3d inspect view for the loadout: the selected knife with its finish on
+ * a slow turntable that can be dragged. renders only while the menu shows it,
+ * and renders the finish swatches through the same webgl context.
  */
 export class KnifeInspectPreview {
   readonly canvas: HTMLCanvasElement;

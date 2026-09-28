@@ -27,9 +27,9 @@ const SWATCH_W = 192;
 const SWATCH_H = 80;
 
 /**
- * Finish controls for the loadout: a grid of rendered swatches, the doppler
+ * finish controls for the loadout: a grid of rendered swatches, the doppler
  * phases, a wear slider with the cs exterior name, the pattern seed with a
- * random button and a live 3D inspect view of the knife.
+ * random button and a live 3d inspect view of the knife.
  */
 export class FinishPicker {
   readonly element: HTMLElement;

@@ -1,10 +1,10 @@
 import type { KnifeFinishWearStyle } from './catalog';
 
 /**
- * GLSL for the knife finishes, injected into MeshStandardMaterial with
- * onBeforeCompile. Everything works in knife space (metres, +x from the guard
+ * glsl for the knife finishes, injected into MeshStandardMaterial with
+ * onBeforeCompile. everything works in knife space (metres, +x from the guard
  * to the tip, +y to the spine) from attributes baked by applyFinish.ts, so
- * models need no special UVs. All patterns are original procedural noise.
+ * models need no special uvs. all patterns are original procedural noise.
  *
  * attributes (per vertex, rest pose):
  * - finishPos    xyz knife space position

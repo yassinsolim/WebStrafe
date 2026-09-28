@@ -26,14 +26,14 @@ import {
 export type { KnifeFinishSelection } from './catalog';
 
 /**
- * Puts a finish on a knife: the procedural knives today and the contract GLBs
- * (docs/assets/knife-contract.md) later. Materials named knife_blade,
+ * puts a finish on a knife: the procedural knives today and the contract glbs
+ * (docs/assets/knife-contract.md) later. materials named knife_blade,
  * knife_edge, knife_handle and knife_metal (or meshes with those names) get
  * swapped for shared finish materials; the originals are kept on the mesh and
- * come back with {@link clearKnifeFinish}. Whoever disposes a knife must clear
+ * come back with {@link clearKnifeFinish}. whoever disposes a knife must clear
  * its finish first (disposeProceduralKnife does).
  *
- * The shaders work in knife space. Each finished geometry gets three baked
+ * the shaders work in knife space. each finished geometry gets three baked
  * attributes (see shaders.ts) in the rest pose of the knife root: folder
  * blades and balisong handles are read with their pivots closed to rest, so
  * the pattern sticks to the part while it swings.

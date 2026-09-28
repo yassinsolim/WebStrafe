@@ -377,7 +377,7 @@ export class MainMenu {
     this.loadoutPanel.setSelectedKnife(knifeId);
   }
 
-  /** Reflects the stored knife finish without firing the callback. */
+  /** reflects the stored knife finish without firing the callback */
   public setKnifeFinish(selection: KnifeFinishSelection): void {
     this.loadoutPanel.setKnifeFinish(selection);
   }

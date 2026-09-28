@@ -1,8 +1,8 @@
 /**
- * Knife finishes (skins). Display names are the CS names so players recognise
+ * knife finishes (skins). display names are the cs names so players recognise
  * them; every pattern is an original procedural shader (shaders.ts), nothing is
- * taken from Valve. Wear ranges are the CS float limits of each finish, seeds
- * are the CS pattern index (0..999) and move the pattern deterministically.
+ * taken from valve. wear ranges are the cs float limits of each finish, seeds
+ * are the cs pattern index (0..999) and move the pattern deterministically.
  */
 
 export type KnifeFinishCategory = 'stock' | 'anodized' | 'steel' | 'paint' | 'camo';

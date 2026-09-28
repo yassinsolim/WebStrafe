@@ -12,11 +12,11 @@ import {
 import { finishFragmentShader, finishVertexShader } from './shaders';
 
 /**
- * Finish materials, shared between every knife showing the same finish, wear
- * step and seed (the viewmodel, the menu preview and the swatches). They are
+ * finish materials, shared between every knife showing the same finish, wear
+ * step and seed (the viewmodel, the menu preview and the swatches). they are
  * reference counted: a material nobody uses waits in a small idle list so
  * scrubbing the wear slider doesn't rebuild everything, then gets disposed.
- * One shader program per finish family and part, all variation is uniforms.
+ * one shader program per finish family and part, all variation is uniforms.
  */
 
 /** wear is quantized to this step for material sharing, finer than any visible change */
