@@ -3,6 +3,7 @@ import { Box3, Texture, Vector3, type Mesh } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { MovementController } from '../../movement/MovementController';
 import { defaultCvars } from '../../movement/cvars';
+import { weaponMaxSpeed } from '../../combat/weapons';
 import type { CollisionWorld } from '../CollisionWorld';
 import { MapTriggers, sanitizeTriggers } from '../MapTriggers';
 import { applyLightmaps, resolveEnvironment, resolveMapAssetPath } from '../MapEnvironment';
@@ -27,6 +28,13 @@ const MAPS = ['bhop_emberdrift', 'surf_prismline', 'aim_ochrecut'] as const;
 const CAPSULE = new MovementController().capsule;
 const DT = 1 / 128;
 const MB = 1024 * 1024;
+
+/** the real movement code at the speed you run with the knife, what you hold outside combat */
+function knifeRunner(): MovementController {
+  const player = new MovementController();
+  player.setMaxSpeedCap(weaponMaxSpeed('knife'));
+  return player;
+}
 
 const worlds = new Map<string, CollisionWorld>();
 
@@ -244,7 +252,7 @@ describe('bhop_emberdrift course', () => {
 
   it('runs the start of the course with the real movement code', () => {
     const w = world('bhop_emberdrift');
-    const player = new MovementController();
+    const player = knifeRunner();
     player.setCvar('sv_airaccelerate', 150);
     const spawn = meta.spawns![0];
     player.reset(vec(spawn.position), spawn.yawDeg ?? 0);
@@ -439,7 +447,7 @@ describe('surf_prismline ramps', () => {
     const { rs, re, fs, normal } = facePlane(ramp);
     const f = vec(ramp.forward).normalize();
     const start = rs.clone().lerp(re, 0.1).add(fs.clone().sub(rs).multiplyScalar(0.15)).addScaledVector(normal, 0.3);
-    const player = new MovementController();
+    const player = knifeRunner();
     player.setCvar('sv_airaccelerate', 100);
     player.reset(start, (Math.atan2(-f.x, -f.z) * 180) / Math.PI);
     player.setVelocity(f.clone().multiplyScalar(12));
@@ -489,7 +497,7 @@ function rideStage(w: CollisionWorld, layout: SurfLayout, stageIndex: number, si
   const start = origin.clone().addScaledVector(fwd, first.s0 + 8)
     .addScaledVector(right, first.lateral + sign * depth0 / Math.tan((first.angleDeg * Math.PI) / 180));
   start.y = first.ridgeStart + (first.ridgeEnd - first.ridgeStart) * (8 / first.length) - depth0 + 0.3;
-  const player = new MovementController();
+  const player = knifeRunner();
   player.setCvar('sv_airaccelerate', 100);
   player.reset(start, (Math.atan2(-fwd.x, -fwd.z) * 180) / Math.PI);
   player.setVelocity(fwd.clone().multiplyScalar(speed));
@@ -591,7 +599,7 @@ describe('aim_ochrecut arena', () => {
     const bottom = vec(stair.bottom);
     const topPoint = vec(stair.top);
     const dir = topPoint.clone().sub(bottom).setY(0).normalize();
-    const player = new MovementController();
+    const player = knifeRunner();
     player.reset(bottom.clone().addScaledVector(dir, -1.5).add(new Vector3(0, 0.05, 0)), (Math.atan2(-dir.x, -dir.z) * 180) / Math.PI);
     let onNest = false;
     for (let t = 0; t < 128 * 3 && !onNest; t += 1) {

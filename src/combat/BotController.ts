@@ -7,6 +7,7 @@ import {
   wrapBotAngle,
   type BotPerception,
 } from './BotPerception';
+import { weaponMaxSpeed } from './weapons';
 
 export type { BotPerception } from './BotPerception';
 
@@ -291,6 +292,9 @@ export class BotController {
     private readonly random: () => number = Math.random,
   ) {
     this.params = params;
+    // bots carry the deagle (BotManager and HostSimulation arm them with it), so
+    // they run at its cs2 speed, 230 u/s, like a player holding one
+    this.movement.setMaxSpeedCap(weaponMaxSpeed('deagle'));
     this.movement.reset(spawn, yawDeg);
   }
 

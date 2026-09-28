@@ -86,7 +86,7 @@ export interface AimMotion {
   /** vertical velocity, m/s, positive up */
   verticalSpeed: number;
   grounded: boolean;
-  /** max ground speed the move ramp is measured against, m/s (sv_maxspeed) */
+  /** max ground speed the move ramp is measured against: the held weapon's run speed, m/s */
   maxSpeed: number;
   /** jump take-off speed, m/s (sv_jump_impulse) */
   jumpImpulse: number;

@@ -288,7 +288,9 @@ plus an air term:
   units/s. It decays back to the floor, 90% per recovery time. In the air the
   recovery time is CS's crouch recovery x4.
 - **Movement term:** zero up to 34% of max speed, then `move` x ramp^0.25 up
-  to 95%, measured against `sv_maxspeed`.
+  to 95%, measured against the held weapon's max speed like CS: 250 u/s for
+  the knife, 230 for the Deagle, 200 for the AWP and 100 scoped (see
+  [movement-cs2.md](movement-cs2.md)).
 - **Air term:** from `jumpInitial` at take-off speed down to 0 near the apex,
   using a sqrt of vertical speed, capped at 2x.
 - **Sampling:** each shot draws a random radius in [0, inaccuracy] at a

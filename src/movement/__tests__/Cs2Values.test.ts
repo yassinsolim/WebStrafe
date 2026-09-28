@@ -3,6 +3,7 @@ import { Vector3 } from 'three';
 import { MovementController } from '../MovementController';
 import { defaultCvars, METRES_PER_UNIT } from '../cvars';
 import type { MoveInput } from '../types';
+import { weaponMaxSpeed } from '../../combat/weapons';
 import { flatWorld, horizontalSpeed, lowCeilingWorld } from './testWorlds';
 
 // cs2 values from DumpSource2/convars.txt and scripts/weapons.vdata in
@@ -196,5 +197,79 @@ describe('cs2 ground movement', () => {
     expect(peak).toBeGreaterThan(w);
     expect(peak).toBeLessThanOrEqual(bound + 1e-9);
     expect(peak / w).toBeLessThan(1.03);
+  });
+});
+
+describe('cs2 weapon run speeds', () => {
+  /** runs W from a standstill with the weapon cap set, crouched or not, and returns the final and peak speed */
+  function runWith(cap: number, crouch = false): { speed: number; peak: number } {
+    const world = flatWorld();
+    const mc = new MovementController();
+    mc.setMaxSpeedCap(cap);
+    mc.reset(new Vector3(0, 0, 0), 0);
+    for (let i = 0; crouch && i < 32; i += 1) {
+      mc.tick(DT, move({ crouchHeld: true }), world);
+    }
+    let peak = 0;
+    for (let i = 0; i < 384; i += 1) {
+      mc.tick(DT, move({ forwardMove: 1, crouchHeld: crouch }), world);
+      peak = Math.max(peak, horizontalSpeed(mc.getVelocity()));
+    }
+    return { speed: horizontalSpeed(mc.getVelocity()), peak };
+  }
+
+  const cases = [
+    ['knife', false, 250],
+    ['deagle', false, 230],
+    ['awp', false, 200],
+    ['awp', true, 100],
+  ] as const;
+
+  it.each(cases)('%s (scoped %s) runs at %i u/s', (id, scoped, units) => {
+    const { speed, peak } = runWith(weaponMaxSpeed(id, scoped));
+    expect(speed).toBeCloseTo(units * U, 9);
+    expect(peak).toBeLessThanOrEqual(units * U + 1e-9);
+  });
+
+  it.each(cases)('%s (scoped %s) crouch-walks at 0.34 x %i u/s', (id, scoped, units) => {
+    // 85 u/s with the knife down to 34 u/s scoped, all reachable against stopspeed friction
+    const { speed, peak } = runWith(weaponMaxSpeed(id, scoped), true);
+    expect(speed).toBeCloseTo(0.34 * units * U, 9);
+    expect(peak).toBeLessThanOrEqual(0.34 * units * U + 1e-9);
+  });
+
+  it('sv_maxspeed still caps a weapon that is faster than it', () => {
+    const mc = new MovementController();
+    mc.setCvar('sv_maxspeed', 200 * U);
+    mc.setMaxSpeedCap(weaponMaxSpeed('knife'));
+    expect(mc.getMaxSpeed()).toBeCloseTo(200 * U, 12);
+  });
+
+  it('scoping in while running slows down through friction, not a snap', () => {
+    const world = flatWorld();
+    const mc = new MovementController();
+    mc.setMaxSpeedCap(weaponMaxSpeed('awp'));
+    mc.reset(new Vector3(0, 0, 0), 0);
+    for (let i = 0; i < 384; i += 1) {
+      mc.tick(DT, move({ forwardMove: 1 }), world);
+    }
+    mc.setMaxSpeedCap(weaponMaxSpeed('awp', true));
+    mc.tick(DT, move({ forwardMove: 1 }), world);
+    expect(horizontalSpeed(mc.getVelocity())).toBeCloseTo(200 * U * (1 - defaultCvars.sv_friction * DT), 9);
+    for (let i = 0; i < 64; i += 1) {
+      mc.tick(DT, move({ forwardMove: 1 }), world);
+    }
+    expect(horizontalSpeed(mc.getVelocity())).toBeCloseTo(100 * U, 9);
+  });
+
+  it('clearing the cap leaves sv_maxspeed, and reset keeps it', () => {
+    const mc = new MovementController();
+    mc.setMaxSpeedCap(weaponMaxSpeed('deagle'));
+    mc.reset(new Vector3(0, 0, 0), 0);
+    expect(mc.getMaxSpeed()).toBeCloseTo(230 * U, 12);
+    for (const cleared of [Number.POSITIVE_INFINITY, 0, -1, Number.NaN]) {
+      mc.setMaxSpeedCap(cleared);
+      expect(mc.getMaxSpeed()).toBe(defaultCvars.sv_maxspeed);
+    }
   });
 });

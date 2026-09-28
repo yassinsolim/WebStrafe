@@ -69,7 +69,7 @@ import type { MeleeTarget } from '../combat/MeleeResolver';
 import { DEFAULT_ZOOM_SENSITIVITY_RATIO } from '../combat/Scope';
 import { ScopeOverlay } from '../ui/ScopeOverlay';
 import { isCombatEnabled } from '../combat/combatConfig';
-import { getWeapon, type WeaponId } from '../combat/weapons';
+import { getWeapon, weaponMaxSpeed, type WeaponId } from '../combat/weapons';
 import { DEFAULT_KNIFE_ID, getKnife, isKnifeId, type KnifeId } from '../combat/knives';
 import { CollisionWorld } from '../world/CollisionWorld';
 import { deleteCustomMap, listCustomMaps } from '../world/CustomMapStore';
@@ -648,6 +648,9 @@ export class GameApp {
         // around as a "ghost" until they respawn.
         const sampledMove = this.input.sampleMoveInput();
         const moveInput = dead ? this.deadMoveInput : this.qaMove ? { ...sampledMove, ...this.qaMove } : sampledMove;
+        // cs2 run speed follows the held weapon, and the awp's scoped value while zoomed
+        // (knife 250 u/s, deagle 230, awp 200 or 100). outside combat you hold the knife
+        this.movement.setMaxSpeedCap(weaponMaxSpeed(this.weapon.getActive(), this.combatAim.isScoped()));
         this.movement.tick(FIXED_TICK_DT, moveInput, this.collisionWorld);
         this.updateMapTriggers();
         if (this.combatEnabled) {
@@ -1369,7 +1372,8 @@ export class GameApp {
     this.combatAim.tick(dt, {
       velocity: this.movement.getVelocity(),
       grounded: this.movement.getDebugState().grounded,
-      maxSpeed: cvars.sv_maxspeed,
+      // cs measures move inaccuracy against the held weapon's own max speed
+      maxSpeed: this.movement.getMaxSpeed(),
       jumpImpulse: cvars.sv_jump_impulse,
     });
   }

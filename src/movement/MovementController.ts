@@ -58,6 +58,8 @@ export class MovementController {
   private viewEase = 0;
 
   private readonly cvars: SourceCvars = { ...defaultCvars };
+  // held weapon run speed, see setMaxSpeedCap. infinity leaves only sv_maxspeed
+  private maxSpeedCap = Number.POSITIVE_INFINITY;
   private readonly position = new Vector3(0, 4, 0); // feet
   private readonly velocity = new Vector3();
   private readonly surfContactNormal = new Vector3(0, 1, 0);
@@ -102,6 +104,22 @@ export class MovementController {
 
   public setCvars(next: Partial<SourceCvars>): void {
     Object.assign(this.cvars, next);
+  }
+
+  /**
+   * run speed cap from the held weapon in m/s, cs2's weapons.vdata m_flMaxSpeed
+   * (the scoped value while zoomed). wishspeed is clamped to the lower of this and
+   * sv_maxspeed, like cs's per-player max speed. it's an input the owner keeps up
+   * to date, so it's not in the snapshot and reset() keeps it. anything but a
+   * positive number clears it.
+   */
+  public setMaxSpeedCap(speed: number): void {
+    this.maxSpeedCap = Number.isFinite(speed) && speed > 0 ? speed : Number.POSITIVE_INFINITY;
+  }
+
+  /** what wishspeed is clamped to right now: min(sv_maxspeed, weapon cap), m/s */
+  public getMaxSpeed(): number {
+    return Math.min(this.cvars.sv_maxspeed, this.maxSpeedCap);
   }
 
   /**
@@ -198,7 +216,7 @@ export class MovementController {
       && this.surfContactGraceTicks > 0
       && groundProbe !== null
       && groundProbe.slopeAngleDeg <= walkableAngle + 1
-      && horizontalLength(this.velocity) > Math.max(SURF_EDGE_LAUNCH_MIN_SPEED, this.cvars.sv_maxspeed * 0.9)
+      && horizontalLength(this.velocity) > Math.max(SURF_EDGE_LAUNCH_MIN_SPEED, this.getMaxSpeed() * 0.9)
       && this.velocity.y <= 0.9;
     if (preserveLaunchFromSurf) {
       mode = 'air';
@@ -233,9 +251,13 @@ export class MovementController {
           this.applyGroundFriction(dt);
           frictionApplied = true;
         }
+        // the crouch crop lowers the goal speed, not the accel rate. at cs2's
+        // accelerate 5.5 a rate cropped with it couldn't beat stopspeed friction
+        // under 76 u/s, and a scoped awp crouch-walks at 34 u/s
         this.accelerateGround(
           wish.wishDir,
           wish.wishSpeed * MathUtils.lerp(1, DUCK_SPEED_SCALE, this.duckAmount),
+          wish.wishSpeed,
           dt,
         );
         if (this.velocity.y < 0) {
@@ -338,7 +360,7 @@ export class MovementController {
       && this.surfContactGraceTicks > 0
       && groundProbe !== null
       && groundProbe.slopeAngleDeg <= walkableAngle + 1
-      && horizontalLength(this.velocity) > Math.max(SURF_EDGE_LAUNCH_MIN_SPEED, this.cvars.sv_maxspeed * 0.9)
+      && horizontalLength(this.velocity) > Math.max(SURF_EDGE_LAUNCH_MIN_SPEED, this.getMaxSpeed() * 0.9)
       && this.velocity.y <= 0.9;
 
     const walkable = this.isWalkable(groundProbe);
@@ -480,7 +502,8 @@ export class MovementController {
     }
 
     const wishDir = wishVel.multiplyScalar(1 / len);
-    const wishSpeed = Math.min(this.cvars.sv_maxspeed, len * this.cvars.sv_maxspeed);
+    const maxSpeed = this.getMaxSpeed();
+    const wishSpeed = Math.min(maxSpeed, len * maxSpeed);
     return { wishDir, wishSpeed };
   }
 
@@ -562,11 +585,11 @@ export class MovementController {
 
   // no speed clamp after this: source's WalkMove only clamps wishspeed, so landing
   // fast without jumping bleeds off through friction over a few ticks
-  private accelerateGround(wishDir: Vector3, wishSpeed: number, dt: number): void {
+  private accelerateGround(wishDir: Vector3, wishSpeed: number, accelScale: number, dt: number): void {
     if (wishSpeed <= 0 || wishDir.lengthSq() <= 0) {
       return;
     }
-    this.velocity.copy(accelerate(this.velocity, wishDir, wishSpeed, this.cvars.sv_accelerate, dt));
+    this.velocity.copy(accelerate(this.velocity, wishDir, wishSpeed, this.cvars.sv_accelerate, dt, 1, accelScale));
   }
 
   private pickMode(groundProbe: GroundProbe | null): MovementMode {
