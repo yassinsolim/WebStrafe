@@ -14,6 +14,13 @@ export interface BudgetOptions {
   minHz: number;
 }
 
+/**
+ * Largest room the budget can serve: 80 / 6^2 = 2.2 Hz per client. At 7 the
+ * 2 Hz floor would put a room at 98 events/s before any combat traffic, and
+ * from 8 the floor alone passes the 100/s cap, so rooms stop at 6.
+ */
+export const MAX_ROOM_PLAYERS = 6;
+
 export const DEFAULT_BUDGET: BudgetOptions = {
   budget: 80,
   maxHz: 20,

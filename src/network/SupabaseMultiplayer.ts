@@ -15,20 +15,25 @@ import type {
 import type { SupabaseConfig } from './supabaseConfig';
 import { HostSimulation, type HostBotRow, type HostEmitter } from './HostSimulation';
 import { SendCadence } from '../netcode/SendCadence';
-import { broadcastRateHz, DEFAULT_BUDGET, type BudgetOptions } from '../netcode/RateBudget';
+import { broadcastRateHz, DEFAULT_BUDGET, MAX_ROOM_PLAYERS, type BudgetOptions } from '../netcode/RateBudget';
+import { RESPAWN_DELAY_MS } from '../combat/CombatState';
 
 const SESSION_KEY = 'webstrafe:session-id:v1';
 /**
  * Wire protocol version, part of the channel name so clients running the old
  * message format never share a room with this one.
  */
-export const SUPABASE_PROTOCOL = 'p2';
+export const SUPABASE_PROTOCOL = 'p3';
 const PLAYER_STALE_MS = 8000;
 /** idle/paused clients only need to prove they are still here */
 const KEEPALIVE_MS = 1000;
 /** how often the pump checks for host/keepalive broadcasts */
 const PUMP_MS = 25;
 const HOST_STEP_MS = 1000 / 60;
+/** a peer not heard from for this long can't host (suspended tab, hung main thread) */
+export const HOST_STALE_MS = 3000;
+/** after joining, wait this long for an existing host's claim before self-electing */
+export const JOIN_GRACE_MS = 2500;
 
 type Packed = [number, number, number, number, number, number, number, number];
 
@@ -49,8 +54,14 @@ interface WireState {
   s: Packed | null;
   /** combat ready */
   r: 0 | 1;
-  /** willing to host (tab visible) */
-  e: 0 | 1;
+  /** host eligibility: 0 no map loaded (menu), 1 map loaded but tab hidden, 2 visible in a map */
+  e: 0 | 1 | 2;
+  /** host claim epoch, only while this peer is hosting */
+  h?: number;
+  /** active weapon, so a new host restores it */
+  w?: string;
+  /** ms until this player respawns, only while dead */
+  d?: number;
   /** bot rows, only from the elected host */
   b?: WireBot[];
   /** host clock time of the step that produced `b` */
@@ -69,6 +80,8 @@ export interface SupabaseMultiplayerOptions {
   /** defaults to document.visibilityState */
   isVisible?: () => boolean;
   sessionId?: string;
+  /** clock override for tests */
+  now?: () => number;
 }
 
 interface RemoteRecord {
@@ -77,7 +90,11 @@ interface RemoteRecord {
   state: OutgoingState | null;
   t: number | null;
   combatReady: boolean;
-  hostEligible: boolean;
+  eligibility: 0 | 1 | 2;
+  hostEpoch: number | null;
+  weapon: string | null;
+  deadForMs: number | null;
+  joinedAt: number;
   lastSeen: number;
 }
 
@@ -103,6 +120,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   public onRespawn: ((event: RespawnEvent) => void) | null = null;
   public onShot: ((event: ShotEvent) => void) | null = null;
   public onConnectedChange: ((connected: boolean) => void) | null = null;
+  /** fired when the room already holds MAX_ROOM_PLAYERS and this client backed out */
+  public onRoomFull: (() => void) | null = null;
 
   private readonly localId: string;
   private channel: RealtimeChannel | null = null;
@@ -129,12 +148,23 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   private presenceSynced = false;
   private pendingCombat: CombatWireEvent[] = [];
   private readonly detachVisibility: (() => void) | null;
+  private localWeapon: string | null = null;
+  /** Date.now() when the local player respawns, while dead */
+  private localDeadUntil: number | null = null;
+  /** our claim epoch while hosting, and the highest epoch seen in this room */
+  private hostEpoch = 0;
+  private maxEpochSeen = 0;
+  private joinedChannelAt = 0;
+  /** set once the paused pose went out with zero velocity */
+  private restSent = false;
+  private roomFull = false;
 
   /** Messages this client has broadcast, by event (diagnostics/bench). */
   public readonly sentCounts = new Map<string, number>();
 
   private readonly budget: BudgetOptions;
   private readonly isVisible: () => boolean;
+  private readonly now: () => number;
 
   constructor(
     private readonly client: SupabaseClient,
@@ -143,6 +173,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   ) {
     this.budget = options.budget ?? DEFAULT_BUDGET;
     this.isVisible = options.isVisible ?? isDocumentVisible;
+    this.now = options.now ?? (() => Date.now());
     this.localId = options.sessionId ?? loadSessionId();
     this.detachVisibility = watchVisibility(() => {
       this.cadence.flush();
@@ -207,6 +238,10 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.activeMapId = mapId;
     this.presenceSynced = false;
     this.subscribed = false;
+    this.hostEpoch = 0;
+    this.maxEpochSeen = 0;
+    this.roomFull = false;
+    this.joinedChannelAt = this.now();
 
     const channel = this.client.channel(
       `${this.config.lobbyChannelPrefix}_${SUPABASE_PROTOCOL}_${mapId}`,
@@ -247,17 +282,23 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.localCombatReady = ready;
     // rides on the next state message, sent right away
     this.cadence.flush();
-    this.broadcastState(Date.now());
+    this.broadcastState();
   }
 
   sendState(state: OutgoingState): void {
-    this.localState = state;
-    this.localStateAtMs = Date.now();
-    const t = state.t ?? this.localStateAtMs;
+    this.localState = { ...state, t: state.t ?? this.now() };
+    this.localStateAtMs = this.now();
+    this.restSent = false;
     this.cadence.setRate(this.getBroadcastHz());
-    if (this.cadence.due(t)) {
-      this.broadcastState(t);
+    if (!this.cadence.due(this.localState.t!)) {
+      return;
     }
+    // nobody else in the room: a 1 Hz keepalive is enough for newcomers to
+    // find us (and our host claim), full rate would only burn message quota
+    if (this.remotes.size === 0 && this.now() - this.lastBroadcastAtMs < KEEPALIVE_MS) {
+      return;
+    }
+    this.broadcastState();
   }
 
   sendAttack(kind: AttackKind): void {
@@ -272,7 +313,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     view?: FireView | number,
   ): void {
     const fireView: FireView = typeof view === 'number' ? { observedAtMs: view } : view ?? {};
-    const shooterT = this.localState?.t ?? Date.now();
+    const shooterT = this.localState?.t ?? this.now();
     if (this.hostSim) {
       this.hostSim.applyFire(this.localId, origin, dir, fireView.observedAtMs, {
         targetTimes: fireView.targets,
@@ -299,6 +340,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   }
 
   sendEquip(weaponId: string): void {
+    this.localWeapon = weaponId;
     if (this.hostSim) {
       this.hostSim.applyEquip(this.localId, weaponId);
       return;
@@ -308,7 +350,21 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
 
   setRoomContext(context: RoomContext | null): void {
     this.roomContext = context;
+    // eligibility rides on state, tell the room right away
+    this.cadence.flush();
+    this.broadcastState();
     this.updateHostRole();
+  }
+
+  /** Whether this client is currently the elected host (diagnostics/tests). */
+  isHosting(): boolean {
+    return this.hostSim !== null;
+  }
+
+  /** 2 = visible with a map loaded, 1 = map loaded but hidden, 0 = no map (menu). */
+  private localEligibility(): 0 | 1 | 2 {
+    if (!this.roomContext) return 0;
+    return this.isVisible() ? 2 : 1;
   }
 
   private presencePayload(): Record<string, unknown> {
@@ -316,26 +372,56 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       id: this.localId,
       name: this.localName,
       model: this.localModel,
+      j: this.joinedChannelAt,
     };
   }
 
   /**
-   * Host = lowest id among peers whose tab is visible. Background tabs get
-   * their timers throttled to ~1 Hz by the browser, which used to freeze bots
-   * and stall combat for everyone while the host was alt-tabbed. Falls back to
-   * lowest id overall when nobody is visible.
+   * Host election, evaluated independently by every peer from shared state:
+   *
+   * 1. Only live peers count (heard from within HOST_STALE_MS), so a suspended
+   *    or hung host fails over instead of silently eating every shot.
+   * 2. Sticky: if anyone live and eligible is already hosting, the claim with
+   *    the highest epoch wins (ties to lowest id). A new host always claims
+   *    epoch max+1, so a returning low-id tab doesn't take the room back and
+   *    reset everyone's weapons and health.
+   * 3. Otherwise the lowest id among visible peers with a map loaded; if none
+   *    are visible, the lowest id with a map loaded. Menu tabs never host.
+   *
+   * A freshly joined peer waits JOIN_GRACE_MS for an existing claim before
+   * self-electing, so it can't grab hosting before it has heard the room.
    */
-  private electedHostId(): string | null {
+  electedHostId(): string | null {
     if (!this.presenceSynced) {
       return null;
     }
-    const eligible: string[] = this.isVisible() ? [this.localId] : [];
-    const everyone = [this.localId];
-    for (const [id, record] of this.remotes) {
-      everyone.push(id);
-      if (record.hostEligible) eligible.push(id);
+    const now = this.now();
+    const localElig = this.localEligibility();
+    const claims: Array<{ id: string; epoch: number }> = [];
+    if (this.hostSim && localElig > 0) {
+      claims.push({ id: this.localId, epoch: this.hostEpoch });
     }
-    const pool = eligible.length > 0 ? eligible : everyone;
+    const visible: string[] = localElig === 2 ? [this.localId] : [];
+    const mapped: string[] = localElig > 0 ? [this.localId] : [];
+    for (const [id, r] of this.remotes) {
+      if (now - r.lastSeen > HOST_STALE_MS) continue;
+      if (r.eligibility > 0) mapped.push(id);
+      if (r.eligibility === 2) visible.push(id);
+      if (r.hostEpoch !== null && r.eligibility > 0) claims.push({ id, epoch: r.hostEpoch });
+    }
+    if (claims.length > 0) {
+      claims.sort((a, b) => b.epoch - a.epoch || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      const best = claims[0];
+      // a hidden claimant keeps the room only until someone visible can take over
+      const bestVisible = best.id === this.localId ? localElig === 2 : this.remotes.get(best.id)?.eligibility === 2;
+      if (bestVisible || visible.length === 0) {
+        return best.id;
+      }
+    }
+    if (this.remotes.size > 0 && now - this.joinedChannelAt < JOIN_GRACE_MS && !this.hostSim) {
+      return null;
+    }
+    const pool = visible.length > 0 ? visible : mapped;
     pool.sort();
     return pool[0] ?? null;
   }
@@ -349,7 +435,10 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       this.electedHostId() === this.localId && this.roomContext !== null;
 
     if (shouldHost && !this.hostSim && this.roomContext) {
-      const queue = (event: CombatWireEvent) => this.pendingCombat.push(event);
+      const queue = (event: CombatWireEvent) => {
+        this.trackLocalLife(event);
+        this.pendingCombat.push(event);
+      };
       const emitter: HostEmitter = {
         hit: (e) => { this.onHit?.(e); queue({ k: 'hit', e }); },
         death: (e) => { this.onDeath?.(e); queue({ k: 'death', e }); },
@@ -357,13 +446,15 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         respawn: (e) => { this.onRespawn?.(e); queue({ k: 'respawn', e }); },
         shot: (e) => { this.onShot?.(e); queue({ k: 'shot', e }); },
       };
+      this.hostEpoch = this.maxEpochSeen + 1;
+      this.maxEpochSeen = this.hostEpoch;
       this.hostSim = new HostSimulation(
         this.roomContext.collisionWorld,
         this.roomContext.spawn,
         this.roomContext.botCount,
         emitter,
       );
-      this.hostLastTickMs = Date.now();
+      this.hostLastTickMs = this.now();
       this.hostAccumulatorMs = 0;
       this.cadence.flush();
     } else if (!shouldHost && this.hostSim) {
@@ -394,7 +485,9 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
    * player is paused (no ticks arriving), and idle keepalives.
    */
   private pump(): void {
-    const now = Date.now();
+    const now = this.now();
+    // liveness and grace windows expire on their own, re-run the election
+    this.updateHostRole();
     if (this.hostSim) {
       this.tickHost(now);
     }
@@ -402,9 +495,19 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (ticking) {
       return;
     }
-    const interval = this.hostSim ? 1000 / this.getBroadcastHz() : KEEPALIVE_MS;
+    // paused: publish one final pose at rest (zero velocity, fresh time) so
+    // nobody extrapolates the last strafe, then keepalives repeat that sample
+    // with its original time, which receivers drop as a duplicate
+    if (this.localState && !this.restSent) {
+      this.localState = { ...this.localState, velocity: [0, 0, 0], t: now };
+      this.restSent = true;
+      this.broadcastState();
+      return;
+    }
+    const busyHost = this.hostSim !== null && this.remotes.size > 0;
+    const interval = busyHost ? 1000 / this.getBroadcastHz() : KEEPALIVE_MS;
     if (now - this.lastBroadcastAtMs >= interval) {
-      this.broadcastState(now);
+      this.broadcastState();
     }
   }
 
@@ -426,6 +529,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         position: this.localState.position,
         velocity: this.localState.velocity,
         t: this.localState.t,
+        weapon: this.localWeapon ?? undefined,
+        deadForMs: this.localDeadUntil !== null ? Math.max(0, this.localDeadUntil - now) : undefined,
         combatReady: this.localCombatReady,
         yaw: this.localState.yaw,
         pitch: this.localState.pitch,
@@ -440,6 +545,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
           position: record.state.position,
           velocity: record.state.velocity,
           t: record.t ?? undefined,
+          weapon: record.weapon ?? undefined,
+          deadForMs: record.deadForMs ?? undefined,
           combatReady: record.combatReady,
           yaw: record.state.yaw,
           pitch: record.state.pitch,
@@ -471,18 +578,26 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.broadcast('cb', { host: this.localId, ev: events });
   }
 
-  private broadcastState(t: number): void {
-    if (!this.channel || !this.subscribed) {
+  /**
+   * Sends our state. The message time is always the time of the pose it
+   * carries, never "now": a repeated pose must look like the same sample.
+   */
+  private broadcastState(): void {
+    if (!this.channel || !this.subscribed || this.roomFull) {
       return;
     }
+    const now = this.now();
     const s = this.localState;
     const payload: WireState = {
       id: this.localId,
-      t: Math.round(t),
+      t: Math.round(s?.t ?? now),
       s: s ? pack(s.position, s.velocity, s.yaw, s.pitch) : null,
       r: this.localCombatReady ? 1 : 0,
-      e: this.isVisible() ? 1 : 0,
+      e: this.localEligibility(),
     };
+    if (this.hostSim) payload.h = this.hostEpoch;
+    if (this.localWeapon) payload.w = this.localWeapon;
+    if (this.localDeadUntil !== null) payload.d = Math.max(0, Math.round(this.localDeadUntil - now));
     if (this.hostSim && this.botRows.length > 0) {
       payload.b = this.botRows.map((row) => ({
         id: row.id,
@@ -495,7 +610,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       // bot poses come from the last host step, not this tick
       payload.bt = Math.round(this.botRowsT);
     }
-    this.lastBroadcastAtMs = Date.now();
+    this.lastBroadcastAtMs = now;
     this.broadcast('st', payload);
   }
 
@@ -514,21 +629,17 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     let record = this.remotes.get(p.id);
     if (!record) {
       // state can beat the presence sync; keep it with a placeholder profile
-      record = {
-        name: 'Player',
-        model: 'terrorist',
-        state: null,
-        t: null,
-        combatReady: false,
-        hostEligible: true,
-        lastSeen: Date.now(),
-      };
+      record = newRecord('Player', 'terrorist', this.now());
       this.remotes.set(p.id, record);
     }
-    const wasEligible = record.hostEligible;
-    record.lastSeen = Date.now();
+    const before = `${record.eligibility}|${record.hostEpoch}`;
+    record.lastSeen = this.now();
     record.combatReady = p.r === 1;
-    record.hostEligible = p.e === 1;
+    record.eligibility = p.e === 2 ? 2 : p.e === 1 ? 1 : 0;
+    record.hostEpoch = typeof p.h === 'number' && Number.isFinite(p.h) ? p.h : null;
+    if (record.hostEpoch !== null) this.maxEpochSeen = Math.max(this.maxEpochSeen, record.hostEpoch);
+    record.weapon = typeof p.w === 'string' ? p.w : record.weapon;
+    record.deadForMs = typeof p.d === 'number' && Number.isFinite(p.d) ? p.d : null;
     if (Array.isArray(p.s) && p.s.length === 8 && (record.t === null || p.t > record.t)) {
       record.state = unpack(p.s);
       record.t = p.t;
@@ -552,10 +663,10 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       });
       this.botRowsT = Number.isFinite(p.bt) ? (p.bt as number) : p.t;
       this.botRowsClock = p.id;
-      this.botRowsAt = Date.now();
+      this.botRowsAt = this.now();
     }
 
-    if (wasEligible !== record.hostEligible) {
+    if (before !== `${record.eligibility}|${record.hostEpoch}`) {
       this.updateHostRole();
     }
     this.emitSnapshot();
@@ -563,10 +674,12 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
 
   private onCombatBatch(payload: unknown): void {
     const p = payload as { host?: string; ev?: CombatWireEvent[] };
-    if (this.hostSim || !Array.isArray(p.ev)) {
+    // only the elected host resolves combat; a stale or rogue sender is ignored
+    if (this.hostSim || !Array.isArray(p.ev) || !p.host || p.host !== this.electedHostId()) {
       return;
     }
     for (const item of p.ev) {
+      this.trackLocalLife(item);
       switch (item.k) {
         case 'hit': this.onHit?.(item.e); break;
         case 'death': this.onDeath?.(item.e); break;
@@ -575,6 +688,18 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         case 'shot': this.onShot?.(item.e); break;
         default: break;
       }
+    }
+  }
+
+  /** Remembers our own death so a new host can keep the respawn timer going. */
+  private trackLocalLife(item: CombatWireEvent): void {
+    if (item.k === 'death' && item.e.victimId === this.localId) {
+      this.localDeadUntil = this.now() + RESPAWN_DELAY_MS;
+    } else if (
+      (item.k === 'respawn' && item.e.playerId === this.localId)
+      || (item.k === 'health' && item.e.playerId === this.localId && item.e.alive)
+    ) {
+      this.localDeadUntil = null;
     }
   }
 
@@ -617,6 +742,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       id: string;
       name: string;
       model: PlayerModel;
+      j?: number;
     }>();
     const present = new Set<string>();
     for (const entries of Object.values(state)) {
@@ -625,16 +751,11 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
           continue;
         }
         present.add(entry.id);
-        const existing = this.remotes.get(entry.id);
-        this.remotes.set(entry.id, {
-          name: entry.name,
-          model: entry.model,
-          state: existing?.state ?? null,
-          t: existing?.t ?? null,
-          combatReady: existing?.combatReady ?? false,
-          hostEligible: existing?.hostEligible ?? true,
-          lastSeen: existing?.lastSeen ?? Date.now(),
-        });
+        const existing = this.remotes.get(entry.id) ?? newRecord(entry.name, entry.model, this.now());
+        existing.name = entry.name;
+        existing.model = entry.model;
+        existing.joinedAt = typeof entry.j === 'number' ? entry.j : existing.joinedAt;
+        this.remotes.set(entry.id, existing);
       }
     }
     for (const id of [...this.remotes.keys()]) {
@@ -643,6 +764,34 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       }
     }
     this.cadence.setRate(this.getBroadcastHz());
+    this.enforceRoomCap();
+  }
+
+  /**
+   * Past MAX_ROOM_PLAYERS the per-client rate budget can't stay under the
+   * project event cap, so the latest joiners (by join time, then id) back out.
+   */
+  private enforceRoomCap(): void {
+    if (this.remotes.size + 1 <= MAX_ROOM_PLAYERS || this.roomFull) {
+      return;
+    }
+    const roster = [{ id: this.localId, j: this.joinedChannelAt }];
+    for (const [id, r] of this.remotes) roster.push({ id, j: r.joinedAt });
+    roster.sort((a, b) => a.j - b.j || (a.id < b.id ? -1 : 1));
+    const seat = roster.findIndex((r) => r.id === this.localId);
+    if (seat >= MAX_ROOM_PLAYERS) {
+      this.roomFull = true;
+      this.stopPump();
+      this.stopHost();
+      if (this.channel) {
+        void this.client.removeChannel(this.channel);
+        this.channel = null;
+      }
+      this.subscribed = false;
+      this.remotes.clear();
+      this.onRoomFull?.();
+      this.onConnectedChange?.(false);
+    }
   }
 
   private onRemoteAttack(payload: unknown): void {
@@ -658,7 +807,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (!this.onSnapshot) {
       return;
     }
-    const now = Date.now();
+    const now = this.now();
     const players: MultiplayerSnapshotPlayer[] = [];
 
     if (this.localState) {
@@ -697,6 +846,23 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
 
     this.onSnapshot({ mapId: this.activeMapId, players, serverTimeMs: now });
   }
+}
+
+function newRecord(name: string, model: PlayerModel, now: number): RemoteRecord {
+  return {
+    name,
+    model,
+    state: null,
+    t: null,
+    combatReady: false,
+    eligibility: 0,
+    hostEpoch: null,
+    weapon: null,
+    deadForMs: null,
+    // unknown join time sorts last, so an unseen peer never bumps a seated one
+    joinedAt: Number.MAX_SAFE_INTEGER,
+    lastSeen: now,
+  };
 }
 
 function pack(

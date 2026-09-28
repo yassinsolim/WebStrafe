@@ -9,7 +9,8 @@ import { computeBotSpawnCandidate, groundBotSpawn } from '../combat/BotSpawn';
 import { CombatArena } from '../combat/CombatArena';
 import { shouldResetCombatEntry } from '../combat/CombatEntryPolicy';
 import { REMOTE_SHOT_VISUAL_DISTANCE } from '../combat/ShotPresentation';
-import { getWeapon } from '../combat/weapons';
+import { getWeapon, type WeaponId } from '../combat/weapons';
+import { RESPAWN_DELAY_MS } from '../combat/CombatState';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import type { PlayerModel } from './types';
 import type { DeathEvent, HealthEvent, HitEvent, RespawnEvent, ShotEvent } from './MultiplayerTransport';
@@ -30,6 +31,10 @@ export interface HostHuman {
   velocity?: [number, number, number];
   /** sample time in this human's own clock (their Date.now at the tick) */
   t?: number;
+  /** weapon the player has out, so a new host doesn't reset everyone to the knife */
+  weapon?: string;
+  /** set while the player is dead: ms until their respawn is due */
+  deadForMs?: number;
 }
 
 export interface HostFireLag {
@@ -143,11 +148,19 @@ export class HostSimulation {
       const isNew = !this.humanPositions.has(h.id);
       const wasReady = this.humanCombatReady.get(h.id) ?? false;
       if (isNew) {
-        this.arena.addPlayer(h.id, MAP_ID, 'knife');
+        this.arena.addPlayer(h.id, MAP_ID, isWeaponId(h.weapon) ? h.weapon : 'knife');
+        // a player who died under the previous host stays dead until their
+        // respawn is due, and this host then sends the respawn they're waiting on
+        if (h.deadForMs !== undefined) {
+          this.arena.markDead(h.id, now + Math.min(h.deadForMs, RESPAWN_DELAY_MS));
+        }
         this.humanLastCombatAtMs.set(h.id, now);
         if (!h.combatReady) {
           this.humanPausedAtMs.set(h.id, now);
         }
+      }
+      if (!isNew && isWeaponId(h.weapon) && this.arena.getActiveWeapon(h.id) !== h.weapon) {
+        this.arena.equip(h.id, h.weapon);
       }
       this.arena.setPosition(h.id, h.position, MAP_ID, h.t ?? now, h.velocity);
       this.humanPositions.set(h.id, new Vector3(h.position[0], h.position[1], h.position[2]));
@@ -437,4 +450,8 @@ export class HostSimulation {
 
 function tuple(v: Vector3): [number, number, number] {
   return [v.x, v.y, v.z];
+}
+
+function isWeaponId(value: unknown): value is WeaponId {
+  return value === 'awp' || value === 'deagle' || value === 'knife';
 }
