@@ -76,6 +76,12 @@ export interface MapEnvironmentConfig {
   lightmapMode?: 'full' | 'indirect';
   /** multiplier on baked indirect light, 'indirect' mode only */
   indirectIntensity?: number;
+  /**
+   * hue shift for baked indirect light ('indirect' mode), normalised to keep its
+   * brightness, e.g. a cool tint for shade under a warm baked sky. sunlit
+   * surfaces keep the live sun's color
+   */
+  indirectTint?: string;
   /** sky light and reflections on players and weapons */
   envIntensity?: number;
   /** color grade overrides, see src/render/grade.ts */
@@ -98,6 +104,11 @@ export interface MapMeta {
   source: string;
   license: string;
   attribution?: string;
+  /** what the map is built for: movement runs, fights, or both */
+  modes?: ('surf' | 'combat')[];
+  difficulty?: 'beginner' | 'intermediate' | 'advanced';
+  /** full run time of the headless test rider, a reference for the run timer */
+  parTimeMs?: number;
   goalY?: number;
   goalPad?: {
     center: [number, number, number];
@@ -126,6 +137,8 @@ export interface MapManifestEntry {
   collisionPath?: string;
   metaPath: string;
   thumbnailPath?: string;
+  modes?: ('surf' | 'combat')[];
+  difficulty?: 'beginner' | 'intermediate' | 'advanced';
 }
 
 export interface MapManifest {

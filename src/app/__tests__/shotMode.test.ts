@@ -7,6 +7,8 @@ describe('shot mode gating', () => {
     expect(devToolsEnabled({ DEV: false, PROD: true })).toBe(false);
     expect(devToolsEnabled({ DEV: false, VITE_DEV_TOOLS: 'false' })).toBe(false);
     expect(parseShotRequest('?shot=aim_ochrecut&qa=1', false)).toBeNull();
+    // a free camera or hidden viewmodel in live play would be a spectator cheat
+    expect(parseShotRequest('?shot=aim_ochrecut&qa=1&vm=0&cam=0,50,0', false)).toBeNull();
   });
 
   it('is on for the dev server and preview builds', () => {
@@ -27,5 +29,9 @@ describe('shot mode gating', () => {
     expect(parseShotRequest('?shot=aim_ochrecut&hudDemo=1', true)?.hudDemo).toBe('1');
     expect(parseShotRequest('?shot=aim_ochrecut&hudDemo=board', true)?.hudDemo).toBe('board');
     expect(parseShotRequest('?shot=aim_ochrecut&hudDemo=1', false)).toBeNull();
+    expect(parseShotRequest('?shot=aim_ochrecut', true)?.viewmodel).toBe(true);
+    expect(parseShotRequest('?shot=aim_ochrecut&vm=0', true)?.viewmodel).toBe(false);
+    expect(parseShotRequest('?shot=aim_ochrecut&cam=1,2.5,-3', true)?.camera).toEqual([1, 2.5, -3]);
+    expect(parseShotRequest('?shot=aim_ochrecut&cam=1,x', true)?.camera).toBeNull();
   });
 });

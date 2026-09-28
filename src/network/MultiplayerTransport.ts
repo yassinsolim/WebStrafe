@@ -107,17 +107,16 @@ export interface MultiplayerTransport {
   onConnectedChange: ((connected: boolean) => void) | null;
   /** set by transports with a room size limit; fired when this client was turned away */
   onRoomFull?: (() => void) | null;
+  /** live room kills/deaths, published by the authority */
+  onScoreboard?: ((rows: Array<{ id: string; kills: number; deaths: number }>) => void) | null;
+  /** opt in or out of pvp; transports without a toggle treat everyone as on */
+  setPvp?(on: boolean): void;
 
   connect(): void;
   disconnect(): void;
   getLocalId(): string | null;
   getActiveMapId(): string;
-  /**
-   * `cosmetics` is the look as an encodeLook() wire string. it's profile data
-   * like the name, so call again only when it changes (supabase presence only
-   * takes a few updates per 30 s)
-   */
-  join(mapId: string, name: string, model: PlayerModel, cosmetics?: string): void;
+  join(mapId: string, name: string, model: PlayerModel): void;
   /** Marks pointer-locked active play; false removes the player from bot targets. */
   setCombatReady(ready: boolean): void;
   /** Called every fixed sim tick; the transport decides which ticks to send. */

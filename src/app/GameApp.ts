@@ -112,6 +112,11 @@ import { loadCharacterLibrary } from '../characters/CharacterFactory';
 import { devCharacterRows, parseDevCharacters } from '../characters/devCharacters';
 import { setCharacterDetail } from '../characters/ArmorCharacter';
 import { decodeLook, encodeLook, lookToArmor } from '../characters/look';
+import { SurfSession } from '../surf/SurfSession';
+import { getSurfBoards } from '../surf/SurfBoards';
+import { PRESPEED_CAP_FACTOR } from '../surf/RunTimer';
+import { checkpointStages, hasTimedZones } from '../surf/mapModes';
+import { LeaderboardPanel, type BoardsMap } from '../ui/surf/LeaderboardPanel';
 
 type MapSource =
   | {
@@ -269,6 +274,10 @@ export class GameApp {
   private readonly gameHud: GameHud;
   private readonly movementAudio = new MovementAudioTracker();
   private runTimerAllowed = false;
+  private readonly surf: SurfSession;
+  private lastLocalHealth = 100;
+  private boardsPanel: LeaderboardPanel | null = null;
+  private readonly boardsMapInfo = new Map<string, Promise<BoardsMap>>();
   private lastShotDirectionAtMs = 0;
   private lastDryFireAtMs = 0;
   private readonly listenerForward = new Vector3();
@@ -324,6 +333,16 @@ export class GameApp {
     const runHud = this.createRunHud();
     this.timerLabel = runHud.timer;
     this.runInfoLabel = runHud.info;
+    this.surf = new SurfSession({
+      container: document.body,
+      worldScene: this.worldScene,
+      boards: getSurfBoards(),
+      localName: () => this.localPlayerName,
+      localModel: () => (this.loadout ? this.getPlayerModelFromLoadout(this.loadout) : 'terrorist'),
+      localId: () => this.multiplayer.getLocalId(),
+      setTransportPvp: (on) => this.multiplayer.setPvp?.(on),
+      showStatus: (text, ms) => this.showStatus(text, ms),
+    });
     const submitOverlay = this.createRunSubmitOverlay();
     this.runSubmitOverlay = submitOverlay.root;
     this.runSubmitInput = submitOverlay.input;
@@ -414,6 +433,7 @@ export class GameApp {
         this.remotePlayers.applySnapshot([], null);
         this.backstabTargets = [];
         void this.refreshLeaderboard(mapId);
+        this.syncBoardsPanel(mapId);
         this.syncMultiplayerIdentity();
       },
       onSettingsChanged: (next) => this.applySettings(next),
@@ -440,6 +460,7 @@ export class GameApp {
         this.syncCosmetics();
       },
     });
+    this.mountBoardsPanel();
     this.menu.setSelectedKnife(this.viewmodel.getKnife());
     this.menu.setKnifeFinish(this.knifeSelection);
     this.menu.setMaps(this.getMapEntries(), this.selectedMapId);
@@ -462,12 +483,14 @@ export class GameApp {
     this.multiplayer = this.shot && !this.shot.qa ? new OfflineMultiplayer() : await createMultiplayer();
     this.syncCosmetics();
 
+    this.multiplayer.onScoreboard = (rows) => this.surf.onScoreboard(rows);
     this.multiplayer.onSnapshot = (snapshot) => {
       if (snapshot.mapId !== this.selectedMapId) {
         return;
       }
       const localId = this.multiplayer.getLocalId();
       this.remotePlayers.applySnapshot(snapshot.players, localId);
+      this.surf.onSnapshot(snapshot.players);
       this.backstabTargets = snapshot.players
         .filter((player) => player.id !== localId)
         .map((player) => ({
@@ -563,6 +586,8 @@ export class GameApp {
     document.removeEventListener('pointerlockerror', this.onPointerLockError);
     document.removeEventListener('pointerlockchange', this.onPointerLockChange);
     this.input.dispose();
+    this.surf.dispose();
+    this.boardsPanel?.dispose();
     this.renderer.dispose();
     this.combatEffects?.dispose();
     this.combatHud?.dispose();
@@ -607,6 +632,17 @@ export class GameApp {
     this.fixedInputActions.enqueue(actions);
     if (!this.playing) {
       this.fixedInputActions.clear();
+    }
+    if (this.playing && this.loadedMap) {
+      if (actions.restartRunPressed && (!this.combatEnabled || this.localAlive)) {
+        this.resetToSpawn(this.surf.isTimed ? 'Run restarted' : 'Reset to spawn', true);
+      }
+      if (actions.togglePvpPressed && this.combatEnabled) {
+        this.showStatus(this.surf.togglePvp(performance.now()), 2600);
+      }
+      if (actions.toggleGhostPressed && this.surf.isTimed) {
+        this.showStatus(this.surf.toggleGhost(), 1400);
+      }
     }
     if (actions.toggleGridPressed) {
       this.showWorldDebugHelpers = !this.showWorldDebugHelpers;
@@ -759,7 +795,7 @@ export class GameApp {
       && findBackstabOpportunity({
         attackerFeet: this.movement.getFeetPosition(),
         attackerForward: this.movement.getForwardVector(),
-        targets: this.backstabTargets,
+        targets: this.backstabTargets.filter((target) => this.surf.canFight(target.id)),
         hasLineOfSight: (target) => !this.collisionWorld.segmentIntersectsGeometry(
           cameraPosition,
           new Vector3(
@@ -794,11 +830,21 @@ export class GameApp {
     this.hud.update(debug);
     this.updateUiFrame(frameDt, time, debug);
     this.updateTimerHud();
+    this.surf.frame({
+      nowMs: time,
+      playing: this.playing,
+      showHud: this.settings.showHud,
+      camera: this.worldCamera,
+      displayed: this.remotePlayers.getDisplayedPlayers(),
+      width: window.innerWidth,
+      height: window.innerHeight,
+      multiplayerActive: this.combatEnabled,
+    });
     this.updateSurfNormalLine(debug);
     this.updateStatusVisibility(time);
 
     this.mapEnvironment.update(frameDt, this.worldCamera);
-    const firstPerson = this.playing && this.debugCameraMode === 'firstPerson';
+    const firstPerson = this.playing && this.debugCameraMode === 'firstPerson' && this.shot?.viewmodel !== false;
     this.pipeline.render(
       this.worldScene,
       this.worldCamera,
@@ -1029,6 +1075,7 @@ export class GameApp {
       position: [spawn.position.x, spawn.position.y, spawn.position.z],
       yawDeg: spawn.yawDeg,
     });
+    const mapBots = this.surf.mapActivated(map);
     // arena maps stage bots on the far side (first spawn with another `side`)
     const botAnchor = resolveBotAnchor(map.meta);
     const hostBotSpawn = botAnchor && map.meta.spawns?.[0]?.side !== undefined
@@ -1042,7 +1089,7 @@ export class GameApp {
         ? {
             collisionWorld: this.collisionWorld,
             spawn: { position: hostBotSpawn.position.clone(), yawDeg: hostBotSpawn.yawDeg },
-            botCount: 1,
+            botCount: mapBots,
           }
         : null,
     );
@@ -1295,6 +1342,7 @@ export class GameApp {
 
   private applyLocalHealth(health: number, alive: boolean): void {
     const wasAlive = this.localAlive;
+    this.lastLocalHealth = health;
     this.localAlive = alive;
     // Authoritative health applies immediately, while the centered death
     // presentation waits for the incoming round to travel to its endpoint.
@@ -1305,6 +1353,7 @@ export class GameApp {
       this.combatHud?.setHealth(health, alive, false);
     }
     if (wasAlive && !alive) {
+      this.surf.cancelRun();
       this.combatAim.cancelScope(performance.now());
       this.armRespawnFallback();
       this.viewmodel.setAlive(false);
@@ -1682,7 +1731,7 @@ export class GameApp {
   }
 
   private tryCompleteRun(): void {
-    if (!this.playing || this.runComplete || !this.loadedMap) {
+    if (!this.playing || this.runComplete || !this.loadedMap || this.surf.isTimed) {
       return;
     }
 
@@ -1733,9 +1782,11 @@ export class GameApp {
   private openRunSubmitOverlay(): void {
     this.runSubmitOverlay.style.display = 'grid';
     this.runSubmitInput.value = this.localPlayerName;
-    this.runSubmitStatus.textContent = this.finishedRunTimeMs !== null
-      ? `Finished in ${formatRunTime(this.finishedRunTimeMs)}`
-      : '';
+    this.runSubmitStatus.textContent = this.surf.isTimed
+      ? this.surf.describeFinish()
+      : this.finishedRunTimeMs !== null
+        ? `Finished in ${formatRunTime(this.finishedRunTimeMs)}`
+        : '';
     this.runSubmitInput.focus();
     this.runSubmitInput.select();
   }
@@ -1761,6 +1812,17 @@ export class GameApp {
     this.syncMultiplayerIdentity();
 
     this.runSubmitStatus.textContent = 'Submitting...';
+    if (this.surf.isTimed) {
+      const outcome = await this.surf.submit(cleanedName, this.getPlayerModelFromLoadout(this.loadout));
+      if (outcome.handled) {
+        this.runSubmitStatus.textContent = outcome.text;
+        this.boardsPanel?.refresh();
+        if (outcome.ok) {
+          window.setTimeout(() => this.hideRunSubmitOverlay(), 1400);
+        }
+        return;
+      }
+    }
     try {
       const model = this.getPlayerModelFromLoadout(this.loadout);
       const entries = await this.leaderboard.submitRun(
@@ -1998,7 +2060,8 @@ export class GameApp {
     if (!this.loadedMap) {
       return;
     }
-    const pick = this.spawnPoints.length > 1
+    // peaceful surfers go straight back to the run spawn, the arena spawns are for fighters
+    const pick = this.spawnPoints.length > 1 && !(this.surf.isTimed && !this.surf.pvp)
       ? pickSpawnAwayFrom(this.spawnPoints, this.backstabTargets)
       : null;
     if (pick) {
@@ -2019,19 +2082,26 @@ export class GameApp {
     if (!this.loadedMap || !this.mapTriggers?.hasTriggers()) {
       return;
     }
-    const update = this.mapTriggers.update(this.movement.getFeetPosition());
+    const feet = this.movement.getFeetPosition();
+    const update = this.mapTriggers.update(feet);
     if (update.inStartZone && !this.runComplete) {
       this.startRunTimer();
     }
+    if (this.surf.tick(update.inStartZone && !this.runComplete, feet, this.movement.getYawRad())) {
+      this.capPrespeed();
+    }
     for (const event of update.events) {
       if (event.type === 'checkpoint') {
-        if (event.changed) {
+        const split = this.surf.checkpoint(event.stage, performance.now());
+        if (event.changed && !split && !this.surf.isTimed) {
           this.showStatus(`Checkpoint ${event.stage}`, 1200);
         }
       } else if (event.type === 'teleport') {
         this.teleportTo(event.respawn);
       } else if (event.type === 'finish') {
-        this.completeRun();
+        if (!this.surf.isTimed || this.surf.finish(performance.now())) {
+          this.completeRun();
+        }
       }
     }
   }
@@ -2040,12 +2110,60 @@ export class GameApp {
     this.movement.reset(new Vector3(target.position[0], target.position[1], target.position[2]), target.yawDeg);
   }
 
+  /** leaving the start zone faster than the cap gets clamped, like surf server timers do */
+  private capPrespeed(): void {
+    const velocity = this.movement.getVelocity().clone();
+    const cap = this.movement.getCvars().sv_maxspeed * PRESPEED_CAP_FACTOR;
+    const horizontal = Math.hypot(velocity.x, velocity.z);
+    if (horizontal > cap) {
+      velocity.x *= cap / horizontal;
+      velocity.z *= cap / horizontal;
+      this.movement.setVelocity(velocity);
+    }
+  }
+
+  /** the ranked boards live inside the menu's leaderboard tab, the legacy list stays as a fallback */
+  private mountBoardsPanel(): void {
+    const section = this.container.querySelector<HTMLElement>('[data-tab="leaderboard"]');
+    if (!section || this.boardsPanel) {
+      return;
+    }
+    const legacy = Array.from(section.children) as HTMLElement[];
+    this.boardsPanel = new LeaderboardPanel(section, getSurfBoards(), legacy, () => this.localPlayerName);
+    this.syncBoardsPanel(this.selectedMapId);
+  }
+
+  private syncBoardsPanel(mapId: string): void {
+    if (!this.boardsPanel || !mapId) {
+      return;
+    }
+    let info = this.boardsMapInfo.get(mapId);
+    if (!info) {
+      const entry = this.mapSources.get(mapId)?.entry;
+      const name = entry?.name ?? mapId;
+      info = (async (): Promise<BoardsMap> => {
+        try {
+          if (!entry?.metaPath) return { id: mapId, name, stageCount: 0 };
+          const meta = await (await fetch(entry.metaPath)).json() as { triggers?: Parameters<typeof checkpointStages>[0] };
+          return { id: mapId, name, stageCount: hasTimedZones(meta.triggers) ? checkpointStages(meta.triggers).length + 1 : 0 };
+        } catch {
+          return { id: mapId, name, stageCount: 0 };
+        }
+      })();
+      this.boardsMapInfo.set(mapId, info);
+    }
+    void info.then((map) => {
+      if (this.selectedMapId === mapId) this.boardsPanel?.setMap(map);
+    });
+  }
+
   private resetToSpawn(message: string | null, restartTimer = false): void {
     if (!this.loadedMap) {
       return;
     }
     this.movement.reset(this.loadedMap.spawnPosition, this.loadedMap.spawnYawDeg);
     this.mapTriggers?.reset();
+    this.surf.cancelRun();
     this.resetMovementFeedback();
     this.runComplete = false;
     this.finishedRunTimeMs = null;
@@ -2415,6 +2533,9 @@ export class GameApp {
     if (this.finishedRunTimeMs !== null) {
       return this.finishedRunTimeMs;
     }
+    if (this.surf.isTimed) {
+      return this.surf.elapsedMs();
+    }
     const nowMs = this.runPauseStartedAtMs ?? performance.now();
     return Math.max(0, nowMs - this.runStartTimeMs);
   }
@@ -2504,7 +2625,8 @@ export class GameApp {
       strafeStats: this.readStrafeStats(),
       pingMs: this.multiplayer.getPingMs?.() ?? null,
     });
-    this.gameHud.setRunTimerVisible(this.playing && this.runTimerAllowed && this.settings.showHud);
+    // timed maps use the tick timer hud from src/ui/surf instead
+    this.gameHud.setRunTimerVisible(this.playing && this.runTimerAllowed && this.settings.showHud && !this.surf.isTimed);
 
     this.worldCamera.getWorldDirection(this.listenerForward);
     this.listenerUp.set(0, 1, 0).applyQuaternion(this.worldCamera.quaternion);
@@ -2547,7 +2669,34 @@ export class GameApp {
           return { id: p.id, pos: p.position.toArray(), look: look ? encodeLook(look) : null };
         }),
         look: this.playerCharacter?.wire() ?? null,
+        health: this.lastLocalHealth,
+        surf: this.surf.qaState(),
       }),
+      togglePvp: () => this.surf.togglePvp(performance.now() + 60_000),
+      hostArena: () => {
+        const sim = (this.multiplayer as unknown as { hostSim?: { arena: { players: Map<string, Record<string, unknown>> } } }).hostSim;
+        if (!sim) return null;
+        return [...sim.arena.players.values()].map((p) => ({
+          id: p.id,
+          pvp: p.pvp,
+          feet: (p.feet as Vector3).toArray().map((v) => Math.round(v * 10) / 10),
+          protectedMs: Math.max(0, Number(p.spawnProtectedUntilMs) - Date.now()),
+          history: (p.positionHistory as unknown[]).length,
+          weapon: (p.weapon as { getActive?: () => string }).getActive?.(),
+        }));
+      },
+      restartRun: () => this.resetToSpawn('Run restarted', true),
+      // what the menu's restart run does after a finish, minus the pointer lock
+      playAgain: () => {
+        this.hideRunSubmitOverlay();
+        this.resetToSpawn(null, true);
+        this.playing = true;
+        this.multiplayer.setCombatReady(true);
+      },
+      nameplates: () => Array.from(document.querySelectorAll('.surf-nameplate:not([hidden])')).map((el) => el.textContent ?? ''),
+      roomBoardText: () => document.querySelector('.surf-room-board')?.textContent ?? null,
+      pvpBadgeText: () => document.querySelector('.surf-pvp')?.textContent ?? null,
+      timerText: () => document.querySelector('.surf-timer')?.textContent ?? null,
       equip: (id: WeaponId) => this.equipCombatWeapon(id),
       setLook: (wire: string) => {
         const look = decodeLook(wire);
@@ -2696,6 +2845,11 @@ export class GameApp {
         ((shot.yawDeg ?? 0) * Math.PI) / 180,
         ((shot.pitchDeg ?? 0) * Math.PI) / 180,
       );
+    }
+    if (shot.camera) {
+      this.debugCameraMode = 'freecam';
+      this.freecamPosition.set(...shot.camera);
+      this.freecamInitialized = true;
     }
     if (!shot.hud) {
       this.container.classList.add('shot-no-hud');

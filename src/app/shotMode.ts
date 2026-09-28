@@ -10,6 +10,7 @@ import { devToolsEnabled } from './devTools';
  * &dpr=<screen ratio to emulate>&adaptive=0|1&qa=1 (window.__qa test hooks)
  * &quality=low|medium|high (graphics preset for this run)
  * &hudDemo=1|board|death|low|kill|body (sample killfeed, scores and hit feedback)
+ * &vm=0 (no viewmodel, for map thumbnails)&cam=x,y,z (free camera eye position, no gravity)
  * it drops straight into the map without pointer lock, poses the viewmodel,
  * freezes it and sets window.__shotReady once a few frames have drawn.
  * dev server and preview builds only. without qa=1 it plays offline; qa=1
@@ -48,6 +49,10 @@ export interface ShotRequest {
   quality: GraphicsQuality | null;
   /** fills the hud with sample data for screenshots: 1, board, death, low, kill, body */
   hudDemo: string | null;
+  /** draw the gun and arms, off for map thumbnails */
+  viewmodel: boolean;
+  /** free camera eye position, looks along yaw/pitch */
+  camera: [number, number, number] | null;
 }
 
 export function parseShotRequest(search: string, enabled = devToolsEnabled()): ShotRequest | null {
@@ -63,6 +68,7 @@ export function parseShotRequest(search: string, enabled = devToolsEnabled()): S
     return Number.isFinite(value) ? value : null;
   };
   const pos = params.get('pos')?.split(',').map(Number);
+  const cam = params.get('cam')?.split(',').map(Number);
   let time: Date | null = null;
   const clock = params.get('time');
   if (clock) {
@@ -92,6 +98,8 @@ export function parseShotRequest(search: string, enabled = devToolsEnabled()): S
     adaptive: params.has('adaptive') ? params.get('adaptive') !== '0' : null,
     quality: parseQuality(params.get('quality')),
     hudDemo: params.get('hudDemo') || null,
+    viewmodel: params.get('vm') !== '0',
+    camera: cam && cam.length === 3 && cam.every(Number.isFinite) ? [cam[0], cam[1], cam[2]] : null,
   };
 }
 

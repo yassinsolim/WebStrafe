@@ -40,14 +40,19 @@ ENV = {
         "zenith": "#28305f",
         "horizon": "#f2a36e",
         "ground": "#7a3326",
-        "bake_ground": "#d0542a",
+        "bake_ground": "#a8583e",
+        "bake_anti_sun": "#8f8cc4",
+        "bake_anti_sun_mix": 0.75,
         "exponent": 0.55,
         "sun_size_deg": 2.2,
         "sun_glow": 0.45,
         "sun_haze": 0.3,
         "clouds": {"color": "#ffb48a", "shadow": "#6a4a78", "coverage": 0.46, "scale": 0.9, "speed": 0.004, "height": 0.35},
     },
-    "bake_ground_scale": 0.9,
+    "bake_ground_scale": 0.6,
+    # the baked shade stays warm from the lava and ground bounce, cool it at runtime
+    "indirect_tint": "#c4ccff",
+    "indirect_intensity": 1.1,
     "hemi": {"sky": "#9a9ed8", "ground": "#c0583a", "intensity": 2.4},
     "fog": {"color": "#e9946a", "near": 55.0, "far": 460.0},
     "grade": {"exposure": 1.05, "contrast": 1.1, "saturation": 1.06, "temperature": 0.02, "vignette": 0.26, "bloom": 0.09},
@@ -625,6 +630,8 @@ def main():
         "triggers": make_triggers(plats),
         # autobhop bhop servers run 1000 (sharptimer's bhop config, shavit's normal style)
         "cvars": {"sv_airaccelerate": 1000},
+        "modes": ["surf"],
+        "difficulty": "intermediate",
         "notes": f"{jumps} jumps, checkpoints every six, lava teleports to the last checkpoint.",
     }
     layout = {

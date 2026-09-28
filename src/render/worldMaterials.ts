@@ -1,4 +1,5 @@
 import {
+  Color,
   MeshBasicMaterial,
   MeshLambertMaterial,
   MeshStandardMaterial,
@@ -69,7 +70,7 @@ const BAKED_LIGHTS_MAPS = /* glsl */ `
 #if defined( RE_IndirectDiffuse )
 	#ifdef USE_LIGHTMAP
 		vec4 lightMapTexel = texture2D( lightMap, vLightMapUv );
-		vec3 lightMapIrradiance = lightMapTexel.rgb * lightMapIntensity;
+		vec3 lightMapIrradiance = lightMapTexel.rgb * lightMapIntensity * wsIndirectTint;
 		irradiance += lightMapIrradiance;
 	#endif
 #endif
@@ -83,6 +84,12 @@ const BAKED_LIGHTS_MAPS = /* glsl */ `
 #endif
 `;
 
+/** three's lightmap chunk (lambert) with the indirect tint applied */
+const TINTED_LIGHTMAP_CHUNK = ShaderChunk.lights_fragment_maps.replace(
+  'lightMapTexel.rgb * lightMapIntensity',
+  'lightMapTexel.rgb * lightMapIntensity * wsIndirectTint',
+);
+
 export function sunMaskAvailable(): boolean {
   return SUN_MASKED_LIGHTS_BEGIN !== ShaderChunk.lights_fragment_begin;
 }
@@ -92,6 +99,8 @@ export interface WorldMaterialOptions {
   lightMap: Texture;
   /** pi * encode scale * the map's indirect multiplier */
   lightMapIntensity: number;
+  /** linear gains on the baked indirect light (white = none) */
+  indirectTint?: Color;
   normals: NormalFromAlbedo | null;
   /** how much baked light counts as open sky for reflection occlusion */
   skyRef: number;
@@ -104,6 +113,7 @@ export interface WorldMaterialOptions {
  */
 export function buildBakedMaterial(source: MeshStandardMaterial, options: WorldMaterialOptions): Material {
   const profile = surfaceProfile(source.name);
+  const tint = (options.indirectTint ?? new Color(1, 1, 1)).clone();
   const common = {
     name: source.name,
     map: source.map,
@@ -120,7 +130,11 @@ export function buildBakedMaterial(source: MeshStandardMaterial, options: WorldM
   if (!options.preset.detailedMaterials) {
     const lambert = new MeshLambertMaterial(common);
     lambert.onBeforeCompile = (shader) => {
-      shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_begin>', SUN_MASKED_LIGHTS_BEGIN);
+      shader.uniforms.wsIndirectTint = { value: tint };
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform vec3 wsIndirectTint;')
+        .replace('#include <lights_fragment_begin>', SUN_MASKED_LIGHTS_BEGIN)
+        .replace('#include <lights_fragment_maps>', TINTED_LIGHTMAP_CHUNK);
     };
     lambert.customProgramCacheKey = () => 'ws-baked-lambert';
     lambert.userData.surface = profile.kind;
@@ -139,8 +153,9 @@ export function buildBakedMaterial(source: MeshStandardMaterial, options: WorldM
   const skyRef = options.skyRef;
   standard.onBeforeCompile = (shader) => {
     shader.uniforms.wsSkyRef = { value: skyRef };
+    shader.uniforms.wsIndirectTint = { value: tint };
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float wsSkyRef;')
+      .replace('#include <common>', '#include <common>\nuniform float wsSkyRef;\nuniform vec3 wsIndirectTint;')
       .replace('#include <lights_fragment_begin>', SUN_MASKED_LIGHTS_BEGIN)
       .replace('#include <lights_fragment_maps>', BAKED_LIGHTS_MAPS);
   };

@@ -5,10 +5,23 @@ import {
   weaponSlotForKey,
 } from './GameplayWeaponInput';
 import type { WeaponCycleDirection, WeaponSlot } from './GameplayWeaponInput';
+import { devToolsEnabled } from '../app/devTools';
+
+export interface InputManagerOptions {
+  /**
+   * V cycles third person and free camera, which see around and through walls,
+   * so it only exists on dev and preview builds
+   */
+  debugKeys?: boolean;
+}
 
 export interface InputActions {
   inspectPressed: boolean;
   resetPressed: boolean;
+  /** back to the start zone, also in combat builds where R reloads */
+  restartRunPressed: boolean;
+  togglePvpPressed: boolean;
+  toggleGhostPressed: boolean;
   toggleGridPressed: boolean;
   toggleDebugCameraPressed: boolean;
   toggleSurfNormalPressed: boolean;
@@ -30,6 +43,9 @@ export class InputManager {
   private jumpQueued = false;
   private inspectQueued = false;
   private resetQueued = false;
+  private restartRunQueued = false;
+  private togglePvpQueued = false;
+  private toggleGhostQueued = false;
   private toggleGridQueued = false;
   private toggleDebugCameraQueued = false;
   private toggleSurfNormalQueued = false;
@@ -43,7 +59,10 @@ export class InputManager {
   private pointerLocked = false;
   private ignoreNextMouseMove = false;
 
-  constructor(private readonly domElement: HTMLElement) {
+  private readonly debugKeys: boolean;
+
+  constructor(private readonly domElement: HTMLElement, options: InputManagerOptions = {}) {
+    this.debugKeys = options.debugKeys ?? devToolsEnabled();
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('mousemove', this.onMouseMove);
@@ -164,6 +183,9 @@ export class InputManager {
     const actions = {
       inspectPressed: this.inspectQueued,
       resetPressed: this.resetQueued,
+      restartRunPressed: this.restartRunQueued,
+      togglePvpPressed: this.togglePvpQueued,
+      toggleGhostPressed: this.toggleGhostQueued,
       toggleGridPressed: this.toggleGridQueued,
       toggleDebugCameraPressed: this.toggleDebugCameraQueued,
       toggleSurfNormalPressed: this.toggleSurfNormalQueued,
@@ -174,6 +196,9 @@ export class InputManager {
     };
     this.inspectQueued = false;
     this.resetQueued = false;
+    this.restartRunQueued = false;
+    this.togglePvpQueued = false;
+    this.toggleGhostQueued = false;
     this.toggleGridQueued = false;
     this.toggleDebugCameraQueued = false;
     this.toggleSurfNormalQueued = false;
@@ -255,10 +280,15 @@ export class InputManager {
     if (firstPress && event.code === 'KeyR') {
       this.resetQueued = true;
     }
+    if (firstPress && !isEditableGameplayTarget(event.target)) {
+      if (event.code === 'KeyT') this.restartRunQueued = true;
+      if (event.code === 'KeyP') this.togglePvpQueued = true;
+      if (event.code === 'KeyH') this.toggleGhostQueued = true;
+    }
     if (firstPress && event.code === 'KeyG') {
       this.toggleGridQueued = true;
     }
-    if (firstPress && event.code === 'KeyV') {
+    if (firstPress && event.code === 'KeyV' && this.debugKeys) {
       this.toggleDebugCameraQueued = true;
     }
     if (firstPress && event.code === 'KeyN') {
@@ -297,6 +327,9 @@ export class InputManager {
     this.jumpQueued = false;
     this.inspectQueued = false;
     this.resetQueued = false;
+    this.restartRunQueued = false;
+    this.togglePvpQueued = false;
+    this.toggleGhostQueued = false;
     this.toggleGridQueued = false;
     this.toggleDebugCameraQueued = false;
     this.toggleSurfNormalQueued = false;

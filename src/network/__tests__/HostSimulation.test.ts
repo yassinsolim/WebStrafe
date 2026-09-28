@@ -549,4 +549,63 @@ describe('HostSimulation knife combat', () => {
       vi.useRealTimers();
     }
   });
+
+  it.each([true, false])('bots only engage humans that opted into pvp (pvp %s)', (pvp) => {
+    vi.useFakeTimers();
+    try {
+      const emit = makeEmitter();
+      const sim = new HostSimulation(makeWorld(), makeSpawn(), 1, emit);
+      const bot = sim.tick(16)[0];
+      const pos: [number, number, number] = [bot.position[0], bot.position[1], bot.position[2] + 8];
+      for (let t = 0; t < 9000; t += 16) {
+        vi.advanceTimersByTime(16);
+        sim.syncHumans([{ id: 'h1', name: 'H', model: 'terrorist', combatReady: true, position: pos, pvp }]);
+        sim.tick(16);
+      }
+      const botShots = emit.shot.mock.calls.filter((c) => String(c[0].playerId).startsWith('bot:'));
+      const hurt = emit.hit.mock.calls.filter((c) => c[0].targetId === 'h1');
+      if (pvp) {
+        expect(botShots.length).toBeGreaterThan(0);
+      } else {
+        expect(botShots).toHaveLength(0);
+        expect(hurt).toHaveLength(0);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a peaceful human cannot damage bots either', () => {
+    vi.useFakeTimers();
+    try {
+      const emit = makeEmitter();
+      const sim = new HostSimulation(makeWorld(), makeSpawn(), 1, emit);
+      const bot = sim.tick(16)[0];
+      const pos: [number, number, number] = [bot.position[0], bot.position[1], bot.position[2] + 30];
+      sim.syncHumans([{ id: 'h1', name: 'H', model: 'terrorist', combatReady: true, position: pos, pvp: false }]);
+      vi.advanceTimersByTime(SPAWN_PROTECTION_MS + 100);
+      sim.tick(16);
+      const eye: [number, number, number] = [pos[0], pos[1] + 1.6, pos[2]];
+      const target: [number, number, number] = [bot.position[0], bot.position[1] + 1.2, bot.position[2]];
+      sim.applyEquip('h1', 'deagle');
+      sim.applyFire('h1', eye, normalize(eye, target));
+      expect(emit.hit).not.toHaveBeenCalled();
+      expect(emit.health.mock.calls.some((c) => c[0].playerId === 'bot:0')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps a kills scoreboard and seeds a returning player from its own score', () => {
+    const sim = new HostSimulation(makeWorld(), makeSpawn(), 0, makeEmitter());
+    sim.syncHumans([
+      { id: 'h1', name: 'A', model: 'terrorist', combatReady: true, position: [0, 0, 0], score: { kills: 3, deaths: 1 } },
+      { id: 'h2', name: 'B', model: 'terrorist', combatReady: true, position: [2, 0, 0] },
+    ]);
+    (sim as any).recordKill('h2', 'h1');
+    expect(sim.scoreboard()).toEqual([
+      { id: 'h1', kills: 3, deaths: 2 },
+      { id: 'h2', kills: 1, deaths: 0 },
+    ]);
+  });
 });

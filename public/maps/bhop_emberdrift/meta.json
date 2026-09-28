@@ -248,6 +248,10 @@
   "cvars": {
     "sv_airaccelerate": 1000
   },
+  "modes": [
+    "surf"
+  ],
+  "difficulty": "intermediate",
   "notes": "33 jumps, checkpoints every six, lava teleports to the last checkpoint.",
   "environment": {
     "sky": {
@@ -294,7 +298,7 @@
     ],
     "lightMapIntensity": 10.9956,
     "lightmapMode": "indirect",
-    "indirectIntensity": 1.0,
+    "indirectIntensity": 1.1,
     "envIntensity": 1.0,
     "grade": {
       "exposure": 1.05,
@@ -303,6 +307,7 @@
       "temperature": 0.02,
       "vignette": 0.26,
       "bloom": 0.09
-    }
+    },
+    "indirectTint": "#c4ccff"
   }
 }

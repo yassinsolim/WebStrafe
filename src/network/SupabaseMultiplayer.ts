@@ -27,12 +27,13 @@ const SESSION_KEY = 'webstrafe:session-id:v1';
  * message format never share a room with this one. p4 (v2): knife swings are
  * flagged melee with the cs knife damage table and backstabs, hits carry
  * melee/backstab, and fires carry the shooter's weapon. a p3 host would resolve
- * those differently, so p3 and p4 tabs must never share a room.
- * p6: hit capsules follow the cs2 hull (72 u standing, 54 u crouched, rounded
- * ends at the feet and the top of the head) and states carry the crouch (`k`),
- * so a p5 host resolves the same shot differently.
+ * those differently, so p3 and p4 tabs must never share a room. p5 moves fires
+ * and combat events onto state messages. p6 (knives, #51) swaps in the cs2 hull
+ * hit capsules (72 u standing, 54 u crouched, rounded ends at the feet and the top
+ * of the head) and crouch on the wire (`k`). p7 adds per player pvp opt-in (an
+ * older host would let peaceful players be hit) and the host's room scoreboard.
  */
-export const SUPABASE_PROTOCOL = 'p6';
+export const SUPABASE_PROTOCOL = 'p7';
 const PLAYER_STALE_MS = 8000;
 /** idle/paused clients only need to prove they are still here */
 const KEEPALIVE_MS = 1000;
@@ -43,6 +44,15 @@ const HOST_STEP_MS = 1000 / 60;
 export const HOST_STALE_MS = 3000;
 /** after joining, wait this long for an existing host's claim before self-electing */
 export const JOIN_GRACE_MS = 2500;
+/**
+ * a forgotten tab kept a channel open forever: a keepalive every second plus
+ * every message the room sends it, ~86K billed messages a day. after this long
+ * hidden, on the menu or out of play the tab leaves the channel (presence goes
+ * with it) and rejoins as a fresh joiner when it comes back.
+ */
+export const IDLE_DISCONNECT_MS = 60_000;
+/** a host with a visible peer waits up to this long past the idle limit for the handoff */
+export const IDLE_HANDOFF_GRACE_MS = 10_000;
 
 type Packed = [number, number, number, number, number, number, number, number];
 
@@ -79,6 +89,12 @@ interface WireState {
   f?: WireFire[];
   /** combat events, only from the elected host */
   ev?: CombatWireEvent[];
+  /** pvp off (0); omitted means on */
+  pv?: 0;
+  /** own kills/deaths from the last host scoreboard */
+  sc?: [number, number];
+  /** room scoreboard [id, kills, deaths], only from the elected host */
+  sb?: Array<[string, number, number]>;
   /** crouch 0..1 in hundredths, only while crouching (sizes the host's hit capsule) */
   k?: number;
 }
@@ -118,6 +134,11 @@ export interface SupabaseMultiplayerOptions {
   sessionId?: string;
   /** clock override for tests */
   now?: () => number;
+  /**
+   * leave the channel after this long hidden, on the menu or out of play, and
+   * rejoin on return (default IDLE_DISCONNECT_MS; Infinity keeps it connected)
+   */
+  idleDisconnectMs?: number;
 }
 
 interface RemoteRecord {
@@ -130,11 +151,24 @@ interface RemoteRecord {
   hostEpoch: number | null;
   weapon: string | null;
   deadForMs: number | null;
+  /** opted into pvp; false = immune and harmless */
+  pvp: boolean;
+  /** kills/deaths this peer last saw for itself, seeds a new host */
+  score: { kills: number; deaths: number } | null;
   cosmetics: PlayerCosmetics | undefined;
   joinedAt: number;
   lastSeen: number;
 }
 
+/** room kills/deaths as published by the host */
+export interface RoomScore {
+  id: string;
+  kills: number;
+  deaths: number;
+}
+
+/** how often the host republishes the room scoreboard on its state */
+const SCOREBOARD_EVERY_MS = 2000;
 /** quiet time before a cosmetics change is tracked, and the least time between two tracks */
 export const COSMETICS_DEBOUNCE_MS = 1000;
 export const COSMETICS_MIN_INTERVAL_MS = 10000;
@@ -163,6 +197,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   public onConnectedChange: ((connected: boolean) => void) | null = null;
   /** fired when the room already holds MAX_ROOM_PLAYERS and this client backed out */
   public onRoomFull: (() => void) | null = null;
+  /** live room kills/deaths from the elected host (or our own sim while hosting) */
+  public onScoreboard: ((rows: RoomScore[]) => void) | null = null;
 
   private readonly localId: string;
   private channel: RealtimeChannel | null = null;
@@ -192,6 +228,10 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   private carrierTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly detachVisibility: (() => void) | null;
   private localWeapon: string | null = null;
+  private localPvp = true;
+  private roomScores: RoomScore[] = [];
+  private roomScoresKey = '';
+  private lastScoreboardSentAt = 0;
   /** cosmetics peers have been told (what presence carries) */
   private localCosmetics: PlayerCosmetics | null = null;
   // presence track costs ~N events per room and is capped at 5 per client per
@@ -215,6 +255,12 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
 
   private readonly budget: BudgetOptions;
   private readonly isVisible: () => boolean;
+  private readonly idleDisconnectMs: number;
+  /** what the game asked to join, kept while parked */
+  private desiredJoin: { mapId: string; name: string; model: PlayerModel } | null = null;
+  /** left the channel while idle; rejoins on return */
+  private parked = false;
+  private idleSince: number | null = null;
   private readonly now: () => number;
 
   constructor(
@@ -226,9 +272,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.isVisible = options.isVisible ?? isDocumentVisible;
     this.now = options.now ?? (() => Date.now());
     this.localId = options.sessionId ?? loadSessionId();
+    this.idleDisconnectMs = options.idleDisconnectMs ?? IDLE_DISCONNECT_MS;
     this.detachVisibility = watchVisibility(() => {
+      this.wake();
       this.cadence.flush();
       this.updateHostRole();
+      // tell the room right away, so a hidden host hands off early
+      if (this.channel && this.subscribed) this.broadcastState();
     });
   }
 
@@ -237,6 +287,9 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   }
 
   disconnect(): void {
+    this.desiredJoin = null;
+    this.parked = false;
+    this.idleSince = null;
     this.cosmeticsPublisher.dispose();
     this.localCombatReady = false;
     this.stopPump();
@@ -265,10 +318,22 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     return broadcastRateHz(this.remotes.size + 1, this.budget);
   }
 
+  /** true while parked: left the channel after sitting idle, rejoins on return */
+  isParked(): boolean {
+    return this.parked;
+  }
+
   join(mapId: string, name: string, model: PlayerModel): void {
     const profileChanged = name !== this.localName || model !== this.localModel;
     this.localName = name;
     this.localModel = model;
+    this.desiredJoin = { mapId, name, model };
+    if (this.parked) {
+      // parked on the menu: remember the pick, join when the player comes back
+      this.activeMapId = mapId;
+      this.wake();
+      return;
+    }
 
     // Same map: refresh presence only when the profile actually changed
     // (presence track is limited to 5 calls per client per 30 s).
@@ -279,6 +344,11 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       return;
     }
 
+    this.openChannel(mapId);
+  }
+
+  /** leaves any channel and joins the one for `mapId` as a fresh joiner */
+  private openChannel(mapId: string): void {
     if (this.channel) {
       void this.client.removeChannel(this.channel);
       this.channel = null;
@@ -287,12 +357,15 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.stopHost();
     this.botRows = [];
     this.remotes.clear();
+    this.parked = false;
+    this.idleSince = null;
     this.activeMapId = mapId;
     this.presenceSynced = false;
     this.subscribed = false;
     this.hostEpoch = 0;
     this.maxEpochSeen = 0;
     this.roomFull = false;
+    this.pendingFires = [];
     this.joinedChannelAt = this.now();
 
     const channel = this.client.channel(
@@ -302,6 +375,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.channel = channel;
 
     channel.on('presence', { event: 'sync' }, () => {
+      if (this.channel !== channel) return;
       this.presenceSynced = true;
       this.syncPresence();
       this.updateHostRole();
@@ -314,11 +388,15 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     channel.on('broadcast', { event: 'cb' }, ({ payload }) => this.onCombatBatch(payload));
 
     channel.subscribe((status) => {
+      // a channel we already left (parked, changed map) reports CLOSED late
+      if (this.channel !== channel) return;
       if (status === 'SUBSCRIBED') {
         this.subscribed = true;
         this.localCosmetics = this.cosmeticsPublisher.joined();
         void channel.track(this.presencePayload());
         this.cadence.flush();
+        // everything dropped while joining (weapon, ready, pvp, score) rides on this one state
+        this.broadcastState();
         this.startPump();
         this.onConnectedChange?.(true);
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
@@ -333,12 +411,14 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       return;
     }
     this.localCombatReady = ready;
+    this.wake();
     // rides on the next state message, sent right away
     this.cadence.flush();
     this.broadcastState();
   }
 
   sendState(state: OutgoingState): void {
+    if (this.parked) this.wake();
     this.localState = { ...state, t: state.t ?? this.now() };
     this.localStateAtMs = this.now();
     this.restSent = false;
@@ -379,8 +459,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       this.flushCombat();
       return;
     }
-    if (this.roomFull) {
-      // turned away by a full room: nobody hosts for us, nothing to send
+    if (this.roomFull || !this.joined()) {
+      // turned away by a full room, or not in one yet: nobody hosts for us, nothing to send
       return;
     }
     this.pendingFires.push({
@@ -438,8 +518,41 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.broadcast('equip', { id: this.localId, weaponId });
   }
 
+  /**
+   * Opt in or out of pvp. Enforced by the host: off means immune and unable to
+   * damage anyone (players or bots). Goes out on the next pump tick.
+   */
+  setPvp(on: boolean): void {
+    if (this.localPvp === on) return;
+    this.localPvp = on;
+    // the next pump tick sends it, one message instead of two
+    this.cadence.flush();
+  }
+
+  getPvp(): boolean {
+    return this.localPvp;
+  }
+
+  getRoomScores(): RoomScore[] {
+    return this.roomScores.map((r) => ({ ...r }));
+  }
+
+  private ownScore(): { kills: number; deaths: number } | null {
+    const row = this.roomScores.find((r) => r.id === this.localId);
+    return row ? { kills: row.kills, deaths: row.deaths } : null;
+  }
+
+  private setRoomScores(rows: RoomScore[]): void {
+    const key = JSON.stringify(rows);
+    if (key === this.roomScoresKey) return;
+    this.roomScoresKey = key;
+    this.roomScores = rows;
+    this.onScoreboard?.(this.getRoomScores());
+  }
+
   setRoomContext(context: RoomContext | null): void {
     this.roomContext = context;
+    this.wake();
     // eligibility rides on state, tell the room right away
     this.cadence.flush();
     this.broadcastState();
@@ -558,6 +671,71 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     }
   }
 
+  /**
+   * hidden, or not playing (menu, paused, dead menu, run over). combat ready is
+   * only set while playing a loaded map, and builds with combat off never get a
+   * room context, so it can't be part of this
+   */
+  private isIdle(): boolean {
+    return !this.isVisible() || !this.localCombatReady;
+  }
+
+  /** runs from the pump: parks the tab once it has been idle long enough */
+  private checkIdle(): void {
+    if (this.parked || !this.channel || !Number.isFinite(this.idleDisconnectMs)) return;
+    const now = this.now();
+    if (!this.isIdle()) {
+      this.idleSince = null;
+      return;
+    }
+    this.idleSince ??= now;
+    const idleFor = now - this.idleSince;
+    if (idleFor < this.idleDisconnectMs) return;
+    // a hidden host hands the room to a visible peer first (it stops being
+    // eligible once hidden); only past the grace does it leave regardless. a
+    // visible paused host stays eligible, nobody takes over, so no wait
+    const handoffPending = this.hostSim !== null && !this.isVisible() && this.hasVisiblePeer();
+    if (handoffPending && idleFor < this.idleDisconnectMs + IDLE_HANDOFF_GRACE_MS) return;
+    this.park();
+  }
+
+  private hasVisiblePeer(): boolean {
+    const now = this.now();
+    for (const r of this.remotes.values()) {
+      if (r.eligibility === 2 && now - r.lastSeen <= HOST_STALE_MS) return true;
+    }
+    return false;
+  }
+
+  /** leaves the channel (and presence) but remembers the join, see IDLE_DISCONNECT_MS */
+  private park(): void {
+    this.parked = true;
+    this.idleSince = null;
+    this.stopPump();
+    this.stopHost();
+    if (this.channel) {
+      void this.client.removeChannel(this.channel);
+      this.channel = null;
+    }
+    this.subscribed = false;
+    this.presenceSynced = false;
+    this.remotes.clear();
+    this.botRows = [];
+    this.roomFull = false;
+    this.pendingFires = [];
+    // clear the remote players the game is drawing
+    this.emitSnapshot();
+    this.onConnectedChange?.(false);
+  }
+
+  /** a parked tab that is wanted again (visible, or back in a map) rejoins */
+  private wake(): void {
+    if (!this.parked || !this.desiredJoin) return;
+    // back on a visible tab rejoins even on the menu (and parks again later if it stays there)
+    if (!this.isVisible()) return;
+    this.openChannel(this.desiredJoin.mapId);
+  }
+
   private stopHost(): void {
     this.hostSim?.dispose();
     this.hostSim = null;
@@ -585,6 +763,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
    * player is paused (no ticks arriving), and idle keepalives.
    */
   private pump(): void {
+    this.checkIdle();
+    if (this.parked) return;
     const now = this.now();
     // liveness and grace windows expire on their own, re-run the election
     this.updateHostRole();
@@ -631,6 +811,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         t: this.localState.t,
         weapon: this.localWeapon ?? undefined,
         deadForMs: this.localDeadUntil !== null ? Math.max(0, this.localDeadUntil - now) : undefined,
+        pvp: this.localPvp,
+        score: this.ownScore() ?? undefined,
         combatReady: this.localCombatReady,
         yaw: this.localState.yaw,
         pitch: this.localState.pitch,
@@ -648,6 +830,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
           t: record.t ?? undefined,
           weapon: record.weapon ?? undefined,
           deadForMs: record.deadForMs ?? undefined,
+          pvp: record.pvp,
+          score: record.score ?? undefined,
           combatReady: record.combatReady,
           yaw: record.state.yaw,
           pitch: record.state.pitch,
@@ -660,6 +844,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     while (this.hostAccumulatorMs >= HOST_STEP_MS) {
       this.hostAccumulatorMs -= HOST_STEP_MS;
       this.botRows = this.hostSim.tick(HOST_STEP_MS);
+      this.setRoomScores(this.hostSim.scoreboard());
       stepped = true;
     }
     if (stepped) {
@@ -683,7 +868,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
    * carries, never "now": a repeated pose must look like the same sample.
    */
   private broadcastState(): void {
-    if (!this.channel || !this.subscribed || this.roomFull) {
+    if (!this.joined() || this.roomFull) {
       return;
     }
     const now = this.now();
@@ -698,6 +883,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (this.hostSim) payload.h = this.hostEpoch;
     if (this.localWeapon) payload.w = this.localWeapon;
     if (this.localDeadUntil !== null) payload.d = Math.max(0, Math.round(this.localDeadUntil - now));
+    if (!this.localPvp) payload.pv = 0;
+    const own = this.ownScore();
+    if (own) payload.sc = [own.kills, own.deaths];
+    if (this.hostSim && now - this.lastScoreboardSentAt >= SCOREBOARD_EVERY_MS) {
+      payload.sb = this.roomScores.slice(0, 16).map((r) => [r.id, r.kills, r.deaths] as [string, number, number]);
+      this.lastScoreboardSentAt = now;
+    }
     const duck = Math.round(clampDuck(s?.duck) * 100) / 100;
     if (duck > 0) payload.k = duck;
     if (this.hostSim && this.botRows.length > 0) {
@@ -724,8 +916,18 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.broadcast('st', payload);
   }
 
+  /**
+   * realtime-js sends a broadcast it can't push over the socket (joining, leaving,
+   * socket closing) as a REST post instead, billed like any message. so nothing
+   * goes out unless the channel is joined; what matters rides on the first state
+   * after the join
+   */
+  private joined(): boolean {
+    return this.channel !== null && this.subscribed && String(this.channel.state) === 'joined';
+  }
+
   private broadcast(event: string, payload: unknown): void {
-    if (!this.channel) {
+    if (!this.channel || !this.joined()) {
       return;
     }
     this.sentCounts.set(event, (this.sentCounts.get(event) ?? 0) + 1);
@@ -750,6 +952,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (record.hostEpoch !== null) this.maxEpochSeen = Math.max(this.maxEpochSeen, record.hostEpoch);
     record.weapon = typeof p.w === 'string' ? p.w : record.weapon;
     record.deadForMs = typeof p.d === 'number' && Number.isFinite(p.d) ? p.d : null;
+    record.pvp = p.pv !== 0;
+    if (Array.isArray(p.sc) && p.sc.length === 2) {
+      record.score = { kills: Number(p.sc[0]) || 0, deaths: Number(p.sc[1]) || 0 };
+    }
+    if (Array.isArray(p.sb) && p.id === this.electedHostId() && !this.hostSim) {
+      this.setRoomScores(parseScores(p.sb));
+    }
     if (Array.isArray(p.s) && p.s.length === 8 && (record.t === null || p.t > record.t)) {
       record.state = { ...unpack(p.s), duck: clampDuck(p.k) };
       record.t = p.t;
@@ -961,6 +1170,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         velocity: this.localState.velocity,
         yaw: this.localState.yaw,
         pitch: this.localState.pitch,
+        pvp: this.localPvp,
       });
     }
     for (const [id, record] of this.remotes) {
@@ -977,18 +1187,31 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         pitch: record.state.pitch,
         t: record.t ?? undefined,
         clock: id,
+        pvp: record.pvp,
         ...(record.cosmetics ? { cosmetics: record.cosmetics } : {}),
       });
     }
 
     if (now - this.botRowsAt <= PLAYER_STALE_MS) {
       for (const bot of this.botRows) {
-        players.push({ ...bot, t: this.botRowsT, clock: this.botRowsClock });
+        players.push({ ...bot, t: this.botRowsT, clock: this.botRowsClock, pvp: true });
       }
     }
 
     this.onSnapshot({ mapId: this.activeMapId, players, serverTimeMs: now });
   }
+}
+
+function parseScores(raw: unknown[]): RoomScore[] {
+  const out: RoomScore[] = [];
+  for (const row of raw.slice(0, 16)) {
+    if (!Array.isArray(row) || typeof row[0] !== 'string') continue;
+    const kills = Number(row[1]);
+    const deaths = Number(row[2]);
+    if (!Number.isFinite(kills) || !Number.isFinite(deaths)) continue;
+    out.push({ id: row[0], kills: Math.max(0, Math.floor(kills)), deaths: Math.max(0, Math.floor(deaths)) });
+  }
+  return out;
 }
 
 function newRecord(name: string, model: PlayerModel, now: number): RemoteRecord {
@@ -1003,6 +1226,8 @@ function newRecord(name: string, model: PlayerModel, now: number): RemoteRecord 
     weapon: null,
     cosmetics: undefined,
     deadForMs: null,
+    pvp: true,
+    score: null,
     // unknown join time sorts last, so an unseen peer never bumps a seated one
     joinedAt: Number.MAX_SAFE_INTEGER,
     lastSeen: now,

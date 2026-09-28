@@ -1,10 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Vector3 } from 'three';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   COSMETICS_DEBOUNCE_MS,
   COSMETICS_MIN_INTERVAL_MS,
   HOST_STALE_MS,
+  IDLE_DISCONNECT_MS,
   JOIN_GRACE_MS,
   MAX_PENDING_FIRES,
   SUPABASE_PROTOCOL,
@@ -24,6 +25,16 @@ class FakeBus {
   readonly byEvent = new Map<string, number>();
   /** presence track calls per client */
   readonly tracks = new Map<string, number>();
+  /** broadcasts sent while not joined: realtime-js posts those to /realtime/v1/api/broadcast (billed) */
+  readonly restBroadcasts: Array<{ from: string; event: string }> = [];
+  /** while set, subscribe() waits in 'joining' until releaseJoins() */
+  holdJoins = false;
+  readonly pendingJoins: Array<() => void> = [];
+
+  releaseJoins(): void {
+    this.holdJoins = false;
+    for (const join of this.pendingJoins.splice(0)) join();
+  }
 
   join(ch: FakeChannel): void {
     const set = this.topics.get(ch.topic) ?? new Set();
@@ -32,8 +43,23 @@ class FakeBus {
   }
 
   leave(ch: FakeChannel): void {
-    this.topics.get(ch.topic)?.delete(ch);
+    ch.state = 'closed';
+    const had = this.topics.get(ch.topic)?.delete(ch) ?? false;
+    // presence tells everyone left that this client went
+    if (had && ch.presence) {
+      for (const other of this.topics.get(ch.topic) ?? []) {
+        this.events += 1;
+        this.bill(other.key);
+      }
+      this.byEvent.set('presence', (this.byEvent.get('presence') ?? 0) + (this.topics.get(ch.topic)?.size ?? 0));
+    }
     this.syncPresence(ch.topic);
+  }
+
+  /** billed messages per client: what it sends plus what is delivered to it */
+  readonly perClient = new Map<string, number>();
+  bill(key: string, n = 1): void {
+    this.perClient.set(key, (this.perClient.get(key) ?? 0) + n);
   }
 
   syncPresence(topic: string): void {
@@ -45,10 +71,12 @@ class FakeBus {
   broadcast(from: FakeChannel, event: string, payload: unknown): void {
     this.sent.push({ from: from.key, event, payload, at: Date.now() });
     this.events += 1;
+    this.bill(from.key);
     this.byEvent.set(event, (this.byEvent.get(event) ?? 0) + 1);
     for (const ch of this.topics.get(from.topic) ?? []) {
       if (ch === from) continue;
       this.events += 1;
+      this.bill(ch.key);
       ch.emit('broadcast', event, { event, payload });
     }
   }
@@ -56,6 +84,8 @@ class FakeBus {
 
 class FakeChannel {
   presence: Record<string, unknown> | null = null;
+  /** like realtime-js: closed, joining, joined, leaving, errored */
+  state = 'closed';
   private readonly handlers: Array<{ type: string; event: string; cb: (arg: any) => void }> = [];
 
   constructor(private readonly bus: FakeBus, readonly topic: string, readonly key: string) {}
@@ -72,8 +102,15 @@ class FakeChannel {
   }
 
   subscribe(cb: (status: string) => void): this {
-    this.bus.join(this);
-    cb('SUBSCRIBED');
+    this.state = 'joining';
+    const join = () => {
+      if (this.state !== 'joining') return;
+      this.state = 'joined';
+      this.bus.join(this);
+      cb('SUBSCRIBED');
+    };
+    if (this.bus.holdJoins) this.bus.pendingJoins.push(join);
+    else join();
     return this;
   }
 
@@ -82,6 +119,7 @@ class FakeChannel {
     // billed like a broadcast: the track, then a presence diff to every peer
     const peers = this.bus.topics.get(this.topic)?.size ?? 1;
     this.bus.events += peers;
+    for (const ch of this.bus.topics.get(this.topic) ?? []) this.bus.bill(ch.key);
     this.bus.byEvent.set('presence', (this.bus.byEvent.get('presence') ?? 0) + peers);
     this.bus.tracks.set(this.key, (this.bus.tracks.get(this.key) ?? 0) + 1);
     this.bus.syncPresence(this.topic);
@@ -97,6 +135,11 @@ class FakeChannel {
   }
 
   send(msg: { event: string; payload: unknown }): Promise<string> {
+    if (this.state !== 'joined') {
+      // realtime-js 2.110 falls back to a REST post here instead of failing
+      this.bus.restBroadcasts.push({ from: this.key, event: msg.event });
+      return Promise.resolve('ok');
+    }
     this.bus.broadcast(this, msg.event, msg.payload);
     return Promise.resolve('ok');
   }
@@ -120,8 +163,8 @@ const config = {
   lobbyChannelPrefix: 'test_room',
 };
 
-function makePeer(bus: FakeBus, id: string, visible = () => true): SupabaseMultiplayer {
-  return new SupabaseMultiplayer(fakeClient(bus), config, { sessionId: id, isVisible: visible });
+function makePeer(bus: FakeBus, id: string, visible = () => true, idleDisconnectMs?: number): SupabaseMultiplayer {
+  return new SupabaseMultiplayer(fakeClient(bus), config, { sessionId: id, isVisible: visible, idleDisconnectMs });
 }
 
 /** drives one peer like GameApp does: a state every 128 Hz tick */
@@ -155,7 +198,7 @@ const arenaOf = (p: SupabaseMultiplayer) => (p as any).hostSim.arena;
 const statesFrom = (bus: FakeBus, id: string, since = 0) =>
   bus.sent.filter((m) => m.from === id && m.event === 'st' && m.at >= since).map((m) => m.payload);
 
-describe('SupabaseMultiplayer (p6 protocol)', () => {
+describe('SupabaseMultiplayer (p7 protocol)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
@@ -431,6 +474,105 @@ describe('SupabaseMultiplayer (p6 protocol)', () => {
     for (const p of peers) p.disconnect();
   });
 
+  describe('pvp', () => {
+    function stabRoom(hostPvp: boolean, guestPvp: boolean) {
+      const bus = new FakeBus();
+      const host = makePeer(bus, 'p_a');
+      const guest = makePeer(bus, 'p_b');
+      const hits: unknown[] = [];
+      guest.onHit = (e) => hits.push(e);
+      for (const p of [host, guest]) {
+        p.join('map1', 'Player', 'terrorist');
+        p.setRoomContext({
+          collisionWorld: new CollisionWorld(),
+          spawn: { position: new Vector3(0, 0, 0), yawDeg: 0 },
+          botCount: 0,
+        });
+        p.setCombatReady(true);
+      }
+      host.setPvp(hostPvp);
+      guest.setPvp(guestPvp);
+      const step = 1000 / 128;
+      for (let t = 0; t < 4200; t += step) {
+        vi.advanceTimersByTime(step);
+        const now = Date.now();
+        host.sendState({ position: [0, 0, -1.1], velocity: [0, 0, 0], yaw: 0, pitch: 0, t: now });
+        guest.sendState({ position: [0, 0, 0], velocity: [0, 0, 0], yaw: 0, pitch: 0, t: now });
+      }
+      return { bus, host, guest, hits };
+    }
+
+    it('both opted in: the stab lands', () => {
+      const { host, guest, hits } = stabRoom(true, true);
+      guest.sendFire([0, 1.6, 0], [0, 0, -1], undefined, 'secondary');
+      vi.advanceTimersByTime(150);
+      expect(hits).toHaveLength(1);
+      host.disconnect();
+      guest.disconnect();
+    });
+
+    it('a peaceful host is immune to a pvp guest, enforced by the host sim', () => {
+      const { host, guest, hits } = stabRoom(false, true);
+      guest.sendFire([0, 1.6, 0], [0, 0, -1], undefined, 'secondary');
+      vi.advanceTimersByTime(150);
+      expect(hits).toHaveLength(0);
+      expect(arenaOf(host).getHealth('p_a')).toBe(100);
+      host.disconnect();
+      guest.disconnect();
+    });
+
+    it('a peaceful guest cannot damage anyone, even if its client sends the swing', () => {
+      const { host, guest, hits } = stabRoom(true, false);
+      expect(arenaOf(host).isPvp('p_b')).toBe(false);
+      guest.sendFire([0, 1.6, 0], [0, 0, -1], undefined, 'secondary');
+      vi.advanceTimersByTime(150);
+      expect(hits).toHaveLength(0);
+      host.disconnect();
+      guest.disconnect();
+    });
+
+    it('carries the flag on state (pv=0 only when off) and into snapshot rows', () => {
+      const { bus, host, guest } = stabRoom(true, false);
+      expect(statesFrom(bus, 'p_b').at(-1).pv).toBe(0);
+      expect(statesFrom(bus, 'p_a').at(-1).pv).toBeUndefined();
+      let rows: any[] = [];
+      host.onSnapshot = (snap) => { rows = snap.players; };
+      tickAll([host, guest], 200);
+      expect(rows.find((r) => r.id === 'p_b')?.pvp).toBe(false);
+      expect(rows.find((r) => r.id === 'p_a')?.pvp).toBe(true);
+      host.disconnect();
+      guest.disconnect();
+    });
+  });
+
+  it('publishes live room kills from the host, and a new host keeps them', () => {
+    const bus = new FakeBus();
+    const a = makePeer(bus, 'p_a');
+    const b = makePeer(bus, 'p_b');
+    const c = makePeer(bus, 'p_c');
+    for (const p of [a, b, c]) enter(p);
+    tickAll([a, b, c], JOIN_GRACE_MS + 1000);
+    expect(hosting(a)).toBe(true);
+    let seenByC: Array<{ id: string; kills: number; deaths: number }> = [];
+    c.onScoreboard = (rows) => { seenByC = rows; };
+    // two kills for b, recorded by the host's arena path
+    const sim = (a as any).hostSim;
+    sim.recordKill('p_b', 'p_c');
+    sim.recordKill('p_b', 'p_a');
+    tickAll([a, b, c], 2600);
+    expect(seenByC.find((r) => r.id === 'p_b')).toMatchObject({ kills: 2, deaths: 0 });
+    expect(seenByC.find((r) => r.id === 'p_c')).toMatchObject({ kills: 0, deaths: 1 });
+
+    // host leaves; the next host seeds from each player's own published score
+    a.disconnect();
+    tickAll([b, c], 5000);
+    const next = [b, c].find(hosting)!;
+    expect(next).toBeDefined();
+    expect(next.getRoomScores().find((r) => r.id === 'p_b')).toMatchObject({ kills: 2 });
+    b.disconnect();
+    c.disconnect();
+  });
+
   it('fires and combat results ride on state messages, not their own broadcasts', () => {
     const bus = new FakeBus();
     const host = makePeer(bus, 'p_a');
@@ -520,12 +662,12 @@ describe('SupabaseMultiplayer (p6 protocol)', () => {
     for (const p of peers) p.disconnect();
   });
 
-  it('joins p6 channels, so p5 hosts (old hit capsules) never share a room with it', () => {
+  it('joins p7 channels, so p6 hosts (no pvp opt-in) and p5 hosts (old hit capsules) never share a room with it', () => {
     const bus = new FakeBus();
     const peer = makePeer(bus, 'p_a');
     enter(peer);
-    expect(SUPABASE_PROTOCOL).toBe('p6');
-    expect([...bus.topics.keys()]).toEqual(['test_room_p6_map1']);
+    expect(SUPABASE_PROTOCOL).toBe('p7');
+    expect([...bus.topics.keys()]).toEqual(['test_room_p7_map1']);
     peer.disconnect();
   });
 
@@ -549,6 +691,316 @@ describe('SupabaseMultiplayer (p6 protocol)', () => {
     expect(statesFrom(bus, 'p_b').some((st) => st.k === 1)).toBe(true);
     host.disconnect();
     guest.disconnect();
+  });
+
+  describe('idle tabs leave the channel', () => {
+    const HOUR = 3_600_000;
+    // peers listen for visibilitychange on the document; visibility itself comes from each peer's isVisible
+    beforeEach(() => {
+      (globalThis as any).document = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    });
+    const knife = (seed: number) => ({ knife: { id: 'flip' as const, finish: 'fade', wear: 0.02, seed } });
+
+    /** runs the clock, sending states at `hz` from the peers that are playing */
+    function run(ms: number, playing: SupabaseMultiplayer[], hz = 32): void {
+      const step = 1000 / hz;
+      for (let t = 0; t < ms; t += step) {
+        vi.advanceTimersByTime(step);
+        const now = Date.now();
+        for (const [i, p] of playing.entries()) {
+          p.sendState({ position: [i, 0, now / 1000], velocity: [0, 0, 1], yaw: 0, pitch: 0, t: now });
+        }
+      }
+    }
+
+    /** billed messages per hour for `id`, over an hour after `settle` */
+    function perHour(bus: FakeBus, id: string, playing: SupabaseMultiplayer[], settle = 0): number {
+      if (settle) run(settle, playing);
+      const before = bus.perClient.get(id) ?? 0;
+      run(HOUR, playing);
+      return (bus.perClient.get(id) ?? 0) - before;
+    }
+
+    const rates: Record<string, number> = {};
+    afterAll(() => {
+      // eslint-disable-next-line no-console
+      console.log('[idle] billed messages per hour', JSON.stringify(rates));
+    });
+
+    it('a tab left on the menu: ~3600 messages an hour before, none after the first minute', () => {
+      for (const [label, idleMs] of [['before', Infinity], ['after', undefined]] as const) {
+        const bus = new FakeBus();
+        const menu = makePeer(bus, 'p_menu', () => true, idleMs);
+        menu.join('map1', 'Player', 'terrorist'); // the game joins at start, on the menu
+        const first = perHour(bus, 'p_menu', []);
+        const second = perHour(bus, 'p_menu', []);
+        rates[`menu tab alone, ${label}, first hour`] = first;
+        rates[`menu tab alone, ${label}, later hours`] = second;
+        if (label === 'before') expect(second).toBeGreaterThan(3000);
+        else {
+          expect(menu.isParked()).toBe(true);
+          expect(first).toBeLessThan(100);
+          expect(second).toBe(0);
+        }
+        menu.disconnect();
+      }
+    }, 30_000);
+
+    it('a hidden tab in a map next to a player: tens of thousands an hour before, none after', () => {
+      for (const [label, idleMs] of [['before', Infinity], ['after', undefined]] as const) {
+        const bus = new FakeBus();
+        let hidden = false;
+        const player = makePeer(bus, 'p_play', () => true, idleMs);
+        const tab = makePeer(bus, 'p_tab', () => !hidden, idleMs);
+        enter(player);
+        enter(tab);
+        run(JOIN_GRACE_MS + 1000, [player, tab]);
+        hidden = true;
+        document.dispatchEvent(new Event('visibilitychange'));
+        const hiddenHour = perHour(bus, 'p_tab', [player]);
+        const alone = new FakeBus();
+        const solo = makePeer(alone, 'p_solo', () => false, idleMs);
+        enter(solo);
+        const hiddenAlone = perHour(alone, 'p_solo', [], 5000);
+        rates[`hidden tab next to a player, ${label}`] = hiddenHour;
+        rates[`hidden tab alone in a map, ${label}`] = hiddenAlone;
+        if (label === 'before') {
+          expect(hiddenHour).toBeGreaterThan(20_000);
+          expect(hiddenAlone).toBeGreaterThan(3000);
+        } else {
+          expect(tab.isParked()).toBe(true);
+          expect(solo.isParked()).toBe(true);
+          expect(hiddenHour).toBeLessThan(2000);
+          expect(hiddenAlone).toBeLessThan(100);
+        }
+        for (const p of [player, tab, solo]) p.disconnect();
+      }
+    }, 30_000);
+
+    it('rejoins on return as a fresh joiner: presence, cosmetics and an unchanged host', () => {
+      const bus = new FakeBus();
+      let hidden = false;
+      const host = makePeer(bus, 'p_a');
+      const tab = makePeer(bus, 'p_b', () => !hidden);
+      tab.setCosmetics(knife(1));
+      enter(host);
+      enter(tab);
+      run(JOIN_GRACE_MS + 1000, [host, tab]);
+      expect(hosting(host)).toBe(true);
+      expect((host as any).remotes.get('p_b')?.cosmetics?.knife?.seed).toBe(1);
+
+      hidden = true;
+      document.dispatchEvent(new Event('visibilitychange'));
+      run(IDLE_DISCONNECT_MS + 2000, [host]);
+      expect(tab.isParked()).toBe(true);
+      expect((host as any).remotes.has('p_b')).toBe(false);
+      expect([...bus.topics.values()].every((set) => ![...set].some((ch) => ch.key === 'p_b'))).toBe(true);
+
+      // picks a new finish while away, then comes back
+      tab.setCosmetics(knife(2));
+      run(20_000, [host]);
+      hidden = false;
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(tab.isParked()).toBe(false);
+      run(JOIN_GRACE_MS + 1000, [host, tab]);
+      expect((host as any).remotes.get('p_b')?.cosmetics?.knife?.seed).toBe(2);
+      expect((tab as any).remotes.has('p_a')).toBe(true);
+      // the host keeps the room; the returning tab doesn't take it back
+      expect(hosting(host)).toBe(true);
+      expect(hosting(tab)).toBe(false);
+      host.disconnect();
+      tab.disconnect();
+    }, 30_000);
+
+    it('a hidden host hands the room off before it leaves', () => {
+      const bus = new FakeBus();
+      let hidden = false;
+      const host = makePeer(bus, 'p_a', () => !hidden);
+      const other = makePeer(bus, 'p_b');
+      enter(host);
+      run(JOIN_GRACE_MS + 1000, [host]);
+      enter(other);
+      run(JOIN_GRACE_MS + 1000, [host, other]);
+      expect(hosting(host)).toBe(true);
+
+      hidden = true;
+      document.dispatchEvent(new Event('visibilitychange'));
+      run(5000, [other]);
+      expect(hosting(other)).toBe(true);
+      expect(hosting(host)).toBe(false);
+      run(IDLE_DISCONNECT_MS, [other]);
+      expect(host.isParked()).toBe(true);
+      expect(hosting(other)).toBe(true);
+      host.disconnect();
+      other.disconnect();
+    }, 30_000);
+
+    it('a parked menu tab rejoins when it enters a map', () => {
+      const bus = new FakeBus();
+      const tab = makePeer(bus, 'p_menu');
+      tab.join('map1', 'Player', 'terrorist');
+      run(IDLE_DISCONNECT_MS + 1000, []);
+      expect(tab.isParked()).toBe(true);
+      // picking another map on a visible menu means the player is back: it rejoins
+      tab.join('map2', 'Player', 'terrorist');
+      expect(tab.isParked()).toBe(false);
+      run(IDLE_DISCONNECT_MS + 1000, []);
+      expect(tab.isParked()).toBe(true);
+      tab.setRoomContext(ctx());
+      tab.setCombatReady(true);
+      expect(tab.isParked()).toBe(false);
+      expect([...bus.topics.keys()]).toContain(`test_room_${SUPABASE_PROTOCOL}_map2`);
+      run(IDLE_DISCONNECT_MS + 5000, [tab]);
+      expect(tab.isParked()).toBe(false);
+      tab.disconnect();
+    }, 30_000);
+
+    it('with combat off a playing tab stays connected, and a hidden or menu tab still parks', () => {
+      const bus = new FakeBus();
+      let hidden = false;
+      // combat off: the game loads the map but never gives the transport a room context
+      const player = makePeer(bus, 'p_play', () => !hidden);
+      player.join('map1', 'Player', 'terrorist');
+      player.setRoomContext(null);
+      player.setCombatReady(true);
+      const menu = makePeer(bus, 'p_menu');
+      menu.join('map1', 'Player', 'terrorist');
+      run(3 * IDLE_DISCONNECT_MS, [player]);
+      expect(player.isParked()).toBe(false);
+      expect(bus.tracks.get('p_play')).toBe(1);
+      expect(menu.isParked()).toBe(true);
+
+      hidden = true;
+      document.dispatchEvent(new Event('visibilitychange'));
+      run(IDLE_DISCONNECT_MS + 1000, [player]);
+      expect(player.isParked()).toBe(true);
+      player.disconnect();
+      menu.disconnect();
+    }, 30_000);
+
+    it('a paused host that is still visible parks on time, and a peer takes the room', () => {
+      const bus = new FakeBus();
+      const host = makePeer(bus, 'p_a');
+      const other = makePeer(bus, 'p_b');
+      enter(host);
+      run(JOIN_GRACE_MS + 1000, [host]);
+      enter(other);
+      run(JOIN_GRACE_MS + 1000, [host, other]);
+      expect(hosting(host)).toBe(true);
+
+      // paused on the menu with the tab in front: still eligible, so nobody takes over first
+      host.setCombatReady(false);
+      run(IDLE_DISCONNECT_MS + 1000, [other]);
+      expect(host.isParked()).toBe(true);
+      run(1000, [other]);
+      expect(hosting(other)).toBe(true);
+      host.disconnect();
+      other.disconnect();
+    }, 30_000);
+  });
+
+  describe('never falls back to REST broadcast', () => {
+    beforeEach(() => {
+      (globalThis as any).document = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    });
+    const pose = () => ({ position: [0, 0, 0] as [number, number, number], velocity: [0, 0, 0] as [number, number, number], yaw: 0, pitch: 0, t: Date.now() });
+    // everything a player can trigger that used to reach channel.send
+    const everything = (p: SupabaseMultiplayer, weapon: string) => {
+      p.sendEquip(weapon);
+      p.sendAttack('primary');
+      p.sendReload();
+      p.sendFire([0, 1, 0], [0, 0, 1]);
+      p.sendState(pose());
+    };
+
+    it('the fake counts a send before the join as a REST post', () => {
+      const bus = new FakeBus();
+      const ch = new FakeChannel(bus, 'test_room', 'p_raw');
+      void ch.send({ event: 'equip', payload: {} });
+      expect(bus.restBroadcasts).toEqual([{ from: 'p_raw', event: 'equip' }]);
+    });
+
+    it('connect with an equip before the join: nothing over REST, the weapon rides on the first state', () => {
+      const bus = new FakeBus();
+      bus.holdJoins = true;
+      const a = makePeer(bus, 'p_a');
+      a.join('map1', 'Player', 'terrorist');
+      a.setRoomContext(ctx());
+      a.setCombatReady(true);
+      everything(a, 'awp');
+      vi.advanceTimersByTime(500);
+      expect(bus.restBroadcasts).toEqual([]);
+      expect(bus.sent).toHaveLength(0);
+
+      bus.releaseJoins();
+      const first = statesFrom(bus, 'p_a')[0];
+      expect(first?.w).toBe('awp');
+      expect(first?.r).toBe(1);
+      // a fire from before the room existed is not carried into it
+      expect(first?.f).toBeUndefined();
+      tickAll([a], 2000);
+      expect(bus.restBroadcasts).toEqual([]);
+      a.disconnect();
+    });
+
+    it('handoff, park and rejoin: nothing over REST', () => {
+      const bus = new FakeBus();
+      let hidden = false;
+      const host = makePeer(bus, 'p_a', () => !hidden);
+      const other = makePeer(bus, 'p_b');
+      enter(host);
+      tickAll([host], JOIN_GRACE_MS + 500);
+      enter(other);
+      tickAll([host, other], JOIN_GRACE_MS + 500);
+      expect(hosting(host)).toBe(true);
+
+      hidden = true;
+      document.dispatchEvent(new Event('visibilitychange'));
+      tickAll([other], 3000);
+      expect(hosting(other)).toBe(true);
+      tickAll([other], IDLE_DISCONNECT_MS);
+      expect(host.isParked()).toBe(true);
+      everything(host, 'deagle');
+      expect(bus.restBroadcasts).toEqual([]);
+
+      // back, and busy during the rejoin
+      bus.holdJoins = true;
+      hidden = false;
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(host.isParked()).toBe(false);
+      everything(host, 'awp');
+      vi.advanceTimersByTime(300);
+      expect(bus.restBroadcasts).toEqual([]);
+      const before = bus.sent.length;
+      bus.releaseJoins();
+      expect(bus.sent.slice(before).find((m) => m.from === 'p_a' && m.event === 'st')?.payload.w).toBe('awp');
+      tickAll([host, other], 3000);
+      expect(bus.restBroadcasts).toEqual([]);
+      host.disconnect();
+      other.disconnect();
+    }, 30_000);
+
+    it('unload: a socket or channel already closing sends nothing over REST', () => {
+      const bus = new FakeBus();
+      const a = makePeer(bus, 'p_a');
+      const b = makePeer(bus, 'p_b');
+      enter(a);
+      enter(b);
+      tickAll([a, b], JOIN_GRACE_MS + 500);
+      // pagehide: the socket drops (phoenix marks the channel errored before any callback) or the leave is in flight
+      (a as any).channel.state = 'errored';
+      (b as any).channel.state = 'leaving';
+      for (const p of [a, b]) {
+        everything(p, 'deagle');
+        p.setCombatReady(false);
+      }
+      (globalThis as any).document.visibilityState = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+      tickAll([a, b], 3000);
+      a.disconnect();
+      b.disconnect();
+      expect(bus.restBroadcasts).toEqual([]);
+    });
   });
 
   describe('cosmetics', () => {

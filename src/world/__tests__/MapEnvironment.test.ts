@@ -50,6 +50,15 @@ describe('MapEnvironment', () => {
     expect(env.lightMapIntensity).toBe(7.5);
   });
 
+  it('turns indirectTint into gains that shift hue without changing brightness', () => {
+    const plain = resolveEnvironment({ lightmapMode: 'indirect' });
+    expect(plain.indirectTint.toArray()).toEqual([1, 1, 1]);
+    const cool = resolveEnvironment({ lightmapMode: 'indirect', indirectTint: '#c4ccff' }).indirectTint;
+    expect(0.2126 * cool.r + 0.7152 * cool.g + 0.0722 * cool.b).toBeCloseTo(1, 6);
+    expect(cool.b).toBeGreaterThan(cool.r);
+    expect(resolveEnvironment({ indirectTint: 'not a color' }).indirectTint.toArray()).toEqual([1, 1, 1]);
+  });
+
   it('matches meshes to lightmaps by name, then the default', () => {
     const list = [{ path: 'a.webp' }, { path: 'far.webp', match: 'far_' }];
     expect(lightmapIndexForMesh('far_cliffs__rock', list)).toBe(1);
