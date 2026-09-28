@@ -1,5 +1,6 @@
 import { Box3, Matrix4, Mesh, Quaternion, Vector3, type Object3D } from 'three';
-import type { KnifeDef } from '../combat/knives';
+import type { KnifeDef, KnifeId } from '../combat/knives';
+import FITTED from './knifeHandPoses.json';
 import { blendHandPose, createHandPose, HAND_POSES, type HandPose, type MutableHandPose } from './handPoses';
 
 /**
@@ -31,6 +32,8 @@ export interface KnifeGripSpec {
   pose: MutableHandPose;
   /** hand frame in the anchor socket frame, what the ik targets */
   handInAnchor: Matrix4;
+  /** folders: thumb curls that put it on the opener, blended in while opening */
+  openerThumb?: [number, number, number];
 }
 
 export function gripKindFor(def: KnifeDef): KnifeGripKind {
@@ -107,8 +110,10 @@ export function wrapPose(kind: KnifeGripKind, handleDiameter: number, out: Mutab
   return out;
 }
 
-export function knifeGripSpec(kind: KnifeGripKind, handleDiameter: number): KnifeGripSpec {
+export function knifeGripSpec(kind: KnifeGripKind, handleDiameter: number, offset?: readonly [number, number, number]): KnifeGripSpec {
   const anchorInHand = anchorFor(kind, handleDiameter);
+  // per knife nudge fitted to the model (see tools/assets/gripFit.ts)
+  if (offset) anchorInHand.add(new Vector3(offset[0], offset[1], offset[2]));
   const knifeInHand = KNIFE_IN_HAND[kind].clone();
   const handInAnchor = new Matrix4().compose(anchorInHand, knifeInHand, new Vector3(1, 1, 1)).invert();
   return {
@@ -184,3 +189,23 @@ export function measureHandleDiameter(knife: Object3D): number {
 }
 
 export type { HandPose };
+
+interface FittedEntry {
+  pose: HandPose;
+  offset: [number, number, number];
+  opener?: [number, number, number];
+}
+const FITTED_POSES = FITTED as unknown as Partial<Record<KnifeId, FittedEntry>>;
+
+/**
+ * the grip for a blender knife model: finger curls and handle placement fitted
+ * to that model's geometry offline (tools/assets/gripFit.ts), so every finger
+ * rests on the handle without sinking into it or the blade.
+ */
+export function fittedGripSpec(id: KnifeId, kind: KnifeGripKind, handleDiameter: number): KnifeGripSpec {
+  const fit = FITTED_POSES[id];
+  const spec = knifeGripSpec(kind, handleDiameter, fit?.offset);
+  if (fit) spec.pose = createHandPose(fit.pose);
+  if (fit?.opener) spec.openerThumb = [...fit.opener];
+  return spec;
+}

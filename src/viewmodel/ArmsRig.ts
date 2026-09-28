@@ -47,6 +47,25 @@ const qParent = new Quaternion();
 const qDelta = new Quaternion();
 const vTmp = new Vector3();
 
+export type DigitBones = Record<Digit, [Object3D, Object3D, Object3D]>;
+export type DigitRest = Record<Digit, [Quaternion, Quaternion, Quaternion]>;
+export const DIGIT_NAMES = DIGITS;
+
+/** curls every finger and thumb bone to `pose` on top of its rest rotation */
+export function applyDigitPose(digits: DigitBones, rest: DigitRest, side: Side, pose: HandPose): void {
+  const thumbAxes = side === 'r' ? THUMB_AXES_R : THUMB_AXES_L;
+  for (const digit of DIGITS) {
+    const bones = digits[digit];
+    const restQ = rest[digit];
+    const angles = pose[digit];
+    for (let i = 0; i < 3; i += 1) {
+      const axis = digit === 'thumb' ? thumbAxes[i] : CURL_AXIS;
+      qDelta.setFromAxisAngle(axis, angles[i] * DEG);
+      bones[i].quaternion.copy(restQ[i]).multiply(qDelta);
+    }
+  }
+}
+
 /**
  * the one shared first-person arms rig. every weapon and knife drives the same
  * gloves, sleeves and watch through two bone ik on each arm, a forearm twist
@@ -138,17 +157,7 @@ export class ArmsRig {
 
   public applyHandPose(side: Side, pose: HandPose): void {
     const arm = this.arms[side];
-    const thumbAxes = side === 'r' ? THUMB_AXES_R : THUMB_AXES_L;
-    for (const digit of DIGITS) {
-      const bones = arm.digits[digit];
-      const rest = arm.digitRest[digit];
-      const angles = pose[digit];
-      for (let i = 0; i < 3; i += 1) {
-        const axis = digit === 'thumb' ? thumbAxes[i] : CURL_AXIS;
-        qDelta.setFromAxisAngle(axis, angles[i] * DEG);
-        bones[i].quaternion.copy(rest[i]).multiply(qDelta);
-      }
-    }
+    applyDigitPose(arm.digits, arm.digitRest, side, pose);
   }
 
   /** watch hands show `date` local time; the second hand ticks */

@@ -8,7 +8,7 @@ import { ArmsRig } from './ArmsRig';
 import { sampleClip, retime, type Clip } from './clips';
 import { blendHandPose, createHandPose, HAND_POSES, type HandPoseName } from './handPoses';
 import { frameFromAxes, frameFromXZ, frameFromYZ } from './ik';
-import { alignRingGrip, gripKindFor, knifeGripSpec, measureHandleDiameter, type KnifeGripKind, type KnifeGripSpec } from './knifeGrips';
+import { alignRingGrip, fittedGripSpec, gripKindFor, knifeGripSpec, measureHandleDiameter, type KnifeGripKind, type KnifeGripSpec } from './knifeGrips';
 import {
   AWP_CLIPS,
   DEAGLE_CLIPS,
@@ -150,6 +150,8 @@ interface GunParts {
 interface KnifeRig {
   /** how the hand holds it, and where it sits at idle */
   grip: KnifeGripSpec;
+  /** knives with a finger ring the hand can switch to for spins (skeleton), knife frame */
+  ringHold: { spec: KnifeGripSpec; anchorLocal: Vector3 } | null;
   base: ItemBase;
   /** the socket the hand anchors to, knife frame */
   anchorLocal: Vector3;
@@ -558,11 +560,30 @@ export class ViewmodelSystem {
     this.holderTarget(rig, pA, qA);
     const open = this.channel('gripOpen');
     blendHandPose(rig.grip.pose, HAND_POSES.open, open, this.poseR);
-    if (rig.grip.kind === 'reverse_ring') {
+    const ringHold = rig.ringHold ? this.channel('ringHold') : 0;
+    if (rig.ringHold && ringHold > 0) {
+      // the hand slides to the ring and hooks the index through it
+      mB.compose(rig.ringHold.anchorLocal, qB.identity(), sA.set(1, 1, 1));
+      mA.multiplyMatrices(rig.holder.matrixWorld, mB).multiply(rig.ringHold.spec.handInAnchor);
+      mA.decompose(pB, qB, sA);
+      pA.lerp(pB, ringHold);
+      qA.slerp(qB, ringHold);
+      blendHandPose(this.poseR, rig.ringHold.spec.pose, ringHold, this.poseR);
+      blendHandPose(this.poseR, HAND_POSES.open, open, this.poseTmp);
+      this.poseR.middle = this.poseTmp.middle;
+      this.poseR.ring = this.poseTmp.ring;
+      this.poseR.pinky = this.poseTmp.pinky;
+    }
+    const opener = rig.grip.openerThumb ? this.channel('thumbOpener') : 0;
+    if (rig.grip.openerThumb && opener > 0) {
+      for (let i = 0; i < 3; i += 1) this.poseR.thumb[i] += (rig.grip.openerThumb[i] - this.poseR.thumb[i]) * opener;
+    }
+    if (rig.grip.kind === 'reverse_ring' || ringHold > 0.5) {
       // spins hang off the index finger, so it stays hooked through the ring
-      this.poseR.index[0] = rig.grip.pose.index[0];
-      this.poseR.index[1] = rig.grip.pose.index[1];
-      this.poseR.index[2] = rig.grip.pose.index[2];
+      const hooked = rig.grip.kind === 'reverse_ring' ? rig.grip.pose : rig.ringHold!.spec.pose;
+      this.poseR.index[0] = hooked.index[0];
+      this.poseR.index[1] = hooked.index[1];
+      this.poseR.index[2] = hooked.index[2];
     }
     arms.setArmVisible('r', true);
     arms.solveArm('r', pA, qA, this.pole(POLE_R));
@@ -804,13 +825,20 @@ export class ViewmodelSystem {
     const gripLocal = gripNode ? gripNode.getWorldPosition(new Vector3()) : new Vector3(-0.05, 0, 0);
     const ringLocal = ringNode ? ringNode.getWorldPosition(new Vector3()) : null;
     const teeNode = knife.getObjectByName('socket_tee');
-    let grip = knifeGripSpec(gripKindFor(def), measureHandleDiameter(knife));
+    const kind = gripKindFor(def);
+    let grip = isKnifeModel(knife)
+      ? fittedGripSpec(def.id, kind, measureHandleDiameter(knife))
+      : knifeGripSpec(kind, measureHandleDiameter(knife));
     if (ringLocal) grip = alignRingGrip(grip, ringLocal, gripLocal);
     const anchorLocal = grip.anchor === 'ring' && ringLocal
       ? ringLocal.clone()
       : grip.anchor === 'tee' && teeNode ? teeNode.getWorldPosition(new Vector3()) : gripLocal.clone();
+    // a hammer-grip knife with a ring (skeleton) can hang off the index finger for spins
+    const ringHold = ringLocal && grip.kind !== 'reverse_ring'
+      ? { spec: alignRingGrip(knifeGripSpec('reverse_ring', measureHandleDiameter(knife)), ringLocal, gripLocal), anchorLocal: ringLocal.clone() }
+      : null;
     // ring knives spin on the ring (the index finger), everything else on the grip
-    const pivotLocal = ringLocal && grip.kind === 'reverse_ring' ? ringLocal.clone() : gripLocal.clone();
+    const pivotLocal = ringLocal && (grip.kind === 'reverse_ring' || ringHold) ? ringLocal.clone() : gripLocal.clone();
     // the knife group sits at its origin inside the holder, so world = local here
     this.content.add(holder);
     return {
@@ -819,6 +847,7 @@ export class ViewmodelSystem {
       spin,
       knife,
       grip,
+      ringHold,
       base: knifeBaseFor(grip),
       anchorLocal,
       pivotLocal,
