@@ -9,8 +9,22 @@ export class RemoteTimeline {
   private readonly clocks = new Map<string, SourceClock>();
   private readonly lead = new Map<string, number>();
 
-  /** max rate the render offset may drift, as a fraction of real time */
-  constructor(private readonly slewRate = 0.1, private readonly minDelayMs = 40, private readonly maxDelayMs = 350) {}
+  /**
+   * `maxDelayMs` bounds the delay for normal send rates. Slow senders (big
+   * rooms at ~2 Hz) get up to one interval plus margin on top, capped at
+   * `hardMaxDelayMs`, so remotes stay interpolated between real samples
+   * instead of being extrapolated for half of every interval.
+   */
+  constructor(
+    private readonly slewRate = 0.1,
+    private readonly minDelayMs = 40,
+    private readonly maxDelayMs = 350,
+    private readonly hardMaxDelayMs = 900,
+  ) {}
+
+  private capFor(clock: SourceClock): number {
+    return Math.min(this.hardMaxDelayMs, Math.max(this.maxDelayMs, clock.getIntervalMs() + 60));
+  }
 
   observe(source: string, sourceT: number, localMs: number): void {
     let clock = this.clocks.get(source);
@@ -30,7 +44,7 @@ export class RemoteTimeline {
     const maxStep = Math.max(0, frameDtMs) * this.slewRate;
     for (const [source, clock] of this.clocks) {
       if (!clock.hasOffset()) continue;
-      const target = clock.toLocal(0) + clock.getRecommendedDelayMs(this.minDelayMs, this.maxDelayMs);
+      const target = clock.toLocal(0) + clock.getRecommendedDelayMs(this.minDelayMs, this.capFor(clock));
       const current = this.lead.get(source);
       if (current === undefined || Math.abs(target - current) > 1000) {
         this.lead.set(source, target);
@@ -47,7 +61,7 @@ export class RemoteTimeline {
     if (lead === undefined) {
       const clock = this.clocks.get(source);
       if (!clock?.hasOffset()) return null;
-      return clock.toSource(localNowMs) - clock.getRecommendedDelayMs(this.minDelayMs, this.maxDelayMs);
+      return clock.toSource(localNowMs) - clock.getRecommendedDelayMs(this.minDelayMs, this.capFor(clock));
     }
     return localNowMs - lead;
   }
@@ -55,7 +69,7 @@ export class RemoteTimeline {
   /** Current presentation delay for `source`, in ms. */
   delayMs(source: string): number {
     const clock = this.clocks.get(source);
-    return clock ? clock.getRecommendedDelayMs(this.minDelayMs, this.maxDelayMs) : this.minDelayMs;
+    return clock ? clock.getRecommendedDelayMs(this.minDelayMs, this.capFor(clock)) : this.minDelayMs;
   }
 
   forget(source: string): void {

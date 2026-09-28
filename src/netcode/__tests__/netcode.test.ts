@@ -168,3 +168,32 @@ describe('RateBudget', () => {
     expect(sent + delivered).toBeGreaterThan(SUPABASE_FREE_EVENTS_PER_SEC);
   });
 });
+
+describe('large rooms', () => {
+  it('a 2.2 Hz sender (6 player room) stays interpolated, not extrapolated', () => {
+    const timeline = new RemoteTimeline();
+    const buffer = new InterpolationBuffer();
+    const interval = 1000 / 2.22;
+    let local = 0;
+    let extrap = 0;
+    let frames = 0;
+    let nextSend = 0;
+    let sourceT = 0;
+    for (let f = 0; f < 60 * 30; f += 1) {
+      local += 1000 / 60;
+      if (local >= nextSend) {
+        sourceT = local;
+        buffer.push(circleSample(sourceT));
+        timeline.observe('a', sourceT, local + 40);
+        nextSend += interval;
+      }
+      timeline.update(1000 / 60);
+      const r = timeline.renderTime('a', local);
+      if (r === null || f < 600) continue;
+      frames += 1;
+      if (buffer.sampleAt(r)!.mode !== 'interp') extrap += 1;
+    }
+    expect(timeline.delayMs('a')).toBeGreaterThan(interval);
+    expect(extrap / frames).toBeLessThan(0.02);
+  });
+});

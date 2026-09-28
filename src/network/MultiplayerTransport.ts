@@ -100,6 +100,8 @@ export interface MultiplayerTransport {
   onRespawn: ((event: RespawnEvent) => void) | null;
   onShot: ((event: ShotEvent) => void) | null;
   onConnectedChange: ((connected: boolean) => void) | null;
+  /** set by transports with a room size limit; fired when this client was turned away */
+  onRoomFull?: (() => void) | null;
 
   connect(): void;
   disconnect(): void;

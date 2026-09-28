@@ -21,6 +21,9 @@ services:
         value: 0.0.0.0
       - key: ENABLE_BOTS
         value: "false"
+      # render's load balancer appends the client address to x-forwarded-for
+      - key: TRUST_PROXY
+        value: xff-last
       - key: WEBSTRAFE_ALLOWED_ORIGINS
         value: https://strafe.yassin.app
       - key: WEBSTRAFE_ALLOWED_ORIGIN_SUFFIXES

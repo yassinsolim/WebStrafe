@@ -14,3 +14,6 @@ public/audio
 public/cosmetics
 docs
 tools/netbench/results
+# secrets never go into the image
+.env
+.env.*

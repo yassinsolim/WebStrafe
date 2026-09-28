@@ -111,6 +111,12 @@ const RESPAWN_DELAY_MS = 3000;
 /** built-in maps the menu opens on when nothing is stored */
 const DEFAULT_RUN_MAP_ID = 'surf_prismline';
 const DEFAULT_COMBAT_MAP_ID = 'aim_ochrecut';
+/**
+ * If the respawn for our death never arrives (the host that killed us left
+ * before sending it), respawn locally after this long. The next host restores
+ * the death from our state and respawns us itself, this only covers the gap.
+ */
+export const LOCAL_RESPAWN_FALLBACK_MS = RESPAWN_DELAY_MS + 3000;
 
 export class GameApp {
   private readonly container: HTMLElement;
@@ -140,6 +146,7 @@ export class GameApp {
   private readonly killFeed = new KillFeed();
   private readonly weapon = new WeaponController('knife');
   private localAlive = true;
+  private respawnFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   private deathPresentationTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly deadMoveInput = { forwardMove: 0, sideMove: 0, jumpPressed: false, jumpHeld: false };
   private readonly remotePlayerNames = new Map<string, string>();
@@ -1115,6 +1122,9 @@ export class GameApp {
       }
       this.applyLocalHealth(health, alive);
     };
+    this.multiplayer.onRoomFull = () => {
+      this.showStatus('Room is full (6 players), playing solo', 6000);
+    };
     this.multiplayer.onRespawn = ({ playerId }) => {
       if (playerId === this.multiplayer.getLocalId()) {
         this.restoreLocalAfterRespawn();
@@ -1182,6 +1192,7 @@ export class GameApp {
     }
     if (wasAlive && !alive) {
       this.combatAim.cancelScope(performance.now());
+      this.armRespawnFallback();
       this.viewmodel.setAlive(false);
       this.combatEffects?.clearForDeath(performance.now());
       this.combatHud?.clearTransient(true);
@@ -1207,8 +1218,25 @@ export class GameApp {
     }
   }
 
+  private armRespawnFallback(): void {
+    if (this.respawnFallbackTimer !== null) {
+      clearTimeout(this.respawnFallbackTimer);
+    }
+    this.respawnFallbackTimer = setTimeout(() => {
+      this.respawnFallbackTimer = null;
+      if (!this.localAlive) {
+        console.warn('[Combat] no respawn from the host, respawning locally');
+        this.restoreLocalAfterRespawn();
+      }
+    }, LOCAL_RESPAWN_FALLBACK_MS);
+  }
+
   private resetLocalCombatState(): void {
     this.localAlive = true;
+    if (this.respawnFallbackTimer !== null) {
+      clearTimeout(this.respawnFallbackTimer);
+      this.respawnFallbackTimer = null;
+    }
     if (this.deathPresentationTimer !== null) {
       clearTimeout(this.deathPresentationTimer);
       this.deathPresentationTimer = null;

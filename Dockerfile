@@ -6,12 +6,15 @@ WORKDIR /app
 
 # Install deps first for layer caching. tsx (used to run the TS server) lives in
 # devDependencies, so install everything.
-COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+COPY --chown=node:node package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund && chown -R node:node /app
 
 # App source. public/maps/*/collision.glb is required for server-side bot
 # collision; render-only assets are dropped by .dockerignore.
-COPY . .
+COPY --chown=node:node . .
+
+# the official node image ships an unprivileged "node" user; run as that
+USER node
 
 ENV NODE_ENV=production
 ENV PORT=8080
@@ -19,4 +22,4 @@ ENV HOST=0.0.0.0
 ENV WEBSTRAFE_DATA_DIR=/tmp/webstrafe
 
 EXPOSE 8080
-CMD ["npx", "tsx", "server/index.ts"]
+CMD ["node_modules/.bin/tsx", "server/index.ts"]
