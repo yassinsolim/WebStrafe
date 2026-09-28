@@ -668,9 +668,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     }
   }
 
-  /** hidden, on the menu (no map) or out of play (paused, dead menu, run over) */
+  /**
+   * hidden, or not playing (menu, paused, dead menu, run over). combat ready is
+   * only set while playing a loaded map, and builds with combat off never get a
+   * room context, so it can't be part of this
+   */
   private isIdle(): boolean {
-    return !this.isVisible() || !this.roomContext || !this.localCombatReady;
+    return !this.isVisible() || !this.localCombatReady;
   }
 
   /** runs from the pump: parks the tab once it has been idle long enough */
@@ -684,9 +688,11 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.idleSince ??= now;
     const idleFor = now - this.idleSince;
     if (idleFor < this.idleDisconnectMs) return;
-    // a host hands the room to a visible peer first (it stops being eligible
-    // once hidden); only past the grace does it leave regardless
-    if (this.hostSim && this.hasVisiblePeer() && idleFor < this.idleDisconnectMs + IDLE_HANDOFF_GRACE_MS) return;
+    // a hidden host hands the room to a visible peer first (it stops being
+    // eligible once hidden); only past the grace does it leave regardless. a
+    // visible paused host stays eligible, nobody takes over, so no wait
+    const handoffPending = this.hostSim !== null && !this.isVisible() && this.hasVisiblePeer();
+    if (handoffPending && idleFor < this.idleDisconnectMs + IDLE_HANDOFF_GRACE_MS) return;
     this.park();
   }
 

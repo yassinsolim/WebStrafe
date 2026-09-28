@@ -824,10 +824,53 @@ describe('SupabaseMultiplayer (p7 protocol)', () => {
       tab.setRoomContext(ctx());
       tab.setCombatReady(true);
       expect(tab.isParked()).toBe(false);
-      expect([...bus.topics.keys()]).toContain('test_room_p6_map2');
+      expect([...bus.topics.keys()]).toContain(`test_room_${SUPABASE_PROTOCOL}_map2`);
       run(IDLE_DISCONNECT_MS + 5000, [tab]);
       expect(tab.isParked()).toBe(false);
       tab.disconnect();
+    }, 30_000);
+
+    it('with combat off a playing tab stays connected, and a hidden or menu tab still parks', () => {
+      const bus = new FakeBus();
+      let hidden = false;
+      // combat off: the game loads the map but never gives the transport a room context
+      const player = makePeer(bus, 'p_play', () => !hidden);
+      player.join('map1', 'Player', 'terrorist');
+      player.setRoomContext(null);
+      player.setCombatReady(true);
+      const menu = makePeer(bus, 'p_menu');
+      menu.join('map1', 'Player', 'terrorist');
+      run(3 * IDLE_DISCONNECT_MS, [player]);
+      expect(player.isParked()).toBe(false);
+      expect(bus.tracks.get('p_play')).toBe(1);
+      expect(menu.isParked()).toBe(true);
+
+      hidden = true;
+      document.dispatchEvent(new Event('visibilitychange'));
+      run(IDLE_DISCONNECT_MS + 1000, [player]);
+      expect(player.isParked()).toBe(true);
+      player.disconnect();
+      menu.disconnect();
+    }, 30_000);
+
+    it('a paused host that is still visible parks on time, and a peer takes the room', () => {
+      const bus = new FakeBus();
+      const host = makePeer(bus, 'p_a');
+      const other = makePeer(bus, 'p_b');
+      enter(host);
+      run(JOIN_GRACE_MS + 1000, [host]);
+      enter(other);
+      run(JOIN_GRACE_MS + 1000, [host, other]);
+      expect(hosting(host)).toBe(true);
+
+      // paused on the menu with the tab in front: still eligible, so nobody takes over first
+      host.setCombatReady(false);
+      run(IDLE_DISCONNECT_MS + 1000, [other]);
+      expect(host.isParked()).toBe(true);
+      run(1000, [other]);
+      expect(hosting(other)).toBe(true);
+      host.disconnect();
+      other.disconnect();
     }, 30_000);
   });
 
