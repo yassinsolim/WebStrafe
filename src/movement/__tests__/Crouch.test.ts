@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { Vector3 } from 'three';
 import { MovementController } from '../MovementController';
-import { defaultCvars } from '../cvars';
+import { defaultCvars, METRES_PER_UNIT as U } from '../cvars';
 import type { MoveInput } from '../types';
 import { flatWorld, headingYaw, horizontalSpeed, lowCeilingWorld } from './testWorlds';
 
 const DT = 1 / 128;
-const STAND = { height: 1.76, eye: 1.6 };
-const CROUCH = { height: 1.32, eye: 1.12 };
+// cs2: 72 u hull and 64 u eyes standing, 54 u and 46 u crouched
+const STAND = { height: 72 * U, eye: 64 * U };
+const CROUCH = { height: 54 * U, eye: 46 * U };
 const HULL_DROP = STAND.height - CROUCH.height;
 // ceil(0.12 s * 128 Hz)
 const DUCK_TICKS = 16;
@@ -79,7 +80,7 @@ describe('crouch', () => {
     expect(horizontalSpeed(runner.getVelocity())).toBeCloseTo(cap, 2);
   });
 
-  it('ducking mid-jump pulls the feet up by the hull difference', () => {
+  it('ducking mid-jump pulls the feet up by half the hull difference (9 u)', () => {
     const world = flatWorld();
     const peakOf = (duck: boolean) => {
       const mc = new MovementController();
@@ -94,12 +95,12 @@ describe('crouch', () => {
     };
     const normal = peakOf(false);
     const ducked = peakOf(true);
-    expect(ducked.peak - normal.peak).toBeCloseTo(HULL_DROP, 9);
-    // the head stays put, the camera only drops by the eye/hull mismatch (0.48 - 0.44)
-    expect(normal.camera - ducked.camera).toBeCloseTo(STAND.eye - CROUCH.eye - HULL_DROP, 9);
+    expect(ducked.peak - normal.peak).toBeCloseTo(HULL_DROP / 2, 9);
+    // the hull shrinks about its middle, so once the camera has eased it sits 9 u lower
+    expect(normal.camera - ducked.camera).toBeCloseTo(STAND.eye - CROUCH.eye - HULL_DROP / 2, 9);
   });
 
-  it('standing up in the air drops the feet back down when there is room', () => {
+  it('standing up in the air drops the feet 9 u when there is room', () => {
     const world = flatWorld();
     const mc = new MovementController();
     mc.reset(new Vector3(0, 0, 0), 0);
@@ -107,13 +108,17 @@ describe('crouch', () => {
     for (let i = 0; i < 30; i += 1) {
       mc.tick(DT, move({ crouchHeld: true }), world);
     }
-    const headBefore = mc.getFeetPosition().y + CROUCH.height;
+    const feetBefore = mc.getFeetPosition().y;
+    const cameraBefore = mc.getCameraPosition().y;
     const vy = mc.getVelocity().y;
     mc.tick(DT, move(), world);
     expect(mc.getDuckAmount()).toBe(0);
-    // same head height after the swap, minus one tick of the jump arc (half-step gravity)
-    const headAfter = mc.getFeetPosition().y + STAND.height;
-    expect(headAfter - headBefore).toBeCloseTo((vy - defaultCvars.sv_gravity * DT * 0.5) * DT, 9);
+    // half the hull growth goes under the feet, plus one tick of the jump arc (half-step gravity)
+    const arc = (vy - defaultCvars.sv_gravity * DT * 0.5) * DT;
+    expect(mc.getFeetPosition().y - feetBefore).toBeCloseTo(-HULL_DROP / 2 + arc, 9);
+    // the camera only moves by the arc and one tick of easing up, no 9 u jump
+    const easeStep = ((STAND.eye - CROUCH.eye) * DT) / 0.12;
+    expect(mc.getCameraPosition().y - cameraBefore).toBeCloseTo(arc + easeStep, 9);
   });
 
   it('standing up right above the floor waits for the landing', () => {
@@ -121,7 +126,7 @@ describe('crouch', () => {
     const mc = new MovementController();
     mc.reset(new Vector3(0, 0, 0), 0);
     mc.tick(DT, move({ jumpPressed: true, jumpHeld: true, crouchHeld: true }), world);
-    // fall until the feet are within a hull drop of the floor
+    // fall until standing up (the feet drop half a hull difference) would go through the floor
     while (!(mc.getVelocity().y < 0 && mc.getFeetPosition().y < HULL_DROP * 0.5)) {
       mc.tick(DT, move({ crouchHeld: true }), world);
     }
@@ -188,7 +193,7 @@ describe('crouch', () => {
       chain = stats.chain;
     }
     const airTicks = mc.getStrafeStats().last!.airTicks;
-    expect(airTicks).toBeGreaterThan(70);
+    expect(airTicks).toBeGreaterThan(96);
     expect(landingSpeed).toBeCloseTo(Math.sqrt(9.5 ** 2 + airTicks * W * W), 9);
   });
 

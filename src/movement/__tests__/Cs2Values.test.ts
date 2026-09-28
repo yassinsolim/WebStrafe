@@ -3,7 +3,7 @@ import { Vector3 } from 'three';
 import { MovementController } from '../MovementController';
 import { defaultCvars, METRES_PER_UNIT } from '../cvars';
 import type { MoveInput } from '../types';
-import { flatWorld, horizontalSpeed } from './testWorlds';
+import { flatWorld, horizontalSpeed, lowCeilingWorld } from './testWorlds';
 
 // cs2 values from DumpSource2/convars.txt and scripts/weapons.vdata in
 // SteamTracking/GameTracking-CS2, see docs/movement-cs2.md for the links
@@ -49,6 +49,69 @@ describe('cs2 jump', () => {
     expect(apex / U).toBeGreaterThan(56.99);
     // 2 * 301.99 / 800 = 0.755 s in the air, the landing snap catches it on tick 96
     expect(airTicks).toBe(96);
+  });
+
+  it('a crouch jump peaks 9 u higher, at 66 u (1.676 m)', () => {
+    // cs measures 64 to 66 u blocks with a crouch jump against 55 to 57 u without
+    const { apex } = jumpArc({ crouchHeld: true });
+    expect(apex / U).toBeLessThanOrEqual(66);
+    expect(apex / U).toBeGreaterThan(65.99);
+  });
+});
+
+describe('cs2 crouch', () => {
+  it('has the 72 u hull with 64 u eyes, and 46 u eyes crouched', () => {
+    const world = flatWorld();
+    const mc = new MovementController();
+    expect(mc.capsule.height).toBeCloseTo(72 * U, 12);
+    expect(mc.eyeHeight).toBeCloseTo(64 * U, 12);
+    mc.reset(new Vector3(0, 0, 0), 0);
+    expect(mc.getEyeHeight()).toBeCloseTo(64 * U, 12);
+    for (let i = 0; i < 32; i += 1) {
+      mc.tick(DT, move({ crouchHeld: true }), world);
+    }
+    expect(mc.getDuckAmount()).toBe(1);
+    expect(mc.getEyeHeight()).toBeCloseTo(46 * U, 12);
+  });
+
+  it('the crouched hull is 54 u: 2 cm of headroom over it keeps you down, over 72 u you stand', () => {
+    const standUpUnder = (ceiling: number) => {
+      const world = lowCeilingWorld(ceiling, -5, 5);
+      const mc = new MovementController();
+      mc.reset(new Vector3(0, 0, 0), 0);
+      for (let i = 0; i < 32; i += 1) {
+        mc.tick(DT, move({ crouchHeld: true }), world);
+      }
+      for (let i = 0; i < 32; i += 1) {
+        mc.tick(DT, move(), world);
+      }
+      return mc.getDuckAmount();
+    };
+    expect(standUpUnder(54 * U + 0.02)).toBe(1);
+    expect(standUpUnder(72 * U + 0.02)).toBe(0);
+  });
+
+  it('ducking in the air eases the camera down 9 u instead of jumping', () => {
+    const world = flatWorld();
+    const mc = new MovementController();
+    mc.reset(new Vector3(0, 0, 0), 0);
+    mc.tick(DT, move({ jumpPressed: true, jumpHeld: true }), world);
+    for (let i = 0; i < 10; i += 1) {
+      mc.tick(DT, move(), world);
+    }
+    const cameraBefore = mc.getCameraPosition().y;
+    const vy = mc.getVelocity().y;
+    mc.tick(DT, move({ crouchHeld: true }), world);
+    const arc = (vy - defaultCvars.sv_gravity * DT * 0.5) * DT;
+    const easeStep = (18 * U * DT) / 0.12;
+    // the feet came up 9 u, the camera only moved by the arc and one easing step
+    expect(mc.getCameraPosition().y - cameraBefore).toBeCloseTo(arc - easeStep, 9);
+    // and it catches up at the ground duck rate: 9 u in 8 ticks
+    for (let i = 0; i < 7; i += 1) {
+      mc.tick(DT, move({ crouchHeld: true }), world);
+    }
+    expect(mc.getEyeHeight()).toBeCloseTo(46 * U, 12);
+    expect(mc.captureState().viewEase).toBe(0);
   });
 });
 

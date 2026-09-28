@@ -23,7 +23,8 @@ import {
 } from './mapTestUtils';
 
 const MAPS = ['bhop_emberdrift', 'surf_prismline', 'aim_ochrecut'] as const;
-const CAPSULE = { height: 1.76, radius: 0.34 };
+// the standing hull the game spawns and moves (cs2's 72 u)
+const CAPSULE = new MovementController().capsule;
 const DT = 1 / 128;
 const MB = 1024 * 1024;
 

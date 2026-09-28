@@ -1,5 +1,5 @@
 import { MathUtils, Vector3 } from 'three';
-import { defaultCvars, sanitizeMapCvars, type MapCvarResult } from './cvars';
+import { defaultCvars, METRES_PER_UNIT, sanitizeMapCvars, type MapCvarResult } from './cvars';
 import { StrafeStatsTracker, type StrafeStats } from './StrafeStats';
 import {
   accelerate,
@@ -26,27 +26,36 @@ const SURF_CONTACT_GRACE_TICKS = 20;
 const SURF_EDGE_GROUND_OVERRIDE_MIN_ANGLE_DEG = 1;
 const SURF_EDGE_OVERRIDE_MIN_SPEED = 1.2;
 const SURF_EDGE_LAUNCH_MIN_SPEED = 5;
-const CROUCH_HEIGHT = 1.32;
-const CROUCH_EYE_HEIGHT = 1.12;
+// cs2 hull is 72 u standing and 54 u crouched, eyes 64 u and 46 u above the feet
+const STAND_HEIGHT = 72 * METRES_PER_UNIT;
+const CROUCH_HEIGHT = 54 * METRES_PER_UNIT;
+const STAND_EYE_HEIGHT = 64 * METRES_PER_UNIT;
+const CROUCH_EYE_HEIGHT = 46 * METRES_PER_UNIT;
 // seconds for a full duck or unduck on the ground
 const DUCK_TIME = 0.12;
-// source's duck speed crop, ground only
+// cs crouch-walk speed, 34% of the run speed (85 u/s with a knife), ground only
 const DUCK_SPEED_SCALE = 0.34;
+// share of the hull change the feet take when ducking in the air. cs shrinks the
+// hull about its middle there, so the feet come up 9 u and the head drops 9 u
+const AIR_DUCK_FEET_SHARE = 0.5;
 // the stand-up check starts this far off the floor so touching it doesn't count
 const UNDUCK_CLEARANCE = 0.01;
 
 export class MovementController {
   /** standing hull, what spawn checks use. the live hull shrinks while crouched */
   public readonly capsule: CapsuleShape = {
-    height: 1.76,
+    height: STAND_HEIGHT,
     radius: 0.34,
   };
 
   /** standing eye height, see getEyeHeight() for the live one */
-  public readonly eyeHeight = 1.6;
+  public readonly eyeHeight = STAND_EYE_HEIGHT;
 
   private readonly hull: CapsuleShape = { ...this.capsule };
   private duckAmount = 0;
+  // camera only: added to the eye height after an air duck moved the feet, so the
+  // view eases to the new eye height instead of jumping
+  private viewEase = 0;
 
   private readonly cvars: SourceCvars = { ...defaultCvars };
   private readonly position = new Vector3(0, 4, 0); // feet
@@ -116,6 +125,7 @@ export class MovementController {
       yawRad: this.yawRad,
       pitchRad: this.pitchRad,
       duckAmount: this.duckAmount,
+      viewEase: this.viewEase,
     };
   }
 
@@ -127,6 +137,7 @@ export class MovementController {
     this.yawRad = state.yawRad;
     this.pitchRad = state.pitchRad;
     this.setDuckAmount(state.duckAmount);
+    this.viewEase = state.viewEase;
     this.statsYawRad = state.yawRad;
   }
 
@@ -144,6 +155,7 @@ export class MovementController {
     this.yawRad = MathUtils.degToRad(yawDeg);
     this.pitchRad = 0;
     this.setDuckAmount(0);
+    this.viewEase = 0;
     this.strafeStats.reset();
     this.statsYawRad = this.yawRad;
   }
@@ -213,6 +225,7 @@ export class MovementController {
     }
     const accelMode = mode;
     this.updateDuck(dt, input.crouchHeld === true, mode === 'ground', world);
+    this.easeView(dt);
 
     switch (mode) {
       case 'ground':
@@ -410,9 +423,9 @@ export class MovementController {
     this.position.copy(position);
   }
 
-  /** live eye height above the feet, blends down to 1.12 m while crouched */
+  /** live eye height above the feet, blends down to 1.17 m (46 u) while crouched */
   public getEyeHeight(): number {
-    return MathUtils.lerp(this.eyeHeight, CROUCH_EYE_HEIGHT, this.duckAmount);
+    return this.eyeHeightAt(this.duckAmount) + this.viewEase;
   }
 
   /** 0 standing, 1 fully crouched */
@@ -477,10 +490,10 @@ export class MovementController {
     );
   }
 
-  // source-style ducking. on the ground the hull and eye blend over DUCK_TIME with
-  // the feet planted. off the ground it's instant and the feet move instead so the
-  // head stays put, which is why ducking mid-jump clears higher ledges. standing
-  // back up only happens where the standing hull fits.
+  // cs-style ducking. on the ground the hull and eye blend over DUCK_TIME with the
+  // feet planted. off the ground the hull switches at once about its middle, so the
+  // feet come up 9 u (a crouch jump clears 57 + 9 = 66 u) and the camera eases down.
+  // standing back up only happens where the standing hull fits.
   private updateDuck(dt: number, crouchHeld: boolean, onGround: boolean, world: CollisionAdapter): void {
     const target = crouchHeld ? 1 : 0;
     if (this.duckAmount === target) {
@@ -488,13 +501,17 @@ export class MovementController {
     }
 
     if (!onGround) {
+      const shift = (this.hull.height - this.hullHeightAt(target)) * AIR_DUCK_FEET_SHARE;
       const feet = this.position.clone();
-      feet.y += this.hull.height - this.hullHeightAt(target);
+      feet.y += shift;
       if (target < this.duckAmount && !this.hullFits(feet, this.hullHeightAt(target), world)) {
         return;
       }
+      const eyeBefore = this.getEyeHeight();
       this.position.copy(feet);
       this.setDuckAmount(target);
+      // same camera height as before the switch, easeView() takes it from there
+      this.viewEase = eyeBefore - shift - this.eyeHeightAt(target);
       return;
     }
 
@@ -513,8 +530,18 @@ export class MovementController {
     return !world.resolveCapsulePosition(start, { radius: this.hull.radius, height }).collided;
   }
 
+  // the camera moves at the ground duck rate while it catches up
+  private easeView(dt: number): void {
+    const step = ((STAND_EYE_HEIGHT - CROUCH_EYE_HEIGHT) * dt) / DUCK_TIME;
+    this.viewEase = Math.abs(this.viewEase) <= step ? 0 : this.viewEase - Math.sign(this.viewEase) * step;
+  }
+
   private hullHeightAt(duckAmount: number): number {
     return MathUtils.lerp(this.capsule.height, CROUCH_HEIGHT, duckAmount);
+  }
+
+  private eyeHeightAt(duckAmount: number): number {
+    return MathUtils.lerp(this.eyeHeight, CROUCH_EYE_HEIGHT, duckAmount);
   }
 
   private setDuckAmount(duckAmount: number): void {

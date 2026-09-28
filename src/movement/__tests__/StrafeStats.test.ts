@@ -199,6 +199,7 @@ describe('strafe stats', () => {
       'surfContactGraceTicks',
       'surfContactNormal',
       'velocity',
+      'viewEase',
       'yawRad',
     ]);
     expect(horizontalSpeed(a.getVelocity())).toBeGreaterThan(0);
