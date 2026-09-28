@@ -14,7 +14,7 @@
          ?view=front|back|side|quarter, ?lod=0|1|2, ?w=&h= canvas size,
          ?bind=1 shows the bind pose instead of the stance -->
     <script type="module">
-      import {
+      import { Quaternion, Vector3,
         ACESFilmicToneMapping, AmbientLight, CircleGeometry, Color, DirectionalLight, HemisphereLight, Mesh,
         MeshStandardMaterial, PerspectiveCamera, PMREMGenerator, Scene, SRGBColorSpace, WebGLRenderer,
       } from 'three';
@@ -82,15 +82,56 @@
       const lookY = Number(params.get('y') ?? 0.95);
       camera.position.set(Number(params.get('x') ?? 0), lookY + Number(params.get('up') ?? 0.3), dist);
       camera.lookAt(Number(params.get('x') ?? 0), lookY, 0);
+      // extreme test poses on top of the stance (plate gap checks): model space axes, the model faces +z
+      const poseName = params.get('pose');
+      const POSES = {
+        crouch: { drop: 0.36, x: { spine_1: 0.18, spine_2: 0.16, neck_0: -0.2, head_0: -0.14, leg_upper_l: -1.45, leg_upper_r: -1.35, leg_lower_l: 2.25, leg_lower_r: 2.1, ankle_l: -0.8, ankle_r: -0.75 } },
+        aimup: { x: { spine_2: -0.3, spine_3: -0.3, neck_0: -0.35, head_0: -0.4 } },
+        aimdown: { x: { spine_2: 0.32, spine_3: 0.3, neck_0: 0.35, head_0: 0.4 } },
+        run: { y: { spine_2: 0.22, spine_3: 0.14 }, x: { spine_1: 0.14, leg_upper_l: -1.0, leg_upper_r: 0.55, leg_lower_l: 0.5, leg_lower_r: 1.45, ankle_l: -0.2, ankle_r: 0.35 } },
+        inspect: { x: { arm_upper_r: -0.5 }, twist: { arm_lower_r: 1.4, hand_r: 0.5 } },
+      };
+      const qa = new Quaternion(), qp = new Quaternion();
+      function rotW(root, name, axis, angle) {
+        const bone = [];
+        root.traverse((n) => { if (n.isBone && n.name.replace(/_\d+$/, '') === name) bone.push(n); });
+        if (!bone[0]) return;
+        const b = bone[0];
+        b.parent.updateWorldMatrix(true, false);
+        b.parent.getWorldQuaternion(qp);
+        root.getWorldQuaternion(qa);
+        // axis given in the character's model space
+        const w = new Quaternion().setFromAxisAngle(axis.clone().applyQuaternion(qa), angle);
+        b.quaternion.premultiply(qp.clone().invert().multiply(w).multiply(qp));
+      }
+      function twist(root, name, angle) {
+        root.traverse((n) => { if (n.isBone && n.name.replace(/_\d+$/, '') === name) n.quaternion.multiply(new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), angle)); });
+      }
+      function applyPose(ch) {
+        const pose = POSES[poseName];
+        if (!pose) return;
+        for (const [n, a] of Object.entries(pose.x ?? {})) rotW(ch.root, n, new Vector3(1, 0, 0), a);
+        for (const [n, a] of Object.entries(pose.y ?? {})) rotW(ch.root, n, new Vector3(0, 1, 0), a);
+        for (const [n, a] of Object.entries(pose.twist ?? {})) twist(ch.root, n, a);
+        if (pose.drop) {
+          ch.root.traverse((n) => { if (n.isBone && n.name.startsWith('pelvis')) n.position.y -= pose.drop; });
+        }
+      }
       let t = 0;
       function frame() {
         t += 1 / 60;
-        for (const ch of chars) ch.update(1 / 60, 1.2 + (bind ? 0 : t * 0));
+        for (const ch of chars) {
+          ch.update(1 / 60, 1.2 + (bind ? 0 : t * 0));
+        }
         renderer.render(scene, camera);
       }
       for (let i = 0; i < 20; i += 1) frame();
+      // once, after the stance settled: the stance doesn't reset legs and spine, so per frame it would pile up
+      for (const ch of chars) applyPose(ch);
+      renderer.render(scene, camera);
       const info = renderer.info.render;
       window.__shotInfo = { calls: info.calls, triangles: info.triangles };
+      window.__chars = chars;
       window.__shotReady = true;
     </script>
   </body>

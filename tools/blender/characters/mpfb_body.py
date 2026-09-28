@@ -43,6 +43,9 @@ for s in ("l", "r"):
         f"calf_{s}": f"leg_lower_{s}",
         f"foot_{s}": f"ankle_{s}",
         f"ball_{s}": f"ball_{s}",
+        # cap helpers (CAP_HELPERS in skeleton.ts), only armor weights them
+        f"knee_{s}": f"knee_{s}",
+        f"elbow_{s}": f"elbow_{s}",
     })
     for f in ("thumb", "index", "middle", "ring", "pinky"):
         for i in (1, 2, 3):

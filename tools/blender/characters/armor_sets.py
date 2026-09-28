@@ -299,7 +299,7 @@ def arms(k, st):
     ELB = ak.Sphere(elb_c, V((0.30, 0.90, 0.30)).normalized(), UP, r0=0.05 * es)
     k.add(ak.plate("elbow_l", T_E, ELB, [(-0.045 * es, -0.042 * es), (0.045 * es, -0.042 * es), (0.052 * es, 0.036 * es),
                                          (-0.052 * es, 0.036 * es)], **SMALL, thickness=0.009 * t, bevel=0.003,
-                   fillet_r=0.025 * es), "lowerarm_l:0.55,upperarm_l:0.45", "trim", "arms")
+                   fillet_r=0.025 * es), "elbow_l", "trim", "arms")
     T_FA = k.limb("forearm", fa_a, fa_b, UP, 0.013, 0.05, 0.98)
     T_FA2 = k.limb("forearm", fa_a, fa_b, UP, 0.024, 0.05, 0.98)
     vw = st["vam_w"]
@@ -390,7 +390,7 @@ def legs(k, st):
     KNEE = ak.Sphere(knee_c, FWD, UP, r0=0.056 * ks)
     k.add(ak.plate("knee_l", T_K, KNEE, [(-0.052 * ks, -0.042 * ks), (0.052 * ks, -0.042 * ks), (0.060 * ks, 0.030 * ks),
                                          (0.0, 0.070 * ks), (-0.060 * ks, 0.030 * ks)], **MED, thickness=0.011 * t,
-                   bevel=0.0035, fillet_r=[0.02, 0.02, 0.02, 0.01, 0.02]), "calf_l:0.6,thigh_l:0.4", "secondary", "legs")
+                   bevel=0.0035, fillet_r=[0.02, 0.02, 0.02, 0.01, 0.02]), "knee_l", "secondary", "legs")
     gw = st["greave_w"]
     k.add(ak.plate("greave_l", T_SH, k.SH, [(-0.085 * gw, 0.10 * L_sh), (0.062 * gw, 0.10 * L_sh), (0.052 * gw, 0.70 * L_sh),
                                             (-0.075 * gw, 0.72 * L_sh)], **BIG, thickness=0.012 * t, bevel=0.0038,
@@ -554,15 +554,16 @@ def helmet(k, st):
         brow = [(-0.182, top + 0.008), (-0.050, top + 0.017), (0.0, top + 0.010), (0.050, top + 0.017), (0.182, top + 0.008),
                 (0.176, top + 0.054 * st["brow"]), (0.060, top + 0.074 * st["brow"]), (0.0, top + 0.084 * st["brow"]),
                 (-0.060, top + 0.074 * st["brow"]), (-0.176, top + 0.054 * st["brow"])]
-        k.add(ak.plate("brow", T_H2, HEL, brow, n=96, rings=6, thickness=0.013 * st["thick"], bevel=0.004, smooth_iters=4,
-                       fillet_r=[0.006, 0.012, 0.008, 0.012, 0.006, 0.02, 0.03, 0.02, 0.03, 0.02]), "head", "primary", "helmet")
+        # grid filled: a ring fill pinched a crease along the middle of this wide, thin band
+        k.add(ak.band_plate("brow", T_H2, HEL, brow[:5], list(reversed(brow[5:])), cols=112, rows=10,
+                            thickness=0.013 * st["thick"], bevel=0.004, smooth_iters=3), "head", "primary", "helmet")
         bottom = min(v for _, v in visor)
         jd = st["jaw_h"]
         jaw = [(-0.180, bottom + 0.010), (-0.082, bottom - 0.004), (0.0, bottom - 0.010), (0.082, bottom - 0.004),
                (0.180, bottom + 0.010), (0.172, bottom - 0.064 * jd), (0.060, bottom - 0.086 * jd),
                (-0.060, bottom - 0.086 * jd), (-0.172, bottom - 0.064 * jd)]
-        k.add(ak.plate("jaw", T_H2, HEL, jaw, n=96, rings=6, thickness=0.010 * st["thick"], bevel=0.0035, smooth_iters=4,
-                       fillet_r=[0.006, 0.012, 0.008, 0.012, 0.006, 0.02, 0.02, 0.02, 0.02]), "head", "primary", "helmet")
+        k.add(ak.band_plate("jaw", T_H2, HEL, jaw[:5], list(reversed(jaw[5:])), cols=112, rows=10,
+                            thickness=0.010 * st["thick"], bevel=0.0035, smooth_iters=3), "head", "primary", "helmet")
         for j in range(st["vents"]):
             e = bottom - 0.030 - 0.009 * j
             k.add(ak.strip(f"vent_{j}", T_H3, HEL, [(-0.030 + 0.003 * j, e), (0.030 - 0.003 * j, e)], 0.0045,

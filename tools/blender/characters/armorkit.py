@@ -405,10 +405,18 @@ def plate(name, tree, proj, outline, *, n=64, rings=7, thickness=0.008, bevel=0.
     pts, miss = project(tree, proj, uvs)
     faces = ring_topology(n, rings)
     ob = mesh_object(name, pts, faces, coll)
+    return _finish_plate(ob, proj, uvs[-1], miss, thickness=thickness, bevel=bevel, bevel_segments=bevel_segments,
+                         material=material, extrude_dir_flip=extrude_dir_flip, smooth_iters=smooth_iters,
+                         sharp_deg=sharp_deg, inner=inner)
+
+
+def _finish_plate(ob, proj, ray_uv, miss, *, thickness, bevel, bevel_segments, material, extrude_dir_flip,
+                  smooth_iters, sharp_deg, inner):
+    """shared by plate and band_plate: face outwards, relax, thicken, bevel, drop the body side"""
     # make normals point away from the body: compare with the cast direction
     me = ob.data
     me.update()
-    o, d = proj.ray(uvs[-1])
+    o, d = proj.ray(ray_uv)
     avg_n = Vector()
     for p in me.polygons:
         avg_n += p.normal
@@ -442,6 +450,48 @@ def plate(name, tree, proj, outline, *, n=64, rings=7, thickness=0.008, bevel=0.
         ob.data.materials.append(material)
     ob["miss"] = miss
     return ob
+
+
+def _open_resample(poly, n):
+    pts = [Vector(p) for p in poly]
+    acc = [0.0]
+    for a, b in zip(pts, pts[1:]):
+        acc.append(acc[-1] + (b - a).length)
+    out = []
+    for i in range(n):
+        t = acc[-1] * i / (n - 1)
+        j = max(k for k in range(len(acc)) if acc[k] <= t + 1e-12)
+        j = min(j, len(pts) - 2)
+        f = (t - acc[j]) / max(acc[j + 1] - acc[j], 1e-12)
+        out.append(pts[j].lerp(pts[j + 1], min(1.0, f)))
+    return out
+
+
+def band_plate(name, tree, proj, lower, upper, *, cols=96, rows=8, thickness=0.008, bevel=0.0032, bevel_segments=2,
+               material=None, coll="armor", smooth_iters=2, sharp_deg=38.0, inner=False, ease=0.25):
+    """a wide, short plate (brows, jaw guards) filled with a quad grid between two open uv
+    curves running the same way. ring filled plates pinch a seam along the middle of
+    shapes like this; a grid keeps even rows. ease rounds the two ends in."""
+    lo = _open_resample(lower, cols)
+    hi = _open_resample(upper, cols)
+    uvs = []
+    for r in range(rows + 1):
+        t = r / rows
+        for c in range(cols):
+            e = min(c, cols - 1 - c) / max(1, (cols - 1) / 2)
+            # pull the corners of the upper edge towards the middle row so the ends round off
+            pinch = ease * (1.0 - min(1.0, e * 6.0)) * (abs(t - 0.5) * 2.0)
+            uvs.append(lo[c].lerp(hi[c], t + (0.5 - t) * pinch))
+    pts, miss = project(tree, proj, uvs)
+    faces = []
+    for r in range(rows):
+        for c in range(cols - 1):
+            a = r * cols + c
+            faces.append((a, a + 1, a + cols + 1, a + cols))
+    ob = mesh_object(name, pts, faces, coll)
+    return _finish_plate(ob, proj, uvs[len(uvs) // 2], miss, thickness=thickness, bevel=bevel,
+                         bevel_segments=bevel_segments, material=material, extrude_dir_flip=False,
+                         smooth_iters=smooth_iters, sharp_deg=sharp_deg, inner=inner)
 
 
 def strip(name, tree, proj, path_uv, width, *, n=48, thickness=0.004, bevel=0.0012,

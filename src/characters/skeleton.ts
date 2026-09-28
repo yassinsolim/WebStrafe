@@ -110,7 +110,27 @@ export const FINGER_JOINTS: readonly JointSpec[] = [
   { name: 'finger_pinky_2_r', parent: 'finger_pinky_1_r', q: [0.0914, 0.0008, -0.7446, 0.6613], at: [-0.0018, -0.0175, -0.0021] },
 ];
 
-export const ALL_JOINTS: readonly JointSpec[] = [...BODY_JOINTS, ...FINGER_JOINTS, ...CLOTH_JOINTS];
+/**
+ * knee and elbow cap helpers: at the joint pivot, oriented like the lower limb.
+ * ArmorCharacter turns each one back by half the joint's bend every frame, so a
+ * cap riding it rigidly stays on the joint instead of the linear blend of two
+ * bones dragging it off (and squashing it) in deep bends.
+ */
+export const CAP_HELPERS: Readonly<Record<string, string>> = {
+  knee_l: 'leg_lower_l',
+  knee_r: 'leg_lower_r',
+  elbow_l: 'arm_lower_l',
+  elbow_r: 'arm_lower_r',
+};
+
+function capJoints(): JointSpec[] {
+  return Object.entries(CAP_HELPERS).map(([name, parent]) => {
+    const spec = BODY_JOINTS.find((j) => j.name === parent)!;
+    return { name, parent, q: spec.q, at: [0, 0, 0] as [number, number, number] };
+  });
+}
+
+export const ALL_JOINTS: readonly JointSpec[] = [...BODY_JOINTS, ...FINGER_JOINTS, ...CLOTH_JOINTS, ...capJoints()];
 
 /** right-side chains are mirrored: they point at their child along -X */
 export function boneAxisSign(name: string): 1 | -1 {

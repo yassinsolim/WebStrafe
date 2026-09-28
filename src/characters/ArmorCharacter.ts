@@ -18,7 +18,7 @@ import { ARMOR_SLOTS } from './catalog';
 import { attachDecals } from './decals';
 import { LOD_LEVELS, mergeParts, type CharacterLibrary, type PartMesh } from './library';
 import type { CharacterLook } from './look';
-import { ALL_JOINTS, buildSkeleton } from './skeleton';
+import { ALL_JOINTS, buildSkeleton, CAP_HELPERS } from './skeleton';
 
 export type CharacterDetail = 'high' | 'medium' | 'low';
 
@@ -71,6 +71,12 @@ interface ClothBone {
  * and cloth bones that swing with movement. the knife stance comes from the
  * same playerRig pose code as before.
  */
+const capRel = new Quaternion();
+const capQ = new Quaternion();
+const capPivot = new Vector3();
+const capUp = new Vector3();
+const capDown = new Vector3();
+
 export class ArmorCharacter {
   public readonly root = new Group();
   public readonly rig: ArmRig | null;
@@ -78,12 +84,13 @@ export class ArmorCharacter {
   public team: PlayerModel;
 
   private readonly bones: Map<string, Bone>;
-  private readonly skeleton: Skeleton;
+  readonly skeleton: Skeleton;
   private readonly bindWorld = new Map<string, Matrix4>();
   private readonly lod = new LOD();
   private readonly meshes: SkinnedMesh[] = [];
   private readonly material = new ArmorMaterial();
   private readonly cloth: ClothBone[] = [];
+  private readonly caps: { name: string; helper: Bone; lower: Bone; child: Bone; bindInv: Quaternion; radius: number; give: number }[] = [];
   private disposeDecals: (() => void) | null = null;
   private piecesKey = '';
   private decalKey = '';
@@ -116,6 +123,20 @@ export class ArmorCharacter {
       const bone = this.bones.get(name);
       if (bone) this.cloth.push({ bone, base: bone.quaternion.clone(), swing: 0, swingVel: 0, side: 0, sideVel: 0 });
     }
+    for (const [name, parent] of Object.entries(CAP_HELPERS)) {
+      const helper = this.bones.get(name);
+      const lower = this.bones.get(parent);
+      const child = lower?.children.find((c): c is Bone => (c as Bone).isBone && c !== helper);
+      if (helper && lower && child) this.caps.push({ name, helper, lower, child, bindInv: lower.quaternion.clone().invert(), radius: 0,
+        // mpfb spreads the knee blend over a long stretch, so the suit rounds in well past a one joint blend
+        give: name.startsWith('knee') ? 2.5 : 1.5 });
+    }
+    // caps follow whatever posed the rig this frame (idle, swing, remote pose code), right before skinning
+    const skeletonUpdate = this.skeleton.update.bind(this.skeleton);
+    this.skeleton.update = () => {
+      this.updateCaps();
+      skeletonUpdate();
+    };
     this.rig = buildArmRig(this.root);
     this.setLook(look, team);
     this.refreshLodDistances();
@@ -150,6 +171,33 @@ export class ArmorCharacter {
       applyKnifeIdlePose(this.rig, Math.sin(nowSec * 1.43));
     }
     this.updateCloth(Math.min(dt, 0.05), nowSec);
+  }
+
+  /**
+   * each cap helper undoes half its joint's bend, so it sits at the mid angle
+   * between the two limbs, and sinks into the bend as far as the linearly blended
+   * undersuit under it rounds in (a multiple of r (1 - cos(bend / 2))), so no gap opens.
+   */
+  private updateCaps(): void {
+    for (const cap of this.caps) {
+      capRel.copy(cap.bindInv).multiply(cap.lower.quaternion).invert();
+      cap.helper.quaternion.identity().slerp(capRel, 0.5);
+      cap.lower.getWorldPosition(capPivot);
+      cap.lower.parent!.getWorldPosition(capUp).sub(capPivot).normalize();
+      cap.child.getWorldPosition(capDown).sub(capPivot).normalize();
+      const bend = Math.PI - capUp.angleTo(capDown);
+      const sink = cap.give * cap.radius * (1 - Math.cos(bend / 2));
+      capUp.add(capDown);
+      if (capUp.lengthSq() > 1e-8 && sink > 0) {
+        // world offset into the lower bone's frame (bones carry no scale)
+        cap.lower.getWorldQuaternion(capQ);
+        capUp.normalize().multiplyScalar(sink).applyQuaternion(capQ.invert());
+        cap.helper.position.copy(capUp);
+      } else {
+        cap.helper.position.set(0, 0, 0);
+      }
+      cap.helper.updateMatrixWorld(true);
+    }
   }
 
   /** triangles drawn at a lod, for budgets and tests */
@@ -194,6 +242,27 @@ export class ArmorCharacter {
       // the skeleton's inverses come from the bind pose at construction, so an
       // identity bind matrix is right wherever the root is now
       mesh.bind(this.skeleton, new Matrix4());
+    }
+    this.measureCaps(this.collect(0));
+  }
+
+  /** each cap's centre distance from its pivot, from the plates riding it (sets size their caps differently) */
+  private measureCaps(parts: PartMesh[]): void {
+    for (const cap of this.caps) {
+      const index = this.skeleton.bones.indexOf(cap.helper);
+      const pivot = new Vector3().setFromMatrixPosition(this.bindWorld.get(cap.name)!);
+      const centre = new Vector3();
+      let n = 0;
+      for (const part of parts) {
+        if (part.skinIndex[0] !== index || part.skinWeight[0] < 0.99) continue;
+        for (let i = 0; i < part.position.length; i += 3) {
+          centre.x += part.position[i];
+          centre.y += part.position[i + 1];
+          centre.z += part.position[i + 2];
+          n += 1;
+        }
+      }
+      if (n) cap.radius = centre.multiplyScalar(1 / n).distanceTo(pivot);
     }
   }
 
