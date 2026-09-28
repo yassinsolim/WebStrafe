@@ -1,0 +1,311 @@
+/*
+ * Map themed loading screen. The map's thumbnail is blurred behind a shade
+ * tinted with the map palette (--load-accent, --load-glow), the name sits
+ * bottom left like cs2's loading screens, and a full width bar runs along
+ * the bottom edge under the rotating tip.
+ */
+
+.loading-overlay {
+  --load-accent: var(--ws-ember);
+  --load-glow: rgba(255, 106, 43, 0.34);
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: 1.3rem;
+  padding: 1.3rem 2.2rem 0;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--ws-ink);
+  font-family: var(--font-ui);
+  background: var(--ws-bg-0);
+  animation: loading-in 300ms var(--ease-out);
+  transition: opacity 340ms ease;
+}
+
+.loading-overlay.is-leaving:not(.loading-overlay-error) {
+  opacity: 0;
+}
+
+@keyframes loading-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.loading-backdrop {
+  position: absolute;
+  inset: -4%;
+  background-color: var(--ws-bg-1);
+  background-position: center;
+  background-size: cover;
+  filter: blur(1.1rem) brightness(0.6) saturate(1.2);
+  transform: scale(1.04);
+  animation: loading-drift 22s ease-in-out infinite alternate;
+}
+
+@keyframes loading-drift {
+  from { transform: scale(1.04) translate3d(0, 0, 0); }
+  to { transform: scale(1.12) translate3d(-1.5%, -1%, 0); }
+}
+
+.loading-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(70% 55% at 12% 100%, var(--load-glow), transparent 70%),
+    linear-gradient(180deg, rgba(6, 8, 11, 0.6) 0%, rgba(6, 8, 11, 0.12) 30%, rgba(6, 8, 11, 0.5) 64%, rgba(6, 8, 11, 0.94) 100%);
+}
+
+.loading-brand {
+  position: relative;
+  grid-row: 1;
+}
+
+.loading-wordmark {
+  font-size: 1.55rem;
+}
+
+.loading-panel {
+  position: relative;
+  grid-row: 3;
+  display: flex;
+  align-items: flex-end;
+  gap: 1.5rem;
+  animation: loading-rise 520ms var(--ease-out) both 80ms;
+}
+
+@keyframes loading-rise {
+  from { opacity: 0; transform: translate3d(0, 0.8rem, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+.loading-thumb {
+  flex: none;
+  width: 22rem;
+  aspect-ratio: 16 / 9;
+  background-color: var(--ws-bg-2);
+  background-position: center;
+  background-size: cover;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  clip-path: var(--notch);
+}
+
+.loading-thumb.is-empty {
+  background-image: linear-gradient(140deg, var(--load-glow), transparent 70%) !important;
+}
+
+.loading-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+  padding-bottom: 0.15rem;
+}
+
+.loading-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.loading-mode {
+  padding: 0.14rem 0.55rem;
+  color: #0a0d12;
+  background: var(--load-accent);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.loading-author {
+  color: var(--ws-ink-2);
+  font-size: 0.92rem;
+}
+
+.loading-mode:empty,
+.loading-author:empty {
+  display: none;
+}
+
+.loading-title {
+  overflow: hidden;
+  font-family: var(--font-display);
+  font-size: 4.4rem;
+  font-weight: 700;
+  line-height: 0.9;
+  letter-spacing: 0.05em;
+  text-overflow: ellipsis;
+  text-shadow: 0 0.25rem 1.6rem rgba(0, 0, 0, 0.5);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.loading-foot {
+  position: relative;
+  grid-row: 4;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.9rem 2rem;
+  margin: 0 -2.2rem;
+}
+
+.loading-tip {
+  grid-column: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  max-width: 56rem;
+  padding-left: 2.2rem;
+  color: var(--ws-ink);
+  font-size: 1.05rem;
+}
+
+.loading-tip b {
+  flex: none;
+  color: var(--load-accent);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.loading-tip-text {
+  transition: opacity 220ms ease, transform 220ms var(--ease-out);
+}
+
+.loading-tip-text.is-swapping {
+  opacity: 0;
+  transform: translate3d(0, 0.3rem, 0);
+}
+
+.loading-status {
+  grid-column: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding-right: 2.2rem;
+}
+
+.loading-stage {
+  color: var(--ws-ink-2);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.loading-progress {
+  min-width: 3.4ch;
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  line-height: 1;
+  text-align: right;
+}
+
+.loading-bar {
+  position: relative;
+  grid-column: 1 / -1;
+  height: 0.3rem;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.loading-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--load-accent), #ffffff);
+  box-shadow: 0 0 1rem var(--load-glow);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 240ms var(--ease-out);
+}
+
+.loading-bar.is-indeterminate .loading-bar-fill {
+  width: 30%;
+  transition: none;
+  animation: loading-indeterminate 1.3s ease-in-out infinite;
+}
+
+@keyframes loading-indeterminate {
+  from { transform: translate3d(-100%, 0, 0); }
+  to { transform: translate3d(340%, 0, 0); }
+}
+
+.loading-detail {
+  display: none;
+}
+
+/* errors: drop the art so the menu underneath stays readable, show the log */
+.loading-overlay-error {
+  background: rgba(5, 6, 8, 0.74);
+}
+
+.loading-overlay-error .loading-backdrop,
+.loading-overlay-error .loading-shade,
+.loading-overlay-error .loading-brand,
+.loading-overlay-error .loading-thumb,
+.loading-overlay-error .loading-tip,
+.loading-overlay-error .loading-bar,
+.loading-overlay-error .loading-stage {
+  display: none;
+}
+
+.loading-overlay-error .loading-title {
+  color: var(--ws-bad);
+  font-size: 2.6rem;
+}
+
+.loading-overlay-error .loading-progress {
+  color: var(--ws-bad);
+}
+
+.loading-overlay-error .loading-foot {
+  padding-bottom: 1.3rem;
+}
+
+.loading-overlay-error .loading-detail {
+  position: relative;
+  grid-row: 2;
+  display: block;
+  align-self: end;
+  max-width: 62rem;
+  max-height: 100%;
+  margin: 0;
+  overflow: auto;
+  padding: 0.9rem 1rem;
+  color: #d8c4bc;
+  background: rgba(12, 15, 20, 0.92);
+  box-shadow: inset 2px 0 0 var(--ws-bad);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading-overlay,
+  .loading-panel,
+  .loading-backdrop {
+    animation: none;
+  }
+
+  .loading-tip-text,
+  .loading-bar-fill {
+    transition: none;
+  }
+
+  .loading-tip-text.is-swapping {
+    transform: none;
+  }
+
+  .loading-bar.is-indeterminate .loading-bar-fill {
+    width: 100%;
+    opacity: 0.4;
+    animation: none;
+  }
+}

@@ -391,7 +391,8 @@ export class RemotePlayersRenderer {
         material.depthTest = true;
         material.needsUpdate = true;
       }
-      child.castShadow = false;
+      // players throw a live sun shadow onto the lightmapped world (medium and high)
+      child.castShadow = true;
       child.receiveShadow = false;
       child.frustumCulled = false;
     });

@@ -23,12 +23,14 @@ node tools/blender/weapons/compress_previews.mjs .blender-tmp/weapons/final docs
 npx vitest run tools/assets/weapons.test.ts
 
 # quick iteration: no ao bake, orthographic left/right/top/front + 3/4 + first person in .blender-tmp/weapons/
+# (the deagle also writes deagle_ref_right.png, a right side at 4 px per mm for holding against a photo)
 blender -b --factory-startup --python-exit-code 1 -P tools/blender/weapons/build_deagle.py -- --quick
 ```
 
-A full build takes about 30 to 40 s per weapon on the M5 (Cycles on Metal for
-the renders, CPU for the vertex AO bake). The export is deterministic, so
-rebuilding without script changes gives the same GLB.
+Without `--renders` a build with the AO bake takes about 10 to 15 s per weapon
+on the M5 (the vertex AO bake runs on the CPU). The preview renders (Cycles on
+Metal) add a few minutes. The export is deterministic, so rebuilding without
+script changes gives the same GLB.
 
 ## How the firearms are built
 
@@ -76,67 +78,128 @@ describes its gun.
 
 | material | used for |
 |----------|----------|
-| `mat_steel_dark` | black nitride: Deagle slide, barrel, rail, magazine; AWP receiver, barrel, brake, rail, bipod |
-| `mat_gunmetal` | Deagle frame and guard (the second tone) |
-| `mat_steel` | pins, screws, levers, hammer, trigger, polished AWP bolt |
+| `mat_stainless` | satin stainless: Deagle slide, barrel, rail, magazine (the default finish) |
+| `mat_stainless_frame` | Deagle frame, guard, beavertail and grip core (rougher satin, the second tone) |
+| `mat_sight_black` | Deagle front and rear sights, matte black so the dots read |
+| `mat_steel_dark` | black nitride: AWP receiver, barrel, brake, rail, bipod; the Deagle's slide, barrel, sights and magazine with `--finish black` |
+| `mat_gunmetal` | the Deagle frame with `--finish black` |
+| `mat_steel` | pins, screws, levers, safety, hammer, trigger, Deagle bolt head and rear plate, polished AWP bolt |
 | `mat_steel_worn` | convex bevel faces on metal parts |
-| `mat_grip` | Deagle pebbled rubber wraparound grip |
+| `mat_grip` | Deagle raised stippled grip fields |
 | `mat_polymer_green`, `mat_polymer_green_stipple` | AWP stock, cheek rest, stippled grip and forend panels |
 | `mat_aluminium` | AWP chassis rail, guard, magwell lip, rings, bipod mount, cheek wheel |
 | `mat_scope` | scope tube, turrets, saddle |
 | `mat_glass` | dark tinted domed lenses (opaque, so the tube never looks hollow) |
-| `mat_rubber`, `mat_polymer_black` | butt pad, eye cup, bipod feet, bolt knob |
-| `mat_sight_dot`, `mat_paint_white`, `mat_indicator`, `mat_brass` | sight dots, turret marks, cocking indicator, top round in each magazine |
+| `mat_rubber`, `mat_polymer_black` | Deagle smooth grip rubber; AWP butt pad, eye cup, bipod feet, bolt knob |
+| `mat_sight_dot`, `mat_paint_white`, `mat_indicator`, `mat_paint_red`, `mat_brass` | sight dots, turret marks, AWP cocking indicator, Deagle fire dot, top round in each magazine |
 
 ## Deagle (`public/viewmodels/v2/deagle.glb`)
 
-Heavy .50 gas pistol. It has a long slide with rear serrations (9) and front
-serrations (8) on the slide arms under the barrel. The fixed barrel has a
-Picatinny-style top rail and a heavy flat-sided front with a crowned bore.
-The rear sight has anti-glare grooves and two white dots, and the front post
-has one. It also has an exposed spur hammer with serrations, ambidextrous
-safety levers on the slide, a slide stop, magazine release, barrel release
-button, and pins. Other parts: a squared trigger guard, a pebbled
-wraparound rubber grip with hex screws, a steel backstrap and beavertail,
-and an ejection port on the right showing the chamber, with an extractor.
-The magazine has a baseplate, witness holes and a .50 cartridge on top.
+Heavy .50 gas pistol laid out like the Magnum Research Desert Eagle Mark XIX
+with the 6 in barrel. The sizes follow the published Mark XIX numbers (273 mm
+long, 159 mm tall, 32 mm slide, 70 mm trigger reach, fixed barrel). The
+proportions come from real side, front and 3/4 photos: Wikimedia Commons
+pictures and Magnum Research product shots, used only as a size and
+silhouette reference and never committed. The build renders an orthographic
+right side at 4 px per mm (`deagle_side.png`). I laid a side photo over it at
+the same scale and matched the outline to within 2 or 3 mm.
 
-- Size: 285 mm long, 156 mm tall, 33 mm wide. The barrel is 152 mm from the
-  breech face to the muzzle, and the grip angle is 14°.
-- Triangles: 11,040 (body 6,048, slide 3,392, hammer 508, trigger 208, mag
-  884). 10,201 vertices. The file is 186 KB optimized (573 KB raw).
+- **Barrel** (fixed, part of `body`): the classic trapezoid section. The
+  sides are vertical up to a long horizontal edge, then the flanks slope in
+  to the rail. The Picatinny style rail is cut into the top: 8 slots, 10.6 mm
+  apart, with a dovetail undercut on the sides. Behind the rail the round
+  chamber section stands proud of the flanks, and the flank cut runs out over
+  it in a curved scoop. The front block under the muzzle comes down over the
+  end of the frame. It has chamfered lower corners and a slanted lower front
+  face. There is a crowned bore, a chamber mouth at the breech (seen with the
+  slide back), a gas block between the slide arms, and a front sight blade in
+  a dovetail base with a dot.
+- **Slide:** the rear block has a slanted rear face and 12 slanted serrations
+  a side, leaning 17.4° like the rear face. The ones under the safety stop
+  short of it. A low deck carries the rear sight (square notch, two dots,
+  anti-glare lines), then a long ramp rises to the hood that wraps the
+  chamber. The slanted rear face has a plate and the firing pin, and the
+  hood's front face has a rotating bolt head with lugs. The ambidextrous
+  safety has a teardrop plate, a slotted hub, a ridged paddle and a red fire
+  dot. The slide arms run forward under the barrel on both sides to the front
+  block, with the same lower chamfer.
+- **Frame:** dust cover rails, a squared trigger guard with a slight hook at
+  the front, and a beavertail with a curved web under it over the hammer
+  slot. On the left there is the long slide stop with a ridged thumb pad, the
+  barrel release button and a ridged magazine release. On the right there is
+  the barrel release lever and the magazine release's other end. Trigger,
+  hammer and sear pins go through both sides.
+- **Grip:** the front strap is nearly upright and the back flares into a palm
+  swell. A metal grip core shows at the front strap, under a rubber
+  wraparound over the sides and back. The rubber has raised stippled fields
+  split by the smooth diagonal band of the stock grip, and a slotted screw on
+  each side. A frame lip sits under it.
+- **Moving parts:** a spur hammer with a serrated spur (cocked at rest), a
+  curved trigger blade, and a magazine with witness holes, feed lips, a .50 AE
+  round on top and a floorplate square to the grip bottom.
+
+- Size: 273 mm long, 160 mm tall (front sight to floorplate), 37 mm wide over
+  the safety levers (the slide is 32 mm). The bore is 158 mm from the breech
+  face to the muzzle.
+- Triangles: 16,406 (body 9,294, slide 5,274, hammer 554, trigger 200, mag
+  1,084). 14,478 vertices. The file is 244 KB optimized (760 KB raw). The
+  earlier model was 11,040 triangles and 186 KB.
+- Finish: satin stainless by default, with a rougher satin frame, darker steel
+  controls and matte black sights. `--finish black` builds the black nitride
+  version. The black one read as a near black shape against the bright maps
+  once the viewmodel took the world's light (a 0.03 reflectance metal
+  reflects almost nothing), so stainless is the shipped finish.
+- Materials: the metals are metallic 0.6 to 1 at roughness 0.22 to 0.5. The
+  rubber is dielectric at roughness 0.62 (smooth) and 0.85 (stippled). None
+  of it is tuned to one environment map.
 - Nodes: `deagle` (root), then `body` (static mesh), `slide`, `hammer`,
   `trigger`, `mag` (pivot empties with `_mesh` children), and the sockets.
+- The build prints a clearance check. It poses the hammer fired and the
+  trigger pulled the way the runtime does, and counts triangle overlaps with
+  the slide and the frame. The only contact left is the hammer face on the
+  firing pin.
 
 Socket and pivot positions, in three.js axes (+X right, +Y up, -Z forward,
 metres), relative to `socket_grip_r`, which is the origin:
 
 | node | parent | position | notes |
 |------|--------|----------|-------|
-| `socket_grip_r` | deagle | 0, 0, 0 | rotated -14° about X: local +Y runs up the grip (0, 0.970, -0.242) |
-| `socket_grip_l` | deagle | -0.0163, -0.0010, -0.0080 | support palm on the left grip panel under the guard |
-| `socket_trigger` | deagle | 0, 0.0279, -0.0554 | centre of the trigger face |
-| `socket_muzzle` | deagle | 0, 0.0719, -0.2472 | bore exit, forward is -Z |
-| `socket_eject` | deagle | 0.0130, 0.0729, -0.0982 | right side ejection port |
-| `socket_mag_bottom` | mag | 0, -0.0576, 0.0149 | baseplate centre, in world terms (local to `mag`: 0, -0.0975, 0.0243) |
-| `socket_slide_rear` | slide | 0, 0.0669, -0.0224 | middle of the rear serration band (serrations sit at x = ±0.013) |
-| `slide` | deagle | 0, 0.0719, 0.0108 | on the bore axis at the slide's rear face |
-| `hammer` | deagle | 0, 0.0449, 0.0163 | hammer pin |
-| `trigger` | deagle | 0, 0.0419, -0.0572 | trigger pin |
-| `mag` | deagle | 0, 0.0399, -0.0094 | top of the magazine on its axis |
+| `socket_grip_r` | deagle | 0, 0, 0 | rotated -4° about X: local +Y runs up the front strap (0, 0.998, -0.070) |
+| `socket_grip_l` | deagle | -0.0168, -0.0010, -0.0080 | support palm on the left grip panel under the guard |
+| `socket_trigger` | deagle | 0, 0.0188, -0.0457 | centre of the trigger face |
+| `socket_muzzle` | deagle | 0, 0.0668, -0.2096 | bore exit, forward is -Z |
+| `socket_eject` | deagle | 0.0160, 0.0718, -0.0291 | right side of the hood, where the case leaves with the slide back |
+| `socket_mag_bottom` | mag | 0, -0.0717, -0.0016 | floorplate centre, in world terms (local to `mag`: 0, -0.1095, 0.0033) |
+| `socket_slide_rear` | slide | 0, 0.0568, -0.0051 | middle of the serration band, in world terms (local to `slide`: 0, -0.0100, -0.0280) |
+| `slide` | deagle | 0, 0.0668, 0.0229 | on the bore axis where the slanted rear face crosses it |
+| `hammer` | deagle | 0, 0.0363, 0.0354 | hammer pin |
+| `trigger` | deagle | 0, 0.0338, -0.0406 | trigger pin |
+| `mag` | deagle | 0, 0.0378, -0.0049 | top of the magazine on its axis |
+
+`socket_grip_r` sits on the grip centreline, 66.8 mm below the bore. It leans
+with the front strap the fingers wrap, not with the grip's centreline, which
+rakes about 10° because of the palm swell. With a 10° socket the hand's index
+finger pointed down into the bottom of the guard. The Deagle also has its own
+right hand pose, `deagle` in `src/viewmodel/handPoses.ts`. Its trigger sits
+close in front of the deep grip, so the first index segment lies along the
+frame and the finger bends in at the middle joint onto the trigger face. The
+AWP keeps `pistol`.
 
 Animation hints (`userData`):
 
-- `slide`: `travel_m` 0.05. Move `position.z` by up to +0.05 (backwards).
-- `hammer`: `fire_rot_x_deg` -55. The rest pose is cocked, and a negative
-  `rotation.x` drops it forward. The slide should push it back past rest
-  while it cycles.
-- `trigger`: `pull_rot_x_deg` -14. A negative `rotation.x` swings the blade
-  back.
-- `mag`: `drop_dir` [0, -0.970, 0.242] and `drop_m` 0.16. The magazine drops
-  along the grip rake.
+- `slide`: `travel_m` 0.045. Move `position.z` by up to +0.045 (backwards).
+  The barrel stays put. With the slide back you see the chamber mouth, the
+  bolt head and the gas block between the arms.
+- `hammer`: `fire_rot_x_deg` -21. The rest pose is cocked, and a negative
+  `rotation.x` drops it forward onto the firing pin. The slide should push it
+  back past rest while it cycles, which hides it inside the slide.
+- `trigger`: `pull_rot_x_deg` -10. A negative `rotation.x` swings the blade
+  back into the recess behind it.
+- `mag`: `drop_dir` [0, -0.999, 0.044] and `drop_m` 0.16. The magazine drops
+  along its own axis, which follows the front strap (2.5°).
 
 ![Deagle 3/4 and first person](../screenshots/weapons/deagle.png)
+![Deagle right side, orthographic](../screenshots/weapons/deagle_side.png)
 ![Deagle sockets](../screenshots/weapons/deagle_sockets.png)
 
 ## AWP (`public/viewmodels/v2/awp.glb`)
@@ -210,6 +273,7 @@ environment. Params:
 - `center=x,y,z&dist=m` zooms the side view in on a part.
 
 ![Deagle in the three.js viewmodel lighting](../screenshots/weapons/threejs_deagle.png)
+![Deagle with the slide back and the trigger pulled](../screenshots/weapons/threejs_deagle_fire.png)
 ![AWP with the bolt lifted and pulled back](../screenshots/weapons/threejs_awp_bolt.png)
 
 ## Knives (runtime, `src/cosmetics/ProceduralKnife.ts`)

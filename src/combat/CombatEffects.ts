@@ -1,23 +1,23 @@
 import {
   AdditiveBlending,
-  CylinderGeometry,
-  DataTexture,
-  DoubleSide,
+  Color,
   Group,
-  Mesh,
-  MeshBasicMaterial,
-  NormalBlending,
   Object3D,
-  Quaternion,
-  RGBAFormat,
-  RingGeometry,
   Scene,
   Sprite,
   SpriteMaterial,
+  Vector2,
   Vector3,
+  type DataTexture,
 } from 'three';
 import type { FirearmId as GunId } from './FirearmTiming';
 import { ImpactDecals } from './ImpactDecals';
+import type { QualityPreset } from '../render/quality';
+import { onEffectsLayer } from '../render/layers';
+import type { SurfaceKind } from '../render/worldMaterials';
+import { TracerRibbon } from './effects/TracerRibbon';
+import { ParticleBurst, type BurstStyle, type Particle } from './effects/ParticleBurst';
+import { createFlashTexture, createPuffTexture } from './effects/textures';
 
 export interface ShotEffectRequest {
   weaponId: GunId;
@@ -37,7 +37,7 @@ export interface ShotEffectRequest {
 }
 
 export interface CombatEffectsOptions {
-  /** bullet holes, dust and blood puffs; off keeps bare instances to tracers, flashes and rings */
+  /** bullet holes, sparks, dust, smoke and blood; off keeps tracers, flashes and impact flashes */
   impactEffects?: boolean;
   /**
    * Real muzzle socket of the local first-person gun, in the space of the
@@ -45,6 +45,18 @@ export interface CombatEffectsOptions {
    * falls back to the fixed camera-space anchors.
    */
   getLocalMuzzleWorldPosition?: (weapon: GunId) => Vector3 | null;
+  /**
+   * World point where a local tracer starts: on the line from the eye through
+   * the drawn muzzle, so the streak leaves the gun on screen even though the
+   * viewmodel has its own fov.
+   */
+  getLocalTracerOrigin?: (weapon: GunId) => Vector3 | null;
+  /** what the round hit, from the render mesh at the impact */
+  resolveSurface?: (point: Vector3, direction: Vector3) => SurfaceKind | null;
+  /** 0 (deep shade) .. 1 (full sun) at a point, so dust in the shade doesn't glow */
+  lightAt?: (point: Vector3) => number;
+  /** a local shot flashed, for the viewmodel and world flash lights */
+  onLocalMuzzleFlash?: (weapon: GunId) => void;
   /** random source for decal spin and particles */
   random?: () => number;
 }
@@ -55,73 +67,25 @@ export const DECAL_SIZE_M: Readonly<Record<GunId, number>> = {
   awp: 0.09,
 };
 
-interface PuffStyle {
-  count: number;
-  color: number;
-  opacity: number;
-  additive: boolean;
-  startSize: number;
-  endSize: number;
-  minSpeed: number;
-  maxSpeed: number;
-  /** 0 = along the given direction only, 1 = anywhere in the hemisphere */
-  scatter: number;
-  gravity: number;
-  drag: number;
-  lifetimeMs: number;
-}
-
-const DUST_PUFF: PuffStyle = {
-  count: 5,
-  color: 0xb6a891,
-  opacity: 0.5,
-  additive: false,
-  startSize: 0.05,
-  endSize: 0.24,
-  minSpeed: 0.6,
-  maxSpeed: 1.6,
-  scatter: 0.55,
-  gravity: -0.6,
-  drag: 3.2,
-  lifetimeMs: 480,
-};
-
-const IMPACT_SPARKS: PuffStyle = {
-  count: 3,
-  color: 0xffd08a,
-  opacity: 0.95,
-  additive: true,
-  startSize: 0.03,
-  endSize: 0.012,
-  minSpeed: 2.5,
-  maxSpeed: 5,
-  scatter: 0.8,
-  gravity: -9,
-  drag: 1.5,
-  lifetimeMs: 160,
-};
-
-const BLOOD_PUFF: PuffStyle = {
-  count: 6,
-  color: 0x8e0f0f,
-  opacity: 0.8,
-  additive: false,
-  startSize: 0.05,
-  endSize: 0.17,
-  minSpeed: 0.5,
-  maxSpeed: 2.2,
-  scatter: 0.45,
-  gravity: -6,
-  drag: 2.5,
-  lifetimeMs: 420,
-};
-
 interface ShotEffectProfile {
   tracerColor: number;
+  /** hdr multiplier on the tracer core, bloom turns it into the glow */
+  tracerIntensity: number;
+  /** metres of bright streak, the shortest a local one gets */
   tracerLength: number;
+  /** a local streak grows with the shot distance up to this */
+  tracerMaxLength: number;
+  /** world width of the ribbon, metres */
   tracerWidth: number;
+  tracerMinPixels: number;
+  /** how fast the streak crosses the screen, m/s */
+  tracerSpeed: number;
+  /** shortest time a local tracer object lives */
   tracerMs: number;
+  /** faint trail left along the path, 0 = none */
+  wakeMs: number;
   flashColor: number;
+  flashIntensity: number;
   flashScale: number;
   flashMs: number;
   impactColor: number;
@@ -143,24 +107,28 @@ interface ActiveEffect {
   dispose(): void;
 }
 
+/**
+ * Remote rounds cross the whole distance in `travelMs` no matter how far,
+ * so a shot at you is a fast streak with its endpoint cue right behind it.
+ */
 export const REMOTE_SHOT_EFFECTS = {
   deagle: {
-    tracerLength: 2.1,
-    tracerMs: 720,
-    travelMs: 420,
-    muzzleMs: 230,
-    impactMs: 900,
-    fatalTracerMs: 820,
-    fatalImpactMs: 1050,
+    tracerLength: 2.6,
+    tracerMs: 120,
+    travelMs: 45,
+    muzzleMs: 75,
+    impactMs: 380,
+    fatalTracerMs: 160,
+    fatalImpactMs: 620,
   },
   awp: {
-    tracerLength: 3.7,
-    tracerMs: 820,
-    travelMs: 460,
-    muzzleMs: 260,
-    impactMs: 1050,
-    fatalTracerMs: 920,
-    fatalImpactMs: 1200,
+    tracerLength: 5.2,
+    tracerMs: 150,
+    travelMs: 34,
+    muzzleMs: 90,
+    impactMs: 420,
+    fatalTracerMs: 190,
+    fatalImpactMs: 700,
   },
 } as const satisfies Readonly<Record<GunId, {
   tracerLength: number;
@@ -174,88 +142,89 @@ export const REMOTE_SHOT_EFFECTS = {
 
 export const SHOT_EFFECT_PROFILES: Readonly<Record<GunId, ShotEffectProfile>> = {
   deagle: {
-    tracerColor: 0xffb35c,
-    tracerLength: 2.8,
-    tracerWidth: 0.016,
-    tracerMs: 620,
-    flashColor: 0xff8a35,
-    flashScale: 0.095,
-    flashMs: 190,
-    impactColor: 0xffb45b,
-    impactScale: 0.16,
-    impactMs: 1500,
+    tracerColor: 0xffae4a,
+    tracerIntensity: 4.2,
+    tracerLength: 3.2,
+    tracerMaxLength: 14,
+    tracerWidth: 0.006,
+    tracerMinPixels: 2.4,
+    tracerSpeed: 950,
+    tracerMs: 90,
+    wakeMs: 0,
+    flashColor: 0xffb45c,
+    flashIntensity: 9,
+    flashScale: 0.1,
+    flashMs: 70,
+    impactColor: 0xffd29a,
+    impactScale: 0.1,
+    impactMs: 180,
   },
   awp: {
-    tracerColor: 0xd9efff,
-    tracerLength: 6.2,
-    tracerWidth: 0.023,
-    tracerMs: 760,
-    flashColor: 0xffe0a0,
-    flashScale: 0.13,
-    flashMs: 220,
-    impactColor: 0xffe7bd,
-    impactScale: 0.22,
-    impactMs: 1700,
+    tracerColor: 0xffe2b0,
+    tracerIntensity: 7,
+    tracerLength: 6.5,
+    tracerMaxLength: 24,
+    tracerWidth: 0.01,
+    tracerMinPixels: 3.2,
+    tracerSpeed: 1500,
+    tracerMs: 110,
+    wakeMs: 520,
+    flashColor: 0xffd49a,
+    flashIntensity: 12,
+    flashScale: 0.14,
+    flashMs: 85,
+    impactColor: 0xfff0c8,
+    impactScale: 0.13,
+    impactMs: 220,
   },
 };
 
-const FLASH_TEXTURE_SIZE = 16;
+/** shortest flight of a local round, so a wall at arm's length still shows the streak */
+const LOCAL_MIN_TRAVEL_MS = 14;
+
 const LOCAL_MUZZLE_ANCHORS: Readonly<Record<GunId, readonly [number, number, number]>> = {
   deagle: [0.075, -0.065, -0.46],
   awp: [0.11, -0.095, -0.5],
 };
 
-function createFlashTexture(): DataTexture {
-  const pixels = new Uint8Array(FLASH_TEXTURE_SIZE * FLASH_TEXTURE_SIZE * 4);
-  for (let y = 0; y < FLASH_TEXTURE_SIZE; y += 1) {
-    for (let x = 0; x < FLASH_TEXTURE_SIZE; x += 1) {
-      const dx = ((x + 0.5) / FLASH_TEXTURE_SIZE) * 2 - 1;
-      const dy = ((y + 0.5) / FLASH_TEXTURE_SIZE) * 2 - 1;
-      const radial = Math.max(0, 1 - Math.hypot(dx, dy));
-      const streak = Math.max(0, 1 - Math.abs(dy) * 5) * Math.max(0, 1 - Math.abs(dx));
-      const alpha = Math.max(radial * radial, streak * 0.42);
-      const offset = (y * FLASH_TEXTURE_SIZE + x) * 4;
-      pixels[offset] = 255;
-      pixels[offset + 1] = 255;
-      pixels[offset + 2] = 255;
-      pixels[offset + 3] = Math.round(alpha * 255);
-    }
-  }
-  const texture = new DataTexture(pixels, FLASH_TEXTURE_SIZE, FLASH_TEXTURE_SIZE, RGBAFormat);
-  texture.needsUpdate = true;
-  return texture;
+interface SurfaceLook {
+  sparks: number;
+  dust: number;
+  debris: number;
+  dustColor: [number, number, number];
+  debrisColor: [number, number, number];
 }
 
-/** soft round particle, used by dust and blood */
-function createPuffTexture(): DataTexture {
-  const size = 16;
-  const pixels = new Uint8Array(size * size * 4);
-  for (let y = 0; y < size; y += 1) {
-    for (let x = 0; x < size; x += 1) {
-      const dx = ((x + 0.5) / size) * 2 - 1;
-      const dy = ((y + 0.5) / size) * 2 - 1;
-      const falloff = Math.max(0, 1 - Math.hypot(dx, dy));
-      const offset = (y * size + x) * 4;
-      pixels[offset] = 255;
-      pixels[offset + 1] = 255;
-      pixels[offset + 2] = 255;
-      pixels[offset + 3] = Math.round(falloff ** 1.6 * 255);
-    }
-  }
-  const texture = new DataTexture(pixels, size, size, RGBAFormat);
-  texture.needsUpdate = true;
-  return texture;
+/** what a hit throws up, per surface */
+const SURFACE_LOOKS: Readonly<Record<SurfaceKind, SurfaceLook>> = {
+  metal: { sparks: 11, dust: 3, debris: 0, dustColor: [0.46, 0.46, 0.47], debrisColor: [0.2, 0.2, 0.21] },
+  concrete: { sparks: 3, dust: 7, debris: 6, dustColor: [0.62, 0.6, 0.56], debrisColor: [0.36, 0.35, 0.33] },
+  stone: { sparks: 3, dust: 7, debris: 6, dustColor: [0.68, 0.56, 0.42], debrisColor: [0.4, 0.3, 0.21] },
+  sand: { sparks: 0, dust: 10, debris: 7, dustColor: [0.8, 0.66, 0.46], debrisColor: [0.55, 0.43, 0.28] },
+  wood: { sparks: 0, dust: 4, debris: 8, dustColor: [0.5, 0.38, 0.25], debrisColor: [0.3, 0.2, 0.11] },
+  glass: { sparks: 6, dust: 2, debris: 6, dustColor: [0.7, 0.75, 0.78], debrisColor: [0.6, 0.7, 0.75] },
+  emissive: { sparks: 7, dust: 1, debris: 0, dustColor: [0.5, 0.5, 0.5], debrisColor: [0.2, 0.2, 0.2] },
+  generic: { sparks: 4, dust: 6, debris: 4, dustColor: [0.6, 0.58, 0.54], debrisColor: [0.33, 0.32, 0.3] },
+};
+
+const SPARKS: BurstStyle = { additive: true, gravity: -9.8, drag: 1.4, stretch: 0.014 };
+const DEBRIS: BurstStyle = { additive: false, gravity: -9.8, drag: 0.7, stretch: 0.003 };
+
+function hdr(hex: number, intensity: number): Color {
+  return new Color(hex).multiplyScalar(intensity);
 }
 
 /** Weapon-authored world feedback with deterministic expiry and disposal. */
-
 export class CombatEffects {
   private readonly active: ActiveEffect[] = [];
 
-  private readonly flashTexture = createFlashTexture();
+  private readonly flashTexture: DataTexture = createFlashTexture();
   private puffTexture: DataTexture | null = null;
   private readonly decals: ImpactDecals | null;
   private readonly random: () => number;
+  private density = 1;
+  private readonly resolution = new Vector2(1920, 1080);
+  private lastLocalShotMs: number | null = null;
 
   constructor(
     private readonly scene: Scene,
@@ -268,8 +237,23 @@ export class CombatEffects {
       : null;
   }
 
+  public setQuality(preset: QualityPreset): void {
+    this.density = preset.effectDensity;
+  }
+
+  /** drawing buffer size, so tracer widths are right in pixels */
+  public setResolution(width: number, height: number): void {
+    this.resolution.set(Math.max(1, width), Math.max(1, height));
+  }
+
+  /** birth time of the newest local shot, for frame exact screenshot freezes */
+  public getLastLocalShotMs(): number | null {
+    return this.lastLocalShotMs;
+  }
+
   public spawnShot(request: ShotEffectRequest): void {
     const profile = SHOT_EFFECT_PROFILES[request.weaponId];
+    if (!request.remote) this.lastLocalShotMs = request.nowMs;
     const direction = request.to.clone().sub(request.from);
     const distance = direction.length();
     if (distance < 1e-5) {
@@ -277,7 +261,7 @@ export class CombatEffects {
     }
     direction.multiplyScalar(1 / distance);
 
-    this.spawnTracer(request, direction, distance, profile);
+    const travelMs = this.spawnTracer(request, profile);
     this.spawnMuzzle(request, direction, profile);
     if (request.impactNormal) {
       this.spawnImpact(request, profile);
@@ -285,23 +269,25 @@ export class CombatEffects {
     if (!this.options.impactEffects) {
       return;
     }
+    this.spawnMuzzleSmoke(request, direction);
+    const arriveMs = request.nowMs + travelMs;
     if (request.impactKind === 'world' && request.impactNormal) {
-      this.spawnBulletHole(request.to, request.impactNormal, request.weaponId, request.nowMs);
-      this.spawnDust(request.to, request.impactNormal, request.nowMs);
+      const surface = this.options.resolveSurface?.(request.to, direction) ?? 'generic';
+      this.spawnBulletHole(request.to, request.impactNormal, request.weaponId, request.nowMs, surface);
+      this.spawnSurfaceBurst(request.to, request.impactNormal, direction, surface, arriveMs, request.weaponId);
     } else if (request.impactKind === 'player') {
-      this.spawnBlood(request.to, direction, request.nowMs);
+      this.spawnBloodAt(request.to, direction, arriveMs);
     }
   }
 
   /** pooled bullet hole on world geometry (needs `impactEffects`) */
-  public spawnBulletHole(point: Vector3, normal: Vector3, weaponId: GunId, nowMs: number): void {
-    this.decals?.spawn(point, normal, DECAL_SIZE_M[weaponId], nowMs);
+  public spawnBulletHole(point: Vector3, normal: Vector3, weaponId: GunId, nowMs: number, surface: SurfaceKind = 'generic'): void {
+    this.decals?.spawn(point, normal, DECAL_SIZE_M[weaponId], nowMs, surface);
   }
 
   /** short dust and spark puff where a round hit the world */
-  public spawnDust(point: Vector3, normal: Vector3, nowMs: number): void {
-    this.spawnPuff('impact-dust', DUST_PUFF, point, normal, nowMs);
-    this.spawnPuff('impact-sparks', IMPACT_SPARKS, point, normal, nowMs);
+  public spawnDust(point: Vector3, normal: Vector3, nowMs: number, surface: SurfaceKind = 'generic'): void {
+    this.spawnSurfaceBurst(point, normal, normal.clone().negate(), surface, nowMs, 'deagle');
   }
 
   /**
@@ -309,12 +295,7 @@ export class CombatEffects {
    * shot; most of the spray carries on through, a little comes back out.
    */
   public spawnBlood(point: Vector3, direction: Vector3, nowMs: number): void {
-    if (direction.lengthSq() < 1e-10) {
-      return;
-    }
-    const through = direction.clone().normalize();
-    this.spawnPuff('blood', BLOOD_PUFF, point, through, nowMs);
-    this.spawnPuff('blood', { ...BLOOD_PUFF, count: 2, maxSpeed: 1 }, point, through.clone().negate(), nowMs);
+    this.spawnBloodAt(point, direction, nowMs);
   }
 
   /** removes every bullet hole (map changes); transient effects are untouched */
@@ -326,337 +307,457 @@ export class CombatEffects {
     return this.decals?.getActiveCount() ?? 0;
   }
 
-  private spawnPuff(
-    effectType: string,
-    style: PuffStyle,
-    point: Vector3,
-    direction: Vector3,
-    nowMs: number,
-  ): void {
-    if (!Number.isFinite(point.x + point.y + point.z) || direction.lengthSq() < 1e-10) {
-      return;
-    }
-    this.puffTexture ??= createPuffTexture();
-    const axis = direction.clone().normalize();
-    const group = new Group();
-    group.userData.effectType = effectType;
-    group.position.copy(point).addScaledVector(axis, 0.02);
-    const materials: SpriteMaterial[] = [];
-    const particles: Array<{ sprite: Sprite; velocity: Vector3 }> = [];
-    for (let i = 0; i < style.count; i += 1) {
-      const material = new SpriteMaterial({
-        color: style.color,
-        map: this.puffTexture,
-        transparent: true,
-        opacity: style.opacity,
-        blending: style.additive ? AdditiveBlending : NormalBlending,
-        depthWrite: false,
-        depthTest: true,
-      });
-      material.rotation = this.random() * Math.PI * 2;
-      const sprite = new Sprite(material);
-      sprite.scale.setScalar(style.startSize);
-      sprite.frustumCulled = false;
-      sprite.renderOrder = 3;
-      const spray = randomUnit(this.random).multiplyScalar(style.scatter).add(axis).normalize();
-      const speed = style.minSpeed + (style.maxSpeed - style.minSpeed) * this.random();
-      particles.push({ sprite, velocity: spray.multiplyScalar(speed) });
-      materials.push(material);
-      group.add(sprite);
-    }
-    this.scene.add(group);
-    this.active.push({
-      object: group,
-      parent: this.scene,
-      bornMs: nowMs,
-      lifetimeMs: style.lifetimeMs,
-      baseOpacity: style.opacity,
-      holdRatio: 0.15,
-      fadePower: 1.3,
-      remote: false,
-      setOpacity: (opacity, ageMs) => {
-        const t = ageMs / 1000;
-        // closed-form drag and gravity so the puff is frame-rate independent
-        const travel = (1 - Math.exp(-style.drag * t)) / style.drag;
-        const growth = Math.min(1, ageMs / style.lifetimeMs);
-        for (let i = 0; i < particles.length; i += 1) {
-          const { sprite, velocity } = particles[i];
-          sprite.position.copy(velocity).multiplyScalar(travel);
-          sprite.position.y += 0.5 * style.gravity * t * t;
-          sprite.scale.setScalar(style.startSize + (style.endSize - style.startSize) * growth);
-          materials[i].opacity = opacity;
-        }
-      },
-      dispose: () => {
-        for (const material of materials) material.dispose();
-      },
-    });
+  private count(base: number): number {
+    return base <= 0 ? 0 : Math.max(1, Math.round(base * this.density));
   }
 
-  private spawnTracer(
-    request: ShotEffectRequest,
-    direction: Vector3,
-    distance: number,
-    profile: ShotEffectProfile,
-  ): void {
-    const startDistance = Math.min(distance * 0.06, request.remote ? 0.38 : 0.65);
-    const maxLength = request.remote
-      ? REMOTE_SHOT_EFFECTS[request.weaponId].tracerLength
-      : profile.tracerLength;
-    const endDistance = Math.min(
-      distance,
-      request.remote ? startDistance + distance * 0.22 : distance,
-      startDistance + maxLength,
-    );
-    const start = request.from.clone().addScaledVector(direction, startDistance);
-    const end = request.from.clone().addScaledVector(direction, endDistance);
-    const segmentLength = start.distanceTo(end);
-    const width = profile.tracerWidth * (request.remote ? 4.5 : 1);
-    const geometry = new CylinderGeometry(
-      width,
-      width * 0.7,
-      segmentLength,
-      6,
-      1,
-      false,
-    );
-    const material = new MeshBasicMaterial({
-      color: profile.tracerColor,
-      transparent: true,
-      opacity: request.remote ? 0.78 : 0.82,
-      blending: AdditiveBlending,
-      depthWrite: false,
-      depthTest: true,
-    });
-    const tracer = new Mesh(geometry, material);
-    const initialCenterDistance = startDistance + segmentLength * 0.5;
-    const endpointClearance = request.remote
-      ? Math.min(0.62, distance * 0.045)
-      : 0;
-    const finalCenterDistance = Math.max(
-      initialCenterDistance,
-      distance - segmentLength * 0.5 - endpointClearance,
-    );
-    tracer.position.copy(request.from).addScaledVector(direction, initialCenterDistance);
-    tracer.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), direction);
-    tracer.frustumCulled = false;
-    tracer.renderOrder = 2;
-    tracer.userData.effectType = 'tracer';
-    tracer.userData.weaponId = request.weaponId;
-    tracer.userData.segmentLength = segmentLength;
-    tracer.userData.endpointClearance = endpointClearance;
-    tracer.userData.endpoint = request.to.toArray();
-    const tracerGlowMaterial = new SpriteMaterial({
-      color: profile.tracerColor,
-      map: this.flashTexture,
-      transparent: true,
-      opacity: request.remote ? 0.72 : 0.62,
-      blending: AdditiveBlending,
-      depthWrite: false,
-      depthTest: true,
-    });
-    const tracerGlow = new Sprite(tracerGlowMaterial);
-    if (request.remote) {
-      // A cylinder aimed straight at the viewer foreshortens to a sub-pixel
-      // point. Keep one compact additive bead at its midpoint so natural bot
-      // rounds remain readable without extending a laser across the full ray.
-      const glowScale = this.remoteGlowScale(request.weaponId, distance - initialCenterDistance);
-      tracerGlow.scale.set(glowScale * 0.88, glowScale * 1.55, 1);
-      tracerGlow.userData.effectType = 'tracer-glow';
-    } else {
-      // The physical cylinder is almost end-on for a local shot. Keep a compact
-      // camera-facing streak before the endpoint, where world depth can still
-      // occlude it, instead of putting a bead on the impact surface.
-      tracerGlow.position.y = -segmentLength * 0.12;
-      tracerGlowMaterial.rotation = request.weaponId === 'awp' ? -0.72 : -0.64;
-      const glowWidth = request.weaponId === 'awp' ? 0.036 : 0.027;
-      const glowLength = request.weaponId === 'awp' ? 0.17 : 0.12;
-      tracerGlow.scale.set(glowWidth, glowLength, 1);
-      tracerGlow.userData.effectType = 'tracer-tip';
+  private jitter(scale: number): number {
+    return (this.random() * 2 - 1) * scale;
+  }
+
+  /** returns how long the round takes to reach `to`, ms */
+  private spawnTracer(request: ShotEffectRequest, profile: ShotEffectProfile): number {
+    const remote = request.remote === true;
+    let origin = request.from;
+    if (!remote) {
+      const drawn = this.options.getLocalTracerOrigin?.(request.weaponId);
+      if (drawn && Number.isFinite(drawn.x + drawn.y + drawn.z) && drawn.distanceTo(request.to) > 0.05) {
+        origin = drawn;
+      }
     }
-    tracerGlow.frustumCulled = false;
-    tracerGlow.renderOrder = 3;
-    tracer.add(tracerGlow);
-    this.scene.add(tracer);
+    const path = request.to.clone().sub(origin);
+    const distance = path.length();
+    if (distance < 1e-5) return 0;
+    const direction = path.multiplyScalar(1 / distance);
     const remoteProfile = REMOTE_SHOT_EFFECTS[request.weaponId];
+    // a local round flies away from the eye and shrinks to a dot on screen, so
+    // its first frame is a long streak out of the barrel that then rushes on
+    const length = remote
+      ? Math.min(distance, remoteProfile.tracerLength)
+      : Math.min(distance, Math.max(profile.tracerLength, Math.min(profile.tracerMaxLength, distance * 0.35)));
+    // remote: the head reaches the endpoint in exactly travelMs. local: the
+    // streak starts as [muzzle, length] and both ends move at tracerSpeed.
+    const travelMs = remote
+      ? remoteProfile.travelMs
+      : Math.max(LOCAL_MIN_TRAVEL_MS, ((distance - length) / profile.tracerSpeed) * 1000);
+    const speed = remote
+      ? distance / Math.max(1e-3, travelMs / 1000)
+      : profile.tracerSpeed;
+    const intensity = profile.tracerIntensity * (remote ? 0.85 : 1);
+    const ribbon = new TracerRibbon({
+      core: hdr(profile.tracerColor, intensity),
+      glow: hdr(profile.tracerColor, intensity * 0.55),
+      width: profile.tracerWidth * (remote ? 1.6 : 1),
+      minPixels: profile.tracerMinPixels * (remote ? 1.25 : 1),
+      resolution: this.resolution,
+      headBias: request.weaponId === 'awp' ? 1.1 : 1.5,
+    });
+    ribbon.userData.effectType = 'tracer';
+    ribbon.userData.weaponId = request.weaponId;
+    ribbon.userData.segmentLength = length;
+    ribbon.userData.endpoint = request.to.toArray();
+    ribbon.userData.travelMs = travelMs;
+    const tail = new Vector3();
+    const head = new Vector3();
+    const place = (ageMs: number) => {
+      const t = Math.max(0, ageMs) / 1000;
+      let headAt: number;
+      let tailAt: number;
+      if (remote) {
+        const travelled = speed * t;
+        headAt = Math.min(distance, Math.max(length * 0.25, travelled));
+        tailAt = Math.min(headAt, Math.max(0, travelled - length));
+      } else {
+        // short shots still sweep for LOCAL_MIN_TRAVEL_MS
+        const sweep = Math.min(speed, Math.max(1, distance - length) / (travelMs / 1000));
+        headAt = Math.min(distance, length + sweep * t);
+        tailAt = Math.min(headAt, sweep * t);
+      }
+      head.copy(origin).addScaledVector(direction, headAt);
+      tail.copy(origin).addScaledVector(direction, tailAt);
+      ribbon.setSegment(tail, head);
+      return { headAt, tailAt };
+    };
+    place(0);
+    let wake: TracerRibbon | null = null;
+    if (profile.wakeMs > 0) {
+      // the awp leaves a faint heat trail along the path that hangs for half a second
+      wake = new TracerRibbon({
+        core: hdr(profile.tracerColor, 2.2),
+        glow: hdr(0xc8d6e6, 0.9),
+        width: profile.tracerWidth * 2.4,
+        minPixels: 2.2,
+        resolution: this.resolution,
+        headBias: 0.6,
+      });
+      wake.userData.effectType = 'tracer-wake';
+      wake.setSegment(origin, head);
+      ribbon.add(wake);
+    }
+    const lifetimeMs = remote
+      ? request.fatal ? remoteProfile.fatalTracerMs : remoteProfile.tracerMs
+      : Math.max(profile.tracerMs, travelMs + (length / speed) * 1000 + 30, profile.wakeMs);
+    ribbon.userData.clearMs = remote ? travelMs + (length / speed) * 1000 : travelMs + (length / speed) * 1000;
+    this.scene.add(onEffectsLayer(ribbon));
     this.active.push({
-      object: tracer,
+      object: ribbon,
       parent: this.scene,
       bornMs: request.nowMs,
-      lifetimeMs: request.remote
-        ? request.fatal ? remoteProfile.fatalTracerMs : remoteProfile.tracerMs
-        : profile.tracerMs,
-      baseOpacity: request.remote ? 0.78 : 0.82,
-      holdRatio: request.remote ? 0.22 : request.weaponId === 'awp' ? 0.26 : 0.22,
-      fadePower: request.remote ? 1 : request.weaponId === 'awp' ? 1 : 0.9,
-      remote: request.remote === true,
-      preserveOnDeath: request.remote === true && request.fatal === true,
+      lifetimeMs,
+      baseOpacity: 1,
+      holdRatio: 0.7,
+      fadePower: 1,
+      remote,
+      preserveOnDeath: remote && request.fatal === true,
       setOpacity: (opacity, ageMs) => {
-        material.opacity = opacity;
-        tracerGlowMaterial.opacity = Math.min(request.remote ? 0.72 : 0.62, opacity);
-        if (request.remote) {
-          const travel = Math.min(1, ageMs / remoteProfile.travelMs);
-          const centerDistance =
-            initialCenterDistance
-            + (finalCenterDistance - initialCenterDistance) * travel;
-          tracer.position.copy(request.from).addScaledVector(direction, centerDistance);
-          const glowScale = this.remoteGlowScale(
-            request.weaponId,
-            distance - centerDistance,
-          );
-          tracerGlow.scale.set(glowScale * 0.88, glowScale * 1.55, 1);
+        const { headAt, tailAt } = place(ageMs);
+        // once the tail reaches the endpoint the streak is gone
+        const alive = headAt - tailAt > 1e-3 ? 1 : 0;
+        ribbon.setIntensity(opacity * alive);
+        if (wake) {
+          const since = Math.max(0, ageMs - travelMs);
+          const fade = Math.max(0, 1 - since / profile.wakeMs);
+          wake.setSegment(origin, head);
+          wake.setIntensity(fade * fade * Math.min(1, ageMs / 20));
         }
       },
       dispose: () => {
-        geometry.dispose();
-        material.dispose();
-        tracerGlowMaterial.dispose();
+        ribbon.dispose();
+        wake?.dispose();
       },
     });
+    return travelMs;
   }
 
-  private spawnMuzzle(
-    request: ShotEffectRequest,
-    direction: Vector3,
-    profile: ShotEffectProfile,
-  ): void {
-    const material = new SpriteMaterial({
-      color: profile.flashColor,
+  private spawnMuzzle(request: ShotEffectRequest, direction: Vector3, profile: ShotEffectProfile): void {
+    const group = new Group();
+    const remote = request.remote === true;
+    const coreMaterial = new SpriteMaterial({
+      color: hdr(profile.flashColor, profile.flashIntensity),
       map: this.flashTexture,
       transparent: true,
-      opacity: 0.95,
+      opacity: 1,
       blending: AdditiveBlending,
       depthWrite: false,
       depthTest: true,
     });
-    const sprite = new Sprite(material);
+    coreMaterial.rotation = this.random() * Math.PI * 2;
+    const core = new Sprite(coreMaterial);
+    this.puffTexture ??= createPuffTexture();
+    const glowMaterial = new SpriteMaterial({
+      color: hdr(profile.flashColor, profile.flashIntensity * 0.22),
+      map: this.puffTexture,
+      transparent: true,
+      opacity: 1,
+      blending: AdditiveBlending,
+      depthWrite: false,
+      depthTest: true,
+    });
+    const glow = new Sprite(glowMaterial);
+    group.add(glow, core);
     // Local muzzle feedback belongs to the first-person layer. A world-space
     // flash is otherwise overwritten by the later clearDepth + viewmodel pass.
     // Remote flashes continue to live at their physical world muzzle.
-    const forwardOffset = request.remote ? 0.32 : 0.22;
-    const overlayParent = request.remote ? null : this.localMuzzleParent;
+    const forwardOffset = remote ? 0.32 : 0.22;
+    const overlayParent = remote ? null : this.localMuzzleParent;
     const parent = overlayParent ?? this.scene;
-    const socket = request.remote
+    const socket = remote
       ? null
       : this.options.getLocalMuzzleWorldPosition?.(request.weaponId) ?? null;
     const validSocket = socket && Number.isFinite(socket.x + socket.y + socket.z) ? socket : null;
     if (overlayParent) {
       if (validSocket) {
         overlayParent.updateWorldMatrix(true, false);
-        sprite.position.copy(overlayParent.worldToLocal(validSocket.clone()));
+        group.position.copy(overlayParent.worldToLocal(validSocket.clone()));
       } else {
-        sprite.position.set(...LOCAL_MUZZLE_ANCHORS[request.weaponId]);
+        group.position.set(...LOCAL_MUZZLE_ANCHORS[request.weaponId]);
       }
     } else if (validSocket) {
-      sprite.position.copy(validSocket);
+      group.position.copy(validSocket);
     } else {
-      sprite.position.copy(request.from).addScaledVector(direction, forwardOffset);
+      group.position.copy(request.from).addScaledVector(direction, forwardOffset);
     }
-    const scale = profile.flashScale * (request.remote ? 3.3 : overlayParent ? 0.46 : 1);
-    sprite.scale.set(scale * 1.35, scale, 1);
-    sprite.frustumCulled = false;
-    sprite.renderOrder = overlayParent ? 20 : 3;
-    sprite.userData.effectType = 'muzzle';
-    sprite.userData.weaponId = request.weaponId;
-    sprite.userData.origin = request.from.toArray();
-    sprite.userData.forwardOffset = forwardOffset;
-    parent.add(sprite);
+    const scale = profile.flashScale * (remote ? 3.3 : overlayParent ? 1.05 : 1);
+    const stretch = 1.1 + this.random() * 0.35;
+    group.frustumCulled = false;
+    core.renderOrder = overlayParent ? 21 : 3;
+    glow.renderOrder = overlayParent ? 20 : 3;
+    group.userData.effectType = 'muzzle';
+    group.userData.weaponId = request.weaponId;
+    group.userData.origin = request.from.toArray();
+    group.userData.forwardOffset = forwardOffset;
+    parent.add(parent === this.scene ? onEffectsLayer(group) : group);
+    if (!remote) this.options.onLocalMuzzleFlash?.(request.weaponId);
+    const lifetimeMs = remote ? REMOTE_SHOT_EFFECTS[request.weaponId].muzzleMs : profile.flashMs;
+    const apply = (opacity: number, ageMs: number) => {
+      // a hard pop that swells a touch while it burns out
+      const t = Math.min(1, ageMs / lifetimeMs);
+      const swell = 0.75 + 0.4 * Math.sqrt(t);
+      core.scale.set(scale * stretch * swell, scale * swell, 1);
+      glow.scale.setScalar(scale * 2.6 * (0.8 + 0.5 * t));
+      coreMaterial.opacity = opacity;
+      glowMaterial.opacity = opacity * (1 - t * 0.5);
+    };
+    apply(1, 0);
     this.active.push({
-      object: sprite,
+      object: group,
       parent,
       bornMs: request.nowMs,
-      lifetimeMs: request.remote
-        ? REMOTE_SHOT_EFFECTS[request.weaponId].muzzleMs
-        : profile.flashMs,
-      baseOpacity: request.remote ? 0.92 : 0.95,
-      // Preserve the sharp flash onset; only its compact afterglow spans the
-      // following frames, so this never becomes a floating orange disc.
-      holdRatio: 0.12,
-      fadePower: 2.4,
-      remote: request.remote === true,
-      preserveOnDeath: request.remote === true && request.fatal === true,
-      setOpacity: (opacity) => { material.opacity = opacity; },
-      dispose: () => { material.dispose(); },
+      lifetimeMs,
+      baseOpacity: 1,
+      // Preserve the sharp flash onset; the swell and fade cover the next frames.
+      holdRatio: 0.3,
+      fadePower: 1.8,
+      remote,
+      preserveOnDeath: remote && request.fatal === true,
+      setOpacity: apply,
+      dispose: () => {
+        coreMaterial.dispose();
+        glowMaterial.dispose();
+      },
+    });
+  }
+
+  private spawnMuzzleSmoke(request: ShotEffectRequest, direction: Vector3): void {
+    let origin = request.from;
+    if (!request.remote) {
+      const drawn = this.options.getLocalTracerOrigin?.(request.weaponId);
+      if (drawn && Number.isFinite(drawn.x + drawn.y + drawn.z)) origin = drawn;
+    }
+    this.puffTexture ??= createPuffTexture();
+    const light = this.lightFactor(origin);
+    const count = this.count(request.weaponId === 'awp' ? 7 : 5);
+    const particles: Particle[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const grey = (0.55 + this.random() * 0.15) * light;
+      particles.push({
+        offset: direction.clone().multiplyScalar(0.05 + this.random() * 0.12),
+        velocity: direction.clone().multiplyScalar(0.8 + this.random() * 1.6)
+          .add(new Vector3(this.jitter(0.25), 0.15 + this.random() * 0.3, this.jitter(0.25))),
+        color: new Color(grey, grey, grey * 1.02),
+        opacity: 0.1 + this.random() * 0.08,
+        startSize: 0.05,
+        endSize: 0.32 + this.random() * 0.25,
+        lifetime: 0.7 + this.random() * 0.6,
+        seed: this.random(),
+      });
+    }
+    this.addBurst('muzzle-smoke', origin, particles, { additive: false, gravity: 0.25, drag: 2.6, stretch: 0, map: this.puffTexture }, request.nowMs, request.remote === true);
+  }
+
+  /** sparks, dust and chips thrown off a world hit, shaped by what was hit */
+  private spawnSurfaceBurst(
+    point: Vector3,
+    normal: Vector3,
+    incoming: Vector3,
+    surface: SurfaceKind,
+    bornMs: number,
+    weaponId: GunId,
+  ): void {
+    if (!Number.isFinite(point.x + point.y + point.z) || normal.lengthSq() < 1e-10) return;
+    const look = SURFACE_LOOKS[surface] ?? SURFACE_LOOKS.generic;
+    const n = normal.clone().normalize();
+    const heavy = weaponId === 'awp' ? 1.35 : 1;
+    // rounds glance off along the reflected direction
+    const reflected = incoming.clone().normalize().reflect(n);
+    const light = this.lightFactor(point.clone().addScaledVector(n, 0.05));
+    const origin = point.clone().addScaledVector(n, 0.02);
+
+    const sparkCount = this.count(look.sparks * heavy);
+    if (sparkCount > 0) {
+      const sparks: Particle[] = [];
+      for (let i = 0; i < sparkCount; i += 1) {
+        const dir = reflected.clone().multiplyScalar(0.6).add(n.clone().multiplyScalar(0.7))
+          .add(new Vector3(this.jitter(0.7), this.jitter(0.7), this.jitter(0.7))).normalize();
+        const hot = 4 + this.random() * 6;
+        sparks.push({
+          offset: new Vector3(),
+          velocity: dir.multiplyScalar(3 + this.random() * 6),
+          color: new Color(1, 0.62 + this.random() * 0.2, 0.3).multiplyScalar(hot),
+          opacity: 1,
+          startSize: 0.014 + this.random() * 0.008,
+          endSize: 0.006,
+          lifetime: 0.1 + this.random() * 0.28,
+          seed: this.random(),
+        });
+      }
+      this.addBurst('impact-sparks', origin, sparks, SPARKS, bornMs, false);
+    }
+
+    const dustCount = this.count(look.dust * heavy);
+    if (dustCount > 0) {
+      this.puffTexture ??= createPuffTexture();
+      const dust: Particle[] = [];
+      for (let i = 0; i < dustCount; i += 1) {
+        const dir = n.clone().multiplyScalar(0.9).add(new Vector3(this.jitter(0.55), this.jitter(0.55), this.jitter(0.55))).normalize();
+        const tone = 0.85 + this.random() * 0.3;
+        dust.push({
+          offset: dir.clone().multiplyScalar(0.02),
+          velocity: dir.multiplyScalar(0.4 + this.random() * 1.6),
+          color: new Color(look.dustColor[0] * tone * light, look.dustColor[1] * tone * light, look.dustColor[2] * tone * light),
+          opacity: 0.32 + this.random() * 0.22,
+          startSize: 0.05 + this.random() * 0.04,
+          endSize: (0.3 + this.random() * 0.3) * heavy,
+          lifetime: 0.55 + this.random() * 0.6,
+          seed: this.random(),
+        });
+      }
+      this.addBurst('impact-dust', origin, dust, { additive: false, gravity: -0.35, drag: 3.2, stretch: 0, map: this.puffTexture }, bornMs, false);
+    }
+
+    const debrisCount = this.count(look.debris * heavy);
+    if (debrisCount > 0) {
+      const debris: Particle[] = [];
+      for (let i = 0; i < debrisCount; i += 1) {
+        const dir = n.clone().add(reflected.clone().multiplyScalar(0.3))
+          .add(new Vector3(this.jitter(0.8), this.jitter(0.8), this.jitter(0.8))).normalize();
+        const tone = (0.7 + this.random() * 0.5) * light;
+        debris.push({
+          offset: new Vector3(),
+          velocity: dir.multiplyScalar(1.8 + this.random() * 3.5),
+          color: new Color(look.debrisColor[0] * tone, look.debrisColor[1] * tone, look.debrisColor[2] * tone),
+          opacity: 0.95,
+          startSize: 0.012 + this.random() * 0.014,
+          endSize: 0.01,
+          lifetime: 0.35 + this.random() * 0.45,
+          seed: this.random(),
+        });
+      }
+      this.addBurst('impact-debris', origin, debris, DEBRIS, bornMs, false);
+    }
+  }
+
+  private spawnBloodAt(point: Vector3, direction: Vector3, bornMs: number): void {
+    if (direction.lengthSq() < 1e-10 || !Number.isFinite(point.x + point.y + point.z)) {
+      return;
+    }
+    this.puffTexture ??= createPuffTexture();
+    const through = direction.clone().normalize();
+    const light = this.lightFactor(point);
+    const mist: Particle[] = [];
+    const mistCount = this.count(7);
+    for (let i = 0; i < mistCount; i += 1) {
+      // most of it carries on through, some sprays back out of the wound
+      const back = i < 2 ? -0.6 : 1;
+      const dir = through.clone().multiplyScalar(back).add(new Vector3(this.jitter(0.45), this.jitter(0.45), this.jitter(0.45))).normalize();
+      const red = (0.32 + this.random() * 0.12) * light;
+      mist.push({
+        offset: new Vector3(),
+        velocity: dir.multiplyScalar(0.6 + this.random() * 1.8),
+        color: new Color(red, red * 0.06, red * 0.05),
+        opacity: 0.6 + this.random() * 0.25,
+        startSize: 0.05,
+        endSize: 0.22 + this.random() * 0.16,
+        lifetime: 0.32 + this.random() * 0.28,
+        seed: this.random(),
+      });
+    }
+    this.addBurst('blood', point, mist, { additive: false, gravity: -3, drag: 3, stretch: 0, map: this.puffTexture }, bornMs, false);
+    const drops: Particle[] = [];
+    const dropCount = this.count(9);
+    for (let i = 0; i < dropCount; i += 1) {
+      const dir = through.clone().add(new Vector3(this.jitter(0.6), this.jitter(0.4) + 0.2, this.jitter(0.6))).normalize();
+      const red = (0.25 + this.random() * 0.1) * light;
+      drops.push({
+        offset: new Vector3(),
+        velocity: dir.multiplyScalar(1.5 + this.random() * 3),
+        color: new Color(red, red * 0.04, red * 0.04),
+        opacity: 0.95,
+        startSize: 0.012 + this.random() * 0.01,
+        endSize: 0.008,
+        lifetime: 0.35 + this.random() * 0.3,
+        seed: this.random(),
+      });
+    }
+    this.addBurst('blood', point, drops, DEBRIS, bornMs, false);
+  }
+
+  private lightFactor(point: Vector3): number {
+    const lit = this.options.lightAt?.(point);
+    // shade still gets sky light, so never go fully dark
+    return typeof lit === 'number' && Number.isFinite(lit) ? 0.42 + 0.58 * Math.min(1, Math.max(0, lit)) : 1;
+  }
+
+  private addBurst(
+    effectType: string,
+    origin: Vector3,
+    particles: Particle[],
+    style: BurstStyle,
+    bornMs: number,
+    remote: boolean,
+  ): void {
+    if (particles.length === 0) return;
+    const burst = new ParticleBurst(origin, particles, style);
+    burst.userData.effectType = effectType;
+    this.scene.add(onEffectsLayer(burst));
+    this.active.push({
+      object: burst,
+      parent: this.scene,
+      bornMs,
+      lifetimeMs: burst.lifetime * 1000,
+      baseOpacity: 1,
+      holdRatio: 1,
+      fadePower: 1,
+      remote,
+      setOpacity: (_opacity, ageMs) => burst.setAge(ageMs / 1000),
+      dispose: () => burst.dispose(),
     });
   }
 
   private spawnImpact(request: ShotEffectRequest, profile: ShotEffectProfile): void {
     if (request.remote) {
       // A remote player-hit endpoint can sit almost on the victim camera.
-      // A world-space ring there expands across most of the viewport; use the
-      // compact, depth-tested arrival spark instead. Wall hits remain spatially
-      // resolved because the spark is placed just in front of the hit surface.
+      // Use a compact, depth-tested arrival spark just in front of the surface.
       this.spawnRemoteImpactGlow(request, profile);
       return;
     }
-    // Keep distant wall strikes large enough to read around the fixed crosshair.
-    // Nearby ground impacts retain their authored size, while the cap prevents a
-    // long-range miss from becoming a billboard-sized decal.
+    const normal = request.impactNormal?.clone().normalize() ?? new Vector3(0, 1, 0);
     const distance = request.from.distanceTo(request.to);
-    const scale = Math.max(
-      profile.impactScale,
-      Math.min(0.8, distance * 0.018),
-    );
-    const geometry = new RingGeometry(scale * 0.38, scale, 16);
-    const outlineGeometry = new RingGeometry(scale * 0.66, scale * 1.16, 16);
-    const material = new MeshBasicMaterial({
-      color: profile.impactColor,
+    // a hot pop where the round lands, a little bigger far away so it reads
+    // next to the crosshair, capped so a long miss never becomes a billboard
+    const scale = Math.min(0.42, Math.max(profile.impactScale, distance * 0.0045));
+    const material = new SpriteMaterial({
+      color: hdr(profile.impactColor, 5),
+      map: this.flashTexture,
       transparent: true,
-      opacity: 0.9,
+      opacity: 1,
       blending: AdditiveBlending,
       depthWrite: false,
       depthTest: true,
-      side: DoubleSide,
     });
-    const outlineMaterial = new MeshBasicMaterial({
-      color: 0x07131c,
-      transparent: true,
-      opacity: 0.82,
-      depthWrite: false,
-      depthTest: true,
-      side: DoubleSide,
-    });
-    const normal = request.impactNormal?.clone().normalize() ?? new Vector3(0, 1, 0);
-    const ring = new Mesh(geometry, material);
-    const outline = new Mesh(outlineGeometry, outlineMaterial);
-    outline.position.z = -0.004;
-    outline.renderOrder = 1;
-    outline.userData.effectType = 'impact-outline';
-    ring.add(outline);
-    ring.position.copy(request.to).addScaledVector(normal, 0.018);
-    ring.quaternion.copy(new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), normal));
-    ring.frustumCulled = false;
-    ring.renderOrder = 2;
-    ring.userData.effectType = 'impact';
-    ring.userData.weaponId = request.weaponId;
-    this.scene.add(ring);
+    material.rotation = this.random() * Math.PI * 2;
+    const flash = new Sprite(material);
+    flash.position.copy(request.to).addScaledVector(normal, 0.03);
+    flash.scale.setScalar(scale);
+    flash.frustumCulled = false;
+    flash.renderOrder = 3;
+    flash.userData.effectType = 'impact';
+    flash.userData.weaponId = request.weaponId;
+    flash.userData.radius = scale * 0.5;
+    this.scene.add(onEffectsLayer(flash));
     this.active.push({
-      object: ring,
+      object: flash,
       parent: this.scene,
       bornMs: request.nowMs,
       lifetimeMs: profile.impactMs,
-      baseOpacity: 0.9,
-      holdRatio: 0.72,
-      fadePower: 1.45,
+      baseOpacity: 1,
+      holdRatio: 0.3,
+      fadePower: 1.6,
       remote: false,
       setOpacity: (opacity, ageMs) => {
         material.opacity = opacity;
-        outlineMaterial.opacity = Math.min(0.82, opacity * 0.92);
-        ring.scale.setScalar(1 + Math.min(0.25, ageMs / profile.impactMs * 0.25));
+        flash.scale.setScalar(scale * (0.8 + 0.5 * Math.min(1, ageMs / profile.impactMs)));
       },
       dispose: () => {
-        geometry.dispose();
-        outlineGeometry.dispose();
         material.dispose();
-        outlineMaterial.dispose();
       },
     });
   }
 
   /**
    * A player hit endpoint can be only a few centimetres from the victim camera
-   * and below its frustum. Keep the physical ring at the authoritative surface,
-   * then place a compact arrival spark just behind it along the incoming ray.
+   * and below its frustum. Place a compact arrival spark just behind it along
+   * the incoming ray, shown when the round gets there.
    */
   private spawnRemoteImpactGlow(
     request: ShotEffectRequest,
@@ -668,7 +769,7 @@ export class CombatEffects {
     incoming.multiplyScalar(1 / distance);
 
     const material = new SpriteMaterial({
-      color: profile.impactColor,
+      color: hdr(profile.impactColor, 4),
       map: this.flashTexture,
       transparent: true,
       opacity: 1,
@@ -676,6 +777,7 @@ export class CombatEffects {
       depthWrite: false,
       depthTest: true,
     });
+    material.rotation = this.random() * Math.PI * 2;
     const spark = new Sprite(material);
     const backstep = Math.min(0.32, Math.max(0.12, distance * 0.025));
     spark.position.copy(request.to).addScaledVector(incoming, -backstep);
@@ -687,9 +789,9 @@ export class CombatEffects {
     spark.userData.weaponId = request.weaponId;
     spark.userData.endpoint = request.to.toArray();
     // The impact is an arrival cue, not a second muzzle flash. Hold it until the
-    // moving short tracer reaches the authoritative endpoint.
+    // round reaches the authoritative endpoint.
     spark.visible = false;
-    this.scene.add(spark);
+    this.scene.add(onEffectsLayer(spark));
     this.active.push({
       object: spark,
       parent: this.scene,
@@ -697,9 +799,9 @@ export class CombatEffects {
       lifetimeMs: request.fatal
         ? REMOTE_SHOT_EFFECTS[request.weaponId].fatalImpactMs
         : REMOTE_SHOT_EFFECTS[request.weaponId].impactMs,
-      baseOpacity: 0.88,
-      holdRatio: request.fatal ? 0.42 : 0.34,
-      fadePower: request.fatal ? 1.2 : 1.4,
+      baseOpacity: 0.95,
+      holdRatio: request.fatal ? 0.35 : 0.25,
+      fadePower: request.fatal ? 1.2 : 1.5,
       remote: true,
       preserveOnDeath: request.fatal === true,
       setOpacity: (opacity) => { material.opacity = opacity; },
@@ -722,12 +824,10 @@ export class CombatEffects {
         continue;
       }
       const remaining = 1 - age / effect.lifetimeMs;
-      // Each cue gets a short full-opacity read followed by a smooth authored
-      // fade. Tracers remain captureable without becoming beams, impacts linger
-      // long enough to locate, and muzzle sprites still disappear almost at once.
+      // Each cue gets a short full-opacity read followed by a smooth authored fade.
       const fade = age <= effect.lifetimeMs * effect.holdRatio
         ? 1
-        : Math.max(0, remaining / (1 - effect.holdRatio)) ** effect.fadePower;
+        : Math.max(0, remaining / Math.max(1e-6, 1 - effect.holdRatio)) ** effect.fadePower;
       effect.setOpacity(effect.baseOpacity * fade, age);
     }
   }
@@ -758,12 +858,6 @@ export class CombatEffects {
     return this.active.length;
   }
 
-  private remoteGlowScale(weaponId: GunId, remainingDistance: number): number {
-    const min = weaponId === 'awp' ? 0.085 : 0.07;
-    const max = weaponId === 'awp' ? 0.32 : 0.28;
-    return Math.max(min, Math.min(max, remainingDistance * 0.016));
-  }
-
   private removeAt(index: number): void {
     const effect = this.active[index];
     effect.parent.remove(effect.object);
@@ -778,12 +872,4 @@ export class CombatEffects {
     this.puffTexture?.dispose();
     this.puffTexture = null;
   }
-}
-
-/** uniform direction on the unit sphere */
-function randomUnit(random: () => number): Vector3 {
-  const z = random() * 2 - 1;
-  const theta = random() * Math.PI * 2;
-  const ring = Math.sqrt(Math.max(0, 1 - z * z));
-  return new Vector3(ring * Math.cos(theta), ring * Math.sin(theta), z);
 }

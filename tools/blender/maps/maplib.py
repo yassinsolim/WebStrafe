@@ -801,7 +801,9 @@ def setup_bake_world(env):
     ground = tuple(c * env.get("bake_ground_scale", 0.6) for c in lin(sky.get("bake_ground", sky["ground"])))
     col = _mix_rgb(nt, upper, ground, below)
     nt.links.new(col, bg.inputs["Color"])
-    bg.inputs["Strength"].default_value = env["sky_strength"]
+    # the sky used to light as strongly as the sun, which washed out every
+    # shadow; bake it dimmer so the live sun reads about 3:1 over the sky
+    bg.inputs["Strength"].default_value = env["sky_strength"] * env.get("bake_sky_scale", 0.55)
     nt.links.new(bg.outputs[0], out.inputs["Surface"])
     bpy.context.scene.world = world
     return world
@@ -967,9 +969,44 @@ def _denoise(rgb, folder):
     return px.reshape(h, w, 4)[..., :3]
 
 
-def bake_lightmap(lit_objects, size, samples, folder):
-    """cycles bake of diffuse direct + indirect light (no albedo) into one atlas.
-    returns (encoded png path, scale) where linear light = srgb_decode(texel) * scale."""
+def _bake_into(img, kind, pass_filter=None):
+    kwargs = dict(type=kind, uv_layer="Lightmap", margin=0, use_clear=True, target="IMAGE_TEXTURES")
+    if pass_filter is not None:
+        kwargs["pass_filter"] = pass_filter
+    t = time.time()
+    bpy.ops.object.bake(**kwargs)
+    size = img.size[0]
+    print(f"[maps] baked {kind} {sorted(pass_filter) if pass_filter else ''} {size}x{size} in {time.time() - t:.1f}s")
+    px = np.empty(size * size * 4, np.float32)
+    img.pixels.foreach_get(px)
+    return px.reshape(size, size, 4)
+
+
+def _clean(rgb, mask, folder, denoise=True):
+    """dilate, denoise and dilate again, like every lightmap channel needs"""
+    filled, _ = _dilate(rgb, mask, 6)
+    if denoise:
+        t = time.time()
+        filled = _denoise(filled, folder)
+        print(f"[maps] denoised in {time.time() - t:.1f}s")
+    out = np.maximum(filled, 0.0)
+    out[~mask] = 0.0
+    final, _ = _dilate(out, mask, 10)
+    return final
+
+
+def bake_lightmap(lit_objects, size, samples, folder, split=True):
+    """cycles bakes into one atlas, all without albedo.
+
+    split (default): the shipped lightmap holds indirect light (sky, emissive
+    surfaces and every bounce, sun included) in rgb and the sun's visibility in
+    alpha, so the game can add the sun live with normal maps and specular. it
+    is the full bake minus a sun only direct bake; the visibility is a shadow
+    bake with the sky and emission switched off. a plain full bake is still
+    written for the preview renders.
+
+    returns (shipped png, scale, full png, full scale) where linear light =
+    srgb_decode(rgb) * scale."""
     scene = bpy.context.scene
     scene.cycles.samples = samples
     img = bpy.data.images.new("lightmap_raw", size, size, float_buffer=True, alpha=True)
@@ -994,42 +1031,53 @@ def bake_lightmap(lit_objects, size, samples, folder):
     scene.render.bake.use_pass_direct = True
     scene.render.bake.use_pass_indirect = True
     scene.render.bake.use_pass_color = False
-    boosted = []
+    emission = []
     for info in MATS.values():
-        scale = getattr(info, "bake_emission_scale", 1.0)
-        if info.emissive and scale != 1.0:
+        if info.emissive:
             sock = info.mat.node_tree.nodes["Principled BSDF"].inputs["Emission Strength"]
-            boosted.append((sock, sock.default_value))
-            sock.default_value *= scale
-    t = time.time()
-    bpy.ops.object.bake(type="DIFFUSE", pass_filter={"DIRECT", "INDIRECT"}, uv_layer="Lightmap",
-                        margin=0, use_clear=True, target="IMAGE_TEXTURES")
-    print(f"[maps] baked {size}x{size} at {samples} samples in {time.time() - t:.1f}s")
-    for sock, value in boosted:
+            emission.append((sock, sock.default_value, getattr(info, "bake_emission_scale", 1.0)))
+    for sock, value, scale in emission:
+        sock.default_value = value * scale
+    full = _bake_into(img, "DIFFUSE", {"DIRECT", "INDIRECT"})
+    sun_direct = None
+    visibility = None
+    if split:
+        world_bg = [n for n in scene.world.node_tree.nodes if n.bl_idname == "ShaderNodeBackground"]
+        world_strength = [(n, n.inputs["Strength"].default_value) for n in world_bg]
+        for n, _ in world_strength:
+            n.inputs["Strength"].default_value = 0.0
+        for sock, _, _ in emission:
+            sock.default_value = 0.0
+        sun_direct = _bake_into(img, "DIFFUSE", {"DIRECT"})
+        visibility = _bake_into(img, "SHADOW")
+        for n, value in world_strength:
+            n.inputs["Strength"].default_value = value
+    for sock, value, _ in emission:
         sock.default_value = value
     for mat in touched:
         nt = mat.node_tree
         for n in list(nt.nodes):
             if n.name == "lightmap_bake_target" or (n.bl_idname == "ShaderNodeUVMap" and n.uv_map == "Lightmap"):
                 nt.nodes.remove(n)
-    px = np.empty(size * size * 4, np.float32)
-    img.pixels.foreach_get(px)
-    px = px.reshape(size, size, 4)
-    mask = px[..., 3] > 0.5
-    rgb = np.maximum(px[..., :3], 0.0)
-    np.save(os.path.join(folder, "lightmap_raw.npy"), rgb.astype(np.float16))
+    mask = full[..., 3] > 0.5
+    rgb_full = np.maximum(full[..., :3], 0.0)
+    np.save(os.path.join(folder, "lightmap_raw.npy"), rgb_full.astype(np.float16))
     np.save(os.path.join(folder, "lightmap_mask.npy"), mask)
-    filled, _ = _dilate(rgb, mask, 6)
-    t = time.time()
-    den = _denoise(filled, folder)
-    print(f"[maps] denoised lightmap in {time.time() - t:.1f}s")
-    den = np.maximum(den, 0.0)
-    den[~mask] = 0.0
-    final, _ = _dilate(den, mask, 10)
-    return encode_lightmap(final, mask, folder)
+    final_full = _clean(rgb_full, mask, folder)
+    full_png, full_scale = encode_lightmap(final_full, mask, folder, name="lightmap_full")
+    if not split:
+        return full_png, full_scale, full_png, full_scale
+    indirect = np.maximum(rgb_full - np.maximum(sun_direct[..., :3], 0.0), 0.0)
+    final_indirect = _clean(indirect, mask, folder)
+    vis = np.clip(visibility[..., :1], 0.0, 1.0).repeat(3, axis=2)
+    # the shadow bake is clean enough to skip the denoiser, it only needs dilating
+    final_vis = _clean(vis, mask, folder, denoise=False)[..., 0]
+    png, scale = encode_lightmap(final_indirect, mask, folder, alpha=final_vis)
+    return png, scale, full_png, full_scale
 
 
-def encode_lightmap(rgb, mask, folder, scale=None):
+def encode_lightmap(rgb, mask, folder, scale=None, alpha=None, name="lightmap"):
+    """srgb encodes rgb / scale; `alpha` (linear 0..1, e.g. sun visibility) goes in the alpha channel"""
     lit = rgb[mask]
     if scale is None:
         scale = float(np.percentile(lit.max(axis=1), 99.7)) * 1.08
@@ -1038,21 +1086,29 @@ def encode_lightmap(rgb, mask, folder, scale=None):
     h, w = rgb.shape[:2]
     rgba = np.ones((h, w, 4), np.float32)
     rgba[..., :3] = enc
-    out = bpy.data.images.new("lightmap_encoded", w, h, alpha=False)
+    if alpha is not None:
+        rgba[..., 3] = np.clip(alpha, 0.0, 1.0)
+    out = bpy.data.images.new(f"{name}_encoded", w, h, alpha=alpha is not None)
     out.colorspace_settings.name = "Non-Color"
+    out.alpha_mode = "STRAIGHT"
     out.pixels.foreach_set(rgba.ravel())
-    path = os.path.join(folder, "lightmap.png")
+    path = os.path.join(folder, f"{name}.png")
     out.filepath_raw = path
     out.file_format = "PNG"
+    if alpha is not None:
+        bpy.context.scene.render.image_settings.color_mode = "RGBA"
     out.save()
-    print(f"[maps] lightmap encoded with scale {scale} (median lit {float(np.median(lit)):.3f})")
+    print(f"[maps] {name} encoded with scale {scale} (median lit {float(np.median(lit)):.3f})")
     return path, scale
 
 
 def flat_lightmap(folder, size=64, value=0.55, scale=1.0):
-    """stand-in lightmap for --no-bake iterations"""
+    """stand-in lightmap for --no-bake iterations: flat indirect light, full sun"""
     rgb = np.full((size, size, 3), value, np.float32)
-    return encode_lightmap(rgb, np.ones((size, size), bool), folder, scale=scale)
+    mask = np.ones((size, size), bool)
+    png, scale = encode_lightmap(rgb, mask, folder, scale=scale, alpha=np.ones((size, size), np.float32))
+    full_png, _ = encode_lightmap(rgb, mask, folder, scale=scale, name="lightmap_full")
+    return png, scale, full_png, scale
 
 
 # ---------------------------------------------------------------------------
@@ -1268,6 +1324,12 @@ def environment_meta(env, map_id, lightmap_scale, has_lightmap=True):
     if has_lightmap:
         out["lightmaps"] = [{"path": f"/maps/{map_id}/lightmap.webp"}]
         out["lightMapIntensity"] = round(math.pi * lightmap_scale, 4)
+        # rgb is indirect light only, alpha the sun's visibility (see bake_lightmap)
+        out["lightmapMode"] = "indirect"
+        out["indirectIntensity"] = env.get("indirect_intensity", 1.0)
+    out["envIntensity"] = env.get("env_intensity", 1.0)
+    if "grade" in env:
+        out["grade"] = env["grade"]
     return out
 
 
@@ -1284,10 +1346,10 @@ def finish_map(builder, env, meta, views, opts, layout=None):
     setup_cycles(opts["samples"])
     if opts["bake"]:
         builder.stats["texels_per_metre"] = lightmap_uvs(lit, opts["lightmap"])
-        lm_png, scale = bake_lightmap(lit, opts["lightmap"], opts["samples"], folder)
+        lm_png, scale, full_png, full_scale = bake_lightmap(lit, opts["lightmap"], opts["samples"], folder)
     else:
         lightmap_uvs(lit, 256)
-        lm_png, scale = flat_lightmap(folder)
+        lm_png, scale, full_png, full_scale = flat_lightmap(folder)
     export_glb(os.path.join(folder, "scene.glb"), render)
     export_glb(os.path.join(folder, "collision.glb"), [col], materials=False, normals=False, texcoords=False)
     meta = dict(meta)
@@ -1300,7 +1362,8 @@ def finish_map(builder, env, meta, views, opts, layout=None):
         os.makedirs(os.path.join(HERE, "layouts"), exist_ok=True)
         write_json(os.path.join(HERE, "layouts", f"{map_id}.json"), layout)
     if opts["render"]:
-        preview_materials(lit, render, lm_png, scale, env)
+        # the previews show the full bake, the shipped lightmap has no direct sun
+        preview_materials(lit, render, full_png, full_scale, env)
         setup_preview_world(env)
         for name, view in views.items():
             res = view.get("resolution", (1280, 720))

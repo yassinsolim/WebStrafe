@@ -60,22 +60,43 @@ A build writes scratch files to `.blender-tmp/maps/<id>/` and then
   foot to the ridge of each face so the ridge band always sits on the ridge.
   UV1 is a lightmap atlas: smart project, islands scaled by a per face texel
   weight (walkable tops 1.0, far cliffs 0.0015, faces under lava almost 0), then packed.
-- **Lightmap.** Cycles on the GPU bakes diffuse direct + indirect light with no
-  albedo (384 samples), OpenImageDenoise cleans it through the compositor, the
-  chart borders are dilated, and the result is sRGB encoded as `light / scale`.
-  Emissive surfaces (lava, glow strips, lamps) light their surroundings in the bake.
+- **Lightmap.** Cycles on the GPU bakes three passes into one atlas, all with no
+  albedo: the full diffuse light (direct + indirect, 384 samples), the sun's
+  direct light alone (sky and emission switched off) and a shadow pass for the
+  sun's visibility. The shipped `lightmap.webp` holds full minus sun direct in
+  rgb (sky light, emissive light and every bounce, the sun's included) and the
+  sun's visibility in alpha. OpenImageDenoise cleans the rgb through the
+  compositor, chart borders are dilated and rgb is sRGB encoded as
+  `light / scale`. The bake sky is scaled by `bake_sky_scale` (default 0.55)
+  so the sun reads about 3:1 over the sky; it used to light as strongly as
+  the sun, which washed every shadow out. A plain full bake is still written
+  (`lightmap_full.png`, not shipped) for the preview renders.
 - **Runtime.** `src/world/MapEnvironment.ts` loads the lightmaps listed in
   `meta.environment.lightmaps` (`texture.channel = 1`, GLTFLoader names
-  TEXCOORD_1 `uv1`) and swaps every mesh that has `uv1` to
-  `MeshBasicMaterial(map, color, lightMap)`, so the baked sun is not lit a
-  second time. `lightMapIntensity` is `pi * scale` (Cycles bakes irradiance / pi).
-  Meshes without `uv1` (emissive trims, lava) keep MeshStandardMaterial. A
-  hemisphere light and a directional sun matching the baked sun light players
-  and weapons; the sun intensity equals the Blender sun strength, so a player
-  model and the floor under it get the same sunlight.
-- **Sky.** A shader dome (gradient, sun disc and glow, drifting fbm clouds) in
-  display colours, so the horizon matches the fog colour exactly. The same
-  gradient and sun formula drive the Blender preview world.
+  TEXCOORD_1 `uv1`) through ImageBitmap with `premultiplyAlpha: 'none'`, so the
+  alpha channel never eats the rgb. With `lightmapMode: "indirect"` every mesh
+  with `uv1` gets a lit material (`src/render/worldMaterials.ts`): the live sun
+  is multiplied by the baked visibility, so it keeps the baked soft shadows but
+  gains normal maps (generated from the albedo on the GPU), specular and live
+  player shadows; the baked rgb replaces the sky's diffuse light, and sky
+  reflections are occluded where the bake saw less sky. Low uses a Lambert
+  surface, medium and high a standard one. `lightMapIntensity` is
+  `pi * scale` (Cycles bakes irradiance / pi) and `indirectIntensity` scales
+  the baked light at runtime. Normals are rebuilt from the triangle winding at
+  load, because some packed faces (the floor slabs) carry normals pointing
+  against their winding; the old unlit materials never read normals. Maps
+  without `lightmapMode` keep the v2 path, `MeshBasicMaterial(map, color,
+  lightMap)`. Meshes without `uv1` (emissive trims, lava) keep
+  MeshStandardMaterial. Players and weapons are lit by the same sun and by a
+  PMREM capture of the sky dome (`envIntensity`).
+- **Sky.** A shader dome (gradient, sun disc and glow, drifting self shadowed
+  fbm clouds) in linear hdr. Its colour keys are the meta's display colours run
+  back through the map's grade (`src/render/grade.ts`), so after tone mapping
+  the horizon matches the fog colour exactly and the sky shows as authored. The
+  sun disc is far above 1 so bloom turns it into glare.
+- **Grade.** `meta.environment.grade` (exposure, contrast, saturation,
+  temperature, tint, vignette, bloom, bloomThreshold) drives the composite pass
+  in `src/render/RenderPipeline.ts`; missing fields use the house look.
 - **Previews.** The docs renders swap every material for an emission shader
   that computes albedo x baked light, then the three.js ACES filmic curve with
   the map exposure, then linear fog in display space. They show what the game
@@ -102,7 +123,11 @@ A build writes scratch files to `.blender-tmp/maps/<id>/` and then
     "fog": { "color": "#e9946a", "near": 55, "far": 460 },
     "exposure": 1.12,
     "lightmaps": [{ "path": "/maps/bhop_emberdrift/lightmap.webp" }],
-    "lightMapIntensity": 11.0
+    "lightMapIntensity": 11.0,
+    "lightmapMode": "indirect",
+    "indirectIntensity": 1.0,
+    "envIntensity": 1.0,
+    "grade": { "exposure": 1.05, "contrast": 1.1, "saturation": 1.06, "vignette": 0.26, "bloom": 0.09 }
   }
 }
 ```

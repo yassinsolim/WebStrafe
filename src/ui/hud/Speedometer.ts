@@ -28,12 +28,15 @@ export class Speedometer {
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
     this.root.className = 'hud-speed';
+    const line = document.createElement('div');
+    line.className = 'hud-speed-line';
     this.value = document.createElement('div');
     this.value.className = 'hud-speed-value';
     this.value.textContent = '0';
     const unit = document.createElement('div');
     unit.className = 'hud-speed-unit';
     unit.textContent = 'u/s';
+    line.append(this.value, unit);
     this.strafe = document.createElement('div');
     this.strafe.className = 'hud-strafe';
     this.takeoff = stat('takeoff');
@@ -41,7 +44,7 @@ export class Speedometer {
     this.sync = stat('sync');
     this.jumps = stat('jumps');
     this.strafe.append(this.takeoff, this.gain, this.sync, this.jumps);
-    this.root.append(this.value, unit, this.strafe);
+    this.root.append(line, this.strafe);
     parent.appendChild(this.root);
   }
 

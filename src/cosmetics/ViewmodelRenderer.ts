@@ -1,14 +1,38 @@
 import {
   AmbientLight,
+  Color,
   DirectionalLight,
   Euler,
   Group,
+  HemisphereLight,
   PerspectiveCamera,
+  PointLight,
   Scene,
   Vector3,
 } from 'three';
-import type { Camera } from 'three';
+import type { Camera, Texture } from 'three';
 import type { FirearmId as GunId } from '../combat/FirearmTiming';
+import type { QualityPreset } from '../render/quality';
+
+/**
+ * the world's environment light on the viewmodel is scaled up a little so dark
+ * gloves and steel still read against a sunlit floor the exposure is set for
+ */
+const VIEWMODEL_ENV_LIFT = 1.2;
+
+export interface ViewmodelWorldLighting {
+  environment: Texture | null;
+  environmentIntensity: number;
+  /** world space, towards the sun */
+  sunDirection: Vector3;
+  sunColor: Color;
+  sunIntensity: number;
+  /** 0 in full shadow, 1 in the open */
+  sunVisibility: number;
+  hemiSky: Color;
+  hemiGround: Color;
+  hemiIntensity: number;
+}
 
 /**
  * Drives the first-person viewmodel camera and computes the CS2-inspired
@@ -115,6 +139,17 @@ export class ViewmodelRenderer {
   private motionScale = 1;
   private integratedMode = false;
 
+  private readonly ambient = new AmbientLight(0xffffff, 0.95);
+  private readonly key = new DirectionalLight(0xffffff, 1.35);
+  private readonly fill = new DirectionalLight(0xbcd2ff, 0.55);
+  private readonly sun = new DirectionalLight(0xffffff, 1);
+  private readonly hemi = new HemisphereLight();
+  private readonly flash = new PointLight(0xffc27a, 0, 1.6, 2);
+  private studioEnvironment: Texture | null = null;
+  private flashEnabled = true;
+  private flashStrength = 0;
+  private flashAge = 0;
+
   constructor(viewmodelFov: number, aspect: number) {
     this.camera = new PerspectiveCamera(viewmodelFov, aspect, 0.01, 12);
     this.camera.name = 'ViewmodelCamera';
@@ -126,18 +161,84 @@ export class ViewmodelRenderer {
     this.root.position.set(0.18, -0.18, -0.35);
     this.root.rotation.set(0.02, -0.02, 0);
 
-    const ambient = new AmbientLight(0xffffff, 0.95);
-    this.scene.add(ambient);
+    this.scene.add(this.ambient, this.key, this.fill, this.sun, this.sun.target, this.hemi, this.flash);
+    this.key.position.set(1.5, 1.8, 2.2);
+    // fill from the opposite side so the weapon never reads as a flat black silhouette
+    this.fill.position.set(-1.6, 0.4, -1.2);
+    this.sun.visible = false;
+    this.hemi.visible = false;
+    // the flash light always exists so firing never changes the light count (no shader recompiles)
+    this.flash.intensity = 0;
+  }
 
-    const key = new DirectionalLight(0xffffff, 1.35);
-    key.position.set(1.5, 1.8, 2.2);
-    this.scene.add(key);
+  /**
+   * lights the viewmodel with the world: the map's sky capture, the sun from
+   * its real direction (dimmed by `sunVisibility` when the player stands in
+   * shadow) and the hemisphere light on maps without a sky. the viewmodel
+   * camera copies the world camera, so this scene is already in world space.
+   * falls back to the old studio rig when there is no world lighting.
+   */
+  public syncWorldLighting(world: ViewmodelWorldLighting): void {
+    if (world.environment) {
+      this.scene.environment = world.environment;
+      this.scene.environmentIntensity = world.environmentIntensity * VIEWMODEL_ENV_LIFT;
+    } else {
+      this.scene.environment = this.studioEnvironment;
+      this.scene.environmentIntensity = 1;
+    }
+    const lit = world.environment !== null || world.hemiIntensity > 0;
+    this.ambient.visible = !lit;
+    this.key.visible = !lit;
+    this.fill.visible = !lit;
+    this.sun.visible = lit;
+    this.sun.color.copy(world.sunColor);
+    this.sun.intensity = world.sunIntensity * world.sunVisibility;
+    this.sun.position.copy(world.sunDirection).multiplyScalar(10);
+    this.sun.target.position.set(0, 0, 0);
+    this.hemi.visible = world.environment === null && world.hemiIntensity > 0;
+    if (this.hemi.visible) {
+      this.hemi.color.copy(world.hemiSky);
+      this.hemi.groundColor.copy(world.hemiGround);
+      this.hemi.intensity = world.hemiIntensity;
+      this.hemi.position.set(0, 1, 0);
+    }
+  }
 
-    // Fill from the opposite side so the weapon never reads as a flat black
-    // silhouette (the gun textures are quite dark).
-    const fill = new DirectionalLight(0xbcd2ff, 0.55);
-    fill.position.set(-1.6, 0.4, -1.2);
-    this.scene.add(fill);
+  /** studio lighting for the viewmodel when no map is loaded */
+  public setStudioEnvironment(texture: Texture | null): void {
+    this.studioEnvironment = texture;
+    if (!this.sun.visible) {
+      this.scene.environment = texture;
+    }
+  }
+
+  public setQuality(preset: QualityPreset): void {
+    this.flashEnabled = preset.level !== 'low';
+    if (!this.flashEnabled) {
+      this.flash.intensity = 0;
+      this.flashStrength = 0;
+    }
+  }
+
+  /** muzzle flash light at a point in viewmodel space, fades in `update` */
+  public flashAt(position: Vector3, color: number, strength: number): void {
+    if (!this.flashEnabled) return;
+    this.flash.position.copy(position);
+    this.flash.color.setHex(color);
+    this.flashStrength = strength;
+    this.flashAge = 0;
+  }
+
+  private updateFlash(dt: number): void {
+    if (this.flashStrength <= 0) return;
+    this.flashAge += dt;
+    const t = this.flashAge / 0.06;
+    if (t >= 1) {
+      this.flashStrength = 0;
+      this.flash.intensity = 0;
+      return;
+    }
+    this.flash.intensity = this.flashStrength * (1 - t) * (1 - t);
   }
 
   public resize(width: number, height: number): void {
@@ -234,6 +335,7 @@ export class ViewmodelRenderer {
   ): number {
     this.camera.position.copy(worldCamera.position);
     this.camera.quaternion.copy(worldCamera.quaternion);
+    this.updateFlash(dt);
 
     // The integrated knife rig was authored close to camera-space neutral, so it
     // needs more readable procedural travel than its large baked hand clips.

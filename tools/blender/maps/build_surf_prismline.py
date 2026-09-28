@@ -50,6 +50,7 @@ ENV = {
     "bake_ground_scale": 0.7,
     "hemi": {"sky": "#bcd8f5", "ground": "#d9dfe6", "intensity": 2.2},
     "fog": {"color": "#d3e8fb", "near": 140.0, "far": 950.0},
+    "grade": {"exposure": 0.74, "contrast": 1.16, "saturation": 1.1, "temperature": 0.03, "vignette": 0.2, "bloom": 0.08},
     "exposure": 1.0,
 }
 

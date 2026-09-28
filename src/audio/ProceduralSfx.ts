@@ -291,23 +291,27 @@ function weaponDraw(v: VoiceContext): void {
 
 function hitmarker(v: VoiceContext): void {
   const p = v.pitch;
-  click(v, { freq: 3300 * p, q: 2.4, peak: 0.3, decay: 0.018 });
-  tone(v, { freq: 1550 * p, to: 1280 * p, glide: 0.03, attack: 0.0008, decay: 0.035, peak: 0.08 });
+  // dry tick on top, a short padded thud under it so a hit feels like it landed
+  click(v, { freq: 3900 * p, q: 3.2, peak: 0.26, decay: 0.012 });
+  click(v, { freq: 2100 * p, q: 1.6, peak: 0.12, decay: 0.02, at: 0.002 });
+  noise(v, { attack: 0.0006, decay: 0.03, peak: 0.16, color: 'pink', filters: [{ type: 'bandpass', freq: 720 * p, q: 1.3 }] });
+  tone(v, { type: 'sine', freq: 180 * p, to: 120 * p, glide: 0.035, attack: 0.001, decay: 0.045, peak: 0.12 });
 }
 
 function headshot(v: VoiceContext): void {
   const p = v.pitch;
-  // bright helmet ping: inharmonic partials with long upper ring
-  noise(v, { attack: 0.0004, decay: 0.012, peak: 0.24, filters: [{ type: 'highpass', freq: 4500 * p }] });
+  // hard crack, then a bright helmet ping with an inharmonic ring
+  noise(v, { attack: 0.0003, decay: 0.009, peak: 0.28, filters: [{ type: 'highpass', freq: 5200 * p }] });
+  click(v, { freq: 3000 * p, q: 2.4, peak: 0.2, decay: 0.014 });
   partials(v, {
-    base: 1720 * p,
+    base: 1840 * p,
     ratios: [1, 1.51, 2.26, 3.12],
-    gains: [0.2, 0.11, 0.075, 0.045],
-    decays: [0.55, 0.36, 0.22, 0.15],
-    attack: 0.0015,
+    gains: [0.19, 0.1, 0.07, 0.04],
+    decays: [0.42, 0.28, 0.18, 0.12],
+    attack: 0.001,
     jitter: 0.004,
   });
-  tone(v, { type: 'triangle', freq: 860 * p, attack: 0.001, decay: 0.09, peak: 0.06 });
+  tone(v, { type: 'triangle', freq: 900 * p, attack: 0.001, decay: 0.07, peak: 0.05 });
 }
 
 function killConfirm(v: VoiceContext): void {

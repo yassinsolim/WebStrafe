@@ -5,6 +5,7 @@ import type { ShotEvent } from '../../network/MultiplayerTransport';
 import { CombatEffects, type ShotEffectRequest } from '../CombatEffects';
 import { createRemoteShotHandler, presentFirearmShot } from '../FirearmShotFeedback';
 import { createSeededRandom } from '../Inaccuracy';
+import { ParticleBurst } from '../effects/ParticleBurst';
 
 const types = (scene: Scene) => scene.children.map((child) => child.userData.effectType).sort();
 
@@ -30,7 +31,16 @@ describe('CombatEffects impact effects', () => {
       impactKind: 'world',
       nowMs: 0,
     });
-    expect(types(scene)).toEqual(['decal', 'impact', 'impact-dust', 'impact-sparks', 'muzzle', 'tracer']);
+    expect(types(scene)).toEqual([
+      'decal',
+      'impact',
+      'impact-debris',
+      'impact-dust',
+      'impact-sparks',
+      'muzzle',
+      'muzzle-smoke',
+      'tracer',
+    ]);
     expect(effects.getDecalCount()).toBe(1);
 
     // transient effects expire, the hole stays until its own fade
@@ -66,9 +76,12 @@ describe('CombatEffects impact effects', () => {
     const scene = new Scene();
     const effects = new CombatEffects(scene, null, { impactEffects: true, random: createSeededRandom(3) });
     effects.spawnDust(new Vector3(0, 0, 0), new Vector3(0, 1, 0), 0);
-    const puff = scene.children.find((child) => child.userData.effectType === 'impact-dust')!;
+    const puff = scene.children.find((child) => child.userData.effectType === 'impact-dust') as ParticleBurst;
+    expect(puff).toBeInstanceOf(ParticleBurst);
     effects.update(200);
-    const heights = puff.children.map((sprite) => sprite.position.y);
+    const count = puff.geometry.instanceCount;
+    expect(count).toBeGreaterThan(2);
+    const heights = Array.from({ length: count }, (_, i) => puff.particlePosition(i).y);
     expect(Math.min(...heights)).toBeGreaterThan(0);
     effects.dispose();
   });

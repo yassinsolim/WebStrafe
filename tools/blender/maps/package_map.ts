@@ -56,7 +56,8 @@ export async function packageMap(mapId: string): Promise<void> {
     simplifyRatio: null,
   });
   await copyFile(path.join(tmp, 'collision.glb'), path.join(out, 'collision.glb'));
-  await sharp(path.join(tmp, 'lightmap.png')).webp({ quality: 90, effort: 6 }).toFile(path.join(out, 'lightmap.webp'));
+  // alpha is the sun's baked visibility, keep it near lossless
+  await sharp(path.join(tmp, 'lightmap.png')).webp({ quality: 90, alphaQuality: 100, effort: 6 }).toFile(path.join(out, 'lightmap.webp'));
   await copyFile(path.join(tmp, 'meta.json'), path.join(out, 'meta.json'));
 
   if (await exists(path.join(tmp, 'thumb.png'))) {

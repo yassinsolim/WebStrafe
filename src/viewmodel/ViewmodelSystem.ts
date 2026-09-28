@@ -124,6 +124,8 @@ const ARMS_OFFSET: Readonly<Record<ViewItem, Vector3>> = {
 };
 // the awp support hand holds the forend this far behind socket_grip_l
 const AWP_SUPPORT_BACK_M = 0.12;
+// finger pose of the right hand on each gun's grip
+const RIGHT_GRIP_POSE: Readonly<Record<'deagle' | 'awp', HandPoseName>> = { deagle: 'deagle', awp: 'pistol' };
 
 const SCALE_PIVOT = v(0.12, -0.15, -0.32);
 
@@ -544,13 +546,14 @@ export class ViewmodelSystem {
 
     // right hand: grip, or the bolt knob during a bolt cycle
     const onBolt = this.channel('rightOnBolt');
+    const gripPose = HAND_POSES[RIGHT_GRIP_POSE[id]];
     this.socketTarget(gun.gripR, RIGHT_PISTOL, pA, qA);
-    blendHandPose(HAND_POSES.pistol, HAND_POSES.pistol, 0, this.poseR);
+    blendHandPose(gripPose, gripPose, 0, this.poseR);
     if (onBolt > 0 && gun.boltKnob) {
       this.socketTarget(gun.boltKnob, RIGHT_BOLT, pB, qB);
       pA.lerp(pB, onBolt);
       qA.slerp(qB, onBolt);
-      blendHandPose(HAND_POSES.pistol, HAND_POSES.pinch, onBolt, this.poseR);
+      blendHandPose(gripPose, HAND_POSES.pinch, onBolt, this.poseR);
     }
     this.poseR.index[1] += this.channel('trigger') * 14;
     arms.setArmVisible('r', true);
