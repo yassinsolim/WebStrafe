@@ -9,7 +9,9 @@ has to change all three.
 - `public/knives/<id>.glb`, one per knife id in `src/combat/knives.ts`, built by
   committed bpy scripts in `tools/blender/knives/` and optimized with
   `tools/assets/optimize-glb.ts` (meshopt, WebP textures).
-- Budget: at most 8,000 triangles and 200 KB per knife.
+- Budget: LOD0 at most 15,000 triangles and 1.5 MB per knife (textures
+  included). `public/knives/<id>_lod1.glb` is the third-person LOD: the same
+  nodes, sockets and userData at under half the triangles, at most 400 KB.
 - All geometry is original: modelled from real-world knife layouts, with CS2
   used only as visual reference. No downloaded meshes or textures.
 
@@ -66,4 +68,7 @@ Material names are the hook for the finish system.
 Finish shaders work in knife space, not UV space: the finish system computes
 blade coordinates from the vertex position in the knife root's frame
 (`u = x / bladeLength`, `v` from spine to edge using `bladeHeight`), so models
-don't need special UVs. Models still ship a sane UV0 for handle textures.
+don't need special UVs. Models ship a 0..1 UV0 atlas with baked base colour,
+normal and ORM (occlusion, roughness, metalness) maps on every material; the
+steel's normal map is `knife_blade`'s `normalMap`, so a finish that replaces
+the blade material can keep it (and `aoMap`, the ORM image, likewise).
