@@ -136,6 +136,12 @@ Status: air strafing done on `v2/movement`. The controller is a 128 Hz
 fixed-step kinematic controller with ground, air and surf modes, ramp
 clipping, edge slide and BVH collision. Units are metres (1 u = 0.0254 m).
 
+The constants were audited against CS2 on 2026-09-27, see
+[movement-cs2.md](movement-cs2.md): gravity, jump, accel, stopspeed,
+maxspeed, the hull, eyes, crouch jump and per-weapon run speeds changed, and
+the maps now ship `sv_airaccelerate` 1000 (bhop) and 150 (surf). The numbers
+in this section (9.5 m/s, 70 air ticks, the 1.76 m hull) are from before it.
+
 ### What was wrong
 
 - **No 30 u/s air wishspeed cap.** Air and surf used the ground `accelerate()`,
