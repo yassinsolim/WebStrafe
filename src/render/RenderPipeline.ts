@@ -31,6 +31,9 @@ void main() {
 const COMPOSITE_FRAGMENT = /* glsl */ `
 uniform sampler2D tScene;
 uniform sampler2D tBloom;
+uniform sampler2D tAo;
+uniform sampler2D tDepth;
+uniform float aoOverlay;
 uniform float bloomStrength;
 uniform float vignette;
 uniform vec2 resolution;
@@ -40,6 +43,12 @@ ${GRADE_GLSL}
 
 vec3 graded(vec2 uv) {
   vec3 c = texture2D(tScene, uv).rgb;
+#ifdef USE_AO
+  // after the viewmodel pass the depth buffer only holds the gun and arms
+  // (it was cleared to far), so anything nearer than far keeps its own light
+  float isOverlay = aoOverlay > 0.5 && texture2D(tDepth, uv).x < 0.99999 ? 1.0 : 0.0;
+  c *= mix(texture2D(tAo, uv).r, 1.0, isOverlay);
+#endif
 #ifdef USE_BLOOM
   // the chain sums every mip, strength already folds in 1 / mip count
   c += texture2D(tBloom, uv).rgb * bloomStrength;
@@ -128,6 +137,9 @@ export class RenderPipeline {
       uniforms: {
         tScene: { value: null },
         tBloom: { value: null },
+        tAo: { value: null },
+        tDepth: { value: null },
+        aoOverlay: { value: 0 },
         bloomStrength: { value: 0 },
         vignette: { value: 0 },
         resolution: { value: new Vector2(1, 1) },
@@ -158,6 +170,8 @@ export class RenderPipeline {
     this.preset = preset;
     if (preset.bloom) this.composite.defines.USE_BLOOM = '';
     else delete this.composite.defines.USE_BLOOM;
+    if (preset.ao) this.composite.defines.USE_AO = '';
+    else delete this.composite.defines.USE_AO;
     this.composite.needsUpdate = true;
     if (rebuild) this.rebuildTarget();
   }
@@ -198,8 +212,9 @@ export class RenderPipeline {
     renderer.setRenderTarget(target);
     renderer.clear(true, true, false);
     renderer.render(world, worldCamera);
+    let ao: Texture | null = null;
     if (this.preset.ao && target.depthTexture) {
-      this.ssao.render(renderer, target.depthTexture, target, worldCamera);
+      ao = this.ssao.compute(renderer, target.depthTexture, worldCamera, this.width, this.height);
     }
     if (overlay && overlayCamera) {
       renderer.setRenderTarget(target);
@@ -213,6 +228,9 @@ export class RenderPipeline {
     const u = this.composite.uniforms;
     u.tScene.value = target.texture;
     u.tBloom.value = bloom;
+    u.tAo.value = ao;
+    u.tDepth.value = target.depthTexture;
+    u.aoOverlay.value = overlay && overlayCamera ? 1 : 0;
     u.bloomStrength.value = bloom ? this.grade.bloom / this.bloom.getLevelCount() : 0;
     u.vignette.value = this.grade.vignette;
     u.fxaa.value = this.preset.fxaa ? 1 : 0;

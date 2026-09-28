@@ -1,6 +1,4 @@
 import {
-  CustomBlending,
-  DstColorFactor,
   LinearFilter,
   Matrix4,
   NoBlending,
@@ -10,9 +8,9 @@ import {
   Vector2,
   Vector4,
   WebGLRenderTarget,
-  ZeroFactor,
   type PerspectiveCamera,
   type DepthTexture,
+  type Texture,
   type WebGLRenderer,
 } from 'three';
 import { FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
@@ -122,31 +120,20 @@ void main() {
 }
 `;
 
-const APPLY_FRAGMENT = /* glsl */ `
-uniform sampler2D tAo;
-varying vec2 vUv;
-void main() {
-  float ao = texture2D(tAo, vUv).r;
-  gl_FragColor = vec4(ao, ao, ao, 1.0);
-}
-`;
-
 export interface SsaoOptions {
   radius?: number;
   intensity?: number;
 }
 
 /**
- * screen space ao for the world pass. it reads the resolved depth of the scene
- * target and multiplies the result into its color before the viewmodel is
- * drawn, so the gun and arms never get world occlusion.
+ * screen space ao for the world pass, from the resolved depth of the scene
+ * target. RenderPipeline applies it in the composite, never on the viewmodel.
  */
 export class Ssao {
   private readonly aoTarget: WebGLRenderTarget;
   private readonly blurTarget: WebGLRenderTarget;
   private readonly aoMaterial: ShaderMaterial;
   private readonly blurMaterial: ShaderMaterial;
-  private readonly applyMaterial: ShaderMaterial;
   private readonly quad = new FullScreenQuad();
   private readonly invProjection = new Matrix4();
   public radius: number;
@@ -198,18 +185,6 @@ export class Ssao {
       depthWrite: false,
       blending: NoBlending,
     });
-    this.applyMaterial = new ShaderMaterial({
-      name: 'SsaoApply',
-      vertexShader: VERTEX,
-      fragmentShader: APPLY_FRAGMENT,
-      uniforms: { tAo: { value: null } },
-      depthTest: false,
-      depthWrite: false,
-      transparent: true,
-      blending: CustomBlending,
-      blendSrc: DstColorFactor,
-      blendDst: ZeroFactor,
-    });
   }
 
   setSize(width: number, height: number): void {
@@ -219,8 +194,12 @@ export class Ssao {
     this.blurTarget.setSize(w, h);
   }
 
-  /** computes ao from `depth` and multiplies it into `target`'s color */
-  render(renderer: WebGLRenderer, depth: DepthTexture, target: WebGLRenderTarget, camera: PerspectiveCamera): void {
+  /**
+   * computes ao from the world `depth` (before the viewmodel pass) at half
+   * resolution. the composite multiplies it in and skips viewmodel pixels, so
+   * the msaa scene target never needs an extra pass and resolve for it.
+   */
+  compute(renderer: WebGLRenderer, depth: DepthTexture, camera: PerspectiveCamera, fullWidth: number, fullHeight: number): Texture {
     const w = this.aoTarget.width;
     const h = this.aoTarget.height;
     this.invProjection.copy(camera.projectionMatrixInverse);
@@ -229,7 +208,7 @@ export class Ssao {
     ao.tDepth.value = depth;
     // uv radius per metre at distance 1: 0.5 * projection scale
     (ao.projScale.value as Vector4).set(p[0] * 0.5, p[5] * 0.5, w, h);
-    (ao.depthTexel.value as Vector2).set(2 / target.width, 2 / target.height);
+    (ao.depthTexel.value as Vector2).set(2 / fullWidth, 2 / fullHeight);
     ao.radius.value = this.radius;
     ao.intensity.value = this.intensity;
     this.quad.material = this.aoMaterial;
@@ -249,11 +228,7 @@ export class Ssao {
     (blur.direction.value as Vector2).set(0, 1 / h);
     renderer.setRenderTarget(this.aoTarget);
     this.quad.render(renderer);
-
-    this.applyMaterial.uniforms.tAo.value = this.aoTarget.texture;
-    this.quad.material = this.applyMaterial;
-    renderer.setRenderTarget(target);
-    this.quad.render(renderer);
+    return this.aoTarget.texture;
   }
 
   dispose(): void {
@@ -261,7 +236,6 @@ export class Ssao {
     this.blurTarget.dispose();
     this.aoMaterial.dispose();
     this.blurMaterial.dispose();
-    this.applyMaterial.dispose();
     this.quad.dispose();
   }
 }
