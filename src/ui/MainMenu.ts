@@ -10,6 +10,7 @@ import { attachMenuSounds } from './menu/menuSounds';
 import { MAP_TYPE_LABEL, mapTypeFromId } from './menu/menuInfo';
 import { PlayPanel } from './menu/PlayPanel';
 import { SettingsPanel } from './menu/SettingsPanel';
+import './customize/customize.css';
 
 interface MainMenuCallbacks {
   onPlay: (mapId: string) => void;
@@ -20,6 +21,8 @@ interface MainMenuCallbacks {
   onNameChanged: (name: string) => void;
   /** null = the authored (legacy) viewmodel knife */
   onKnifeSelected?: (knifeId: KnifeId | null) => void;
+  /** opens the customize screen; the character tab only shows its button when this is set */
+  onCustomize?: () => void;
 }
 
 interface LoadoutPreset {
@@ -190,6 +193,16 @@ export class MainMenu {
     this.teamGrid = document.createElement('div');
     this.teamGrid.className = 'menu-team-grid';
     characterSection.append(teamHeading, this.teamGrid);
+    if (this.callbacks.onCustomize) {
+      const customize = document.createElement('button');
+      customize.type = 'button';
+      customize.className = 'cz-open-btn';
+      customize.innerHTML = '<span class="cz-open-label">Customize character</span>'
+        + '<span class="cz-open-go">Open</span>'
+        + '<span class="cz-open-sub">Armor, paint, emblem and tag</span>';
+      customize.addEventListener('click', () => this.callbacks.onCustomize?.());
+      characterSection.appendChild(customize);
+    }
     panels.appendChild(characterSection);
 
     const settingsSection = this.makeSection('settings');
