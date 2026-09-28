@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  BufferAttribute,
   BufferGeometry,
   Group,
   type Material,
@@ -215,6 +216,76 @@ describe('applyKnifeFinish', () => {
     }
     expect(spineEdge).toBeGreaterThan(def.shape.bladeHeight * 0.8);
     disposeProceduralKnife(knife);
+  });
+
+  it('works on a contract glb style knife: pivots, quantized positions and named materials', () => {
+    // what GLTFLoader gives for a meshopt quantized folder: int16 normalized
+    // positions, the node transform dequantizes them, the mesh sits under blade_pivot
+    const root = new Group();
+    root.userData.bladeLength = 0.1;
+    root.userData.bladeHeight = 0.03;
+    const pivot = new Group();
+    pivot.name = 'blade_pivot';
+    pivot.position.set(-0.004, 0.012, 0);
+    pivot.rotation.z = -Math.PI * 0.6;
+    root.add(pivot);
+    // blade outline in knife space: edge strip (y 0..0.002) and the flat above it
+    const corners = [
+      [0, 0, 0.001], [0.1, 0.012, 0.001], [0.1, 0.014, 0.001], [0, 0.002, 0.001],
+      [0, 0.002, 0.001], [0.1, 0.014, 0.001], [0.09, 0.03, 0.001], [0, 0.03, 0.001],
+    ];
+    const scale = 0.1;
+    const offset = new Vector3(0.046, 0.003, 0);
+    const quantized = new Int16Array(corners.length * 3);
+    corners.forEach(([x, y, z], i) => {
+      // knife space to pivot space to the node's quantized frame
+      const local = new Vector3(x, y, z).sub(pivot.position).sub(offset).divideScalar(scale);
+      quantized.set([local.x, local.y, local.z].map((v) => Math.round(v * 32767)), i * 3);
+    });
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(quantized, 3, true));
+    geometry.setAttribute('normal', new BufferAttribute(new Float32Array(corners.flatMap(() => [0, 0, 1])), 3));
+    geometry.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+    geometry.addGroup(0, 6, 1);
+    geometry.addGroup(6, 6, 0);
+    const blade = new MeshStandardMaterial({ name: 'knife_blade' });
+    const edge = new MeshStandardMaterial({ name: 'knife_edge' });
+    const mesh = new Mesh(geometry, [blade, edge]);
+    mesh.name = 'blade_mesh';
+    mesh.position.copy(offset);
+    mesh.scale.setScalar(scale);
+    pivot.add(mesh);
+    const safe = new Group();
+    safe.name = 'handle_safe';
+    safe.rotation.z = Math.PI * 0.5;
+    root.add(safe);
+    const handleMat = new MeshStandardMaterial({ name: 'knife_handle', color: 0x777777 });
+    const handle = new Mesh(new BufferGeometry().setAttribute('position', new BufferAttribute(new Float32Array(9), 3)), handleMat);
+    safe.add(handle);
+
+    applyKnifeFinish(root, { finishId: 'crimson_web', wear: 0.2, seed: 9 });
+    const [b, e] = mesh.material as Material[];
+    expect(isKnifeFinishMaterial(b) && isKnifeFinishMaterial(e)).toBe(true);
+    expect(b.name).toBe('knife_finish_blade');
+    expect(e.name).toBe('knife_finish_edge');
+    expect((handle.material as MeshStandardMaterial).color.getHex()).toBe(0x141414);
+
+    // baked coordinates are the dequantized knife space positions with the pivot at rest
+    const pos = geometry.getAttribute('finishPos');
+    const uv = geometry.getAttribute('finishUv');
+    for (let i = 0; i < corners.length; i += 1) {
+      expect(pos.getX(i)).toBeCloseTo(corners[i][0], 4);
+      expect(pos.getY(i)).toBeCloseTo(corners[i][1], 4);
+      expect(uv.getX(i)).toBeCloseTo(corners[i][0] / 0.1, 3);
+      expect(uv.getW(i)).toBeCloseTo(0.1, 6);
+    }
+    // the edge strip is on the edge, the spine corner is far from it
+    expect(uv.getZ(0)).toBeLessThan(1e-4);
+    expect(uv.getZ(7)).toBeGreaterThan(0.02);
+
+    clearKnifeFinish(root);
+    expect(mesh.material).toEqual([blade, edge]);
+    expect(handle.material).toBe(handleMat);
   });
 
   it('finishes every knife with every finish without throwing', () => {
