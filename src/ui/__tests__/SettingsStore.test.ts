@@ -152,6 +152,41 @@ describe('SettingsStore validation', () => {
     );
   });
 
+  it('validates the newer crosshair fields and fills them in for older saves', () => {
+    const clamped = validateSettings({
+      crosshair: { outlineThickness: 9, alpha: 0, dot: 'yes', tStyle: true },
+    }).crosshair;
+    expect(clamped).toMatchObject({ outlineThickness: 3, alpha: 0.1, dot: false, tStyle: true });
+
+    // a v3 save from before these fields existed keeps its crosshair and gains the defaults
+    const storage = new MemoryStorage();
+    storage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({
+      version: 3,
+      crosshair: { style: 'classic', size: 8, gap: 1, thickness: 2, color: '#ffffff', outline: false, dynamicSpread: false },
+    }));
+    expect(loadSettings(storage).crosshair).toEqual({
+      style: 'classic',
+      size: 8,
+      gap: 1,
+      thickness: 2,
+      color: '#ffffff',
+      outline: false,
+      outlineThickness: defaultSettings.crosshair.outlineThickness,
+      dot: false,
+      tStyle: false,
+      alpha: 1,
+      dynamicSpread: false,
+    });
+  });
+
+  it('keeps the graphics quality choice and rejects unknown presets', () => {
+    expect(validateSettings({ graphicsQuality: 'low' }).graphicsQuality).toBe('low');
+    expect(validateSettings({ graphicsQuality: 'ultra' }).graphicsQuality).toBe('auto');
+    const storage = new MemoryStorage();
+    saveSettings({ ...defaultSettings, graphicsQuality: 'high' }, storage);
+    expect(loadSettings(storage).graphicsQuality).toBe('high');
+  });
+
   it('drops unknown fields', () => {
     const settings = validateSettings({ ...defaultSettings, hax: true }) as unknown as Record<string, unknown>;
     expect(settings.hax).toBeUndefined();

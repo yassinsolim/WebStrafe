@@ -68,6 +68,29 @@ describe('computeCrosshairLayout', () => {
 
   it('draws nothing for a zero length classic crosshair', () => {
     expect(computeCrosshairLayout({ ...classic, size: 0 }).arms).toEqual([]);
+    expect(computeCrosshairLayout({ ...classic, size: 0 }).dot).toBeNull();
+  });
+
+  it('adds a centre dot to the classic style when asked', () => {
+    const layout = computeCrosshairLayout({ ...classic, dot: true });
+    expect(layout.arms).toHaveLength(4);
+    expect(layout.dot).toEqual({ x: -1, y: -1, w: 2, h: 2 });
+    // a dot alone survives a zero arm length
+    expect(computeCrosshairLayout({ ...classic, dot: true, size: 0 }).dot).not.toBeNull();
+  });
+
+  it('drops the top arm for the t style', () => {
+    const layout = computeCrosshairLayout({ ...classic, tStyle: true });
+    expect(layout.arms).toEqual([
+      { x: 3, y: -1, w: 6, h: 2 },
+      { x: -1, y: 3, w: 2, h: 6 },
+      { x: -9, y: -1, w: 6, h: 2 },
+    ]);
+  });
+
+  it('grows the extent with the outline thickness and ignores it without an outline', () => {
+    expect(computeCrosshairLayout({ ...classic, outlineThickness: 2.5 }).extent).toBe(11.5);
+    expect(computeCrosshairLayout({ ...classic, outline: false, outlineThickness: 2.5 }).extent).toBe(9);
   });
 });
 

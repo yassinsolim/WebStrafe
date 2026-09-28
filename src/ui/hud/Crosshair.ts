@@ -44,9 +44,15 @@ export class Crosshair {
   applySettings(settings: CrosshairSettings): void {
     this.settings = { ...settings };
     this.root.style.setProperty('--xh-color', settings.color);
+    this.root.style.setProperty('--xh-alpha', String(settings.alpha));
+    this.root.style.setProperty('--xh-outline-w', `${settings.outlineThickness}px`);
     this.root.classList.toggle('has-outline', settings.outline);
     this.root.dataset.style = settings.style;
     this.render(true);
+  }
+
+  getSettings(): CrosshairSettings {
+    return { ...this.settings };
   }
 
   /** weapon inaccuracy in radians, 0 when perfectly accurate */
