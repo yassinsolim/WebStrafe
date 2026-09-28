@@ -727,7 +727,6 @@ canvas {
 .knife-art-blade { fill: #d9dee6; }
 .knife-art-handle { fill: #6b7584; }
 .knife-art-guard { fill: #a3aab5; }
-.knife-art-legacy { color: #9aa3b0; }
 
 .menu-knife-card.is-selected .knife-art-blade { fill: #ffffff; }
 .menu-knife-card.is-selected .knife-art-handle { fill: var(--m-accent); }

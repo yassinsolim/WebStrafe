@@ -372,7 +372,7 @@ export class GameApp {
       onKnifeSelected: (knifeId) => {
         this.viewmodel.setKnife(knifeId);
         saveKnifeStyle(knifeId);
-        this.showStatus(`Knife: ${knifeId ? getKnife(knifeId).name : 'Legacy Knife'}`);
+        this.showStatus(`Knife: ${getKnife(knifeId ?? DEFAULT_KNIFE_ID).name}`);
         this.syncHudKnifeName();
       },
     });

@@ -1,15 +1,13 @@
-import { KNIFE_DAMAGE, KNIVES, getKnife, type KnifeId } from '../../combat/knives';
+import { DEFAULT_KNIFE_ID, KNIFE_DAMAGE, KNIVES, getKnife, type KnifeId } from '../../combat/knives';
 import { getWeapon, type WeaponId } from '../../combat/weapons';
 import { iconMarkup, type IconName } from '../hud/icons';
 import { knifeDescriptor, knifeSilhouetteMarkup } from './knifeSilhouette';
 import { firearmStats, weaponDisplayName } from './menuInfo';
 
 export interface LoadoutPanelCallbacks {
-  /** null = the authored (legacy) viewmodel knife */
+  /** null = the default knife */
   onKnifeSelected(knifeId: KnifeId | null): void;
 }
-
-const LEGACY_LABEL = 'Legacy Knife';
 
 /**
  * Loadout: the AWP and Deagle as fixed slots with their numbers from
@@ -80,14 +78,14 @@ export class LoadoutPanel {
       knifeDescriptor(knife),
       knifeSilhouetteMarkup(knife, 'knife-art'),
     ));
-    cards.push(this.knifeCard(null, LEGACY_LABEL, 'original imported model', iconMarkup('knife', 'knife-art knife-art-legacy')));
     this.grid.replaceChildren(...cards);
   }
 
   private renderKnifeSlot(): void {
-    const knife = this.selected ? getKnife(this.selected) : null;
-    const name = knife ? knife.name : LEGACY_LABEL;
-    const art = knife ? knifeSilhouetteMarkup(knife, 'loadout-icon knife-art') : iconMarkup('knife', 'loadout-icon');
+    // no saved pick means the viewmodel's default knife
+    const knife = getKnife(this.selected ?? DEFAULT_KNIFE_ID);
+    const name = knife.name;
+    const art = knifeSilhouetteMarkup(knife, 'loadout-icon knife-art');
     const d = KNIFE_DAMAGE;
     this.knifeSlot.innerHTML = [
       '<div class="loadout-slot-head"><span class="loadout-key">3</span><span class="loadout-role">Melee</span></div>',
@@ -101,7 +99,7 @@ export class LoadoutPanel {
       '</dl>',
     ].join('');
     (this.knifeSlot.querySelector('.loadout-name') as HTMLElement).textContent = name;
-    (this.knifeSlot.querySelector('.loadout-sub') as HTMLElement).textContent = knife ? knifeDescriptor(knife) : 'original imported model';
+    (this.knifeSlot.querySelector('.loadout-sub') as HTMLElement).textContent = knifeDescriptor(knife);
   }
 
   private knifeCard(id: KnifeId | null, name: string, detail: string, art: string): HTMLButtonElement {
