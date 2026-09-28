@@ -7,6 +7,16 @@ without an entry here are still credited in-game from their manifest fields.
 WebStrafe does not ship Valve or Counter-Strike assets. Anything not listed
 below is original WebStrafe work.
 
+## Player models
+
+- [Base human body under the armor (MakeHuman system assets, posed and skinned with the MPFB2 Blender add-on)](https://static.makehumancommunity.org/about/license.html) by MakeHuman Community. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `public/characters/armor.glb`.
+  MPFB2 itself (GPL) is only used as a build tool; the assets it places are CC0.
+- [Metal027, Metal009, MetalPlates017A, Fabric004, Leather014 and Scratches005 surface detail, baked into the armor atlas](https://ambientcg.com) by ambientCG. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `public/characters/armor_normal.webp`, `public/characters/armor_orm.webp`, `tools/blender/characters/textures/metal027_n.jpg`, `tools/blender/characters/textures/metal009_n.jpg`, `tools/blender/characters/textures/metalplates017a_n.jpg`, `tools/blender/characters/textures/fabric004_n.jpg`, `tools/blender/characters/textures/leather014_n.jpg`, `tools/blender/characters/textures/scratches005.jpg`.
+- [Bi-stretch fabric (undersuit detail), baked into the armor atlas](https://polyhaven.com/a/bi_stretch) by Poly Haven. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `tools/blender/characters/textures/bi_stretch_n.jpg`, `tools/blender/characters/textures/bi_stretch_r.jpg`.
+
 ## Audio
 
 - [Magnum Research Desert Eagle](https://freesound.org/people/areniporgen/sounds/712310/) by areniporgen. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
@@ -47,5 +57,7 @@ below is original WebStrafe work.
   Files: `public/viewmodels/v2/arms.glb`, `public/viewmodels/v2/deagle.glb`, `public/viewmodels/v2/awp.glb`.
 - Procedural player models by WebStrafe. License: Original work.
   Files: `src/multiplayer/ProceduralPlayer.ts`.
+- Strafe, Anvil, Vector and Quill armor sets (built by our Blender scripts in tools/blender/characters) by WebStrafe. License: Original work.
+  Files: `public/characters/armor.glb`, `public/characters/fp_armor.glb`, `tools/blender/characters/armor_sets.py`.
 - Placeholder gloves, knife and textures by WebStrafe. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
   Files: `public/cosmetics/models/gloves_placeholder.glb`, `public/cosmetics/models/knife_placeholder.glb`.

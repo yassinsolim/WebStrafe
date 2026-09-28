@@ -47,6 +47,8 @@ export async function optimizeArmor(output: string, inputs: string[]): Promise<v
       quantizePosition: 14,
       quantizeNormal: 10,
       quantizeColor: 8,
+      // atlas uvs: 12 bits would be a texel off at 4096
+      quantizeTexcoord: 16,
       quantizeWeight: 8,
     }),
     dedup(),

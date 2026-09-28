@@ -123,6 +123,16 @@ def copy_object(obj, name):
     return dup
 
 
+def transfer_normals(dst, src):
+    """custom split normals from the full-resolution piece onto a decimated copy"""
+    mod = dst.modifiers.new("normals", "DATA_TRANSFER")
+    mod.object = src
+    mod.use_loop_data = True
+    mod.data_types_loops = {"CUSTOM_NORMAL"}
+    mod.loop_mapping = "POLYINTERP_NEAREST"
+    apply_modifiers(dst)
+
+
 def decimate(obj, target_tris, symmetric=False):
     tris = tri_count(obj)
     if tris <= target_tris:

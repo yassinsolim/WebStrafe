@@ -1,20 +1,21 @@
-"""builds public/characters/armor.glb, the armored character part library.
+"""builds public/characters/armor.glb, the armored character part library,
+and its baked atlas. normally run through tools/characters/build-armor.sh.
 
   npx tsx tools/characters/export-rig.ts           # only when the skeleton changes
-  blender -b --factory-startup --python-exit-code 1 -P tools/blender/characters/build_characters.py -- \
-      --out .blender-tmp/characters/armor_raw.glb [--sets strafe,anvil] [--renders docs/screenshots/characters/blender] [--fast]
-  npx tsx tools/assets/optimize-glb.ts .blender-tmp/characters/armor_raw.glb public/characters/armor.glb
+  blender -b --python-exit-code 1 -P tools/blender/characters/build_characters.py -- \\
+      --out .blender-tmp/characters/armor_raw.glb [--sets strafe,anvil] [--atlas 4096]
 
-every piece is a signed distance field (csdf.py) meshed with openvdb, then
-per lod: decimated, projected back onto the exact surface, given smooth
-normals from the field, ambient occlusion and an edge wear mask in the vertex
-colours (r = ao, g = wear), a material slot, and skin weights on the shared
-skeleton (rig.json). the runtime merges whatever pieces a player picked into
-one skinned mesh per lod. see docs/assets/characters.md.
+the body is an MPFB2 human (mpfb_body.py, needs the extension) conformed onto
+the game skeleton (rig.json). the armor sets are polygon plates from the plate
+kit (armor_sets.py, armorkit.py). every full-resolution piece is uv packed
+into one shared atlas, lods are cut from it (custom normals carried over from
+the full piece), and the atlas is baked on lod0 (bake_atlas.py). each lod mesh
+carries a material slot, rigid or blended skin weights and set/slot extras;
+the runtime merges whatever pieces a player picked into one skinned mesh per
+lod. see docs/assets/characters.md.
 """
 
 import argparse
-import importlib
 import os
 import sys
 
@@ -30,7 +31,7 @@ import common  # noqa: E402
 import cbuild as B  # noqa: E402
 import csdf as S  # noqa: E402
 from body import body_sdf, body_weights  # noqa: E402
-from parts import Part, mirror_bone  # noqa: E402
+from parts import Anchor, Part, mirror_bone  # noqa: E402
 from rig import Rig  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
@@ -48,12 +49,171 @@ def parse_args():
     ap.add_argument("--no-body", action="store_true", help="skip the undersuit (per-set parallel builds)")
     ap.add_argument("--lod0-scale", type=float, default=1.0, help="multiplies every lod0 budget")
     ap.add_argument("--adaptivity", type=float, default=0.0, help="openvdb adaptivity before decimation")
+    ap.add_argument("--body", default="mpfb", choices=["mpfb", "sdf"], help="undersuit source")
+    ap.add_argument("--kit-lod0", type=float, default=0.3, help="lod0 share of the kit pieces as modelled")
+    ap.add_argument("--atlas", type=int, default=0, help="uv pack and bake the texture atlas at this size (0 = off)")
     return ap.parse_args(common.script_args())
 
 
 def body_part(rig, body):
     weights = lambda co: body_weights(rig, co)  # noqa: E731
     return Part("body", "core", "suit", body, "suit", weights=weights, voxel=0.0042, tris=(5200, 2000, 700), symmetric=True)
+
+
+def split_by_bones(obj, weights, bones, threshold=0.5):
+    """moves the faces mostly weighted to `bones` into their own object (gloves off the body)"""
+    import bmesh as _bm
+
+    n = len(obj.data.vertices)
+    total = np.zeros(n)
+    for w in weights.values():
+        total += w
+    part = np.zeros(n)
+    for b in bones:
+        if b in weights:
+            part += weights[b]
+    share = part / np.maximum(total, 1e-9)
+    dup = B.copy_object(obj, obj.name + "_split")
+    for ob, keep_hands in ((obj, False), (dup, True)):
+        bm = _bm.new()
+        bm.from_mesh(ob.data)
+        bm.verts.ensure_lookup_table()
+        dead = [f for f in bm.faces if (np.mean([share[v.index] for v in f.verts]) > threshold) != keep_hands]
+        _bm.ops.delete(bm, geom=dead, context="FACES")
+        bm.to_mesh(ob.data)
+        bm.free()
+        ob.data.update()
+    return dup
+
+
+def process_mesh(slot, set_id, name, obj, material, tris, arm, lods=(0, 1, 2)):
+    """a ready mesh (vertex groups named after game bones) -> lod copies, bound and tagged"""
+    made = []
+    for lod in lods:
+        target = tris[lod]
+        if target <= 0:
+            continue
+        dup = B.copy_object(obj, f"{slot}.{set_id}.{name}.lod{lod}")
+        B.decimate(dup, target, symmetric=True)
+        if B.tri_count(dup) > target * 1.5:
+            B.decimate(dup, target, symmetric=False)
+        dup.data.validate(clean_customdata=False)
+        dup.data.polygons.foreach_set("use_smooth", [True] * len(dup.data.polygons))
+        n = len(dup.data.vertices)
+        B.set_colors(dup, np.tile(np.array([[1.0, 0.0, 0.0, 1.0]]), (n, 1)))
+        B.set_material(dup, material)
+        dup.parent = arm
+        mod = dup.modifiers.new("Armature", "ARMATURE")
+        mod.object = arm
+        tag(dup, type("P", (), {"slot": slot, "set": set_id, "material": material})(), lod, name)
+        made.append(dup)
+    B.log(f"{slot}.{set_id}.{name}: lod0 {B.tri_count(made[0]) if made else 0} tris (mesh)")
+    return made
+
+
+def kit_bone_weights(obj, spec, rig):
+    """armor_sets bone spec (mpfb names, 'a:0.8,b:0.2' blends, or 'cape') -> game bone weights"""
+    import mpfb_body
+
+    n = len(obj.data.vertices)
+    if spec == "cape":
+        co = B.to_three(B.get_co(obj))
+        chain = ["spine_3", "cape_0", "cape_1", "cape_2", "cape_3"]
+        ys = np.array([rig.p(b)[1] for b in chain])
+        out = {b: np.zeros(n) for b in chain}
+        for i, y in enumerate(co[:, 1]):
+            k = int(np.clip(np.searchsorted(-ys, -y) - 1, 0, len(chain) - 2))
+            t = float(np.clip((ys[k] - y) / max(ys[k] - ys[k + 1], 1e-6), 0, 1))
+            out[chain[k]][i] += 1 - t
+            out[chain[k + 1]][i] += t
+        return out
+    out = {}
+    for item in spec.split(","):
+        name, _, w = item.partition(":")
+        bone = mpfb_body.BONE_MAP[name.strip()]
+        out[bone] = out.get(bone, np.zeros(n)) + (float(w) if w else 1.0)
+    return out
+
+
+# lod1 and lod2 as shares of lod0
+KIT_LODS = ((0, 1.0), (1, 0.4), (2, 0.14))
+# thin strips and straps fall apart under collapse, never go below this per piece
+KIT_FLOOR = {0: 260, 1: 60, 2: 12}
+
+
+def kit_sources(body, points, sets, slots):
+    import armor_sets as AS
+
+    k = AS.Kit(body, points)
+    for sid in sets:
+        AS.build_set(k, sid, slots)
+    anchors = [Anchor(sid, kind, bone, B.to_three(np.array(p[:])), B.to_three(np.array(n[:])), (0, 1, 0), size)
+               for sid, kind, bone, p, n, size in k.anchors]
+    return k.pieces, anchors
+
+
+def kit_lods(pieces, rig, arm, lod0_ratio):
+    made = []
+    per_set = {}
+    for ob, spec, mat, slot, sid in pieces:
+        name = ob.name.split(".")[-1]
+        weights = kit_bone_weights(ob, spec, rig)
+        base = B.tri_count(ob)
+        for lod, frac in KIT_LODS:
+            # helmets fill the frame in the menu and the customize screen: twice the density up close
+            ratio = min(1.0, lod0_ratio * (2.0 if slot == "helmet" else 1.0))
+            target = max(int(base * frac * ratio), min(base, KIT_FLOOR[lod]))
+            dup = B.copy_object(ob, f"{slot}.{sid}.{name}.lod{lod}")
+            B.decimate(dup, max(12, target))
+            dup.data.validate(clean_customdata=False)
+            if B.tri_count(dup) < base:
+                B.transfer_normals(dup, ob)
+            nv = len(dup.data.vertices)
+            B.set_colors(dup, np.tile(np.array([[1.0, 0.0, 0.0, 1.0]]), (nv, 1)))
+            B.set_material(dup, mat)
+            w = kit_bone_weights(dup, spec, rig) if spec == "cape" else {b: np.full(nv, v[0]) for b, v in weights.items()}
+            B.bind(dup, arm, w)
+            tag(dup, type("P", (), {"slot": slot, "set": sid, "material": mat})(), lod, name)
+            made.append(dup)
+            if lod == 0:
+                per_set[(sid, slot)] = per_set.get((sid, slot), 0) + B.tri_count(dup)
+        bpy.data.objects.remove(ob, do_unlink=True)
+    for (sid, slot), tris in sorted(per_set.items()):
+        B.log(f"{sid}.{slot}: lod0 {tris} tris")
+    return made
+
+
+BODY_TRIS = (7000, 2800, 1000)
+HAND_TRIS = (2000, 800, 280)
+
+
+def mpfb_body_parts(rig, arm, keep=False):
+    import mpfb_body
+
+    body, weights, points = mpfb_body.build(rig, with_points=True)
+    body.vertex_groups.clear()
+    for bone, w in weights.items():
+        nz = np.nonzero(w > 1e-4)[0]
+        if len(nz) == 0:
+            continue
+        vg = body.vertex_groups.new(name=bone)
+        q = np.round(w[nz], 3)
+        for value in np.unique(q):
+            vg.add(nz[q == value].tolist(), float(value), "REPLACE")
+    ref = B.copy_object(body, "mpfb_reference")
+    hands = split_by_bones(body, weights, ["hand_l", "hand_r"], threshold=0.5)
+    if keep == "sources":
+        ref.vertex_groups.clear()
+        return body, hands, ref, points
+    made = process_mesh("body", "core", "suit", body, "suit", BODY_TRIS, arm)
+    made += process_mesh("body", "core", "hands", hands, "dark", HAND_TRIS, arm)
+    bpy.data.objects.remove(body, do_unlink=True)
+    bpy.data.objects.remove(hands, do_unlink=True)
+    if keep:
+        ref.vertex_groups.clear()
+        return made, ref, points
+    bpy.data.objects.remove(ref, do_unlink=True)
+    return made
 
 
 def mirror_object(src, name, normals):
@@ -198,7 +358,16 @@ def render_previews(folder, sets):
 
 def main():
     args = parse_args()
-    common.reset_scene()
+    if args.body == "mpfb" and not args.no_body:
+        # a factory reset would unload the mpfb extension; clear the scene by hand
+        for ob in list(bpy.data.objects):
+            bpy.data.objects.remove(ob, do_unlink=True)
+        for block in (bpy.data.meshes, bpy.data.materials, bpy.data.armatures, bpy.data.images):
+            for item in list(block):
+                block.remove(item)
+        bpy.context.scene.unit_settings.system = "METRIC"
+    else:
+        common.reset_scene()
     rig = Rig()
     arm = B.build_armature(rig)
     body = body_sdf(rig)
@@ -206,21 +375,41 @@ def main():
     sets = [s for s in args.sets.split(",") if s]
 
     parts, anchors = [], []
-    if not args.no_body and (not only or "body" in only):
-        parts.append(body_part(rig, body))
-    for set_id in sets:
-        if set_id == "none":
-            continue
-        module = importlib.import_module(f"set_{set_id}")
-        set_parts, set_anchors = module.build(rig)
-        parts += [p for p in set_parts if not only or p.slot in only]
-        anchors += set_anchors
+    mesh_made = []
+    kit_sets = [s for s in sets if s != "none"]
+    if kit_sets:
+        import bake_atlas
+
+        body_src, hands_src, ref, points = mpfb_body_parts(rig, arm, keep="sources")
+        slots = tuple(s for s in ("helmet", "arms", "chest", "legs", "classItem") if not only or s in only)
+        pieces, anchors = kit_sources(ref, points, kit_sets, slots)
+        bpy.data.objects.remove(ref, do_unlink=True)
+        with_body = not args.no_body and (not only or "body" in only)
+        keep_uv = [body_src, hands_src] if with_body else []
+        if args.atlas:
+            bake_atlas.unwrap_and_pack([p[0] for p in pieces], keep_uv)
+        if with_body:
+            mesh_made += process_mesh("body", "core", "suit", body_src, "suit", BODY_TRIS, arm)
+            mesh_made += process_mesh("body", "core", "hands", hands_src, "dark", HAND_TRIS, arm)
+        for ob in (body_src, hands_src):
+            bpy.data.objects.remove(ob, do_unlink=True)
+        mesh_made += kit_lods(pieces, rig, arm, args.kit_lod0)
+        if args.atlas:
+            lod0 = [o for o in mesh_made if o.get("lod") == 0]
+            body0 = [o for o in lod0 if o.get("slot") == "body"]
+            groups = [(body0, [])] + [([o for o in lod0 if o.get("set") == sid], body0) for sid in kit_sets]
+            bake_atlas.run(lod0, groups, args.atlas, os.path.dirname(os.path.abspath(args.out)))
+    elif not args.no_body and (not only or "body" in only):
+        if args.body == "mpfb":
+            mesh_made = mpfb_body_parts(rig, arm)
+        else:
+            parts.append(body_part(rig, body))
 
     # ao sees the body plus every piece of the same slot and set
     groups = {}
     for p in parts:
         groups.setdefault((p.slot, p.set), []).append(p.sdf)
-    made = []
+    made = list(mesh_made)
     for p in parts:
         scene_fn = body if p.slot == "body" else S.Union([body] + groups[(p.slot, p.set)])
         made += process(p, arm, scene_fn, args.fast, args.lod0_scale, args.adaptivity)
