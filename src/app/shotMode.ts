@@ -9,6 +9,7 @@ import { devToolsEnabled } from './devTools';
  * &perf=<s> (frame timing, clip keeps looping)&scope=1|2&pr=<pixel ratio>
  * &dpr=<screen ratio to emulate>&adaptive=0|1&qa=1 (window.__qa test hooks)
  * &quality=low|medium|high (graphics preset for this run)
+ * &hudDemo=1|board|death|low|kill|body (sample killfeed, scores and hit feedback)
  * it drops straight into the map without pointer lock, poses the viewmodel,
  * freezes it and sets window.__shotReady once a few frames have drawn.
  * dev server and preview builds only. without qa=1 it plays offline; qa=1
@@ -41,6 +42,8 @@ export interface ShotRequest {
   qa: boolean;
   /** graphics preset for this run, null keeps the saved setting */
   quality: GraphicsQuality | null;
+  /** fills the hud with sample data for screenshots: 1, board, death, low, kill, body */
+  hudDemo: string | null;
 }
 
 export function parseShotRequest(search: string, enabled = devToolsEnabled()): ShotRequest | null {
@@ -82,6 +85,7 @@ export function parseShotRequest(search: string, enabled = devToolsEnabled()): S
     qa: params.get('qa') === '1',
     adaptive: params.has('adaptive') ? params.get('adaptive') !== '0' : null,
     quality: parseQuality(params.get('quality')),
+    hudDemo: params.get('hudDemo') || null,
   };
 }
 

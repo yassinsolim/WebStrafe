@@ -18,6 +18,14 @@ export interface CrosshairSettings {
   /** #rrggbb */
   color: string;
   outline: boolean;
+  /** outline width in css px, used when outline is on */
+  outlineThickness: number;
+  /** centre dot on the classic style (circle + dot always has one) */
+  dot: boolean;
+  /** classic without the top arm, like cs2's t style */
+  tStyle: boolean;
+  /** 0.1..1, applies to the lines and the outline */
+  alpha: number;
   /** widen the gap with the weapon's current inaccuracy */
   dynamicSpread: boolean;
 }
@@ -75,6 +83,8 @@ export const SETTING_LIMITS = {
   crosshairSize: { min: 0, max: 20, step: 0.5 },
   crosshairGap: { min: -4, max: 20, step: 0.5 },
   crosshairThickness: { min: 0.5, max: 6, step: 0.5 },
+  crosshairOutline: { min: 0.5, max: 3, step: 0.5 },
+  crosshairAlpha: { min: 0.1, max: 1, step: 0.05 },
 } as const satisfies Record<string, RangeLimit>;
 
 export const defaultCrosshair: CrosshairSettings = {
@@ -84,6 +94,10 @@ export const defaultCrosshair: CrosshairSettings = {
   thickness: 1.5,
   color: '#4dff94',
   outline: true,
+  outlineThickness: 1,
+  dot: false,
+  tStyle: false,
+  alpha: 1,
   dynamicSpread: true,
 };
 
@@ -151,6 +165,10 @@ export function validateCrosshair(raw: unknown, base: CrosshairSettings = defaul
     thickness: clampNumber(src.thickness, limits.crosshairThickness, base.thickness),
     color: normalizeHexColor(src.color) ?? base.color,
     outline: readBoolean(src.outline, base.outline),
+    outlineThickness: clampNumber(src.outlineThickness, limits.crosshairOutline, base.outlineThickness),
+    dot: readBoolean(src.dot, base.dot),
+    tStyle: readBoolean(src.tStyle, base.tStyle),
+    alpha: clampNumber(src.alpha, limits.crosshairAlpha, base.alpha),
     dynamicSpread: readBoolean(src.dynamicSpread, base.dynamicSpread),
   };
 }

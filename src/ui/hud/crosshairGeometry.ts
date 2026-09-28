@@ -9,7 +9,7 @@ export interface CrosshairRect {
 }
 
 export interface CrosshairLayout {
-  /** top, right, bottom, left, empty when the style has no arms */
+  /** top, right, bottom, left (t style drops the top), empty when the style has no arms */
   arms: CrosshairRect[];
   dot: CrosshairRect | null;
   circle: { radius: number; thickness: number } | null;
@@ -37,7 +37,7 @@ export function spreadToPixels(spreadRad: number, verticalFovDeg: number, viewpo
 export function computeCrosshairLayout(settings: CrosshairSettings, spreadPx = 0): CrosshairLayout {
   const spread = settings.dynamicSpread ? Math.max(0, spreadPx) : 0;
   const t = Math.max(0.5, settings.thickness);
-  const outline = settings.outline ? 1 : 0;
+  const outline = settings.outline ? Math.max(0, settings.outlineThickness ?? 1) : 0;
   const dotSize = Math.max(t, 2);
 
   if (settings.style === 'dot') {
@@ -57,8 +57,9 @@ export function computeCrosshairLayout(settings: CrosshairSettings, spreadPx = 0
 
   const gap = settings.gap + spread;
   const length = Math.max(0, settings.size);
+  const dot = settings.dot ? centered(dotSize) : null;
   if (length <= 0) {
-    return { arms: [], dot: null, circle: null, extent: outline };
+    return { arms: [], dot, circle: null, extent: (dot ? dotSize / 2 : 0) + outline };
   }
   const half = t / 2;
   const arms: CrosshairRect[] = [
@@ -67,8 +68,11 @@ export function computeCrosshairLayout(settings: CrosshairSettings, spreadPx = 0
     { x: -half, y: gap, w: t, h: length },
     { x: -(gap + length), y: -half, w: length, h: t },
   ];
-  const extent = Math.max(Math.abs(gap + length), Math.abs(gap), half) + outline;
-  return { arms, dot: null, circle: null, extent };
+  if (settings.tStyle) {
+    arms.shift();
+  }
+  const extent = Math.max(Math.abs(gap + length), Math.abs(gap), half, dot ? dotSize / 2 : 0) + outline;
+  return { arms, dot, circle: null, extent };
 }
 
 /** snaps a rect to the device pixel grid so thin lines stay crisp */

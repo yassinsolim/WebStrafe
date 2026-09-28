@@ -24,6 +24,8 @@ below is original WebStrafe work.
   Loaded from Google Fonts.
 - [Space Mono](https://fonts.google.com/specimen/Space+Mono) by Colophon Foundry (The Space Mono Project Authors). License: [SIL Open Font License 1.1](https://openfontlicense.org/open-font-license-official-text/).
   Loaded from Google Fonts.
+- [Barlow Semi Condensed](https://fonts.google.com/specimen/Barlow+Semi+Condensed) by Jeremy Tribby (The Barlow Project Authors). License: [SIL Open Font License 1.1](https://openfontlicense.org/open-font-license-official-text/).
+  Loaded from Google Fonts. Used for hud numbers and body text because it has tabular figures.
 
 ## Software
 
@@ -39,8 +41,8 @@ below is original WebStrafe work.
   Files: `src/cosmetics/ProceduralKnife.ts`, `src/combat/knives.ts`.
 - Procedural sound effects (movement, knife, bolt, slide, confirms, UI) by WebStrafe. License: Original work.
   Files: `src/audio/ProceduralSfx.ts`.
-- HUD, menu, crosshair and weapon icons by WebStrafe. License: Original work.
-  Files: `src/ui/hud/icons.ts`.
+- HUD, menu, crosshair, logo mark and weapon icons by WebStrafe. License: Original work.
+  Files: `src/ui/hud/icons.ts`, `src/ui/brand.ts`, `public/favicon.svg`.
 - Prismline, Emberdrift, Ochre Cut and the movement test scene (built by our Blender scripts in tools/blender/maps) by WebStrafe. License: Original work.
   Files: `public/maps/surf_prismline/scene.glb`, `public/maps/bhop_emberdrift/scene.glb`, `public/maps/aim_ochrecut/scene.glb`, `public/maps/movement_test_scene/scene.glb`.
 - First-person arms, wristwatch, Deagle and AWP (built by our Blender scripts in tools/blender) by WebStrafe. License: Original work.
