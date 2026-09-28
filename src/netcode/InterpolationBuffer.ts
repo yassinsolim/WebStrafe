@@ -21,7 +21,10 @@ export interface SampledState {
 
 /** long enough to ride out a tcp retransmit stall (~200-300 ms) without freezing */
 export const MAX_EXTRAPOLATION_MS = 250;
-/** A gap bigger than this between two samples is a respawn or reset, not motion. */
+/**
+ * A gap bigger than this (or than the samples' speed can cover, whichever is
+ * larger) between two samples is a respawn or reset, not motion.
+ */
 export const TELEPORT_DISTANCE_M = 6;
 const MAX_SAMPLES = 48;
 
@@ -133,10 +136,17 @@ export function interpolateSamples(a: EntitySample, b: EntitySample, atT: number
   const dx = b.position[0] - a.position[0];
   const dy = b.position[1] - a.position[1];
   const dz = b.position[2] - a.position[2];
-  if (dx * dx + dy * dy + dz * dz > TELEPORT_DISTANCE_M * TELEPORT_DISTANCE_M) {
+  const h = spanMs / 1000;
+  // a gap the samples' own speed can't explain is a respawn/reset: snap. at
+  // full-room send rates (~1.8 Hz) a 16 m/s bhop covers 9 m between samples,
+  // so a fixed distance would snap every fast player every sample
+  const speedA = Math.hypot(a.velocity[0], a.velocity[1], a.velocity[2]);
+  const speedB = Math.hypot(b.velocity[0], b.velocity[1], b.velocity[2]);
+  const explained = ((speedA + speedB) / 2) * h * 1.5 + 1;
+  const limit = Math.max(TELEPORT_DISTANCE_M, explained);
+  if (dx * dx + dy * dy + dz * dz > limit * limit) {
     return fromSample(u < 1 ? a : b, 'interp');
   }
-  const h = spanMs / 1000;
   const u2 = u * u;
   const u3 = u2 * u;
   const h00 = 2 * u3 - 3 * u2 + 1;
