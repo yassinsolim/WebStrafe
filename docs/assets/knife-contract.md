@@ -30,7 +30,7 @@ a pivot must never carry the mesh itself.
 | node | knives | motion |
 |---|---|---|
 | `blade_pivot` | folders: flip, falchion, navaja, stiletto, talon, ursus, nomad | `rotation.z` 0 is open, -PI is closed into the handle |
-| `handle_safe`, `handle_bite` | butterfly | `rotation.z` 0 is open (handles together); `handle_safe` closes to +PI over the spine, `handle_bite` to -PI under the edge |
+| `handle_safe`, `handle_bite` | butterfly | `rotation.z` 0 is open (handles together); `handle_safe` closes to -PI and `handle_bite` to +PI, so the halves swing round the spine and edge without crossing (the procedural fallback knife uses the opposite signs) |
 | `socket_grip` | all | centre of a hammer-grip fist on the handle |
 | `socket_tip` | all | blade tip (child of `blade_pivot` on folders) |
 | `socket_ring` | karambit, talon | centre of the finger ring. Its local +Z is the ring's axis (the direction a finger goes through) |

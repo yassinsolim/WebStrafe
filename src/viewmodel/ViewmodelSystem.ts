@@ -619,8 +619,11 @@ export class ViewmodelSystem {
   private applyKnifeParts(rig: KnifeRig): void {
     const open = this.channel('knifeOpen');
     if (rig.bladePivot) rig.bladePivot.rotation.z = -Math.PI * (1 - Math.min(1.05, Math.max(0, open)));
-    if (rig.handleSafe) rig.handleSafe.rotation.z = Math.PI * this.channel('baliSafe');
-    if (rig.handleBite) rig.handleBite.rotation.z = -Math.PI * this.channel('baliBite');
+    // the blender balisong swings the safe handle the other way round (spine
+    // side pin), so the halves never pass through each other mid swing
+    const bali = isKnifeModel(rig.knife) ? -1 : 1;
+    if (rig.handleSafe) rig.handleSafe.rotation.z = bali * Math.PI * this.channel('baliSafe');
+    if (rig.handleBite) rig.handleBite.rotation.z = -bali * Math.PI * this.channel('baliBite');
     // spins and rolls happen about the pivot (ring centre or grip) inside the hand
     rig.spin.position.copy(rig.pivotLocal);
     const toss = this.channel('tossY');
