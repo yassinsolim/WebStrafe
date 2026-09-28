@@ -295,6 +295,14 @@
     "lightMapIntensity": 10.9956,
     "lightmapMode": "indirect",
     "indirectIntensity": 1.0,
-    "envIntensity": 1.0
+    "envIntensity": 1.0,
+    "grade": {
+      "exposure": 1.05,
+      "contrast": 1.1,
+      "saturation": 1.06,
+      "temperature": 0.02,
+      "vignette": 0.26,
+      "bloom": 0.09
+    }
   }
 }
