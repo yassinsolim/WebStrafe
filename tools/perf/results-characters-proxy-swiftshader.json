@@ -359,6 +359,121 @@
           "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&chars=6&charlook=max&charspace=0.9&chardist=6"
         }
       ]
+    },
+    "D (final): merged 32c195c, low 1.5/3 without atlas, medium 2.5/7; main c9ab3e6 (with #47) at the same presets (mlow/mbal); 1-min load under 4, 30 s cooldown per job": {
+      "bal_0": [
+        {
+          "fpsMedian": 4.6,
+          "fps1Low": 3.4,
+          "frameMsP95": 285,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium"
+        },
+        {
+          "fpsMedian": 4.5,
+          "fps1Low": 3.8,
+          "frameMsP95": 258.3,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium"
+        }
+      ],
+      "bal_6": [
+        {
+          "fpsMedian": 4,
+          "fps1Low": 3.2,
+          "frameMsP95": 309,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        },
+        {
+          "fpsMedian": 3.9,
+          "fps1Low": 3.1,
+          "frameMsP95": 309.8,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        }
+      ],
+      "low_0": [
+        {
+          "fpsMedian": 9.9,
+          "fps1Low": 6.7,
+          "frameMsP95": 124.8,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low"
+        },
+        {
+          "fpsMedian": 10.2,
+          "fps1Low": 8.6,
+          "frameMsP95": 110,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low"
+        }
+      ],
+      "low_6": [
+        {
+          "fpsMedian": 9.1,
+          "fps1Low": 6.6,
+          "frameMsP95": 134.3,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        },
+        {
+          "fpsMedian": 8.6,
+          "fps1Low": 7,
+          "frameMsP95": 126.7,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        }
+      ],
+      "mbal_0": [
+        {
+          "fpsMedian": 4.8,
+          "fps1Low": 3.1,
+          "frameMsP95": 281.9,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium"
+        },
+        {
+          "fpsMedian": 4.8,
+          "fps1Low": 3.6,
+          "frameMsP95": 266.4,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium"
+        }
+      ],
+      "mbal_6": [
+        {
+          "fpsMedian": 4.4,
+          "fps1Low": 3.6,
+          "frameMsP95": 265.7,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        },
+        {
+          "fpsMedian": 4.5,
+          "fps1Low": 3.2,
+          "frameMsP95": 283.4,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=medium&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        }
+      ],
+      "mlow_0": [
+        {
+          "fpsMedian": 10.8,
+          "fps1Low": 8.7,
+          "frameMsP95": 109.5,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low"
+        },
+        {
+          "fpsMedian": 10.8,
+          "fps1Low": 7.5,
+          "frameMsP95": 109.3,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low"
+        }
+      ],
+      "mlow_6": [
+        {
+          "fpsMedian": 10,
+          "fps1Low": 5.7,
+          "frameMsP95": 126.6,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        },
+        {
+          "fpsMedian": 10,
+          "fps1Low": 6.3,
+          "frameMsP95": 125.3,
+          "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0&quality=low&chars=6&charlook=max&charspace=0.9&chardist=3.2"
+        }
+      ]
     }
-  }
+  },
+  "load_D": "round D: load average 3.5 to 4.0 at every job start; the simple far-lod shader landed after round D and was not re-measured (load stayed 5 to 19 for the next five hours)"
 }
