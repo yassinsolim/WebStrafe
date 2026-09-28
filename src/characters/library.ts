@@ -131,79 +131,89 @@ export class CharacterLibrary {
   }
 
   private addPart(mesh: SkinnedMesh, extras: Record<string, unknown>): void {
-    const geometry = mesh.geometry;
-    const position = geometry.getAttribute('position');
-    const normal = geometry.getAttribute('normal');
-    const color = geometry.getAttribute('color');
-    const skinIndex = geometry.getAttribute('skinIndex');
-    const skinWeight = geometry.getAttribute('skinWeight');
-    if (!position || !normal || !skinIndex || !skinWeight) return;
-    const material = String(extras.mat ?? 'primary') as MaterialSlot;
-    if (!MATERIAL_SLOTS.includes(material)) return;
-
-    // quantized meshes carry their dequantization in the bind matrices; in the
-    // rest pose every bone gives the same model-space transform
-    const skeleton = mesh.skeleton;
-    const toModel = new Matrix4()
-      .copy(mesh.matrixWorld)
-      .multiply(mesh.bindMatrixInverse)
-      .multiply(skeleton.bones[0].matrixWorld)
-      .multiply(skeleton.boneInverses[0])
-      .multiply(mesh.bindMatrix);
-    const normalMatrix = new Matrix3().getNormalMatrix(toModel);
-    const remap = skeleton.bones.map((bone) => JOINT_INDEX.get(bone.name) ?? 0);
-
-    const count = position.count;
-    const pos = new Float32Array(count * 3);
-    const nrm = new Float32Array(count * 3);
-    const occ = new Float32Array(count * 2);
-    const sIdx = new Uint16Array(count * 4);
-    const sW = new Float32Array(count * 4);
-    for (let i = 0; i < count; i += 1) {
-      tmpV.fromBufferAttribute(position, i).applyMatrix4(toModel);
-      pos[i * 3] = tmpV.x;
-      pos[i * 3 + 1] = tmpV.y;
-      pos[i * 3 + 2] = tmpV.z;
-      tmpN.fromBufferAttribute(normal, i).applyMatrix3(normalMatrix).normalize();
-      nrm[i * 3] = tmpN.x;
-      nrm[i * 3 + 1] = tmpN.y;
-      nrm[i * 3 + 2] = tmpN.z;
-      occ[i * 2] = color ? color.getX(i) : 1;
-      occ[i * 2 + 1] = color ? color.getY(i) : 0;
-      tmpSkin.set(skinIndex.getX(i), skinIndex.getY(i), skinIndex.getZ(i), skinIndex.getW(i));
-      sIdx[i * 4] = remap[tmpSkin.x] ?? 0;
-      sIdx[i * 4 + 1] = remap[tmpSkin.y] ?? 0;
-      sIdx[i * 4 + 2] = remap[tmpSkin.z] ?? 0;
-      sIdx[i * 4 + 3] = remap[tmpSkin.w] ?? 0;
-      tmpSkin.set(skinWeight.getX(i), skinWeight.getY(i), skinWeight.getZ(i), skinWeight.getW(i));
-      const total = tmpSkin.x + tmpSkin.y + tmpSkin.z + tmpSkin.w || 1;
-      sW[i * 4] = tmpSkin.x / total;
-      sW[i * 4 + 1] = tmpSkin.y / total;
-      sW[i * 4 + 2] = tmpSkin.z / total;
-      sW[i * 4 + 3] = tmpSkin.w / total;
-    }
-    const index = geometry.index
-      ? Uint32Array.from(geometry.index.array as ArrayLike<number>)
-      : Uint32Array.from({ length: count }, (_, i) => i);
-
-    const part: PartMesh = {
-      slot: String(extras.slot),
-      set: String(extras.set),
-      part: String(extras.part ?? mesh.name),
-      lod: Number(extras.lod ?? 0),
-      material,
-      position: pos,
-      normal: nrm,
-      occlusion: occ,
-      skinIndex: sIdx,
-      skinWeight: sW,
-      index,
-    };
+    const part = extractPart(mesh, extras, JOINT_INDEX);
+    if (!part) return;
     const key = `${part.slot}.${part.set}.${part.lod}`;
     const list = this.parts.get(key) ?? [];
     list.push(part);
     this.parts.set(key, list);
   }
+}
+
+/**
+ * reads one skinned part into plain model-space arrays with its joints mapped
+ * onto `jointIndex` (bone name -> index in the target skeleton)
+ */
+export function extractPart(mesh: SkinnedMesh, extras: Record<string, unknown>, jointIndex: Map<string, number>): PartMesh | null {
+  const geometry = mesh.geometry;
+  const position = geometry.getAttribute('position');
+  const normal = geometry.getAttribute('normal');
+  const color = geometry.getAttribute('color');
+  const skinIndex = geometry.getAttribute('skinIndex');
+  const skinWeight = geometry.getAttribute('skinWeight');
+  if (!position || !normal || !skinIndex || !skinWeight) return null;
+  const material = String(extras.mat ?? 'primary') as MaterialSlot;
+  if (!MATERIAL_SLOTS.includes(material)) return null;
+
+  // quantized meshes carry their dequantization in the bind matrices; in the
+  // rest pose every bone gives the same model-space transform
+  const skeleton = mesh.skeleton;
+  const toModel = new Matrix4()
+    .copy(mesh.matrixWorld)
+    .multiply(mesh.bindMatrixInverse)
+    .multiply(skeleton.bones[0].matrixWorld)
+    .multiply(skeleton.boneInverses[0])
+    .multiply(mesh.bindMatrix);
+  const normalMatrix = new Matrix3().getNormalMatrix(toModel);
+  const remap = skeleton.bones.map((bone) => jointIndex.get(bone.name) ?? 0);
+
+  const count = position.count;
+  const pos = new Float32Array(count * 3);
+  const nrm = new Float32Array(count * 3);
+  const occ = new Float32Array(count * 2);
+  const sIdx = new Uint16Array(count * 4);
+  const sW = new Float32Array(count * 4);
+  for (let i = 0; i < count; i += 1) {
+    tmpV.fromBufferAttribute(position, i).applyMatrix4(toModel);
+    pos[i * 3] = tmpV.x;
+    pos[i * 3 + 1] = tmpV.y;
+    pos[i * 3 + 2] = tmpV.z;
+    tmpN.fromBufferAttribute(normal, i).applyMatrix3(normalMatrix).normalize();
+    nrm[i * 3] = tmpN.x;
+    nrm[i * 3 + 1] = tmpN.y;
+    nrm[i * 3 + 2] = tmpN.z;
+    occ[i * 2] = color ? color.getX(i) : 1;
+    occ[i * 2 + 1] = color ? color.getY(i) : 0;
+    tmpSkin.set(skinIndex.getX(i), skinIndex.getY(i), skinIndex.getZ(i), skinIndex.getW(i));
+    sIdx[i * 4] = remap[tmpSkin.x] ?? 0;
+    sIdx[i * 4 + 1] = remap[tmpSkin.y] ?? 0;
+    sIdx[i * 4 + 2] = remap[tmpSkin.z] ?? 0;
+    sIdx[i * 4 + 3] = remap[tmpSkin.w] ?? 0;
+    tmpSkin.set(skinWeight.getX(i), skinWeight.getY(i), skinWeight.getZ(i), skinWeight.getW(i));
+    const total = tmpSkin.x + tmpSkin.y + tmpSkin.z + tmpSkin.w || 1;
+    sW[i * 4] = tmpSkin.x / total;
+    sW[i * 4 + 1] = tmpSkin.y / total;
+    sW[i * 4 + 2] = tmpSkin.z / total;
+    sW[i * 4 + 3] = tmpSkin.w / total;
+  }
+  const index = geometry.index
+    ? Uint32Array.from(geometry.index.array as ArrayLike<number>)
+    : Uint32Array.from({ length: count }, (_, i) => i);
+
+const part: PartMesh = {
+    slot: String(extras.slot),
+    set: String(extras.set),
+    part: String(extras.part ?? mesh.name),
+    lod: Number(extras.lod ?? 0),
+    material,
+    position: pos,
+    normal: nrm,
+    occlusion: occ,
+    skinIndex: sIdx,
+    skinWeight: sW,
+    index,
+  };
+  return part;
 }
 
 /** concatenates part meshes into one skinned geometry with a per-vertex material slot */

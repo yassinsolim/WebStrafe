@@ -2,7 +2,7 @@ import type { MultiplayerSnapshotPlayer, PlayerModel } from '../network/types';
 import { devToolsEnabled } from '../app/devTools';
 import { ARMOR_SETS, ARMOR_SLOTS, type ArmorSetId } from './catalog';
 import type { CharacterLibrary } from './library';
-import { encodeLook, lookForBot, randomLook, type CharacterLook } from './look';
+import { decodeLook, defaultLook, encodeLook, lookForBot, randomLook, type CharacterLook } from './look';
 import { BUILTIN_PRESETS } from './presets';
 
 /**
@@ -32,6 +32,13 @@ export function parseDevCharacters(search: string, enabled = devToolsEnabled()):
     spacing: Number(params.get('charspace') ?? 1.1) || 1.1,
     thirdPerson: params.get('cam') === 'third',
   };
+}
+
+/** dev and preview only: `?look=<wire>` wears a look for this page load without saving it */
+export function parseDevLook(search: string, team: PlayerModel, enabled = devToolsEnabled()): CharacterLook | null {
+  if (!enabled) return null;
+  const wire = new URLSearchParams(search).get('look');
+  return wire ? decodeLook(wire, defaultLook(team)) : null;
 }
 
 /** the heaviest combination the library has: most triangles in every slot, plus emblem and tag */

@@ -351,6 +351,7 @@ export class GameApp {
       worldScene: this.worldScene,
       team: this.getPlayerModelFromLoadout(this.loadout),
       onLookChanged: () => this.syncMultiplayerIdentity(),
+      viewmodel: this.viewmodel,
     });
     this.viewmodel.setKnife(loadKnifeStyle());
     this.activeKnifeSoundProfile = this.getKnifeSoundProfileFromLoadout(this.loadout);

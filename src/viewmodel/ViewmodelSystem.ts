@@ -3,6 +3,8 @@ import { sharedGltfLoader } from '../assets/gltfLoader';
 import { DEFAULT_KNIFE_ID, getKnife, isKnifeId, type KnifeId } from '../combat/knives';
 import { buildProceduralKnife, disposeProceduralKnife, KNIFE_NODES } from '../cosmetics/ProceduralKnife';
 import { ArmsRig } from './ArmsRig';
+import { FirstPersonArmor } from '../characters/fpArmor';
+import type { CharacterLook } from '../characters/look';
 import { sampleClip, retime, type Clip } from './clips';
 import { blendHandPose, createHandPose, HAND_POSES, type HandPoseName } from './handPoses';
 import { frameFromAxes, frameFromXZ, frameFromYZ } from './ik';
@@ -163,6 +165,8 @@ export class ViewmodelSystem {
   public onEvent: ((name: string, item: ViewItem) => void) | null = null;
 
   private arms: ArmsRig | null = null;
+  /** the player's gauntlets or sleeves over the arms, see characters/fpArmor.ts */
+  private readonly armsArmor = new FirstPersonArmor();
   private readonly guns: Partial<Record<'deagle' | 'awp', GunParts>> = {};
   private knife: KnifeRig | null = null;
   private knifeLeft: KnifeRig | null = null;
@@ -227,6 +231,11 @@ export class ViewmodelSystem {
 
   public getKnife(): KnifeId {
     return this.knifeId;
+  }
+
+  /** dresses the arms in the player's armor set and paint */
+  public setArmsLook(look: CharacterLook): void {
+    this.armsArmor.setLook(look);
   }
 
   public equip(item: ViewItem): void {
@@ -663,6 +672,8 @@ export class ViewmodelSystem {
     ]);
     this.arms = arms;
     this.content.add(arms.root);
+    // binds against the rest pose, so before the first update poses the rig
+    void this.armsArmor.attach(arms.root);
     this.guns.deagle = this.setupGun(deagle.scene);
     this.guns.awp = this.setupGun(awp.scene);
     this.rebuildKnife();

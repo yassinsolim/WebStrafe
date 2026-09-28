@@ -6,6 +6,7 @@ import { loadCharacterLibrary } from './CharacterFactory';
 import { LocalAvatar } from './LocalAvatar';
 import { encodeLook, looksEqual, type CharacterLook } from './look';
 import { hasStoredLook, loadLook } from './lookStore';
+import { parseDevLook } from './devCharacters';
 
 export interface PlayerCharacterOptions {
   container: HTMLElement;
@@ -13,6 +14,8 @@ export interface PlayerCharacterOptions {
   team: PlayerModel;
   /** the look changed for good (Done in the customize screen, or a team default swap) */
   onLookChanged: (look: CharacterLook) => void;
+  /** first-person arms that wear the look */
+  viewmodel?: { setArmsLook(look: CharacterLook): void };
 }
 
 /**
@@ -28,9 +31,10 @@ export class PlayerCharacter {
 
   constructor(private readonly options: PlayerCharacterOptions) {
     this.team = options.team;
-    this.lookValue = loadLook(options.team);
+    this.lookValue = parseDevLook(globalThis.location?.search ?? '', options.team) ?? loadLook(options.team);
     this.avatar = new LocalAvatar(this.lookValue, this.team);
     options.worldScene.add(this.avatar.root);
+    options.viewmodel?.setArmsLook(this.lookValue);
     // start fetching the armor library behind the menu
     void loadCharacterLibrary();
   }
@@ -88,6 +92,7 @@ export class PlayerCharacter {
     this.lookValue = look;
     this.avatar.setLook(look, this.team);
     this.menu?.setCharacterLook(look);
+    this.options.viewmodel?.setArmsLook(look);
     if (notify) this.options.onLookChanged(look);
   }
 }
