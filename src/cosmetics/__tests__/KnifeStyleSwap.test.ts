@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Box3, BoxGeometry, Group, Mesh, MeshBasicMaterial, Vector3 } from 'three';
-import { applyKnifeStyle } from '../KnifeStyleSwap';
+import { applyKnifeStyle, syncKnifePair } from '../KnifeStyleSwap';
 
 // stand-in for the imported viewmodel: a 'knife' node with a long thin blade
 // mesh running from the grip (origin) out along -z
@@ -42,6 +42,24 @@ describe('applyKnifeStyle', () => {
     applyKnifeStyle(root, null);
     expect(authored.visible).toBe(true);
     expect(node.getObjectByName('ProceduralKnifeMount')).toBeUndefined();
+  });
+
+  it('dual-wields push daggers on a mirror of the animated knife node', () => {
+    const { root, node } = makeViewmodel();
+    const leftGoal = new Group();
+    leftGoal.name = 'L_wrist_Goal';
+    root.add(leftGoal);
+    applyKnifeStyle(root, 'shadow_daggers');
+    const pair = leftGoal.getObjectByName('ProceduralKnifePairMount');
+    expect(pair).toBeDefined();
+    // the knife node animates; the copy follows it mirrored across x = 0
+    node.position.set(0.1, 0.2, -0.3);
+    syncKnifePair(root);
+    expect(pair!.position.toArray()).toEqual([-0.1, 0.2, -0.3]);
+    expect(pair!.scale.x).toBe(-1);
+    // single knives don't get a second copy, and switching away removes it
+    applyKnifeStyle(root, 'karambit');
+    expect(root.getObjectByName('ProceduralKnifePairMount')).toBeUndefined();
   });
 
   it('reports models without a swappable knife', () => {

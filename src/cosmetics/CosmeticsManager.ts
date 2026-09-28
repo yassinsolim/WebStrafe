@@ -19,7 +19,7 @@ import type { AnimationAction, AnimationClip } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { applyWearShader } from './WearMaterial';
-import { applyKnifeStyle } from './KnifeStyleSwap';
+import { applyKnifeStyle, syncKnifePair } from './KnifeStyleSwap';
 import type { KnifeId } from '../combat/knives';
 import {
   KNIFE_EQUIP_DURATION_SEC,
@@ -368,6 +368,7 @@ export class CosmeticsManager {
     this.clearBackstabSupportArmPose();
     if (this.knifeMixer) {
       this.knifeMixer.update(dt);
+      if (this.currentKnife) syncKnifePair(this.currentKnife);
     }
     this.updateRangePlayback();
     if (this.knifeAttackCooldown > 0) {
