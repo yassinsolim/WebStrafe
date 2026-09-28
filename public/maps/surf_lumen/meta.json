@@ -232,8 +232,8 @@
   "notes": "Beginner surf. One stage, six wide ramps from 50 to 56 degrees. Falling off teleports you back to the start.",
   "environment": {
     "sky": {
-      "zenith": "#6aa9e4",
-      "horizon": "#fbe9d4",
+      "zenith": "#4f90d8",
+      "horizon": "#efd9c2",
       "ground": "#f6ecdf",
       "exponent": 0.55,
       "sunSizeDeg": 2.0,
@@ -263,7 +263,7 @@
       "intensity": 2.3
     },
     "fog": {
-      "color": "#f6e8d7",
+      "color": "#ead7c3",
       "near": 170.0,
       "far": 1150.0
     },
@@ -273,6 +273,17 @@
         "path": "/maps/surf_lumen/lightmap.ktx2"
       }
     ],
-    "lightMapIntensity": 11.781
+    "lightMapIntensity": 11.781,
+    "lightmapMode": "indirect",
+    "indirectIntensity": 1.0,
+    "envIntensity": 1.0,
+    "grade": {
+      "exposure": 0.62,
+      "contrast": 1.16,
+      "saturation": 1.24,
+      "temperature": 0.02,
+      "vignette": 0.2,
+      "bloom": 0.07
+    }
   }
 }
