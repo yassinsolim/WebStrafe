@@ -227,7 +227,7 @@ export class CharacterPreview {
     this.currentBounds = null;
     this.currentRig = null;
     // The attached knife is a clone that SHARES geometry/materials with the
-    // cached knife template — detach it so we don't dispose those shared
+    // cached knife template, so detach it to keep from disposing those shared
     // resources (which would break the knife on the next model load).
     const knife = this.current.getObjectByName('RemoteKnifeModel');
     knife?.parent?.remove(knife);

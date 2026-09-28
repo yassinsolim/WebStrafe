@@ -10,6 +10,15 @@ export const MAP_TYPE_LABEL: Record<MapType, string> = {
   practice: 'Practice',
 };
 
+/** one line about what you do on each kind of map */
+export const MAP_TYPE_BLURB: Record<MapType, string> = {
+  surf: 'Ride the ramps from start to finish. Finished runs can go on the leaderboard.',
+  bhop: 'Chain hops across the course to the finish. Finished runs can go on the leaderboard.',
+  aim: 'An open arena built for gunfights.',
+  training: 'A course for practising movement.',
+  practice: 'A range for trying out movement and weapons.',
+};
+
 /** map type from the usual community prefixes: surf_, bhop_, aim_ */
 export function mapTypeFromId(id: string): MapType {
   const lower = id.toLowerCase();
@@ -34,6 +43,31 @@ export function mapHue(id: string): number {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0) % 360;
+}
+
+export interface MapPalette {
+  /** solid accent for bars, badges and lines */
+  accent: string;
+  /** translucent version for glows */
+  glow: string;
+}
+
+// picked from each built-in map's own art
+const MAP_PALETTES: Record<string, MapPalette> = {
+  surf_prismline: { accent: '#46d5ff', glow: 'rgba(70, 213, 255, 0.34)' },
+  bhop_emberdrift: { accent: '#ff6a2b', glow: 'rgba(255, 106, 43, 0.36)' },
+  aim_ochrecut: { accent: '#e9a54f', glow: 'rgba(233, 165, 79, 0.34)' },
+  movement_test_scene: { accent: '#ffc53d', glow: 'rgba(255, 197, 61, 0.3)' },
+};
+
+/** loading screen colours: hand picked for the built-in maps, from the map hue otherwise */
+export function mapPalette(id: string): MapPalette {
+  const known = MAP_PALETTES[id];
+  if (known) {
+    return known;
+  }
+  const hue = mapHue(id);
+  return { accent: `hsl(${hue} 85% 62%)`, glow: `hsl(${hue} 85% 55% / 0.32)` };
 }
 
 export interface WeaponStatLine {

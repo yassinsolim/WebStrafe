@@ -9,7 +9,7 @@ export interface CrosshairRect {
 }
 
 export interface CrosshairLayout {
-  /** top, right, bottom, left, empty when the style has no arms */
+  /** top, right, bottom, left (t style drops the top), empty when the style has no arms */
   arms: CrosshairRect[];
   dot: CrosshairRect | null;
   circle: { radius: number; thickness: number } | null;
@@ -19,6 +19,16 @@ export interface CrosshairLayout {
 
 /** the widest the dynamic gap is allowed to grow, css px */
 export const MAX_SPREAD_PX = 160;
+
+/**
+ * crosshair sizes are authored for a 1080p tall window and scale with the
+ * window height like the rest of the hud (and like cs2), so a setting looks
+ * the same at 1080p and 1440p
+ */
+export function crosshairScale(viewportHeightPx: number): number {
+  if (!(viewportHeightPx > 0)) return 1;
+  return Math.min(2, Math.max(0.75, viewportHeightPx / 1080));
+}
 
 /**
  * Screen distance of a cone edge from the centre: a ray `spreadRad` off the
@@ -34,11 +44,13 @@ export function spreadToPixels(spreadRad: number, verticalFovDeg: number, viewpo
   return Math.min(MAX_SPREAD_PX, px);
 }
 
-export function computeCrosshairLayout(settings: CrosshairSettings, spreadPx = 0): CrosshairLayout {
+/** `scale` multiplies the authored sizes, `spreadPx` is already in screen px */
+export function computeCrosshairLayout(settings: CrosshairSettings, spreadPx = 0, scale = 1): CrosshairLayout {
   const spread = settings.dynamicSpread ? Math.max(0, spreadPx) : 0;
-  const t = Math.max(0.5, settings.thickness);
-  const outline = settings.outline ? 1 : 0;
-  const dotSize = Math.max(t, 2);
+  const k = scale > 0 ? scale : 1;
+  const t = Math.max(0.5, settings.thickness) * k;
+  const outline = settings.outline ? Math.max(0, settings.outlineThickness ?? 1) * k : 0;
+  const dotSize = Math.max(t, 2 * k);
 
   if (settings.style === 'dot') {
     const dot = centered(dotSize);
@@ -46,7 +58,7 @@ export function computeCrosshairLayout(settings: CrosshairSettings, spreadPx = 0
   }
 
   if (settings.style === 'circle-dot') {
-    const radius = Math.max(3, settings.gap + settings.size + spread);
+    const radius = Math.max(3 * k, (settings.gap + settings.size) * k + spread);
     return {
       arms: [],
       dot: centered(dotSize),
@@ -55,10 +67,11 @@ export function computeCrosshairLayout(settings: CrosshairSettings, spreadPx = 0
     };
   }
 
-  const gap = settings.gap + spread;
-  const length = Math.max(0, settings.size);
+  const gap = settings.gap * k + spread;
+  const length = Math.max(0, settings.size) * k;
+  const dot = settings.dot ? centered(dotSize) : null;
   if (length <= 0) {
-    return { arms: [], dot: null, circle: null, extent: outline };
+    return { arms: [], dot, circle: null, extent: (dot ? dotSize / 2 : 0) + outline };
   }
   const half = t / 2;
   const arms: CrosshairRect[] = [
@@ -67,8 +80,11 @@ export function computeCrosshairLayout(settings: CrosshairSettings, spreadPx = 0
     { x: -half, y: gap, w: t, h: length },
     { x: -(gap + length), y: -half, w: length, h: t },
   ];
-  const extent = Math.max(Math.abs(gap + length), Math.abs(gap), half) + outline;
-  return { arms, dot: null, circle: null, extent };
+  if (settings.tStyle) {
+    arms.shift();
+  }
+  const extent = Math.max(Math.abs(gap + length), Math.abs(gap), half, dot ? dotSize / 2 : 0) + outline;
+  return { arms, dot, circle: null, extent };
 }
 
 /** snaps a rect to the device pixel grid so thin lines stay crisp */

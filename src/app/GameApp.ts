@@ -1,5 +1,4 @@
 import {
-  ACESFilmicToneMapping,
   AxesHelper,
   Box3,
   BufferGeometry,
@@ -8,7 +7,9 @@ import {
   Line,
   LineBasicMaterial,
   Mesh,
+  NoToneMapping,
   Object3D,
+  PCFSoftShadowMap,
   PMREMGenerator,
   PerspectiveCamera,
   SRGBColorSpace,
@@ -35,8 +36,14 @@ import { ViewmodelSystem, type ViewAction } from '../viewmodel/ViewmodelSystem';
 import { parseShotRequest, type ShotRequest } from './shotMode';
 import { FramePerf } from './FramePerf';
 import { AdaptiveResolution } from './AdaptiveResolution';
+import { RenderPipeline } from '../render/RenderPipeline';
+import { readRendererName, resolveQuality, type QualityPreset } from '../render/quality';
+import { EFFECTS_LAYER } from '../render/layers';
+import { configureTextureTranscoder } from '../assets/gltfLoader';
+import { ViewmodelProbe } from '../render/ViewmodelProbe';
 import type { LoadoutSelection } from '../cosmetics/types';
 import { HUD } from '../ui/HUD';
+import { LoadingScreen } from '../ui/LoadingScreen';
 import { MainMenu } from '../ui/MainMenu';
 import { defaultSettings, loadSettings, saveSettings, type GameSettings } from '../ui/SettingsStore';
 import { LeaderboardService, sanitizeLeaderboardName } from '../network/LeaderboardService';
@@ -81,6 +88,7 @@ import { groundResolvedSpawn, type ResolvedSpawn } from '../world/SpawnResolver'
 import { resolveRunGoal, type GoalPad } from '../world/RunGoal';
 import { MapEnvironment } from '../world/MapEnvironment';
 import { MapTriggers } from '../world/MapTriggers';
+import { SurfaceProbe } from '../world/SurfaceProbe';
 import { listMetaSpawns, pickSpawnAwayFrom, resolveBotAnchor } from '../world/SpawnPoints';
 import type { CustomMapRecord, LoadedMap, MapManifestEntry } from '../world/types';
 // v2 ui + audio
@@ -89,6 +97,7 @@ import { MovementAudioTracker } from '../audio/MovementAudio';
 import { KNIFE_DAMAGE, KNIFE_RANGE_M } from '../combat/knives';
 import type { DeathEvent, HitEvent, ShotEvent } from '../network/MultiplayerTransport';
 import { GameHud } from '../ui/hud/GameHud';
+import { runHudDemo } from '../ui/hud/hudDemo';
 import { damageDirection } from '../ui/hud/hudMath';
 import { showsRunTimer } from '../ui/menu/menuInfo';
 
@@ -122,6 +131,9 @@ export const LOCAL_RESPAWN_FALLBACK_MS = RESPAWN_DELAY_MS + 3000;
 export class GameApp {
   private readonly container: HTMLElement;
   private readonly renderer: WebGLRenderer;
+  private readonly pipeline: RenderPipeline;
+  private readonly viewmodelProbe: ViewmodelProbe;
+  private quality: QualityPreset;
   private readonly worldScene = new Scene();
   private readonly worldCamera: PerspectiveCamera;
   private readonly viewmodelRenderer: ViewmodelRenderer;
@@ -163,10 +175,16 @@ export class GameApp {
 
   private readonly viewmodel = new ViewmodelSystem();
   private readonly muzzleScratch = new Vector3();
+  private readonly tracerScratch = new Vector3();
+  private readonly tracerForward = new Vector3();
+  private surfaceProbe: SurfaceProbe | null = null;
   private readonly shot: ShotRequest | null = parseShotRequest(window.location.search);
   private framePerf: FramePerf | null = null;
   private qaMove: { forwardMove: number; sideMove: number; jumpHeld: boolean; jumpPressed: boolean } | null = null;
   private readonly adaptiveResolution = new AdaptiveResolution();
+  private viewmodelSunVisibility = 1;
+  /** qa only: effects stop aging at this time */
+  private effectsFreezeAtMs: number | null = null;
 
   private readonly crosshair: HTMLDivElement;
   private readonly statusLabel: HTMLDivElement;
@@ -175,7 +193,7 @@ export class GameApp {
   private readonly loadingTitle: HTMLDivElement;
   private readonly loadingProgress: HTMLDivElement;
   private readonly loadingDetail: HTMLPreElement;
-  private loadProgressSpinnerIndex = 0;
+  private readonly loadingScreen: LoadingScreen;
   private currentLoadToken = 0;
   private readonly timerLabel: HTMLDivElement;
   private readonly runInfoLabel: HTMLDivElement;
@@ -245,15 +263,23 @@ export class GameApp {
     this.container = rootElement;
     this.worldCamera = new PerspectiveCamera(100, window.innerWidth / window.innerHeight, 0.1, 6000);
     this.worldCamera.rotation.order = 'YXZ';
+    this.worldCamera.layers.enable(EFFECTS_LAYER);
 
-    this.renderer = new WebGLRenderer({ antialias: true });
+    // the scene renders into the hdr pipeline's own msaa target, so the canvas
+    // itself needs no multisampling
+    this.renderer = new WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = SRGBColorSpace;
-    this.renderer.toneMapping = ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1;
+    // tone mapping and grading happen in the pipeline's composite pass
+    this.renderer.toneMapping = NoToneMapping;
     this.renderer.autoClear = false;
+    this.renderer.shadowMap.type = PCFSoftShadowMap;
+    configureTextureTranscoder(this.renderer);
     this.container.appendChild(this.renderer.domElement);
+    this.pipeline = new RenderPipeline(this.renderer);
+    this.viewmodelProbe = new ViewmodelProbe(this.renderer);
+    this.quality = resolveQuality('auto', readRendererName(this.renderer));
 
     this.input = new InputManager(this.renderer.domElement);
     this.hud = new HUD(this.container);
@@ -269,7 +295,7 @@ export class GameApp {
     // Soft studio environment so metallic weapon materials (Deagle/AWP) read as
     // lit gunmetal instead of near-black, and the knife/gloves gain gentle IBL.
     const pmrem = new PMREMGenerator(this.renderer);
-    this.viewmodelRenderer.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.viewmodelRenderer.setStudioEnvironment(pmrem.fromScene(new RoomEnvironment(), 0.04).texture);
     pmrem.dispose();
 
     this.crosshair = this.createCrosshair();
@@ -279,6 +305,7 @@ export class GameApp {
     this.loadingTitle = loadingOverlay.title;
     this.loadingProgress = loadingOverlay.progress;
     this.loadingDetail = loadingOverlay.detail;
+    this.loadingScreen = loadingOverlay.screen;
     const runHud = this.createRunHud();
     this.timerLabel = runHud.timer;
     this.runInfoLabel = runHud.info;
@@ -311,7 +338,7 @@ export class GameApp {
     this.worldCamera.updateProjectionMatrix();
     this.viewmodelRenderer.setFov(this.settings.viewmodelFov);
     this.viewmodel.setScale(this.settings.viewmodelScale);
-    this.applyRenderScale();
+    this.applyQuality();
 
     const [builtinMaps, customRecords, cosmeticsManifest] = await Promise.all([
       loadBuiltinManifest(),
@@ -356,6 +383,7 @@ export class GameApp {
       onReloadMap: () => {
         void this.reloadSelectedMap();
       },
+      canResume: (mapId) => this.loadedMap?.entry.id === mapId && !this.runComplete && this.finishedRunTimeMs === null,
       onMapSelected: (mapId) => {
         this.selectedMapId = mapId;
         this.persistSelectedMapId(mapId);
@@ -723,12 +751,13 @@ export class GameApp {
     this.updateStatusVisibility(time);
 
     this.mapEnvironment.update(frameDt, this.worldCamera);
-    this.renderer.clear();
-    this.renderer.render(this.worldScene, this.worldCamera);
-    if (this.playing && this.debugCameraMode === 'firstPerson') {
-      this.renderer.clearDepth();
-      this.renderer.render(this.viewmodelRenderer.scene, this.viewmodelRenderer.camera);
-    }
+    const firstPerson = this.playing && this.debugCameraMode === 'firstPerson';
+    this.pipeline.render(
+      this.worldScene,
+      this.worldCamera,
+      firstPerson ? this.viewmodelRenderer.scene : null,
+      firstPerson ? this.viewmodelRenderer.camera : null,
+    );
     if (perf) {
       perf.cpu(performance.now() - loopStart, this.renderer.info.render.calls, this.renderer.info.render.triangles);
     }
@@ -841,6 +870,11 @@ export class GameApp {
       }
 
       this.activateLoadedMap(this.loadedMap);
+      // compile the map's shaders behind the loading screen, not in the first frames of play
+      await this.precompileShaders();
+      if (loadToken !== this.currentLoadToken) {
+        return;
+      }
       if (this.combatEnabled) {
         this.resetLocalCombatState();
       }
@@ -886,6 +920,17 @@ export class GameApp {
     }
   }
 
+  /** parallel shader compile where the browser supports it, a failure just means compiling on first draw */
+  private async precompileShaders(): Promise<void> {
+    try {
+      await this.renderer.compileAsync(this.worldScene, this.worldCamera);
+      await this.renderer.compileAsync(this.viewmodelRenderer.scene, this.viewmodelRenderer.camera);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('[GameApp] shader precompile failed, compiling on first draw', error);
+    }
+  }
+
   private activateLoadedMap(map: LoadedMap): void {
     if (this.loadedMapRoot) {
       this.worldScene.remove(this.loadedMapRoot);
@@ -896,11 +941,15 @@ export class GameApp {
     root.add(map.sceneRoot);
     this.loadedMapRoot = root;
     this.worldScene.add(root);
-    // sky, fog, exposure, lights and lightmaps from meta.environment (or the old defaults)
+    // sky, fog, grade, lights and lightmaps from meta.environment (or the old defaults)
     this.mapEnvironment.apply(map);
+    this.viewmodelProbe.reset();
+    this.pipeline.setGrade(this.mapEnvironment.getGrade());
 
     this.collisionWorld.setCollisionFromRoot(map.collisionRoot);
     this.combatEffects?.clearDecals();
+    this.surfaceProbe?.dispose();
+    this.surfaceProbe = new SurfaceProbe(map.sceneRoot);
 
     const bounds = new Box3().setFromObject(map.sceneRoot);
     const triCount = this.countTriangles(map.sceneRoot);
@@ -1116,7 +1165,13 @@ export class GameApp {
     this.combatEffects = new CombatEffects(this.worldScene, this.viewmodel.root, {
       impactEffects: true,
       getLocalMuzzleWorldPosition: () => this.viewmodel.getMuzzleWorldPosition(this.muzzleScratch),
+      getLocalTracerOrigin: () => this.localTracerOrigin(),
+      resolveSurface: (point, direction) => this.surfaceProbe?.surfaceAt(point, direction) ?? null,
+      lightAt: (point) => this.sunVisibilityAt(point),
+      onLocalMuzzleFlash: (weapon) => this.flashViewmodelLight(weapon),
     });
+    this.combatEffects.setQuality(this.quality);
+    this.syncPipelineSize();
     this.scopeOverlay = new ScopeOverlay(this.container);
     this.combatHud.setWeapon(this.weapon.getActive(), this.weapon.getAmmo());
 
@@ -1513,7 +1568,7 @@ export class GameApp {
       this.weapon.getAmmo(),
       this.weapon.isReloading(nowMs),
     );
-    this.combatEffects?.update(nowMs);
+    this.combatEffects?.update(this.effectsFreezeAtMs === null ? nowMs : Math.min(nowMs, this.effectsFreezeAtMs));
     this.combatHud?.update(nowMs);
     this.killFeed.prune(nowMs);
     this.combatHud?.setVisible(this.playing);
@@ -1560,13 +1615,19 @@ export class GameApp {
   }
 
   private updateTimerHud(): void {
-    if (this.runStartTimeMs <= 0) {
-      this.timerLabel.textContent = '';
-      return;
+    // untimed maps never show it, so don't restyle a hidden label every frame
+    const text = this.runStartTimeMs <= 0 || !this.runTimerAllowed ? '' : formatRunTime(this.getCurrentRunTimeMs());
+    // whole seconds and milliseconds are separate spans, each only written when it changes
+    const dot = text.lastIndexOf('.');
+    const main = dot >= 0 ? text.slice(0, dot) : text;
+    const ms = dot >= 0 ? text.slice(dot) : '';
+    const [mainEl, msEl] = Array.from(this.timerLabel.children);
+    if (mainEl && mainEl.textContent !== main) {
+      mainEl.textContent = main;
     }
-
-    const elapsedMs = this.getCurrentRunTimeMs();
-    this.timerLabel.textContent = formatRunTime(elapsedMs);
+    if (msEl && msEl.textContent !== ms) {
+      msEl.textContent = ms;
+    }
   }
 
   private tryCompleteRun(): void {
@@ -1724,8 +1785,12 @@ export class GameApp {
   }
 
   private applySettings(next: GameSettings): void {
+    const qualityChanged = next.graphicsQuality !== this.settings.graphicsQuality;
     this.settings = { ...next };
     saveSettings(next);
+    if (qualityChanged) {
+      this.applyQuality();
+    }
     this.movement.setCvar('sv_autobhop_enabled', next.autoBhop);
     this.worldCamera.fov = next.worldFov;
     this.worldCamera.updateProjectionMatrix();
@@ -1803,9 +1868,47 @@ export class GameApp {
     }
 
     this.viewmodelRenderer.update(dt, this.worldCamera, this.movement.getVelocity(), look);
+    this.syncViewmodelLighting(dt);
     this.setCrosshairVisible(
       this.playing && this.debugCameraMode === 'firstPerson' && !this.combatAim.isScoped(),
     );
+  }
+
+  /**
+   * the gun and arms take the world's light: a probe of the world around the
+   * eye (the sky capture on low), sun direction and color, and a sun ray from
+   * the eye so standing in a shadow darkens them
+   */
+  private syncViewmodelLighting(dt: number): void {
+    const env = this.mapEnvironment.getResolved();
+    const sun = this.mapEnvironment.getSunLight();
+    let target = 1;
+    if (this.loadedMap && env.sky) {
+      const eye = this.worldCamera.position;
+      target = this.collisionWorld.raycastGeometry(eye, env.sunDirection, 600) ? 0 : 1;
+    }
+    // ease so walking past a pole doesn't flicker the gun
+    this.viewmodelSunVisibility += (target - this.viewmodelSunVisibility) * (1 - Math.exp(-dt / 0.12));
+    const hemi = this.mapEnvironment.getHemisphereLight();
+    let environment = this.mapEnvironment.getEnvironmentTexture();
+    if (this.loadedMap && this.quality.viewmodelProbe) {
+      // only refresh while the viewmodel is on screen
+      if (this.playing && this.debugCameraMode === 'firstPerson') {
+        this.viewmodelProbe.update(this.worldScene, this.worldCamera.position, dt);
+      }
+      environment = this.viewmodelProbe.getTexture() ?? environment;
+    }
+    this.viewmodelRenderer.syncWorldLighting({
+      environment,
+      environmentIntensity: env.envIntensity,
+      sunDirection: env.sunDirection,
+      sunColor: sun.color,
+      sunIntensity: sun.intensity,
+      sunVisibility: this.viewmodelSunVisibility,
+      hemiSky: hemi.color,
+      hemiGround: hemi.groundColor,
+      hemiIntensity: hemi.visible ? hemi.intensity : 0,
+    });
   }
 
   private updateSurfNormalLine(debug: MovementDebugState): void {
@@ -1930,27 +2033,19 @@ export class GameApp {
   }
 
   private showLoadingOverlay(mapName: string): void {
-    this.loadingOverlay.classList.remove('loading-overlay-error');
-    this.loadingOverlay.style.display = 'grid';
-    this.loadingTitle.textContent = `Loading ${mapName} ...`;
-    this.loadingProgress.textContent = '0%';
-    this.loadingDetail.textContent = '';
-    this.loadProgressSpinnerIndex = 0;
+    // startPlaySession sets selectedMapId first, so its entry carries the thumbnail and author
+    const entry = this.mapSources.get(this.selectedMapId)?.entry;
+    this.loadingScreen.show(
+      entry && entry.name === mapName ? entry : { id: this.selectedMapId, name: mapName },
+      { combat: this.combatEnabled },
+    );
   }
 
-  private updateLoadingOverlay(mapName: string, percent: number | null, detail?: string): void {
-    if (this.loadingOverlay.style.display === 'none') {
+  private updateLoadingOverlay(_mapName: string, percent: number | null, detail?: string): void {
+    if (!this.loadingScreen.isVisible()) {
       return;
     }
-    this.loadingTitle.textContent = `Loading ${mapName} ...`;
-    if (percent === null) {
-      const spinnerFrames = ['|', '/', '-', '\\'];
-      const spinner = spinnerFrames[this.loadProgressSpinnerIndex % spinnerFrames.length];
-      this.loadProgressSpinnerIndex += 1;
-      this.loadingProgress.textContent = `${spinner} loading`;
-    } else {
-      this.loadingProgress.textContent = `${percent.toFixed(0)}%`;
-    }
+    this.loadingScreen.setProgress(percent, detail);
     if (detail) {
       this.appendLoadingDetail(detail);
     }
@@ -1972,8 +2067,7 @@ export class GameApp {
   }
 
   private hideLoadingOverlay(): void {
-    this.loadingOverlay.style.display = 'none';
-    this.loadingDetail.textContent = '';
+    this.loadingScreen.hide();
   }
 
   private showLoadingError(error: unknown, assetUrl: string): void {
@@ -2016,43 +2110,28 @@ export class GameApp {
     title: HTMLDivElement;
     progress: HTMLDivElement;
     detail: HTMLPreElement;
+    screen: LoadingScreen;
   } {
-    const root = document.createElement('div');
-    root.className = 'loading-overlay';
-    root.style.display = 'none';
-
-    const panel = document.createElement('div');
-    panel.className = 'loading-panel';
-
-    const title = document.createElement('div');
-    title.className = 'loading-title';
-    title.textContent = 'Loading map ...';
-
-    const progress = document.createElement('div');
-    progress.className = 'loading-progress';
-    progress.textContent = '0%';
-
-    const detail = document.createElement('pre');
-    detail.className = 'loading-detail';
-    detail.textContent = '';
-
-    panel.append(title, progress, detail);
-    root.appendChild(panel);
-    this.container.appendChild(root);
-
-    return { root, title, progress, detail };
+    // map themed screen; title, progress and detail keep their roles for the error path
+    const screen = new LoadingScreen(this.container);
+    return { root: screen.root, title: screen.title, progress: screen.progress, detail: screen.detail, screen };
   }
 
   private createRunHud(): { timer: HTMLDivElement; info: HTMLDivElement } {
     const timer = document.createElement('div');
     timer.className = 'run-timer';
-    timer.style.display = 'none';
+    const timerMain = document.createElement('span');
+    timerMain.className = 'run-timer-main';
+    const timerMs = document.createElement('span');
+    timerMs.className = 'run-timer-ms';
+    timer.append(timerMain, timerMs);
 
     const info = document.createElement('div');
     info.className = 'run-info';
-    info.style.display = 'none';
 
-    this.container.append(timer, info);
+    // the timer sits in the middle of the hud's top bar, which also decides when it shows
+    this.gameHud.mountRunTimer(timer, info);
+    this.gameHud.setCombatMode(this.combatEnabled);
     return { timer, info };
   }
 
@@ -2128,6 +2207,7 @@ export class GameApp {
 
   private readonly onResize = (): void => {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.syncPipelineSize();
     this.worldCamera.aspect = window.innerWidth / Math.max(window.innerHeight, 1);
     this.worldCamera.updateProjectionMatrix();
     this.viewmodelRenderer.resize(window.innerWidth, window.innerHeight);
@@ -2373,9 +2453,7 @@ export class GameApp {
       strafeStats: this.readStrafeStats(),
       pingMs: this.multiplayer.getPingMs?.() ?? null,
     });
-    const showTimer = this.playing && this.runTimerAllowed && this.settings.showHud;
-    this.timerLabel.style.display = showTimer ? 'block' : 'none';
-    this.runInfoLabel.style.display = showTimer ? 'block' : 'none';
+    this.gameHud.setRunTimerVisible(this.playing && this.runTimerAllowed && this.settings.showHud);
 
     this.worldCamera.getWorldDirection(this.listenerForward);
     this.listenerUp.set(0, 1, 0).applyQuaternion(this.worldCamera.quaternion);
@@ -2444,25 +2522,96 @@ export class GameApp {
         const eye = this.movement.getCameraPosition();
         return !this.collisionWorld.segmentIntersectsGeometry(eye, target.position.clone().add(new Vector3(0, 1.3, 0)));
       },
+      // pins the effects clock this long after now, so screenshots catch a round in flight
+      freezeEffects: (delayMs: number | null) => {
+        const shotAt = this.combatEffects?.getLastLocalShotMs() ?? performance.now();
+        this.effectsFreezeAtMs = delayMs === null ? null : shotAt + delayMs;
+      },
       scoreboardText: () => document.querySelector('.hud-scoreboard')?.textContent ?? null,
       killfeedLines: () => Array.from(document.querySelectorAll('.combat-killfeed-line')).map((el) => el.textContent ?? ''),
     };
     (window as unknown as { __qa?: unknown }).__qa = qa;
   }
 
-  /** screen pixel ratio x the resolution scale setting x the adaptive scale */
+  /** screen pixel ratio (capped by the preset) x the resolution scale setting x the adaptive scale */
   private applyRenderScale(): void {
     const adaptive = this.settings.adaptiveResolution ? this.adaptiveResolution.getScale() : 1;
-    const screen = this.shot?.dpr ?? Math.min(window.devicePixelRatio || 1, 2);
+    const screen = Math.min(this.shot?.dpr ?? (window.devicePixelRatio || 1), 2, this.quality.maxPixelRatio);
     const ratio = this.shot?.pixelRatio ?? Math.round(screen * this.settings.renderScale * adaptive * 100) / 100;
     if (Math.abs(ratio - this.renderer.getPixelRatio()) < 1e-3) {
+      this.syncPipelineSize();
       return;
     }
     this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.syncPipelineSize();
+  }
+
+  private syncPipelineSize(): void {
+    const size = this.renderer.getDrawingBufferSize(new Vector2());
+    this.pipeline.setSize(size.x, size.y);
+    this.combatEffects?.setResolution(size.x, size.y);
+  }
+
+  /**
+   * where a local tracer starts: on the ray from the eye through the muzzle as
+   * the viewmodel draws it (its own fov), about a metre out, so the streak
+   * leaves the barrel on screen
+   */
+  private localTracerOrigin(): Vector3 | null {
+    const muzzle = this.viewmodel.getMuzzleWorldPosition(this.muzzleScratch);
+    if (!muzzle) return null;
+    const vmCamera = this.viewmodelRenderer.camera;
+    vmCamera.updateMatrixWorld();
+    this.worldCamera.updateMatrixWorld();
+    const ndc = this.tracerScratch.copy(muzzle).project(vmCamera);
+    if (!Number.isFinite(ndc.x + ndc.y) || Math.abs(ndc.x) > 1.2 || Math.abs(ndc.y) > 1.2) return null;
+    const eye = this.worldCamera.position;
+    const through = ndc.setZ(0.5).unproject(this.worldCamera).sub(eye).normalize();
+    const forward = this.worldCamera.getWorldDirection(this.tracerForward);
+    return eye.clone().addScaledVector(through, 0.9 / Math.max(0.3, through.dot(forward)));
+  }
+
+  /** 1 in the sun, 0 in shadow (maps with a sky), for lighting impact dust and smoke */
+  private sunVisibilityAt(point: Vector3): number {
+    const env = this.mapEnvironment.getResolved();
+    if (!env.sky || !this.loadedMap) return 1;
+    return this.collisionWorld.raycastGeometry(point, env.sunDirection, 600) ? 0 : 1;
+  }
+
+  private flashViewmodelLight(weapon: GunId): void {
+    const muzzle = this.viewmodel.getMuzzleWorldPosition(this.muzzleScratch);
+    if (!muzzle) return;
+    this.viewmodelRenderer.flashAt(muzzle, weapon === 'awp' ? 0xffd9a0 : 0xffb870, weapon === 'awp' ? 7 : 5);
+  }
+
+  /** picks the preset from the setting (or the gpu on auto) and pushes it everywhere */
+  private applyQuality(): void {
+    const setting = this.shot?.quality ?? this.settings.graphicsQuality;
+    const next = resolveQuality(setting, readRendererName(this.renderer));
+    const changed = next !== this.quality;
+    this.quality = next;
+    this.pipeline.setPreset(next);
+    this.mapEnvironment.setQuality(next);
+    this.combatEffects?.setQuality(next);
+    this.viewmodelRenderer.setQuality(next);
+    if (changed) {
+      this.adaptiveResolution.reset();
+    }
+    this.applyRenderScale();
   }
 
   private async runShot(shot: ShotRequest): Promise<void> {
+    // dev and preview only (shot mode is), for poking at the render state from devtools
+    (window as unknown as { __webstrafe?: unknown }).__webstrafe = {
+      scene: this.worldScene,
+      camera: this.worldCamera,
+      viewmodelScene: this.viewmodelRenderer.scene,
+      viewmodelCamera: this.viewmodelRenderer.camera,
+      renderer: this.renderer,
+      pipeline: this.pipeline,
+      environment: this.mapEnvironment,
+    };
     if (shot.time) this.viewmodel.setClockOverride(shot.time);
     if (shot.knife) this.viewmodel.setKnife(shot.knife as KnifeId);
     await this.viewmodel.load();
@@ -2519,6 +2668,9 @@ export class GameApp {
     }
     // let the map, lightmaps and a few frames settle before the capture
     await new Promise((resolve) => setTimeout(resolve, 1500));
+    if (shot.hudDemo) {
+      runHudDemo({ variant: shot.hudDemo, gameHud: this.gameHud, combatHud: this.combatHud, killFeed: this.killFeed, localId: this.multiplayer.getLocalId(), localName: this.localPlayerName });
+    }
     const info = this.renderer.info.render;
     (window as unknown as { __shotInfo?: unknown }).__shotInfo = { calls: info.calls, triangles: info.triangles };
     (window as unknown as { __shotReady?: boolean }).__shotReady = true;

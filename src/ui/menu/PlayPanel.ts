@@ -1,9 +1,15 @@
 import type { MapManifestEntry } from '../../world/types';
-import { MAP_TYPE_LABEL, mapHue, mapTypeFromId, type MapType } from './menuInfo';
+import { MAP_TYPE_BLURB, MAP_TYPE_LABEL, mapHue, mapTypeFromId, type MapType } from './menuInfo';
 
 export interface PlayPanelCallbacks {
   onSelect(mapId: string): void;
   onPlay(mapId: string): void;
+}
+
+export interface BestRun {
+  name: string;
+  /** already formatted, e.g. 1:02.113 */
+  time: string;
 }
 
 /** simple line art per map type for cards without a thumbnail */
@@ -15,22 +21,22 @@ const PLACEHOLDER_ART: Record<MapType, string> = {
   practice: '<path class="menu-map-art-line" d="M0 60 H160 M0 72 H160 M20 50 L0 80 M60 50 L50 80 M100 50 L110 80 M140 50 L160 80" /><rect x="70" y="18" width="20" height="30" rx="3" /><circle cx="80" cy="12" r="6" />',
 };
 
+const CHECK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.4l3.2 3.2L13 4.8" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>';
+
 /** map cards: thumbnail or generated art, type badge, name, author, licence */
 export class PlayPanel {
   private readonly grid: HTMLDivElement;
   private readonly detail: HTMLDivElement;
   private maps: MapManifestEntry[] = [];
   private selectedId = '';
+  private best: { mapId: string; run: BestRun | null } | null = null;
 
   constructor(section: HTMLElement, private readonly callbacks: PlayPanelCallbacks) {
-    const hint = document.createElement('p');
-    hint.className = 'menu-section-hint';
-    hint.textContent = 'Pick a map. Double click to jump straight in.';
     this.grid = document.createElement('div');
     this.grid.className = 'menu-map-grid';
     this.detail = document.createElement('div');
-    this.detail.className = 'menu-map-info';
-    section.append(hint, this.grid, this.detail);
+    this.detail.className = 'menu-map-detail';
+    section.append(this.grid, this.detail);
   }
 
   setMaps(entries: MapManifestEntry[], selectedId: string): void {
@@ -43,17 +49,24 @@ export class PlayPanel {
     return this.maps.find((map) => map.id === this.selectedId);
   }
 
-  private render(): void {
-    this.grid.replaceChildren(...this.maps.map((map) => this.card(map)));
+  /** top leaderboard run for a map, shown in the detail card of timed maps */
+  setBestRun(mapId: string, run: BestRun | null): void {
+    this.best = { mapId, run };
     this.renderDetail();
   }
 
-  private card(map: MapManifestEntry): HTMLButtonElement {
+  private render(): void {
+    this.grid.replaceChildren(...this.maps.map((map, index) => this.card(map, index)));
+    this.renderDetail();
+  }
+
+  private card(map: MapManifestEntry, index: number): HTMLButtonElement {
     const type = mapTypeFromId(map.id);
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'menu-map-card menu-card';
     card.dataset.mapId = map.id;
+    card.style.setProperty('--i', String(index));
     card.classList.toggle('is-selected', map.id === this.selectedId);
 
     const thumb = document.createElement('span');
@@ -78,20 +91,23 @@ export class PlayPanel {
     badge.className = 'menu-map-badge';
     badge.dataset.type = type;
     badge.textContent = MAP_TYPE_LABEL[type];
-    thumb.appendChild(badge);
-
-    const body = document.createElement('span');
-    body.className = 'menu-map-body';
+    const check = document.createElement('span');
+    check.className = 'menu-map-check';
+    check.innerHTML = CHECK;
     const name = document.createElement('span');
     name.className = 'menu-map-name';
     name.textContent = map.name;
+    thumb.append(badge, check, name);
+
+    const body = document.createElement('span');
+    body.className = 'menu-map-body';
     const author = document.createElement('span');
     author.className = 'menu-map-author';
     author.textContent = `by ${map.author}`;
     const license = document.createElement('span');
     license.className = 'menu-map-license';
     license.textContent = map.license;
-    body.append(name, author, license);
+    body.append(author, license);
     card.append(thumb, body);
 
     card.addEventListener('click', () => {
@@ -116,12 +132,45 @@ export class PlayPanel {
       this.detail.textContent = 'No map selected';
       return;
     }
-    const type = MAP_TYPE_LABEL[mapTypeFromId(selected.id)];
-    const parts = [`${selected.name}`, type, `by ${selected.author}`, selected.license];
+    const type = mapTypeFromId(selected.id);
+    const head = document.createElement('div');
+    head.className = 'menu-map-detail-head';
+    const badge = document.createElement('span');
+    badge.className = 'menu-map-badge';
+    badge.dataset.type = type;
+    badge.textContent = MAP_TYPE_LABEL[type];
+    const name = document.createElement('span');
+    name.className = 'menu-map-detail-name';
+    name.textContent = selected.name;
+    head.append(badge, name);
+    const blurb = document.createElement('p');
+    blurb.className = 'menu-map-detail-blurb';
+    blurb.textContent = MAP_TYPE_BLURB[type];
+    const parts = [`by ${selected.author}`, selected.license];
     if (selected.source && selected.source !== selected.name && !selected.source.startsWith(selected.name)) {
-      parts.push(`source: ${selected.source}`);
+      parts.push(selected.source);
     }
-    this.detail.textContent = parts.join(' · ');
+    const info = document.createElement('div');
+    info.className = 'menu-map-info';
+    info.textContent = parts.join(' · ');
+    this.detail.append(head, blurb);
+    if ((type === 'surf' || type === 'bhop') && this.best?.mapId === selected.id) {
+      const best = document.createElement('div');
+      best.className = 'menu-map-best';
+      const label = document.createElement('span');
+      label.textContent = 'Best run';
+      const value = document.createElement('b');
+      value.textContent = this.best.run ? this.best.run.time : 'No runs yet';
+      best.append(label, value);
+      if (this.best.run) {
+        const who = document.createElement('span');
+        who.className = 'menu-map-best-name';
+        who.textContent = this.best.run.name;
+        best.appendChild(who);
+      }
+      this.detail.appendChild(best);
+    }
+    this.detail.appendChild(info);
   }
 }
 

@@ -62,8 +62,10 @@ def add_empty(name, location=(0, 0, 0), rotation=(0, 0, 0), parent=None, size=0.
     return empty
 
 
-def export_glb(path, objects=None, animations=False, apply_modifiers=True, extras=True):
-    """exports the given objects (or the whole scene) as a binary gltf"""
+def export_glb(path, objects=None, animations=False, apply_modifiers=True, extras=True, tangents=False):
+    """exports the given objects (or the whole scene) as a binary gltf.
+    tangents=True writes mikktspace tangents, so a baked normal map shades in
+    three.js with the same tangent frame blender baked it in"""
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     bpy.ops.object.select_all(action="DESELECT")
     if objects is not None:
@@ -78,6 +80,7 @@ def export_glb(path, objects=None, animations=False, apply_modifiers=True, extra
         export_extras=extras,
         export_texcoords=True,
         export_normals=True,
+        export_tangents=tangents,
         export_cameras=False,
         export_lights=False,
         export_animations=animations,

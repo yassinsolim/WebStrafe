@@ -1,5 +1,5 @@
 import { defaultCrosshair, type CrosshairSettings } from '../SettingsStore';
-import { computeCrosshairLayout, snapRect, spreadToPixels, type CrosshairRect } from './crosshairGeometry';
+import { computeCrosshairLayout, crosshairScale, snapRect, spreadToPixels, type CrosshairRect } from './crosshairGeometry';
 
 /**
  * Settings driven crosshair. The root keeps the `.crosshair` class and the
@@ -44,9 +44,14 @@ export class Crosshair {
   applySettings(settings: CrosshairSettings): void {
     this.settings = { ...settings };
     this.root.style.setProperty('--xh-color', settings.color);
+    this.root.style.setProperty('--xh-alpha', String(settings.alpha));
     this.root.classList.toggle('has-outline', settings.outline);
     this.root.dataset.style = settings.style;
     this.render(true);
+  }
+
+  getSettings(): CrosshairSettings {
+    return { ...this.settings };
   }
 
   /** weapon inaccuracy in radians, 0 when perfectly accurate */
@@ -92,13 +97,16 @@ export class Crosshair {
       ? spreadToPixels(this.spreadRad, this.verticalFovDeg, window.innerHeight)
       : 0;
     const quantized = Math.round(spreadPx * 4) / 4;
-    const key = `${quantized}`;
+    const scale = crosshairScale(window.innerHeight);
+    const key = `${quantized}:${scale}`;
     if (!force && key === this.lastLayoutKey) {
       return;
     }
     this.lastLayoutKey = key;
     const dpr = window.devicePixelRatio || 1;
-    const layout = computeCrosshairLayout(this.settings, quantized);
+    const layout = computeCrosshairLayout(this.settings, quantized, scale);
+    const outline = Math.round(this.settings.outlineThickness * scale * dpr) / dpr;
+    this.root.style.setProperty('--xh-outline-w', `${Math.max(1 / dpr, outline)}px`);
     for (let i = 0; i < this.arms.length; i += 1) {
       const rect = layout.arms[i];
       place(this.arms[i], rect ? snapRect(rect, dpr) : null);

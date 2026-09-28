@@ -1,13 +1,18 @@
 import {
-  DataTexture,
+  Color,
+  CustomBlending,
+  DstColorFactor,
   Mesh,
-  MeshBasicMaterial,
   PlaneGeometry,
   Quaternion,
-  RGBAFormat,
+  ShaderMaterial,
   Vector3,
+  ZeroFactor,
+  type DataTexture,
   type Object3D,
 } from 'three';
+import type { SurfaceKind } from '../render/worldMaterials';
+import { createDecalTexture } from './effects/textures';
 
 export interface ImpactDecalOptions {
   /** pool size; the oldest hole is reused once it is full */
@@ -20,31 +25,65 @@ export interface ImpactDecalOptions {
 }
 
 export const DEFAULT_MAX_DECALS = 64;
-const DEFAULT_HOLD_MS = 12000;
+const DEFAULT_HOLD_MS = 15000;
 const DEFAULT_FADE_MS = 3000;
 /** lifts the quad off the surface; polygon offset handles the rest */
 const SURFACE_LIFT_M = 0.004;
-const TEXTURE_SIZE = 32;
 const Z_AXIS = new Vector3(0, 0, 1);
+
+const VERTEX = /* glsl */ `
+varying vec2 vUv;
+#include <fog_pars_vertex>
+void main() {
+  vUv = uv;
+  vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mvPosition;
+  #include <fog_vertex>
+}
+`;
+
+// multiply blend: the framebuffer (already lit, shadowed and fogged) is scaled
+// by the texture, so a hole in the shade is as dark as the shade around it
+const FRAGMENT = /* glsl */ `
+uniform sampler2D map;
+uniform float strength;
+varying vec2 vUv;
+#include <fog_pars_fragment>
+void main() {
+  vec3 m = texture2D(map, vUv).rgb * 2.0;
+  m = mix(vec3(1.0), m, strength);
+#ifdef USE_FOG
+  #ifdef FOG_EXP2
+    float fogFactor = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
+  #else
+    float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
+  #endif
+  m = mix(m, vec3(1.0), fogFactor);
+#endif
+  gl_FragColor = vec4(m, 1.0);
+}
+`;
 
 interface DecalSlot {
   mesh: Mesh;
-  material: MeshBasicMaterial;
+  material: ShaderMaterial;
   bornMs: number;
   active: boolean;
 }
 
 /**
  * Pooled bullet holes: small oriented quads laid on world geometry at impact
- * points, at most `maxDecals` alive, each holding and then fading out. Meshes
- * and materials are reused, so a long fight allocates nothing after warm-up.
+ * points, at most `maxDecals` alive, each holding and then fading out. They
+ * multiply the lit surface under them, one texture per surface kind (metal
+ * gets a bright rim, concrete a chipped crater, sand a soft dent). Meshes and
+ * materials are reused, so a long fight allocates nothing after warm-up.
  */
 export class ImpactDecals {
   private readonly slots: DecalSlot[] = [];
   private nextSlot = 0;
   private readonly geometry = new PlaneGeometry(1, 1);
-  private readonly texture = createHoleTexture();
-  private readonly maxDecals: number;
+  private readonly textures = new Map<SurfaceKind, DataTexture>();
+  private maxDecals: number;
   private readonly holdMs: number;
   private readonly fadeMs: number;
   private readonly random: () => number;
@@ -57,8 +96,11 @@ export class ImpactDecals {
     this.random = options.random ?? Math.random;
   }
 
-  spawn(point: Vector3, normal: Vector3, sizeM: number, nowMs: number): void {
+  spawn(point: Vector3, normal: Vector3, sizeM: number, nowMs: number, surface: SurfaceKind = 'generic'): void {
     if (!isFinite3(point) || !isFinite3(normal) || normal.lengthSq() < 1e-8 || !(sizeM > 0)) {
+      return;
+    }
+    if (surface === 'emissive') {
       return;
     }
     const slot = this.acquire();
@@ -68,11 +110,16 @@ export class ImpactDecals {
     // random spin around the normal so repeated holes don't look stamped
     mesh.quaternion.multiply(this.tmpQuat.setFromAxisAngle(Z_AXIS, this.random() * Math.PI * 2));
     mesh.position.copy(point).addScaledVector(facing, SURFACE_LIFT_M);
-    mesh.scale.set(sizeM, sizeM, 1);
+    // sand dents spread wider than a clean hole in steel
+    const scale = surface === 'sand' ? 1.5 : surface === 'metal' ? 0.85 : 1;
+    mesh.scale.set(sizeM * scale, sizeM * scale, 1);
     mesh.visible = true;
+    slot.material.uniforms.map.value = this.texture(surface);
     slot.material.opacity = 1;
+    slot.material.uniforms.strength.value = 1;
     slot.bornMs = nowMs;
     slot.active = true;
+    mesh.userData.surface = surface;
     if (mesh.parent !== this.parent) {
       this.parent.add(mesh);
     }
@@ -86,6 +133,7 @@ export class ImpactDecals {
         this.deactivate(slot);
       } else if (age > this.holdMs) {
         slot.material.opacity = 1 - (age - this.holdMs) / this.fadeMs;
+        slot.material.uniforms.strength.value = slot.material.opacity;
       }
     }
   }
@@ -107,15 +155,54 @@ export class ImpactDecals {
     }
     this.slots.length = 0;
     this.geometry.dispose();
-    this.texture.dispose();
+    for (const texture of this.textures.values()) texture.dispose();
+    this.textures.clear();
+  }
+
+  private texture(kind: SurfaceKind): DataTexture {
+    const key: SurfaceKind = kind === 'stone' ? 'concrete' : kind;
+    let texture = this.textures.get(key);
+    if (!texture) {
+      texture = createDecalTexture(key);
+      this.textures.set(key, texture);
+    }
+    return texture;
+  }
+
+  /** quality presets cap how many holes stay alive, extra slots are freed */
+  public setMaxDecals(count: number): void {
+    const next = Math.max(1, Math.floor(count));
+    if (next === this.maxDecals) return;
+    this.maxDecals = next;
+    if (this.slots.length > next) {
+      for (const slot of this.slots.splice(next)) {
+        this.deactivate(slot);
+        slot.material.dispose();
+      }
+    }
+    this.nextSlot = this.nextSlot % next;
   }
 
   private acquire(): DecalSlot {
     if (this.slots.length < this.maxDecals) {
-      const material = new MeshBasicMaterial({
-        map: this.texture,
+      const material = new ShaderMaterial({
+        name: 'ImpactDecal',
+        vertexShader: VERTEX,
+        fragmentShader: FRAGMENT,
+        uniforms: {
+          map: { value: null },
+          strength: { value: 1 },
+          fogColor: { value: new Color() },
+          fogNear: { value: 1 },
+          fogFar: { value: 1000 },
+          fogDensity: { value: 0 },
+        },
+        fog: true,
         transparent: true,
         depthWrite: false,
+        blending: CustomBlending,
+        blendSrc: DstColorFactor,
+        blendDst: ZeroFactor,
         polygonOffset: true,
         polygonOffsetFactor: -4,
         polygonOffsetUnits: -4,
@@ -140,43 +227,6 @@ export class ImpactDecals {
     slot.mesh.visible = false;
     slot.mesh.parent?.remove(slot.mesh);
   }
-}
-
-/** dark punched hole with a lighter chipped rim, generated once */
-function createHoleTexture(): DataTexture {
-  const pixels = new Uint8Array(TEXTURE_SIZE * TEXTURE_SIZE * 4);
-  let seed = 0x5eed;
-  const noise = () => {
-    seed = (seed * 1664525 + 1013904223) >>> 0;
-    return seed / 4294967296;
-  };
-  for (let y = 0; y < TEXTURE_SIZE; y += 1) {
-    for (let x = 0; x < TEXTURE_SIZE; x += 1) {
-      const dx = ((x + 0.5) / TEXTURE_SIZE) * 2 - 1;
-      const dy = ((y + 0.5) / TEXTURE_SIZE) * 2 - 1;
-      const r = Math.hypot(dx, dy) + (noise() - 0.5) * 0.08;
-      let shade = 18;
-      let alpha = 0;
-      if (r < 0.32) {
-        shade = 12;
-        alpha = 1;
-      } else if (r < 0.5) {
-        shade = 58;
-        alpha = 0.85;
-      } else if (r < 0.78) {
-        shade = 44;
-        alpha = Math.max(0, 0.55 - (r - 0.5) * 2) * (noise() > 0.35 ? 1 : 0.3);
-      }
-      const offset = (y * TEXTURE_SIZE + x) * 4;
-      pixels[offset] = shade;
-      pixels[offset + 1] = shade - 2;
-      pixels[offset + 2] = shade - 4;
-      pixels[offset + 3] = Math.round(alpha * 255);
-    }
-  }
-  const texture = new DataTexture(pixels, TEXTURE_SIZE, TEXTURE_SIZE, RGBAFormat);
-  texture.needsUpdate = true;
-  return texture;
 }
 
 function isFinite3(v: Vector3): boolean {
