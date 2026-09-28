@@ -11,6 +11,9 @@
   display: grid;
   justify-items: center;
   gap: 2px;
+  padding: 4px 14px 6px;
+  background: rgba(6, 8, 12, 0.42);
+  clip-path: var(--notch);
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
 }
 
@@ -74,7 +77,8 @@
 .surf-pvp {
   position: fixed;
   left: 14px;
-  bottom: 14px;
+  /* sits above the combat health panel */
+  bottom: 112px;
   z-index: 22;
   pointer-events: none;
   display: flex;
@@ -259,7 +263,8 @@
   color: var(--cyan);
 }
 
-.surf-board-empty {
+.surf-board-rows li.surf-board-empty {
+  display: block;
   padding: 8px 14px 12px;
   color: var(--ink-dim);
   font-size: 13px;
