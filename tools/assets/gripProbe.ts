@@ -311,7 +311,8 @@ export async function probeAll(poseTable: Record<string, HandPose | KnifeHandFit
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const mm = (v: number) => (Number.isFinite(v) ? (v * 1000).toFixed(0).padStart(4) : '   -');
   console.log('knife            kind          tip->handle mm (T I M R P)      blade clearance mm (T I M R P)   ring');
-  for (const p of await probeAll()) {
+  const table = JSON.parse((await import('node:fs')).readFileSync(path.join(ROOT, 'src/viewmodel/knifeHandPoses.json'), 'utf8'));
+  for (const p of await probeAll(table)) {
     const tips = p.digits.map((d) => mm(d.tipToHandle)).join(' ');
     const clear = p.digits.map((d) => mm(d.bladeClearance)).join(' ');
     const ring = p.indexToRing === null ? '' : `index ${mm(p.indexToRing)} / r ${mm(p.ringInnerRadius ?? NaN)}`;

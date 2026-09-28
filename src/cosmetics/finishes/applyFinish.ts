@@ -124,11 +124,11 @@ function finishMaterial(part: KnifeFinishPart, original: Material, resolved: Res
   const { parts } = resolved.finish;
   switch (part) {
     case 'blade':
-      return parts.blade ? acquireSurfaceMaterial(resolved, wear, seed, 'blade') : null;
+      return parts.blade ? acquireSurfaceMaterial(resolved, wear, seed, 'blade', original) : null;
     case 'metal':
-      return parts.metal ? acquireSurfaceMaterial(resolved, wear, seed, 'blade') : null;
+      return parts.metal ? acquireSurfaceMaterial(resolved, wear, seed, 'blade', original) : null;
     case 'edge':
-      return parts.edge ? acquireSurfaceMaterial(resolved, wear, seed, 'edge') : null;
+      return parts.edge ? acquireSurfaceMaterial(resolved, wear, seed, 'edge', original) : null;
     case 'handle':
       return acquireHandleMaterial(resolved, wear, seed, original);
     default:

@@ -123,8 +123,8 @@ export const AWP_CLIPS: Readonly<Record<GunClipName, Clip>> = {
   },
 };
 
-export type KnifeDrawStyle = 'unsheathe' | 'flip_open' | 'switch_open' | 'flick_open' | 'spin_draw' | 'balisong_open' | 'spin_in' | 'dagger_pair';
-export type KnifeInspectStyle = 'flip_show' | 'switch_show' | 'flick_show' | 'balisong' | 'ring_spin' | 'toss_catch' | 'twirl' | 'heavy_show' | 'dagger_pair';
+export type KnifeDrawStyle = 'unsheathe' | 'flip_open' | 'switch_open' | 'flick_open' | 'spin_draw' | 'balisong_open' | 'spin_in' | 'skeleton_spin' | 'dagger_pair';
+export type KnifeInspectStyle = 'flip_show' | 'switch_show' | 'flick_show' | 'balisong' | 'ring_spin' | 'skeleton_ring' | 'toss_catch' | 'twirl' | 'heavy_show' | 'dagger_pair';
 
 const HEAVY: ReadonlySet<KnifeId> = new Set(['bowie', 'huntsman', 'survival', 'kukri']);
 const TWIRL: ReadonlySet<KnifeId> = new Set(['bayonet', 'm9_bayonet']);
@@ -136,6 +136,8 @@ export function knifeDrawStyle(def: KnifeDef): KnifeDrawStyle {
   // the stiletto is a switchblade: the blade snaps out; the navaja is flicked open
   if (def.id === 'stiletto') return 'switch_open';
   if (def.id === 'navaja') return 'flick_open';
+  // the skeleton is held in a hammer grip, but the draw twirls it on the index finger through its ring
+  if (def.id === 'skeleton') return 'skeleton_spin';
   if (def.shape.fingerRing) return 'spin_in';
   if (mech === 'folder') return 'flip_open';
   if (TWIRL.has(def.id)) return 'spin_draw';
@@ -146,6 +148,7 @@ export function knifeInspectStyle(def: KnifeDef): KnifeInspectStyle {
   const mech = def.shape.mechanism ?? 'fixed';
   if (def.shape.pair) return 'dagger_pair';
   if (mech === 'balisong') return 'balisong';
+  if (def.id === 'skeleton') return 'skeleton_ring';
   if (def.shape.fingerRing) return 'ring_spin';
   if (def.id === 'stiletto') return 'switch_show';
   if (def.id === 'navaja') return 'flick_show';
@@ -179,8 +182,21 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
       rx: [[0, -40], [0.35, 0, 'out']],
       rz: [[0, 20], [0.35, 0], [0.47, -14, 'out'], [0.75, 0]],
       knifeOpen: [[0, 0], [0.36, 0], [0.5, 1, 'back']],
+      thumbOpener: [[0, 0], [0.18, 0], [0.32, 1, 'inOut'], [0.5, 1], [0.64, 0, 'inOut']],
     },
     events: [[0.46, 'sound:knife_open']],
+  },
+  skeleton_spin: {
+    // index slips into the ring, the knife twirls around it, then the hand takes the handle
+    duration: 1.1,
+    tracks: {
+      py: [[0, -0.16], [0.3, 0, 'out']],
+      rx: [[0, -30], [0.3, 0, 'out']],
+      ringHold: [[0, 1], [0.75, 1], [0.95, 0, 'inOut']],
+      spinZ: [[0, 720], [0.8, 0, 'out']],
+      gripOpen: [[0, 0.95], [0.78, 0.95], [0.98, 0, 'out']],
+    },
+    events: [[0.3, 'sound:knife_spin']],
   },
   switch_open: {
     // button press, the blade swings out in a few frames and the knife kicks
@@ -190,6 +206,7 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
       rx: [[0, -35], [0.32, 0, 'out'], [0.45, 0], [0.49, 8, 'out'], [0.65, 0]],
       knifeOpen: [[0, 0], [0.42, 0], [0.47, 1, 'out']],
       rz: [[0, 12], [0.32, 0], [0.49, -6], [0.65, 0]],
+      thumbOpener: [[0, 0], [0.2, 0], [0.34, 1, 'inOut'], [0.48, 1], [0.62, 0, 'inOut']],
     },
     events: [[0.44, 'sound:knife_open']],
   },
@@ -201,6 +218,7 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
       rx: [[0, -30], [0.35, 0, 'out']],
       rz: [[0, 15], [0.35, 0], [0.45, 30, 'out'], [0.55, -18, 'in'], [0.8, 0]],
       knifeOpen: [[0, 0], [0.47, 0], [0.56, 1, 'back']],
+      thumbOpener: [[0, 0], [0.25, 0], [0.4, 1, 'inOut'], [0.55, 1], [0.7, 0, 'inOut']],
     },
     events: [[0.53, 'sound:knife_open']],
   },
@@ -228,11 +246,14 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
     events: [[0.55, 'sound:knife_open'], [1.15, 'sound:knife_open']],
   },
   spin_in: {
+    // pulled out spinning on the index finger through the ring, the other fingers
+    // open to let it turn, then close around the handle as it lands
     duration: 1.0,
     tracks: {
       py: [[0, -0.16], [0.3, 0, 'out']],
       rx: [[0, -30], [0.3, 0, 'out']],
       spinZ: [[0, 720], [0.85, 0, 'out']],
+      gripOpen: [[0, 0.95], [0.72, 0.95], [0.9, 0, 'out']],
     },
     events: [[0.3, 'sound:knife_draw']],
   },
@@ -327,9 +348,26 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
       rz: [[0, 0], [0.4, 25], [1.6, 25], [2.0, -20], [2.8, -20], [3.1, 0]],
       py: [[0, 0], [0.4, 0.04], [2.8, 0.04], [3.1, 0]],
       spinZ: [[0, 0], [0.5, 0], [1.0, 360, 'inOut'], [1.3, 360], [1.8, 720, 'inOut'], [2.1, 720], [2.8, 0, 'inOut']],
+      // the fingers let go while it spins, the index stays hooked in the ring
+      gripOpen: [[0, 0], [0.45, 0], [0.55, 0.95], [1.02, 0.95], [1.12, 0], [1.28, 0], [1.38, 0.95], [1.82, 0.95], [1.92, 0], [2.05, 0], [2.15, 0.95], [2.78, 0.95], [2.9, 0]],
       ...WATCH_TAIL(3.0),
     },
     events: [[0.7, 'sound:knife_spin'], [1.5, 'sound:knife_spin'], [2.4, 'sound:knife_spin']],
+  },
+  skeleton_ring: {
+    // turn it over, then hook the index through the ring and spin it on the finger
+    duration: 4.6,
+    tracks: {
+      ry: [[0, 0], [0.4, 30], [3.2, 30], [3.6, 0]],
+      rz: [[0, 0], [0.4, 45], [1.0, 45], [1.3, 20], [3.2, 20], [3.6, 0]],
+      py: [[0, 0], [0.4, 0.05], [3.2, 0.05], [3.6, 0]],
+      rollX: [[0, 0], [0.5, 0], [0.9, 180, 'inOut'], [1.2, 360, 'inOut']],
+      ringHold: [[0, 0], [1.25, 0], [1.5, 1, 'inOut'], [2.95, 1], [3.2, 0, 'inOut']],
+      gripOpen: [[0, 0], [1.3, 0], [1.5, 0.95], [2.95, 0.95], [3.15, 0]],
+      spinZ: [[0, 0], [1.5, 0], [2.2, 360, 'inOut'], [2.9, 720, 'inOut']],
+      ...WATCH_TAIL(3.2),
+    },
+    events: [[1.9, 'sound:knife_spin'], [2.6, 'sound:knife_spin']],
   },
   toss_catch: {
     // the hand dips, flicks the knife up through a full flip and catches it
