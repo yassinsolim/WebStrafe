@@ -824,7 +824,7 @@ describe('SupabaseMultiplayer (p7 protocol)', () => {
       tab.setRoomContext(ctx());
       tab.setCombatReady(true);
       expect(tab.isParked()).toBe(false);
-      expect([...bus.topics.keys()]).toContain('test_room_p6_map2');
+      expect([...bus.topics.keys()]).toContain(`test_room_${SUPABASE_PROTOCOL}_map2`);
       run(IDLE_DISCONNECT_MS + 5000, [tab]);
       expect(tab.isParked()).toBe(false);
       tab.disconnect();
