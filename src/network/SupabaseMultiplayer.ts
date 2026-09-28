@@ -431,13 +431,13 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
 
   /**
    * Opt in or out of pvp. Enforced by the host: off means immune and unable to
-   * damage anyone (players or bots). Goes out immediately.
+   * damage anyone (players or bots). Goes out on the next pump tick.
    */
   setPvp(on: boolean): void {
     if (this.localPvp === on) return;
     this.localPvp = on;
+    // the next pump tick sends it, one message instead of two
     this.cadence.flush();
-    this.broadcastState();
   }
 
   getPvp(): boolean {
@@ -775,7 +775,6 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     if (record.hostEpoch !== null) this.maxEpochSeen = Math.max(this.maxEpochSeen, record.hostEpoch);
     record.weapon = typeof p.w === 'string' ? p.w : record.weapon;
     record.deadForMs = typeof p.d === 'number' && Number.isFinite(p.d) ? p.d : null;
-    const wasPvp = record.pvp;
     record.pvp = p.pv !== 0;
     if (Array.isArray(p.sc) && p.sc.length === 2) {
       record.score = { kills: Number(p.sc[0]) || 0, deaths: Number(p.sc[1]) || 0 };
@@ -817,10 +816,6 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
 
     if (before !== `${record.eligibility}|${record.hostEpoch}`) {
       this.updateHostRole();
-    }
-    if (wasPvp !== record.pvp) {
-      // pvp changes go out right away so the host enforces them without a gap
-      this.cadence.flush();
     }
     this.onCarried(p);
     this.emitSnapshot();
