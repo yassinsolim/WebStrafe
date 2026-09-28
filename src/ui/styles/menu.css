@@ -563,6 +563,28 @@
   font-size: 0.95rem;
 }
 
+.menu-map-best {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-top: 0.15rem;
+  color: var(--ws-ink-2);
+  font-size: 0.86rem;
+}
+
+.menu-map-best span:first-child {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.menu-map-best b {
+  color: var(--ws-ink);
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .menu-map-info {
   margin: 0.1rem 0 0;
   color: var(--ws-ink-3);

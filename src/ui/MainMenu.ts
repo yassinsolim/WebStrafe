@@ -325,6 +325,10 @@ export class MainMenu {
   }
 
   public setLeaderboard(entries: Array<{ name: string; timeMs: number; model: string }>, mapName: string): void {
+    // the fetch is async, so tie the result to the map it names rather than the current pick
+    const mapId = this.maps.find((map) => map.name === mapName)?.id ?? this.selectedMapId;
+    const top = entries[0];
+    this.playPanel.setBestRun(mapId, top ? { name: top.name, time: formatRunTime(top.timeMs) } : null);
     this.leaderboardInfo.textContent = `Top runs on ${mapName}`;
     this.leaderboardList.innerHTML = '';
     if (entries.length === 0) {

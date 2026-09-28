@@ -6,6 +6,12 @@ export interface PlayPanelCallbacks {
   onPlay(mapId: string): void;
 }
 
+export interface BestRun {
+  name: string;
+  /** already formatted, e.g. 1:02.113 */
+  time: string;
+}
+
 /** simple line art per map type for cards without a thumbnail */
 const PLACEHOLDER_ART: Record<MapType, string> = {
   surf: '<path d="M0 70 L38 22 L52 22 L30 70 Z M44 70 L86 16 L100 16 L100 30 L70 70 Z" /><path class="menu-map-art-line" d="M0 78 H160" />',
@@ -23,6 +29,7 @@ export class PlayPanel {
   private readonly detail: HTMLDivElement;
   private maps: MapManifestEntry[] = [];
   private selectedId = '';
+  private best: { mapId: string; run: BestRun | null } | null = null;
 
   constructor(section: HTMLElement, private readonly callbacks: PlayPanelCallbacks) {
     this.grid = document.createElement('div');
@@ -40,6 +47,12 @@ export class PlayPanel {
 
   getSelected(): MapManifestEntry | undefined {
     return this.maps.find((map) => map.id === this.selectedId);
+  }
+
+  /** top leaderboard run for a map, shown in the detail card of timed maps */
+  setBestRun(mapId: string, run: BestRun | null): void {
+    this.best = { mapId, run };
+    this.renderDetail();
   }
 
   private render(): void {
@@ -140,7 +153,24 @@ export class PlayPanel {
     const info = document.createElement('div');
     info.className = 'menu-map-info';
     info.textContent = parts.join(' · ');
-    this.detail.append(head, blurb, info);
+    this.detail.append(head, blurb);
+    if ((type === 'surf' || type === 'bhop') && this.best?.mapId === selected.id) {
+      const best = document.createElement('div');
+      best.className = 'menu-map-best';
+      const label = document.createElement('span');
+      label.textContent = 'Best run';
+      const value = document.createElement('b');
+      value.textContent = this.best.run ? this.best.run.time : 'No runs yet';
+      best.append(label, value);
+      if (this.best.run) {
+        const who = document.createElement('span');
+        who.className = 'menu-map-best-name';
+        who.textContent = this.best.run.name;
+        best.appendChild(who);
+      }
+      this.detail.appendChild(best);
+    }
+    this.detail.appendChild(info);
   }
 }
 
