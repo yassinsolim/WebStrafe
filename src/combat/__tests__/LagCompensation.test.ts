@@ -58,12 +58,22 @@ describe('lag compensated hits', () => {
 
   it('clamps rewind to the lag compensation window', () => {
     const arena = setup(0);
-    // asks for 900 ms back; only 400 ms is honoured
-    const { origin, dir } = aimAt(feetAt(100)[0]);
+    // asks for 1.5 s back; only 1 s is honoured, so the target sits at t=0 not t=-500
+    const { origin, dir } = aimAt(feetAt(-500)[0]);
     const outcome = arena.handleFire('shooter', origin, dir, 10_000, undefined, undefined, {
-      targetTimes: { target: 100 },
+      targetTimes: { target: -500 },
     });
     expect(outcome.hit).toBeUndefined();
+  });
+
+  it('follows the same short extrapolation the shooter rendered past the newest sample', () => {
+    const arena = setup(0);
+    // newest sample is t=1000; the shooter's renderer carried it 150 ms forward
+    const { origin, dir } = aimAt(feetAt(1150)[0]);
+    const outcome = arena.handleFire('shooter', origin, dir, 10_000, undefined, undefined, {
+      targetTimes: { target: 1150 },
+    });
+    expect(outcome.hit?.targetId).toBe('target');
   });
 
   it('accepts a fast shooter whose origin is ahead of their last sample', () => {

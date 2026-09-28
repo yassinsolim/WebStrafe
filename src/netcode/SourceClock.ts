@@ -83,7 +83,7 @@ export class SourceClock {
    * How far behind "now" to render so a newer sample has almost always arrived:
    * one send interval plus the recent jitter peak plus a small margin.
    */
-  getRecommendedDelayMs(minMs = 40, maxMs = 350): number {
+  getRecommendedDelayMs(minMs = 40, maxMs = 900): number {
     const target = this.getIntervalMs() + this.getJitterMs() + 10;
     return Math.min(maxMs, Math.max(minMs, target));
   }

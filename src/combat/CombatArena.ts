@@ -9,7 +9,7 @@ import {
 import { resolveHit, type TargetCapsule } from './HitResolver';
 import { WeaponController } from './WeaponController';
 import { type WeaponId } from './weapons';
-import { interpolateSamples } from '../netcode/InterpolationBuffer';
+import { interpolateSamples, MAX_EXTRAPOLATION_MS } from '../netcode/InterpolationBuffer';
 
 /** Default player capsule (mirrors MovementController.capsule). */
 export const PLAYER_CAPSULE_HEIGHT = 1.76;
@@ -27,10 +27,17 @@ export const SPAWN_PROTECTION_MS = 3500;
  * tolerating latency/interpolation.
  */
 export const MAX_ORIGIN_DEVIATION = 3;
-export const MAX_LAG_COMPENSATION_MS = 400;
+/**
+ * Covers the slowest render delay a client can use (900 ms at ~2 Hz in a full
+ * Supabase room) plus latency. CS:GO's sv_maxunlag default is 1 s as well.
+ */
+export const MAX_LAG_COMPENSATION_MS = 1000;
 const POSITION_HISTORY_RETENTION_MS = MAX_LAG_COMPENSATION_MS * 2;
-/** allowed lead of a requested rewind time past the newest sample (clock noise) */
-const MAX_REWIND_LEAD_MS = 50;
+/**
+ * A shooter may be looking past the newest sample while it extrapolates; the
+ * rewind follows the same bounded extrapolation so both sides agree.
+ */
+const MAX_REWIND_LEAD_MS = MAX_EXTRAPOLATION_MS;
 
 interface PositionSample {
   /** sample time in this player's authority clock */
@@ -151,6 +158,18 @@ export class CombatArena {
       playerId: id,
       position: position ?? [p.feet.x, p.feet.y, p.feet.z],
     };
+  }
+
+  /**
+   * Restores a death this arena didn't see (it happened under a previous
+   * host). The player respawns through tickRespawns at `respawnAtMs`.
+   */
+  markDead(id: string, respawnAtMs: number): void {
+    const p = this.players.get(id);
+    if (!p) return;
+    p.combat.health = 0;
+    p.combat.alive = false;
+    p.combat.respawnAtMs = respawnAtMs;
   }
 
   /** True while the player is within their post-spawn invulnerability window. */
@@ -366,7 +385,12 @@ function rewindTo(history: readonly PositionSample[], atMs: number): Vector3 | n
   const newest = history.at(-1);
   if (!newest) return null;
   if (atMs > newest.atMs + MAX_REWIND_LEAD_MS) return null;
-  const t = Math.max(newest.atMs - MAX_LAG_COMPENSATION_MS, Math.min(newest.atMs, atMs));
+  if (atMs > newest.atMs) {
+    // what the shooter's renderer showed: the newest pose carried forward
+    const aheadS = Math.min(atMs - newest.atMs, MAX_REWIND_LEAD_MS) / 1000;
+    return newest.velocity ? newest.feet.clone().addScaledVector(newest.velocity, aheadS) : newest.feet;
+  }
+  const t = Math.max(newest.atMs - MAX_LAG_COMPENSATION_MS, atMs);
   if (t >= newest.atMs) return newest.feet;
   let hi = history.length - 1;
   while (hi > 0 && history[hi - 1].atMs > t) hi -= 1;
