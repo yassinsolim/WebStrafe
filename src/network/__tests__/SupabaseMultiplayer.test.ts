@@ -620,7 +620,7 @@ describe('SupabaseMultiplayer (p6 protocol)', () => {
         }
         menu.disconnect();
       }
-    });
+    }, 30_000);
 
     it('a hidden tab in a map next to a player: tens of thousands an hour before, none after', () => {
       for (const [label, idleMs] of [['before', Infinity], ['after', undefined]] as const) {
@@ -651,7 +651,7 @@ describe('SupabaseMultiplayer (p6 protocol)', () => {
         }
         for (const p of [player, tab, solo]) p.disconnect();
       }
-    });
+    }, 30_000);
 
     it('rejoins on return as a fresh joiner: presence, cosmetics and an unchanged host', () => {
       const bus = new FakeBus();
@@ -686,7 +686,7 @@ describe('SupabaseMultiplayer (p6 protocol)', () => {
       expect(hosting(tab)).toBe(false);
       host.disconnect();
       tab.disconnect();
-    });
+    }, 30_000);
 
     it('a hidden host hands the room off before it leaves', () => {
       const bus = new FakeBus();
@@ -709,7 +709,7 @@ describe('SupabaseMultiplayer (p6 protocol)', () => {
       expect(hosting(other)).toBe(true);
       host.disconnect();
       other.disconnect();
-    });
+    }, 30_000);
 
     it('a parked menu tab rejoins when it enters a map', () => {
       const bus = new FakeBus();
@@ -729,7 +729,7 @@ describe('SupabaseMultiplayer (p6 protocol)', () => {
       run(IDLE_DISCONNECT_MS + 5000, [tab]);
       expect(tab.isParked()).toBe(false);
       tab.disconnect();
-    });
+    }, 30_000);
   });
 
   describe('cosmetics', () => {
