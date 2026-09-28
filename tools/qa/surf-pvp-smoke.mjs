@@ -41,6 +41,10 @@ for (const name of ['A', 'B', 'C']) {
     if (new URL(req.url()).origin !== origin) return route.continue();
     return route.continue({ headers: { ...req.headers(), ...headers } });
   });
+  // QA_PREFIX=... gives every client (and the ranked run) a clearly labelled name for cleanup
+  if (process.env.QA_PREFIX) {
+    await context.addInitScript((n) => localStorage.setItem('webstrafe-player-name-v1', n), `${process.env.QA_PREFIX} ${name}`);
+  }
   const page = await context.newPage();
   const errors = [];
   page.on('console', (msg) => {
@@ -199,7 +203,7 @@ try {
   const overlay = await C.page.evaluate(() => document.querySelector('.run-submit-status')?.textContent ?? '');
   check('finish overlay shows the time', /Finished in/.test(overlay), { overlay });
 
-  const runName = `QA ${room.slice(1, 7)}`;
+  const runName = process.env.QA_PREFIX ? `${process.env.QA_PREFIX} run` : `QA ${room.slice(1, 7)}`;
   const rankedBoards = (await state(C)).surf.boardsAvailable;
   if (!rankedBoards) {
     // without the migration the submit would go to the legacy table, which is

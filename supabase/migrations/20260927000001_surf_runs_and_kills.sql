@@ -371,3 +371,12 @@ grant execute on function public.webstrafe_start_run(text) to anon, authenticate
 grant execute on function public.webstrafe_submit_run(uuid, text, text, integer, integer[], boolean, text) to anon, authenticated;
 grant execute on function public.webstrafe_start_session(text, text) to anon, authenticated;
 grant execute on function public.webstrafe_report_session(uuid, integer, integer) to anon, authenticated;
+
+-- supabase's default grants give anon everything on new tables and views; the
+-- client only ever reads them, so everything but select goes
+revoke truncate, references, trigger on public.webstrafe_map_rules, public.webstrafe_runs, public.webstrafe_sessions
+  from anon, authenticated;
+revoke insert, update, delete, truncate, references, trigger on public.webstrafe_run_bests, public.webstrafe_stage_bests,
+  public.webstrafe_kills_daily, public.webstrafe_kills_alltime from anon, authenticated;
+alter function public.webstrafe_valid_name(text) set search_path = public;
+alter function public.webstrafe_client_bucket() set search_path = public;
