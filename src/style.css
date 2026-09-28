@@ -382,3 +382,171 @@ body:has(.shot-no-hud) .combat-hud {
     animation: none;
   }
 }
+
+/* ── knife finishes (loadout) ──────────────────────────────── */
+.finish-panel {
+  gap: 10px;
+}
+
+.finish-inspect {
+  position: relative;
+  height: clamp(170px, 24vh, 250px);
+  overflow: hidden;
+  border: 1px solid var(--m-line);
+  background:
+    radial-gradient(70% 90% at 50% 45%, rgba(255, 106, 43, 0.12), transparent 70%),
+    radial-gradient(60% 50% at 50% 100%, rgba(70, 213, 255, 0.08), transparent 70%),
+    rgba(0, 0, 0, 0.28);
+}
+
+.finish-inspect-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.finish-inspect-canvas.is-dragging {
+  cursor: grabbing;
+}
+
+.finish-inspect-caption {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  pointer-events: none;
+}
+
+.finish-inspect-knife {
+  color: var(--m-ink-dim);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.finish-inspect-name {
+  font-weight: 700;
+  font-size: 1.15rem;
+  line-height: 1.1;
+  letter-spacing: 0.03em;
+}
+
+.finish-inspect-meta {
+  color: var(--m-accent-2);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+}
+
+.finish-inspect-hint {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  color: rgba(255, 255, 255, 0.45);
+  font-family: var(--font-mono);
+  font-size: 0.56rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.finish-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 6px;
+}
+
+.finish-swatch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 6px 7px;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+}
+
+/* the css gradient shows until the rendered swatch lands */
+.finish-swatch-art {
+  display: block;
+  width: 100%;
+  aspect-ratio: 12 / 5;
+  background: var(--finish-swatch);
+}
+
+.finish-swatch-art.is-rendered {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.finish-swatch-name {
+  overflow: hidden;
+  font-weight: 600;
+  font-size: 0.74rem;
+  line-height: 1.1;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.finish-variants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.finish-variant {
+  appearance: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px 4px 6px;
+  color: var(--m-ink-dim);
+  background: var(--m-panel);
+  border: 1px solid var(--m-line-strong);
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.finish-variant:hover {
+  color: var(--m-ink);
+}
+
+.finish-variant.is-active {
+  color: var(--m-ink);
+  border-color: var(--m-accent);
+}
+
+.finish-variant-dot {
+  width: 12px;
+  height: 12px;
+  background: var(--finish-variant);
+  border: 1px solid rgba(0, 0, 0, 0.5);
+}
+
+.finish-seed-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.finish-random {
+  padding: 5px 12px;
+}
+
+.finish-random:disabled,
+.finish-seed-input:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.loadout-finish {
+  color: var(--m-accent-2);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+}

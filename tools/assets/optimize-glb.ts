@@ -69,7 +69,9 @@ export async function optimizeGlb(options: Options): Promise<void> {
     });
   const document = await io.read(options.input);
   const transforms = [
-    dedup(),
+    // named materials are hooks (the knife finishes swap knife_edge, knife_accent...), so
+    // identical ones with different names stay apart
+    dedup({ keepUniqueNames: true }),
     // keepLeaves keeps empty socket nodes (grip points, muzzles) alive
     prune({ keepLeaves: true, keepAttributes: true }),
     weld(),

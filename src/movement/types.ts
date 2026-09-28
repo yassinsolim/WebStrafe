@@ -75,4 +75,6 @@ export interface MovementSnapshot {
   pitchRad: number;
   /** 0 standing, 1 fully crouched. hull and eye height both follow it */
   duckAmount: number;
+  /** metres the camera still has to ease after an air duck moved the feet */
+  viewEase: number;
 }

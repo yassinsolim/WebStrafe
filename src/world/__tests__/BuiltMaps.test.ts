@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs';
 import { Box3, Texture, Vector3, type Mesh } from 'three';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { MovementController } from '../../movement/MovementController';
+import { defaultCvars } from '../../movement/cvars';
+import { weaponMaxSpeed } from '../../combat/weapons';
 import type { CollisionWorld } from '../CollisionWorld';
 import { MapTriggers, sanitizeTriggers } from '../MapTriggers';
 import { applyLightmaps, resolveEnvironment, resolveMapAssetPath } from '../MapEnvironment';
@@ -22,9 +24,17 @@ import {
 } from './mapTestUtils';
 
 const MAPS = ['bhop_emberdrift', 'surf_prismline', 'aim_ochrecut'] as const;
-const CAPSULE = { height: 1.76, radius: 0.34 };
+// the standing hull the game spawns and moves (cs2's 72 u)
+const CAPSULE = new MovementController().capsule;
 const DT = 1 / 128;
 const MB = 1024 * 1024;
+
+/** the real movement code at the speed you run with the knife, what you hold outside combat */
+function knifeRunner(): MovementController {
+  const player = new MovementController();
+  player.setMaxSpeedCap(weaponMaxSpeed('knife'));
+  return player;
+}
 
 const worlds = new Map<string, CollisionWorld>();
 
@@ -159,9 +169,10 @@ describe.each(MAPS)('%s meta', (id) => {
 });
 
 describe('map cvars', () => {
-  it('bhop and surf maps carry their air acceleration, the arena none', () => {
-    expect((readMeta('bhop_emberdrift').cvars as Record<string, number>).sv_airaccelerate).toBe(150);
-    expect((readMeta('surf_prismline').cvars as Record<string, number>).sv_airaccelerate).toBe(100);
+  it('bhop and surf maps carry their community air acceleration, the arena none', () => {
+    // autobhop bhop servers run 1000 and surf servers 150, see docs/movement-cs2.md
+    expect((readMeta('bhop_emberdrift').cvars as Record<string, number>).sv_airaccelerate).toBe(1000);
+    expect((readMeta('surf_prismline').cvars as Record<string, number>).sv_airaccelerate).toBe(150);
     expect(readMeta('aim_ochrecut').cvars).toBeUndefined();
   });
 });
@@ -196,8 +207,8 @@ describe('bhop_emberdrift course', () => {
   });
 
   it('has a platform top under every jump and every one is reachable', () => {
-    const g = 19;
-    const vz = 5.4;
+    const g = defaultCvars.sv_gravity;
+    const vz = defaultCvars.sv_jump_impulse;
     for (let i = 1; i < layout.platforms.length; i += 1) {
       const a = layout.platforms[i - 1];
       const b = layout.platforms[i];
@@ -242,30 +253,32 @@ describe('bhop_emberdrift course', () => {
 
   it('runs the start of the course with the real movement code', () => {
     const w = world('bhop_emberdrift');
-    const player = new MovementController();
-    player.setCvar('sv_airaccelerate', 150);
+    const player = knifeRunner();
+    player.applyMapCvars(meta.cvars);
     const spawn = meta.spawns![0];
     player.reset(vec(spawn.position), spawn.yawDeg ?? 0);
     const targets = layout.platforms.slice(1, 6).map((p) => top(p));
     let next = 0;
     let landed = 0;
     let side = 1;
+    let hopping = false;
+    const { sv_gravity: g, sv_jump_impulse: vz } = player.getCvars();
     for (let t = 0; t < 128 * 8 && next < targets.length; t += 1) {
       const feet = player.getFeetPosition();
       const goal = targets[next];
       const to = goal.clone().sub(feet).setY(0);
-      // run up facing the platform, then hop holding W and steer the wish direction like a mouse strafe.
-      // with the 30 u/s air cap that's the only way to turn, gain or lose speed in the air, so the bot
-      // turns toward the platform and gains or bleeds speed so it lands on the centre
+      // run up facing the platform and start hopping once a flat jump at this speed reaches its
+      // centre, then hold W and steer the wish direction like a mouse strafe. with the 30 u/s air
+      // cap that's the only way to turn, gain or lose speed in the air, so the bot turns toward
+      // the platform and gains or bleeds speed so it lands on the centre
       let yaw = Math.atan2(-to.x, -to.z);
       const vel = player.captureState().velocity;
       const speed = Math.hypot(vel[0], vel[2]);
-      const hopping = t >= 40;
+      hopping ||= to.length() <= speed * ((2 * vz) / g);
       if (hopping && speed > 1 && !player.getDebugState().grounded && feet.y > goal.y - 1) {
         const velYaw = Math.atan2(-vel[0], -vel[2]);
         const err = Math.atan2(Math.sin(yaw - velYaw), Math.cos(yaw - velYaw));
         // speed that lands on the platform centre in the air time left
-        const g = player.getCvars().sv_gravity;
         const drop = Math.max(0, vel[1] * vel[1] + 2 * g * (feet.y - goal.y));
         const airLeft = (vel[1] + Math.sqrt(drop)) / g;
         const want = to.length() / Math.max(airLeft, 0.05);
@@ -435,8 +448,8 @@ describe('surf_prismline ramps', () => {
     const { rs, re, fs, normal } = facePlane(ramp);
     const f = vec(ramp.forward).normalize();
     const start = rs.clone().lerp(re, 0.1).add(fs.clone().sub(rs).multiplyScalar(0.15)).addScaledVector(normal, 0.3);
-    const player = new MovementController();
-    player.setCvar('sv_airaccelerate', 100);
+    const player = knifeRunner();
+    player.applyMapCvars(meta.cvars);
     player.reset(start, (Math.atan2(-f.x, -f.z) * 180) / Math.PI);
     player.setVelocity(f.clone().multiplyScalar(12));
     const into = ramp.side === 'right' ? -1 : 1;
@@ -485,8 +498,8 @@ function rideStage(w: CollisionWorld, layout: SurfLayout, stageIndex: number, si
   const start = origin.clone().addScaledVector(fwd, first.s0 + 8)
     .addScaledVector(right, first.lateral + sign * depth0 / Math.tan((first.angleDeg * Math.PI) / 180));
   start.y = first.ridgeStart + (first.ridgeEnd - first.ridgeStart) * (8 / first.length) - depth0 + 0.3;
-  const player = new MovementController();
-  player.setCvar('sv_airaccelerate', 100);
+  const player = knifeRunner();
+  player.applyMapCvars(readMeta('surf_prismline').cvars);
   player.reset(start, (Math.atan2(-fwd.x, -fwd.z) * 180) / Math.PI);
   player.setVelocity(fwd.clone().multiplyScalar(speed));
   let current = -1;
@@ -587,7 +600,7 @@ describe('aim_ochrecut arena', () => {
     const bottom = vec(stair.bottom);
     const topPoint = vec(stair.top);
     const dir = topPoint.clone().sub(bottom).setY(0).normalize();
-    const player = new MovementController();
+    const player = knifeRunner();
     player.reset(bottom.clone().addScaledVector(dir, -1.5).add(new Vector3(0, 0.05, 0)), (Math.atan2(-dir.x, -dir.z) * 180) / Math.PI);
     let onNest = false;
     for (let t = 0; t < 128 * 3 && !onNest; t += 1) {

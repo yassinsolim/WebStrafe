@@ -12,6 +12,7 @@
   <body>
     <!-- dev tool: /tools/viewmodel-preview.html?item=deagle|awp|knife&knife=<id>&clip=idle|draw|fire|reload|inspect|slashA|slashB|stab
          &t=<seconds into the clip>&time=HH:MM:SS (freezes the watch)&view=fp|side|top|left&width=1600&bg=map&scale=0.5..1.5
+         &finish=<finish or variant id>&wear=<0..1 float>&seed=<0..999> puts a knife finish on
          sets window.__viewmodelReady and document.title = 'ready' once the frame is drawn -->
     <div id="ids"></div>
     <script type="module">
@@ -53,19 +54,47 @@
 
       await system.load();
       if (params.get('scale')) system.setScale(Number(params.get('scale')));
+      if (params.get('finish')) {
+        system.setKnifeFinish({ finishId: params.get('finish'), wear: Number(params.get('wear') ?? 0), seed: Number(params.get('seed') ?? 0) });
+      }
       if (params.get('knife')) system.setKnife(params.get('knife'));
       system.equip(item);
+      // the blender knife loads after the procedural stand-in: wait for it so the
+      // preview shows what the game shows
+      if (item === 'knife') {
+        for (let i = 0; i < 60 && system.getKnifeObjects()[0]?.userData.source !== 'glb'; i += 1) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      }
+      if (params.get('markers')) system.showFingerMarkers(true);
       system.seek(clip, t);
+      if (item === 'knife') {
+        // the blender model swaps in after it loads; shoot that, not the procedural stand-in
+        for (let i = 0; i < 200 && system.knife?.knife?.userData.source !== 'glb'; i += 1) {
+          await new Promise((r) => setTimeout(r, 25));
+        }
+        if (params.get('finish')) {
+          system.setKnifeFinish({ finishId: params.get('finish'), wear: Number(params.get('wear') ?? 0), seed: Number(params.get('seed') ?? 0) });
+        }
+        system.seek(clip, t);
+      }
 
       let camera = vm.camera;
       if (view !== 'fp') {
         // outside views for checking hand placement
         camera = new PerspectiveCamera(40, width / height, 0.01, 20);
-        const target = (params.get('target') ?? '0.05,-0.18,-0.3').split(',').map(Number);
+        // target=hand centres the outside views on the live right hand
+        const handAt = () => {
+          const v = system.getHandWorldPosition();
+          return [v.x, v.y, v.z];
+        };
+        const target = params.get('target') === 'hand' ? handAt() : (params.get('target') ?? '0.05,-0.18,-0.3').split(',').map(Number);
         const dist = Number(params.get('dist') ?? 0.9);
         const pos = view === 'side' ? [target[0] + dist, target[1] + 0.05, target[2]]
           : view === 'left' ? [target[0] - dist, target[1] + 0.05, target[2]]
           : view === 'top' ? [target[0], target[1] + dist, target[2] + 0.001]
+          : view === 'bottom' ? [target[0], target[1] - dist, target[2] + 0.001]
+          : view === 'front' ? [target[0], target[1] + 0.02, target[2] - dist]
           : [target[0] + dist * 0.6, target[1] + dist * 0.3, target[2] - dist * 0.6];
         camera.position.set(...pos);
         camera.lookAt(...target);

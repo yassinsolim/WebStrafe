@@ -1,3 +1,5 @@
+import type { PlayerCosmetics } from './cosmetics';
+
 export type PlayerModel = 'terrorist' | 'counterterrorist';
 export type AttackKind = 'primary' | 'secondary';
 
@@ -24,6 +26,8 @@ export interface MultiplayerSnapshotPlayer {
   t?: number;
   /** Which clock `t` is in: 'server', or the sending peer id in Supabase mode. */
   clock?: string;
+  /** optional knife / armour choices, see network/cosmetics.ts */
+  cosmetics?: PlayerCosmetics;
 }
 
 export interface MultiplayerSnapshot {

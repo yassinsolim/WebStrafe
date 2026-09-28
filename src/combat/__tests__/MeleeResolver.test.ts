@@ -1,12 +1,22 @@
 import { Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { closestSegmentPoints, resolveMeleeHit, type MeleeTarget } from '../MeleeResolver';
+import { STAND_EYE_HEIGHT, STAND_HEIGHT } from '../../movement/hull';
 
-const eye = new Vector3(0, 1.6, 0);
+const eye = new Vector3(0, STAND_EYE_HEIGHT, 0);
+const RADIUS = 0.34;
+// a level swing at eye height meets the rounded top of the capsule, this much
+// short of the axis (the core segment ends a radius below the head)
+const CAP_RISE = STAND_EYE_HEIGHT - (STAND_HEIGHT - RADIUS);
+const CAP_DEPTH = Math.sqrt(RADIUS ** 2 - CAP_RISE ** 2);
+/** nearest surface distance from the eye to a target `z` metres ahead */
+const surfaceAt = (z: number) => Math.hypot(z, CAP_RISE) - RADIUS;
+/** how far ahead a target stands when its nearest surface is `d` from the eye */
+const aheadFor = (d: number) => Math.sqrt((d + RADIUS) ** 2 - CAP_RISE ** 2);
 const forward = new Vector3(0, 0, -1);
 
 function target(id: string, x: number, z: number): MeleeTarget {
-  return { id, feet: new Vector3(x, 0, z), height: 1.76, radius: 0.34 };
+  return { id, feet: new Vector3(x, 0, z), height: STAND_HEIGHT, radius: RADIUS };
 }
 
 function sweep(direction = forward, range = 1.45, radius = 0.41) {
@@ -36,13 +46,13 @@ describe('resolveMeleeHit', () => {
   it('hits a capsule straight ahead and lands on its near surface', () => {
     const hit = resolveMeleeHit(sweep(), [target('a', 0, -1.2)]);
     expect(hit?.targetId).toBe('a');
-    expect(hit?.surfaceDistance).toBeCloseTo(1.2 - 0.34, 6);
-    expect(hit?.point.z).toBeCloseTo(-(1.2 - 0.34), 6);
+    expect(hit?.surfaceDistance).toBeCloseTo(surfaceAt(1.2), 6);
+    expect(hit?.point.z).toBeCloseTo(-(1.2 - CAP_DEPTH), 6);
   });
 
   it('misses once the target surface is beyond the range', () => {
-    expect(resolveMeleeHit(sweep(), [target('a', 0, -(1.45 + 0.34 + 0.02))])).toBeNull();
-    expect(resolveMeleeHit(sweep(), [target('a', 0, -(1.45 + 0.34 - 0.02))])?.targetId).toBe('a');
+    expect(resolveMeleeHit(sweep(), [target('a', 0, -(aheadFor(1.45) + 0.02))])).toBeNull();
+    expect(resolveMeleeHit(sweep(), [target('a', 0, -(aheadFor(1.45) - 0.02))])?.targetId).toBe('a');
   });
 
   it('forgives a slightly off aim like a hull trace but not a wide miss', () => {
@@ -72,10 +82,10 @@ describe('resolveMeleeHit', () => {
 
   it('keeps the wall check above the floor the victim stands on', () => {
     const floorOnly = (_from: Vector3, to: Vector3) => to.y < 0.05;
-    // aimed at the victim's feet, the contact sits on the floor itself
+    // aimed at the victim's feet, the contact sits on the rounded foot of the capsule
     const down = new Vector3(0, -1.6, -0.56).normalize();
     const hit = resolveMeleeHit(sweep(down), [target('a', 0, -0.9)], floorOnly);
     expect(hit?.targetId).toBe('a');
-    expect(hit?.point.y).toBeLessThan(0.05);
+    expect(hit?.point.y).toBeLessThan(RADIUS);
   });
 });

@@ -2,6 +2,11 @@ import { Vector3 } from 'three';
 
 const EPSILON = 1e-6;
 
+/**
+ * source's CGameMovement::Accelerate. `accelScale` is the speed the accel rate
+ * scales with, the wishspeed itself unless a crop (crouching) lowered only the
+ * goal speed.
+ */
 export function accelerate(
   vel: Vector3,
   wishDir: Vector3,
@@ -9,6 +14,7 @@ export function accelerate(
   accel: number,
   dt: number,
   surfaceFriction = 1,
+  accelScale = wishSpeed,
 ): Vector3 {
   const next = vel.clone();
   const currentSpeed = next.dot(wishDir);
@@ -17,7 +23,7 @@ export function accelerate(
     return next;
   }
 
-  let accelSpeed = accel * dt * wishSpeed * surfaceFriction;
+  let accelSpeed = accel * dt * accelScale * surfaceFriction;
   accelSpeed = Math.min(accelSpeed, addSpeed);
   next.addScaledVector(wishDir, accelSpeed);
   return next;
@@ -91,19 +97,6 @@ export function clipVelocity(
   if (adjust < 0) {
     next.addScaledVector(normal, -adjust);
   }
-  return next;
-}
-
-export function clampHorizontalSpeed(vel: Vector3, maxSpeed: number): Vector3 {
-  const next = vel.clone();
-  const horizontalSpeed = Math.hypot(next.x, next.z);
-  if (horizontalSpeed <= maxSpeed || horizontalSpeed <= EPSILON) {
-    return next;
-  }
-
-  const scale = maxSpeed / horizontalSpeed;
-  next.x *= scale;
-  next.z *= scale;
   return next;
 }
 

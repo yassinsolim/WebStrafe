@@ -66,14 +66,14 @@ describe('ground contact around jumps', () => {
     // a takeoff tick leaves vy at exactly the impulse minus one tick of gravity
     const afterTakeoff = defaultCvars.sv_jump_impulse - defaultCvars.sv_gravity * DT;
     const takeoffTicks: number[] = [];
-    for (let i = 0; i < 351; i += 1) {
+    for (let i = 0; i < 481; i += 1) {
       mc.tick(DT, hold, world);
       if (Math.abs(mc.getVelocity().y - afterTakeoff) < 1e-12) {
         takeoffTicks.push(i);
       }
     }
-    // 70 air ticks per jump, see the chain derivation in AirStrafe.test.ts
-    expect(takeoffTicks).toEqual([0, 70, 140, 210, 280, 350]);
+    // 96 air ticks per jump, see the chain derivation in AirStrafe.test.ts
+    expect(takeoffTicks).toEqual([0, 96, 192, 288, 384, 480]);
   });
 
   it('walking off a small step settles on the lower floor', () => {
@@ -95,7 +95,7 @@ describe('ground contact around jumps', () => {
     const top = Math.tan((26 * Math.PI) / 180) * 4;
     const mc = new MovementController();
     mc.reset(new Vector3(-2, 0, 0), -90);
-    for (let i = 0; i < 160; i += 1) {
+    for (let i = 0; i < 256; i += 1) {
       mc.tick(DT, { ...idle, forwardMove: 1 }, world);
       expect(mc.getDebugState().grounded).toBe(true);
     }
