@@ -1,0 +1,149 @@
+{
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "vsync": false,
+  "viewport": [
+    2560,
+    1440
+  ],
+  "results": [
+    {
+      "label": "aim_ochrecut_v2",
+      "query": "shot=aim_ochrecut&weapon=deagle&perf=8&adaptive=0",
+      "frames": 4476,
+      "fpsMedian": 416.67,
+      "fps1Low": 284.99,
+      "frameMsMedian": 2.4,
+      "frameMsP99": 3.3,
+      "cpuMsMedian": 2.3,
+      "cpuMsP99": 3.1,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          4.3,
+          6474
+        ],
+        [
+          4,
+          2058
+        ],
+        [
+          4,
+          6345
+        ],
+        [
+          4,
+          6395
+        ],
+        [
+          3.8,
+          3373
+        ],
+        [
+          3.8,
+          5358
+        ]
+      ],
+      "calls": 77,
+      "triangles": 61783,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "bhop_emberdrift_v2",
+      "query": "shot=bhop_emberdrift&weapon=deagle&perf=8&adaptive=0",
+      "frames": 4122,
+      "fpsMedian": 416.67,
+      "fps1Low": 265.99,
+      "frameMsMedian": 2.4,
+      "frameMsP99": 3.6,
+      "cpuMsMedian": 2.2,
+      "cpuMsP99": 3.2,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          4.3,
+          1709
+        ],
+        [
+          4.1,
+          6788
+        ],
+        [
+          4.1,
+          8392
+        ],
+        [
+          4,
+          5245
+        ],
+        [
+          3.9,
+          1737
+        ],
+        [
+          3.9,
+          1875
+        ]
+      ],
+      "calls": 89,
+      "triangles": 77019,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "surf_prismline_v2",
+      "query": "shot=surf_prismline&weapon=deagle&perf=8&adaptive=0",
+      "frames": 4138,
+      "fpsMedian": 526.32,
+      "fps1Low": 164.25,
+      "frameMsMedian": 1.9,
+      "frameMsP99": 4.9,
+      "cpuMsMedian": 1.5,
+      "cpuMsP99": 3.7,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          8.8,
+          4807
+        ],
+        [
+          8.7,
+          4461
+        ],
+        [
+          8.7,
+          5267
+        ],
+        [
+          7.9,
+          8662
+        ],
+        [
+          7.5,
+          4444
+        ],
+        [
+          7.5,
+          8681
+        ]
+      ],
+      "calls": 90,
+      "triangles": 61739,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    }
+  ],
+  "errors": []
+}

@@ -85,15 +85,15 @@ export class NormalFromAlbedo {
     this.quad = new FullScreenQuad(this.material);
   }
 
-  get(albedo: Texture, strength: number): Texture | null {
+  get(albedo: Texture, strength: number, maxSize = 1024): Texture | null {
     const image = albedo.image as { width?: number; height?: number } | undefined;
     const width = image?.width ?? 0;
     const height = image?.height ?? 0;
     if (!(width > 0 && height > 0) || !(strength > 0)) return null;
-    const key = `${albedo.uuid}:${strength.toFixed(2)}`;
+    const size = Math.min(maxSize, Math.max(width, height));
+    const key = `${albedo.uuid}:${strength.toFixed(2)}:${size}`;
     const cached = this.cache.get(key);
     if (cached) return cached.texture;
-    const size = Math.min(1024, Math.max(width, height));
     const target = new WebGLRenderTarget(size, size, {
       minFilter: LinearMipmapLinearFilter,
       magFilter: LinearFilter,

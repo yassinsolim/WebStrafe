@@ -1322,7 +1322,7 @@ def environment_meta(env, map_id, lightmap_scale, has_lightmap=True):
         "exposure": env.get("exposure", 1.0),
     }
     if has_lightmap:
-        out["lightmaps"] = [{"path": f"/maps/{map_id}/lightmap.webp"}]
+        out["lightmaps"] = [{"path": f"/maps/{map_id}/lightmap.ktx2"}]
         out["lightMapIntensity"] = round(math.pi * lightmap_scale, 4)
         # rgb is indirect light only, alpha the sun's visibility (see bake_lightmap)
         out["lightmapMode"] = "indirect"

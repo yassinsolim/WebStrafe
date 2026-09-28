@@ -156,7 +156,7 @@
     "exposure": 1.0,
     "lightmaps": [
       {
-        "path": "/maps/aim_ochrecut/lightmap.webp"
+        "path": "/maps/aim_ochrecut/lightmap.ktx2"
       }
     ],
     "lightMapIntensity": 2.3562,

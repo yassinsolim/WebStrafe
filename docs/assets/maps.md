@@ -42,7 +42,7 @@ A build writes scratch files to `.blender-tmp/maps/<id>/` and then
   (meshopt, quantized, WebP textures at most 1024 px)
 - `public/maps/<id>/collision.glb`: solid gameplay geometry only, one merged
   mesh, positions and indices, no materials, no meshopt (the node server parses it)
-- `public/maps/<id>/lightmap.webp`: 2048 px baked light atlas
+- `public/maps/<id>/lightmap.ktx2`: 2048 px baked light atlas (ETC1S KTX2, srgb rgb plus linear alpha)
 - `public/maps/<id>/thumbnail.webp`: 480x270 menu card image (`thumbnailPath` in the manifest)
 - `public/maps/<id>/meta.json`: spawns, triggers, cvars, environment
 - `tools/blender/maps/layouts/<id>.json`: platform and ramp data the tests check against
@@ -63,7 +63,7 @@ A build writes scratch files to `.blender-tmp/maps/<id>/` and then
 - **Lightmap.** Cycles on the GPU bakes three passes into one atlas, all with no
   albedo: the full diffuse light (direct + indirect, 384 samples), the sun's
   direct light alone (sky and emission switched off) and a shadow pass for the
-  sun's visibility. The shipped `lightmap.webp` holds full minus sun direct in
+  sun's visibility. The shipped `lightmap.ktx2` holds full minus sun direct in
   rgb (sky light, emissive light and every bounce, the sun's included) and the
   sun's visibility in alpha. OpenImageDenoise cleans the rgb through the
   compositor, chart borders are dilated and rgb is sRGB encoded as
@@ -122,7 +122,7 @@ A build writes scratch files to `.blender-tmp/maps/<id>/` and then
     "hemi": { "sky": "#9a9ed8", "ground": "#c0583a", "intensity": 2.4 },
     "fog": { "color": "#e9946a", "near": 55, "far": 460 },
     "exposure": 1.12,
-    "lightmaps": [{ "path": "/maps/bhop_emberdrift/lightmap.webp" }],
+    "lightmaps": [{ "path": "/maps/bhop_emberdrift/lightmap.ktx2" }],
     "lightMapIntensity": 11.0,
     "lightmapMode": "indirect",
     "indirectIntensity": 1.0,

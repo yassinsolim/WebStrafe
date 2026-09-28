@@ -168,6 +168,7 @@ export class RenderPipeline {
   setPreset(preset: QualityPreset): void {
     const rebuild = !this.sceneTarget || preset.msaa !== this.preset.msaa || preset.ao !== this.preset.ao;
     this.preset = preset;
+    if (preset.bloom) this.bloom.setLevelCount(preset.bloomLevels);
     if (preset.bloom) this.composite.defines.USE_BLOOM = '';
     else delete this.composite.defines.USE_BLOOM;
     if (preset.ao) this.composite.defines.USE_AO = '';

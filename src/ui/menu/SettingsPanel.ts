@@ -58,10 +58,10 @@ const CROSSHAIR_LABEL: Record<CrosshairStyle, string> = {
 };
 
 const QUALITY_INFO: Record<GraphicsQuality, { label: string; description: string }> = {
-  auto: { label: 'Auto', description: 'Picks a preset for your GPU when the game starts' },
+  auto: { label: 'Auto', description: 'Balanced on most GPUs, Low on weak ones' },
   low: { label: 'Low', description: 'Fastest. Baked light, FXAA, no bloom or shadows' },
-  medium: { label: 'Medium', description: '2x MSAA, bloom, sun shadows, detailed surfaces' },
-  high: { label: 'High', description: '4x MSAA, ambient occlusion, sharper shadows' },
+  medium: { label: 'Balanced', description: 'Sun shadows, bloom, detailed surfaces, FXAA' },
+  high: { label: 'High', description: '4x MSAA, ambient occlusion. For strong GPUs' },
 };
 
 const PREVIEW_BACKGROUNDS: ReadonlyArray<{ id: string; label: string; image: string | null }> = [

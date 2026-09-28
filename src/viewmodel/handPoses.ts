@@ -15,14 +15,17 @@ export type HandPoseName =
   | 'relaxed'
   | 'open'
   | 'fist'
-  | 'pistol'
   | 'deagle'
-  | 'pistolSupport'
-  | 'forend'
+  | 'deagleSupport'
+  | 'awp'
+  | 'awpForend'
+  | 'awpBolt'
+  | 'awpBoltClosed'
+  | 'deagleMag'
+  | 'awpMag'
   | 'knife'
   | 'knifeReverse'
-  | 'pinch'
-  | 'cupMag';
+  | 'watchGun';
 
 export const HAND_POSES: Readonly<Record<HandPoseName, HandPose>> = {
   relaxed: {
@@ -35,20 +38,34 @@ export const HAND_POSES: Readonly<Record<HandPoseName, HandPose>> = {
   fist: {
     index: [42, 58, 26], middle: [78, 92, 42], ring: [80, 94, 44], pinky: [84, 92, 42], thumb: [22.5, 38.6, 9.5],
   },
-  // thicker grip, index straight along the frame onto the trigger
-  pistol: {
-    index: [16, 34, 18], middle: [62, 74, 38], ring: [66, 78, 40], pinky: [70, 78, 38], thumb: [16, 26, 8],
-  },
-  // the deagle's trigger sits close in front of its deep grip: the first index
-  // segment lies along the frame, then the finger bends in onto the trigger face
+  // gun poses are fitted offline against the shipped glbs with their grips in
+  // ViewmodelSystem: every segment within about 1 mm of the surface it rests on,
+  // at most a few mm of glove squeeze, nothing through a guard or panel.
+  // deagle firing hand: index pad on the trigger face, the rest wrapped around
+  // the front strap, thumb behind the backstrap and forward high on the left
   deagle: {
-    index: [-4, 60, 36], middle: [62, 74, 38], ring: [66, 78, 40], pinky: [70, 78, 38], thumb: [16, 26, 8],
+    index: [-8, 78, 54], middle: [58, 34, 48], ring: [52, 30, 23], pinky: [36, 18, 36], thumb: [59, -27, -30],
   },
-  pistolSupport: {
-    index: [48, 58, 30], middle: [56, 66, 34], ring: [60, 70, 36], pinky: [64, 70, 34], thumb: [4, 8, 4],
+  // support hand wrapped over the firing fingers under the guard, thumb forward
+  // along the left of the frame below the firing thumb
+  deagleSupport: {
+    index: [16, 26, 17], middle: [0, 26, 17], ring: [9, 5, 56], pinky: [19, 11, 29], thumb: [14, -19, 17],
   },
-  forend: {
-    index: [34, 44, 24], middle: [40, 50, 26], ring: [44, 54, 28], pinky: [48, 56, 28], thumb: [10, 18, 6],
+  // awp thumbhole grip: index on the trigger, thumb out through the hole
+  awp: {
+    index: [-1, 83, -12], middle: [57, 26, 15], ring: [57, 26, 15], pinky: [52, 24, 13], thumb: [61, -32, -11],
+  },
+  // palm up under the forend, fingers up the right side, thumb up the left
+  awpForend: {
+    index: [0, 62, 41], middle: [22, 51, 34], ring: [44, 26, 18], pinky: [40, 24, 16], thumb: [39, -44, 16],
+  },
+  // bolt knob, lifted or pulled back: index and middle wrapped round the knob and handle
+  awpBolt: {
+    index: [54, 43, 75], middle: [52, 72, 45], ring: [85, 100, 75], pinky: [85, 100, 75], thumb: [33, 31, -49],
+  },
+  // bolt closed, the knob sits against the stock: fingers over the top, thumb pad on the knob
+  awpBoltClosed: {
+    index: [4, 3, 2], middle: [26, 21, 13], ring: [85, 100, 75], pinky: [85, 100, 75], thumb: [-14, 64, 18],
   },
   knife: {
     index: [50, 64, 30], middle: [68, 84, 40], ring: [72, 86, 42], pinky: [76, 84, 40], thumb: [20, 34, 10],
@@ -56,11 +73,16 @@ export const HAND_POSES: Readonly<Record<HandPoseName, HandPose>> = {
   knifeReverse: {
     index: [60, 70, 34], middle: [70, 86, 40], ring: [74, 88, 42], pinky: [78, 86, 40], thumb: [26, 40, 12],
   },
-  pinch: {
-    index: [36, 48, 26], middle: [44, 58, 30], ring: [62, 76, 38], pinky: [70, 80, 38], thumb: [24, 22, 14],
+  // palm under the magazine floorplate, fingers up the front against the grip
+  deagleMag: {
+    index: [38, 23, 15], middle: [36, 21, 14], ring: [34, 20, 14], pinky: [36, 21, 14], thumb: [14, 20, 8],
   },
-  cupMag: {
-    index: [26, 36, 20], middle: [32, 42, 22], ring: [36, 46, 24], pinky: [40, 48, 24], thumb: [14, 20, 8],
+  awpMag: {
+    index: [8, 67, 45], middle: [41, 37, 24], ring: [65, 39, 26], pinky: [93, 56, 37], thumb: [-10, -20, 0],
+  },
+  // loosely curled for the watch check on the guns, so the fingers stay off the gun
+  watchGun: {
+    index: [40, 50, 30], middle: [46, 56, 32], ring: [50, 58, 32], pinky: [54, 58, 30], thumb: [10, 16, 8],
   },
 };
 

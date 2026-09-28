@@ -40,6 +40,7 @@ import { AdaptiveResolution } from './AdaptiveResolution';
 import { RenderPipeline } from '../render/RenderPipeline';
 import { readRendererName, resolveQuality, type QualityPreset } from '../render/quality';
 import { EFFECTS_LAYER } from '../render/layers';
+import { configureTextureTranscoder } from '../assets/gltfLoader';
 import { ViewmodelProbe } from '../render/ViewmodelProbe';
 import type { LoadoutSelection } from '../cosmetics/types';
 import { HUD } from '../ui/HUD';
@@ -283,6 +284,7 @@ export class GameApp {
     this.renderer.toneMapping = NoToneMapping;
     this.renderer.autoClear = false;
     this.renderer.shadowMap.type = PCFSoftShadowMap;
+    configureTextureTranscoder(this.renderer);
     this.container.appendChild(this.renderer.domElement);
     this.pipeline = new RenderPipeline(this.renderer);
     this.viewmodelProbe = new ViewmodelProbe(this.renderer);
@@ -892,6 +894,11 @@ export class GameApp {
       }
 
       this.activateLoadedMap(this.loadedMap);
+      // compile the map's shaders behind the loading screen, not in the first frames of play
+      await this.precompileShaders();
+      if (loadToken !== this.currentLoadToken) {
+        return;
+      }
       if (this.combatEnabled) {
         this.resetLocalCombatState();
       }
@@ -934,6 +941,17 @@ export class GameApp {
       this.playing = false;
       this.menu.setVisible(true);
       this.setCrosshairVisible(false);
+    }
+  }
+
+  /** parallel shader compile where the browser supports it, a failure just means compiling on first draw */
+  private async precompileShaders(): Promise<void> {
+    try {
+      await this.renderer.compileAsync(this.worldScene, this.worldCamera);
+      await this.renderer.compileAsync(this.viewmodelRenderer.scene, this.viewmodelRenderer.camera);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn('[GameApp] shader precompile failed, compiling on first draw', error);
     }
   }
 

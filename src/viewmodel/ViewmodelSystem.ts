@@ -8,7 +8,7 @@ import { ArmsRig, type DigitSpread } from './ArmsRig';
 import { checkGrip, type GripCheck } from './gripCheck';
 import { sampleClip, retime, type Clip } from './clips';
 import { blendHandPose, createHandPose, HAND_POSES, type HandPose, type HandPoseName } from './handPoses';
-import { frameFromAxes, frameFromXZ, frameFromYZ } from './ik';
+import { frameFromXZ, frameFromYZ } from './ik';
 import { alignRingGrip, fittedGripSpec, gripKindFor, knifeGripSpec, measureHandleDiameter, type KnifeGripKind, type KnifeGripSpec } from './knifeGrips';
 import {
   AWP_CLIPS,
@@ -33,11 +33,6 @@ interface HandGrip {
   pose: HandPoseName;
 }
 
-function grip(x: Vector3, y: Vector3, z: Vector3, wrist: Vector3, pose: HandPoseName): HandGrip {
-  const q = frameFromAxes(x.normalize(), y.normalize(), z.normalize(), new Quaternion());
-  return { matrix: new Matrix4().compose(wrist, q, new Vector3(1, 1, 1)), pose };
-}
-
 function gripYZ(y: Vector3, zHint: Vector3, wrist: Vector3, pose: HandPoseName): HandGrip {
   const q = frameFromYZ(y, zHint, new Quaternion());
   return { matrix: new Matrix4().compose(wrist, q, new Vector3(1, 1, 1)), pose };
@@ -45,18 +40,39 @@ function gripYZ(y: Vector3, zHint: Vector3, wrist: Vector3, pose: HandPoseName):
 
 const v = (x: number, y: number, z: number): Vector3 => new Vector3(x, y, z);
 
-// the fist closes around a channel 9.3 cm along the hand bone and 2 cm to the
-// palm side of it, running along the knuckle line (local x). right hand on a
-// pistol grip: thumb side up the grip, back of the hand to the gun's right.
-const RIGHT_PISTOL = grip(v(0, -1, 0), v(0, 0, -1), v(1, 0, 0), v(0.024, -0.004, 0.1), 'pistol');
-// support hand wraps the front of the right hand, thumb forward along the frame
-const LEFT_PISTOL = gripYZ(v(0.35, -0.55, -0.75), v(-1, 0.1, 0.2), v(-0.035, 0.03, 0.075), 'pistolSupport');
+// gun grips (hand bone y along the hand, z out of the back of the hand) were
+// fitted offline with their poses in handPoses.ts, so the padded glove rests on
+// the real surfaces. deagle firing hand: web under the beavertail, knuckles at
+// the front corner of the grip, back of the hand to the right.
+const DEAGLE_RIGHT = gripYZ(v(0, 0, -1), v(0.9945, 0.1045, 0), v(0.041, -0.011, 0.079), 'deagle');
+// support hand around the firing fingers, on socket_grip_l
+const DEAGLE_SUPPORT = gripYZ(v(0.3522, -0.6048, -0.7143), v(-0.935, -0.2608, -0.2402), v(-0.0714, 0.0273, 0.0661), 'deagleSupport');
+// awp firing hand pitched up the raked grip so the index meets the trigger and
+// the web sits under the stock bar, clear of the bolt knob
+const AWP_RIGHT = gripYZ(v(0.0623, 0.273, -0.96), v(0.9848, 0.1392, 0.1035), v(0.046, -0.022, 0.086), 'awp');
 // palm up under the forend, fingers wrapping up the right side
-const LEFT_FOREND = gripYZ(v(0.8, 0.3, -0.35), v(0, -1, 0), v(-0.07, -0.035, 0.035), 'forend');
-// pinching the bolt knob from above and behind
-const RIGHT_BOLT = gripYZ(v(-0.25, -0.35, -0.9), v(1, 0.6, 0.1), v(0.03, 0.035, 0.085), 'pinch');
-// palm cupping a magazine baseplate
-const LEFT_MAG = gripYZ(v(0.5, 0.2, -0.8), v(0, -1, 0), v(-0.035, -0.03, 0.06), 'cupMag');
+const AWP_FOREND = gripYZ(v(0.8664, 0.3249, -0.3791), v(0.2977, -0.9457, -0.1302), v(-0.0655, -0.0492, 0.033), 'awpForend');
+// fingers round the bolt knob from above and behind
+const AWP_BOLT = gripYZ(v(-0.2506, -0.3509, -0.9023), v(0.8347, 0.3938, -0.385), v(0.0492, 0.0441, 0.0761), 'awpBolt');
+// palm cupping the magazine floorplate, on socket_mag_bottom
+const DEAGLE_MAG = gripYZ(v(0.5, 0.2, -0.8), v(0, -1, 0), v(-0.035, -0.03, 0.06), 'deagleMag');
+const AWP_MAG = gripYZ(v(0.5, 0.2, -0.8), v(0, -1, 0), v(-0.0341, -0.0378, 0.0586), 'awpMag');
+const GUN_GRIPS: Readonly<Record<'deagle' | 'awp', { right: HandGrip; support: HandGrip; mag: HandGrip }>> = {
+  deagle: { right: DEAGLE_RIGHT, support: DEAGLE_SUPPORT, mag: DEAGLE_MAG },
+  awp: { right: AWP_RIGHT, support: AWP_FOREND, mag: AWP_MAG },
+};
+// between the grip and the bolt knob the hand opens and swings out along this
+// gun space direction (metres at the midpoint), so it never cuts through the stock
+const BOLT_REACH = v(0.07, 0.005, 0.02);
+// thumb angles the swing passes through
+const BOLT_THUMB = [0, 0, 0] as const;
+const REACH_EXP = 1.5;
+const THUMB_RATE = 5;
+// extra index curl (degrees per joint) at full trigger pull, so the pad follows the blade back
+const TRIGGER_PULL: Readonly<Record<'deagle' | 'awp', readonly [number, number, number]>> = {
+  deagle: [0, 14, 0],
+  awp: [0, 14, 0],
+};
 
 interface ItemBase {
   position: Vector3;
@@ -115,22 +131,23 @@ function knifeBaseFor(spec: KnifeGripSpec): ItemBase {
 const LEFT_LOW = { position: v(-0.25, -0.5, -0.12), rotation: frameFromYZ(v(0.3, 0.6, -0.7), v(-0.6, 0.3, 0.2), new Quaternion()) };
 const LEFT_WATCH = { position: v(0.0, -0.085, -0.27), rotation: frameFromYZ(v(0.96, 0.12, -0.25), v(-0.1, 0.5, 0.86), new Quaternion()) };
 
-// the shoulders sit behind the camera; sliding them is invisible and keeps the
-// long rifle reachable
+// the shoulders sit behind the camera; sliding them is invisible. the awp's
+// keep the long rifle reachable, the deagle's straighten the wrists
 const ARMS_OFFSET: Readonly<Record<ViewItem, Vector3>> = {
-  deagle: v(0, 0, 0),
+  deagle: v(0, 0, 0.08),
   awp: v(0, 0.01, -0.1),
   knife: v(0, 0, 0),
 };
 // the awp support hand holds the forend this far behind socket_grip_l
 const AWP_SUPPORT_BACK_M = 0.12;
-// finger pose of the right hand on each gun's grip
-const RIGHT_GRIP_POSE: Readonly<Record<'deagle' | 'awp', HandPoseName>> = { deagle: 'deagle', awp: 'pistol' };
 
 const SCALE_PIVOT = v(0.12, -0.15, -0.32);
 
 const POLE_R = v(0.55, -0.7, 0.05);
 const POLE_L = v(-0.55, -0.7, 0.05);
+// elbows out wider on the guns so the forearms line up with the gripping hands
+const GUN_POLE_R = v(0.8, -0.5, 0.2);
+const GUN_POLE_L = v(-0.8, -0.5, 0.2);
 
 const GUN_DEFAULTS: Readonly<Record<string, number>> = { leftAttach: 1 };
 const KNIFE_DEFAULTS: Readonly<Record<string, number>> = { knifeOpen: 1 };
@@ -189,6 +206,7 @@ const AXIS_X = new Vector3(1, 0, 0);
 const sA = new Vector3();
 const eA = new Euler(0, 0, 0, 'YXZ');
 const poleWorld = new Vector3();
+const poleBlend = new Vector3();
 
 export interface ViewmodelPresentationState {
   active: ViewItem;
@@ -545,23 +563,42 @@ export class ViewmodelSystem {
     this.itemPivot.updateMatrixWorld(true);
 
     // right hand: grip, or the bolt knob during a bolt cycle
+    const grips = GUN_GRIPS[id];
     const onBolt = this.channel('rightOnBolt');
-    const gripPose = HAND_POSES[RIGHT_GRIP_POSE[id]];
-    this.socketTarget(gun.gripR, RIGHT_PISTOL, pA, qA);
+    const gripPose = HAND_POSES[grips.right.pose];
+    this.socketTarget(gun.gripR, grips.right, pA, qA);
     blendHandPose(gripPose, gripPose, 0, this.poseR);
     if (onBolt > 0 && gun.boltKnob) {
-      this.socketTarget(gun.boltKnob, RIGHT_BOLT, pB, qB);
+      this.socketTarget(gun.boltKnob, AWP_BOLT, pB, qB);
       pA.lerp(pB, onBolt);
       qA.slerp(qB, onBolt);
-      blendHandPose(gripPose, HAND_POSES.pinch, onBolt, this.poseR);
+      // the thumb swings back out of the thumbhole first, then the hand travels out and up
+      const arc = Math.sin(Math.PI * onBolt);
+      const reach = arc ** REACH_EXP;
+      const thumbOut = Math.min(1, arc * THUMB_RATE);
+      pC.copy(BOLT_REACH).transformDirection(this.itemPivot.matrixWorld).multiplyScalar(BOLT_REACH.length() * this.content.scale.x * reach);
+      pA.add(pC);
+      // the grasp changes with the lift: over the knob while it's down, wrapped once it's up
+      blendHandPose(HAND_POSES.awpBoltClosed, HAND_POSES[AWP_BOLT.pose], this.channel('boltLift'), this.poseTmp);
+      blendHandPose(gripPose, this.poseTmp, onBolt, this.poseR);
+      // fingers open in transit and the thumb swings back out through the thumbhole
+      const [t0, t1, t2] = this.poseR.thumb;
+      blendHandPose(this.poseR, HAND_POSES.open, reach * 0.8, this.poseR);
+      this.poseR.thumb[0] = t0 + (BOLT_THUMB[0] - t0) * thumbOut;
+      this.poseR.thumb[1] = t1 + (BOLT_THUMB[1] - t1) * thumbOut;
+      this.poseR.thumb[2] = t2 + (BOLT_THUMB[2] - t2) * thumbOut;
     }
-    this.poseR.index[1] += this.channel('trigger') * 14;
+    const pull = TRIGGER_PULL[id];
+    const trigger = this.channel('trigger') * (1 - onBolt);
+    this.poseR.index[0] += pull[0] * trigger;
+    this.poseR.index[1] += pull[1] * trigger;
+    this.poseR.index[2] += pull[2] * trigger;
     arms.setArmVisible('r', true);
-    arms.solveArm('r', pA, qA, this.pole(POLE_R));
+    arms.solveArm('r', pA, qA, this.pole(GUN_POLE_R));
     arms.applyHandPose('r', this.poseR);
 
     // left hand: low -> support grip -> magazine -> watch
-    const leftGrip = id === 'deagle' ? LEFT_PISTOL : LEFT_FOREND;
+    const leftGrip = grips.support;
     this.cameraTarget(LEFT_LOW, pA, qA);
     blendHandPose(HAND_POSES.relaxed, HAND_POSES.relaxed, 0, this.poseL);
     const attach = this.channel('leftAttach');
@@ -570,17 +607,21 @@ export class ViewmodelSystem {
       pA.lerp(pB, attach);
       qA.slerp(qB, attach);
       blendHandPose(HAND_POSES.relaxed, HAND_POSES[leftGrip.pose], attach, this.poseL);
+      // open on the way in so the fingers close onto the grip only as the hand arrives
+      if (attach < 1) blendHandPose(this.poseL, HAND_POSES.open, Math.sin(Math.PI * attach) * 0.8, this.poseL);
     }
     const onMag = this.channel('leftOnMag');
     if (onMag > 0 && gun.magBottom) {
-      this.socketTarget(gun.magBottom, LEFT_MAG, pB, qB);
+      this.socketTarget(gun.magBottom, grips.mag, pB, qB);
       pA.lerp(pB, onMag);
       qA.slerp(qB, onMag);
-      blendHandPose(this.poseL, HAND_POSES.cupMag, onMag, this.poseL);
+      blendHandPose(this.poseL, HAND_POSES[grips.mag.pose], onMag, this.poseL);
     }
-    this.blendWatch(pA, qA, this.poseL);
+    this.blendWatch(pA, qA, this.poseL, HAND_POSES.watchGun);
     arms.setArmVisible('l', true);
-    arms.solveArm('l', pA, qA, this.pole(POLE_L));
+    // the watch check keeps the knife's elbow so it reads the same everywhere
+    const pole = poleBlend.copy(GUN_POLE_L).lerp(POLE_L, this.channel('watch'));
+    arms.solveArm('l', pA, qA, this.pole(pole));
     arms.applyHandPose('l', this.poseL);
   }
 
@@ -775,13 +816,13 @@ export class ViewmodelSystem {
     return this.spreadTmp;
   }
 
-  private blendWatch(pos: Vector3, rot: Quaternion, pose: ReturnType<typeof createHandPose>): void {
+  private blendWatch(pos: Vector3, rot: Quaternion, pose: ReturnType<typeof createHandPose>, fingers: HandPose = HAND_POSES.relaxed): void {
     const watch = this.channel('watch');
     if (watch <= 0) return;
     this.cameraTarget(LEFT_WATCH, pC, qC);
     pos.lerp(pC, watch);
     rot.slerp(qC, watch);
-    blendHandPose(pose, HAND_POSES.relaxed, watch, this.poseTmp);
+    blendHandPose(pose, fingers, watch, this.poseTmp);
     blendHandPose(this.poseTmp, this.poseTmp, 0, pose);
   }
 

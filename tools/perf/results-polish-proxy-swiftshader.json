@@ -1,0 +1,133 @@
+{
+  "proxy": "headless swiftshader, chrome cpu throttle 4x, 1280x720, 3 s warm up, 8 s window",
+  "before": [
+    {
+      "label": "ochre_v2",
+      "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0",
+      "frames": 54,
+      "fpsMedian": 7,
+      "fps1Low": 4.6,
+      "frameMsP95": 184.3,
+      "calls": 38,
+      "triangles": 49395,
+      "canvas": [
+        1280,
+        720
+      ]
+    },
+    {
+      "label": "prism_v2",
+      "query": "shot=surf_prismline&weapon=deagle&adaptive=0",
+      "frames": 58,
+      "fpsMedian": 7.4,
+      "fps1Low": 4.8,
+      "frameMsP95": 175.2,
+      "calls": 38,
+      "triangles": 49395,
+      "canvas": [
+        1280,
+        720
+      ]
+    },
+    {
+      "label": "ochre_v2_adaptive",
+      "query": "shot=aim_ochrecut&weapon=deagle",
+      "frames": 143,
+      "fpsMedian": 19.8,
+      "fps1Low": 4.8,
+      "frameMsP95": 90.6,
+      "calls": 38,
+      "triangles": 49395,
+      "canvas": [
+        640,
+        360
+      ]
+    }
+  ],
+  "after": [
+    {
+      "label": "ochre_low",
+      "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&quality=low",
+      "frames": 51,
+      "fpsMedian": 6.3,
+      "fps1Low": 5,
+      "frameMsP95": 190.7,
+      "calls": 1,
+      "triangles": 1,
+      "canvas": [
+        1280,
+        720
+      ]
+    },
+    {
+      "label": "ochre_balanced",
+      "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&quality=medium",
+      "frames": 23,
+      "fpsMedian": 2.8,
+      "fps1Low": 1.8,
+      "frameMsP95": 424.8,
+      "calls": 1,
+      "triangles": 1,
+      "canvas": [
+        1280,
+        720
+      ]
+    },
+    {
+      "label": "ochre_high",
+      "query": "shot=aim_ochrecut&weapon=deagle&adaptive=0&quality=high",
+      "frames": 13,
+      "fpsMedian": 1.6,
+      "fps1Low": 1.1,
+      "frameMsP95": 923.4,
+      "calls": 1,
+      "triangles": 1,
+      "canvas": [
+        1280,
+        720
+      ]
+    },
+    {
+      "label": "ochre_auto_adaptive",
+      "query": "shot=aim_ochrecut&weapon=deagle",
+      "frames": 153,
+      "fpsMedian": 20,
+      "fps1Low": 4.9,
+      "frameMsP95": 84.1,
+      "calls": 1,
+      "triangles": 1,
+      "canvas": [
+        640,
+        360
+      ]
+    },
+    {
+      "label": "prism_low",
+      "query": "shot=surf_prismline&weapon=deagle&adaptive=0&quality=low",
+      "frames": 64,
+      "fpsMedian": 8.7,
+      "fps1Low": 3.9,
+      "frameMsP95": 200.1,
+      "calls": 1,
+      "triangles": 1,
+      "canvas": [
+        1280,
+        720
+      ]
+    },
+    {
+      "label": "prism_balanced",
+      "query": "shot=surf_prismline&weapon=deagle&adaptive=0&quality=medium",
+      "frames": 23,
+      "fpsMedian": 2.7,
+      "fps1Low": 2,
+      "frameMsP95": 466,
+      "calls": 1,
+      "triangles": 1,
+      "canvas": [
+        1280,
+        720
+      ]
+    }
+  ]
+}

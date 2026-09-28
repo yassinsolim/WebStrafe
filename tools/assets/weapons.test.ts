@@ -36,7 +36,7 @@ const SPECS: Record<'deagle' | 'awp', WeaponSpec> = {
     // mark xix with the 6 in barrel: 273 mm long, 159 mm tall
     length: 0.273,
     height: 0.159,
-    maxTriangles: 20000,
+    maxTriangles: 36000,
     // the socket follows the nearly upright front strap (4 degrees)
     maxGripUpZ: -0.05,
   },
@@ -49,7 +49,7 @@ const SPECS: Record<'deagle' | 'awp', WeaponSpec> = {
     parents: { socket_mag_bottom: 'mag', socket_bolt_knob: 'bolt' },
     length: 1.18,
     height: 0.25,
-    maxTriangles: 28000,
+    maxTriangles: 42000,
     maxGripUpZ: -0.15,
   },
 };
@@ -159,13 +159,24 @@ describe.each(Object.entries(SPECS))('%s viewmodel', (id, spec) => {
     expect(triangles(doc())).toBeGreaterThan(spec.maxTriangles * 0.4);
   });
 
-  it('ships baked ao and named pbr materials', () => {
+  it('ships one baked atlas material: ao, orm and a tangent space normal map', () => {
+    const materials = new Set<string>();
     for (const mesh of doc().getRoot().listMeshes()) {
       for (const prim of mesh.listPrimitives()) {
-        expect(prim.getAttribute('COLOR_0'), mesh.getName()).not.toBeNull();
-        expect(prim.getMaterial()?.getName() ?? '', mesh.getName()).toMatch(/^mat_/);
+        const material = prim.getMaterial();
+        expect(material?.getName() ?? '', mesh.getName()).toMatch(/^mat_/);
+        materials.add(material!.getName());
+        expect(material!.getBaseColorTexture(), mesh.getName()).not.toBeNull();
+        expect(material!.getOcclusionTexture(), mesh.getName()).not.toBeNull();
+        expect(material!.getMetallicRoughnessTexture(), mesh.getName()).not.toBeNull();
+        expect(material!.getNormalTexture(), mesh.getName()).not.toBeNull();
+        expect(prim.getAttribute('TEXCOORD_0'), mesh.getName()).not.toBeNull();
+        // the normal map was baked in blender's mikktspace frame, three.js needs the same tangents
+        expect(prim.getAttribute('TANGENT'), mesh.getName()).not.toBeNull();
       }
     }
+    // one atlas per gun keeps it at one draw call per moving part
+    expect(materials.size).toBe(1);
   });
 });
 

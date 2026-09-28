@@ -44,6 +44,10 @@ export interface KnifeGripSpec {
 }
 
 // push daggers: the neck passes between the middle and ring fingers
+// fingers round a ~3.3 cm handle (the pose the rig's pistol support grip used)
+const THICK_HANDLE_POSE: HandPose = {
+  index: [48, 58, 30], middle: [56, 66, 34], ring: [60, 70, 36], pinky: [64, 70, 34], thumb: [4, 8, 4],
+};
 const TEE_SPREAD: DigitSpread = { middle: 6, ring: -8, pinky: -8 };
 const TEE_POSE: HandPose = {
   index: [54.6, 75.4, 33.8], middle: [71.8, 84.6, 38.6], ring: [65.6, 77.1, 36.1], pinky: [46.2, 50.6, 23.1],
@@ -114,7 +118,7 @@ function anchorFor(kind: KnifeGripKind, handleDiameter: number): Vector3 {
  */
 export function wrapPose(kind: KnifeGripKind, handleDiameter: number, out: MutableHandPose = createHandPose()): MutableHandPose {
   const open = Math.min(1, Math.max(0, (handleDiameter - 0.021) / (0.034 - 0.021)));
-  blendHandPose(HAND_POSES.fist, HAND_POSES.pistolSupport, open * 0.8, out);
+  blendHandPose(HAND_POSES.fist, THICK_HANDLE_POSE, open * 0.8, out);
   if (kind === 'reverse_ring') {
     // the index hooks through the ring, the thumb presses on top of it
     out.index[0] = INDEX_CURL_DEG;

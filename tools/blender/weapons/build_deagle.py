@@ -5,10 +5,17 @@ numbers (273 mm long, 159 mm tall, 32 mm slide, 70 mm trigger reach) and the
 proportions were measured off real side photos.
 
   blender -b --factory-startup --python-exit-code 1 -P tools/blender/weapons/build_deagle.py -- \
-      [--out .blender-tmp/weapons/deagle_raw.glb] [--renders docs/screenshots/weapons] [--quick]
+      [--out .blender-tmp/weapons/deagle_raw.glb] [--renders docs/screenshots/weapons] [--quick] [--size 2048]
 
-then optimize:
-  npx tsx tools/assets/optimize-glb.ts .blender-tmp/weapons/deagle_raw.glb public/viewmodels/v2/deagle.glb --texture-size 1024
+then optimize (keep png so ktx2 encodes from lossless sources) and convert the textures to ktx2:
+  npx tsx tools/assets/optimize-glb.ts .blender-tmp/weapons/deagle_raw.glb public/viewmodels/v2/deagle.glb \
+      --texture-size 1024 --no-webp
+  npx tsx tools/assets/ktx2-textures.ts public/viewmodels/v2/deagle.glb public/viewmodels/v2/deagle.glb
+
+the script builds the gun twice: the low poly that ships and a high poly with
+rounder bevels, finer curves and small details, which is baked onto the low
+poly's uv atlas (normal, ao, edge wear and material maps). --quick skips the
+high poly and the bake and renders flat materials.
 
 design units are millimetres. y runs forward along the bore with y=0 where the
 slide's slanted rear face crosses the bore height, z=0 is the bore axis and x
@@ -37,6 +44,7 @@ QUICK = "--quick" in ARGS
 FINISH = arg("--finish", "stainless")
 OUT = arg("--out", os.path.join(W.TMP, "deagle_raw.glb"))
 RENDERS = arg("--renders", None)
+SIZE = int(arg("--size", "2048"))
 
 # slide and barrel
 MUZZLE_Y = 232.5
@@ -99,6 +107,10 @@ BASE_Z = (-133.5, -138.5)
 MAG_M = Matrix.Translation(Vector((0, MAG_AXIS[0] * MM, MAG_AXIS[1] * MM))) @ Matrix.Rotation(math.radians(-MAG_RAKE), 4, "X")
 MAG_S_TOP = (MAG_TOP_Z - MAG_AXIS[1]) / math.cos(math.radians(MAG_RAKE))
 
+# the eye in weapon space (blender axes, metres from socket_grip_r) with the
+# gun at its idle viewmodel pose, used to give near parts more texels
+EYE = Vector((-0.14, -0.32, 0.155))
+
 
 def final(x, y, z):
     """design mm -> exported metres (origin on socket_grip_r)"""
@@ -149,6 +161,14 @@ def mirrored(pts):
     return [(-p[0], *p[1:]) for p in reversed(pts)]
 
 
+def grip_rows():
+    """the grip sections with smooth steps in between (catmull-rom through
+    the measured ones), so the palm swell doesn't show loft kinks"""
+    per = 4 if W.hi() else 2
+    keys = [(z, f, r, hw) for z, f, r, hw in GRIP_SECTIONS]
+    return W.smooth_curve(keys, per)
+
+
 def grip_section(z, front_y, rear_y, hw, grow=0.0, segs=6, r_front=GRIP_R_FRONT, r_rear=GRIP_R_REAR):
     """horizontal section of the grip (a rounded rectangle), for W.loft along z"""
     pts = [(-hw - grow, rear_y - grow, r_rear), (hw + grow, rear_y - grow, r_rear),
@@ -180,39 +200,60 @@ def inside_polygon(p, poly):
     return inside
 
 
+def hi_cut(obj, cutters):
+    """small cuts (ridges, slots, anti-glare lines) only go into the high poly:
+    the bake carries them in the normal and cavity maps, the low poly saves
+    the triangles"""
+    if W.hi():
+        W.boolean(obj, cutters)
+    else:
+        for c in cutters:
+            W.delete(c)
+    return obj
+
+
 # ---------------------------------------------------------------- materials
 
 def make_materials():
-    pebble = W.pebble_normal_map("tex_grip_pebble", size=256, count=1500, seed=11)
     if FINISH == "black":
         # black nitride on the slide and barrel, a rougher black on the frame,
-        # bare steel on the controls and on worn convex edges
+        # bare steel on the controls and where the finish wears off the edges
         metals = {
-            "dark": W.material("mat_steel_dark", 0x34363a, 0.36, 0.8),
-            "frame": W.material("mat_gunmetal", 0x383a3e, 0.44, 0.75),
-            "steel": W.material("mat_steel", 0x55585e, 0.32, 1.0),
-            "worn": W.material("mat_steel_worn", 0x8a8e94, 0.26, 1.0),
+            "dark": W.finish("mat_steel_dark", base=0x34363a, rough=0.36, metal=0.8, wear=0.85, wear_color=0x9a9ea4,
+                             wear_rough=0.24, wear_metal=1.0, grime=0.35, rvar=0.07, scratch=0.6, detail="brushed"),
+            "frame": W.finish("mat_gunmetal", base=0x383a3e, rough=0.44, metal=0.75, wear=0.75, wear_color=0x8f9398,
+                              wear_rough=0.28, wear_metal=1.0, grime=0.45, rvar=0.08, scratch=0.5, detail="plastic"),
+            "steel": W.finish("mat_steel", base=0x55585e, rough=0.32, metal=1.0, wear=0.7, wear_color=0xa6aab0,
+                              wear_rough=0.2, grime=0.45, rvar=0.06, scratch=0.4, detail="brushed"),
         }
         metals["sight"] = metals["dark"]
     else:
-        # satin stainless slide and barrel, a rougher satin frame as the second
-        # tone, darker steel controls, polished edges and matte black sights.
-        # the black finish lost the gun against bright maps once the viewmodel
-        # took the world's light
+        # satin stainless slide and barrel (brushed along the bore), a rougher
+        # bead blasted frame as the second tone, darker steel controls and
+        # matte black sights. the black finish lost the gun against bright maps
+        # once the viewmodel took the world's light
         metals = {
-            "dark": W.material("mat_stainless", 0xa3a7ad, 0.3, 1.0),
-            "frame": W.material("mat_stainless_frame", 0x8e9298, 0.38, 1.0),
-            "steel": W.material("mat_steel", 0x62666c, 0.3, 1.0),
-            "worn": W.material("mat_steel_worn", 0xc8ccd2, 0.22, 1.0),
-            "sight": W.material("mat_sight_black", 0x2a2b2e, 0.5, 0.6),
+            "dark": W.finish("mat_stainless", base=0xa3a7ad, rough=0.28, metal=1.0, wear=0.55, wear_color=0xc9cdd2,
+                             wear_rough=0.16, grime=0.35, rvar=0.07, scratch=0.55, detail="brushed"),
+            "frame": W.finish("mat_stainless_frame", base=0x8e9298, rough=0.4, metal=1.0, wear=0.5, wear_color=0xbcc0c6,
+                              wear_rough=0.22, grime=0.45, rvar=0.09, scratch=0.45, detail="plastic"),
+            "steel": W.finish("mat_steel", base=0x62666c, rough=0.3, metal=1.0, wear=0.65, wear_color=0xa9adb3,
+                              wear_rough=0.2, grime=0.45, rvar=0.06, scratch=0.4, detail="brushed"),
+            "sight": W.finish("mat_sight_black", base=0x2a2b2e, rough=0.5, metal=0.6, wear=0.45, wear_color=0x8a8d92,
+                              wear_rough=0.3, wear_metal=1.0, grime=0.3, rvar=0.05, scratch=0.3, detail="plastic"),
         }
     return {
         **metals,
-        "rubber": W.material("mat_rubber", 0x1c1c1e, 0.62, 0.0),
-        "grip": W.material("mat_grip", 0x161617, 0.85, 0.0, normal_image=pebble, normal_strength=0.9),
-        "dot": W.material("mat_sight_dot", 0xe9e6dc, 0.45, 0.0),
-        "red": W.material("mat_paint_red", 0xc0221c, 0.5, 0.0),
-        "brass": W.material("mat_brass", 0xc49a4a, 0.3, 1.0),
+        "worn": None,
+        "rubber": W.finish("mat_rubber", base=0x1c1c1e, rough=0.62, wear=0.25, wear_color=0x242428, wear_rough=0.45,
+                           grime=0.5, rvar=0.08, scratch=0.1, bump="grain"),
+        "grip": W.finish("mat_grip", base=0x161617, rough=0.85, wear=0.35, wear_color=0x202023, wear_rough=0.6,
+                         grime=0.6, rvar=0.05, scratch=0.05, bump="stipple"),
+        "dot": W.finish("mat_sight_dot", base=0xe9e6dc, rough=0.45, grime=0.3, rvar=0.03, scratch=0.05),
+        "red": W.finish("mat_paint_red", base=0xc0221c, rough=0.5, wear=0.3, wear_color=0x8c8f94, wear_rough=0.3,
+                        wear_metal=1.0, grime=0.3, rvar=0.04),
+        "brass": W.finish("mat_brass", base=0xc49a4a, rough=0.3, metal=1.0, wear=0.4, wear_color=0xdcbc78,
+                          wear_rough=0.2, grime=0.4, rvar=0.1, scratch=0.3, detail="brushed"),
     }
 
 
@@ -263,16 +304,15 @@ def build_slide(M):
         for sx in (1, -1):
             grooves.append(slot("c", b, t, 2.1, *sx_range(sx, HW - 1.2, HW + 2.0), d))
     W.boolean(block, grooves)
-    bevel_worn(block, M["worn"], 0.6)
+    bevel_worn(block, M["worn"], 0.65, segs=2)
 
     # rear sight: vertical back face with anti-glare lines, square notch, two dots
     rs0, rs1, rtop = 2.4, 14.5, 18.8
     s = M["sight"]
     sight = side("rear_sight", [(rs0, DECK_Z - 0.5), (rs1, DECK_Z - 0.5), (rs0 + 6.0, rtop, 0.9), (rs0, rtop, 0.5)],
                  -11.0, 11.0, s)
-    cuts = [cube("c", -1.9, 1.9, rs0 - 1.0, rs1 + 1.0, rtop - 3.0, rtop + 1.0, s)]
-    cuts += [cube("c", -12.0, 12.0, rs0 - 1.0, rs0 + 0.35, z - 0.28, z + 0.28, s) for z in (11.7, 12.9, 14.1)]
-    W.boolean(sight, cuts)
+    W.boolean(sight, cube("c", -1.9, 1.9, rs0 - 1.0, rs1 + 1.0, rtop - 3.0, rtop + 1.0, s))
+    hi_cut(sight, [cube("c", -12.0, 12.0, rs0 - 1.0, rs0 + 0.35, z - 0.28, z + 0.28, s) for z in (11.7, 12.9, 14.1)])
     bevel_worn(sight, M["worn"], 0.3)
     dots = [rod_y("rear_dot", sx * 5.6, 16.4, [(1.0, rs0 - 0.25), (1.0, rs0 + 0.6)], 12, M["dot"]) for sx in (1, -1)]
 
@@ -309,8 +349,8 @@ def build_slide(M):
         paddle = side("safety_paddle", [(19.0, -1.2, 1.5), (31.5, 0.6, 2.0), (32.6, 3.6, 1.8), (30.6, 5.4, 1.5),
                                         (20.5, 4.4, 1.8), (17.8, 1.6, 1.5)], *sx_range(sx, HW + 0.8, HW + 2.6),
                       M["steel"])
-        W.boolean(paddle, [cube("c", *sx_range(sx, HW + 2.2, HW + 3.2), y - 0.35, y + 0.35, -3.0, 7.0, M["steel"])
-                           for y in (25.8, 27.6, 29.4)])
+        hi_cut(paddle, [cube("c", *sx_range(sx, HW + 2.2, HW + 3.2), y - 0.35, y + 0.35, -3.0, 7.0, M["steel"])
+                        for y in (25.8, 27.6, 29.4)])
         W.bevel(arm, 0.25 * MM, segs=1)
         W.bevel(paddle, 0.35 * MM, segs=1)
         red = pin_x("fire_dot", 21.6, -9.6, 1.1, *sx_range(sx, HW - 0.3, HW + 0.1), M["red"], segs=12)
@@ -331,7 +371,9 @@ def scoop_cutter(mat):
     box = cube("c", -25.0, 25.0, SCOOP_Y - 2.0, 160.0, ARM_TOP - 10.0, 30.0, mat)
     W.boolean(box, front("c", trapezoid(ARM_TOP - 12.0), SCOOP_Y - 5.0, 165.0, mat))
     cy, cz = SCOOP_Y + SCOOP_R, HOOD_TOP
-    arc = [(cy - SCOOP_R * math.cos(math.radians(a)), cz - SCOOP_R * math.sin(math.radians(a))) for a in range(0, 91, 6)]
+    step = 2 if W.hi() else 5
+    arc = [(cy - SCOOP_R * math.cos(math.radians(a)), cz - SCOOP_R * math.sin(math.radians(a)))
+           for a in range(0, 91, step)]
     lim = side("c", [(165.0, 32.0), (SCOOP_Y, 32.0)] + arc + [(cy, ARM_TOP - 12.0), (165.0, ARM_TOP - 12.0)],
                -30.0, 30.0, mat, segs=1)
     W.boolean(box, lim, op="INTERSECT")
@@ -366,7 +408,7 @@ def build_barrel(M):
     ]
     cuts += [cube("c", -12.0, 12.0, c - 2.65, c + 2.65, 9.9, 14.0, d) for c in RAIL_SLOTS]
     W.boolean(body, cuts)
-    bevel_worn(body, M["worn"], 0.7)
+    bevel_worn(body, M["worn"], 0.75, segs=2)
 
     # front sight blade in a dovetail base, dot on the sloped back face
     y0, y1 = MUZZLE_Y - 16.0, MUZZLE_Y - 3.6
@@ -394,16 +436,17 @@ def magwell(mat):
 def grip_core(M):
     """metal grip frame under the rubber; only its front strap shows"""
     core = W.loft("grip_core", [grip_section(z, f, r + RUBBER_T, hw - RUBBER_T, r_front=5.5, r_rear=6.5)
-                                for z, f, r, hw in GRIP_SECTIONS], "Z", M["frame"])
+                                for z, f, r, hw in grip_rows()], "Z", M["frame"])
     W.boolean(core, magwell(M["frame"]))
     return W.mark_sharp_by_angle(core, 40.0)
 
 
 def rubber_grip(M):
-    grip = W.loft("grip", [grip_section(*s) for s in GRIP_SECTIONS], "Z", M["rubber"])
+    rows = grip_rows()
+    grip = W.loft("grip", [grip_section(*s) for s in rows], "Z", M["rubber"])
     trim = side("c", [(-45.0, -43.5), (40.0, -45.5), (47.0, -49.0, 3.0), (52.0, -58.0, 3.0), (54.5, -63.0),
                       (80.0, -63.0), (80.0, 10.0), (-45.0, 10.0)], -30.0, 30.0, M["rubber"])
-    edge = [(f - RUBBER_FRONT, z) for z, f, _, _ in GRIP_SECTIONS]
+    edge = [(f - RUBBER_FRONT, z) for z, f, _, _ in rows]
     nose = side("c", [(edge[0][0], -140.0)] + edge + [(edge[-1][0], -30.0), (90.0, -30.0), (90.0, -140.0)],
                 -30.0, 30.0, M["rubber"], segs=1)
     W.boolean(grip, [trim, magwell(M["rubber"])])
@@ -411,14 +454,13 @@ def rubber_grip(M):
     W.bevel(grip, 1.2 * MM, segs=2, angle=35.0)
 
     # raised stippled fields, cut from a copy of the grip grown by 0.45 mm
-    grown = W.loft("c", [grip_section(*s, grow=0.45) for s in GRIP_SECTIONS], "Z", M["grip"])
+    grown = W.loft("c", [grip_section(*s, grow=0.45) for s in rows], "Z", M["grip"])
     pads = []
     for sx in (1, -1):
         fields = [side("grip_pad", pts, *sx_range(sx, 11.0, 20.0), M["grip"]) for pts in (PAD_UPPER, PAD_LOWER)]
         pad = W.join(fields, "grip_pad")
         W.boolean(pad, W.copy(grown, "c"), op="INTERSECT")
         W.bevel(pad, 0.25 * MM, segs=1)
-        W.box_uv(pad, 0.022)
         pads.append(pad)
     W.delete(grown)
     return [grip] + pads
@@ -453,9 +495,10 @@ def build_frame(M):
         W.boolean(part, cube("c", -3.9, 3.9, 55.0, 70.0, -37.0, -27.0, f))
         W.boolean(part, cube("c", -3.9, 3.9, 56.0, 60.5, -50.0, -36.5, f))
     W.boolean(tail, hammer_slot)
-    bevel_worn(body, M["worn"], 0.7)
+    bevel_worn(body, M["worn"], 0.7, segs=2)
     bevel_worn(dust, M["worn"], 0.6)
-    bevel_worn(guard, M["worn"], 0.9, segs=2)
+    # the guard reads as a round bar, not a flat plate
+    bevel_worn(guard, M["worn"], 1.6, segs=3)
     W.bevel(tail, 2.0 * MM, segs=3, angle=30.0)
 
     # frame lip under the rubber, flared a little like a magwell funnel
@@ -463,28 +506,28 @@ def build_frame(M):
     lip = W.loft("grip_lip", [grip_section(BASE_Z[0] + 0.2, fr + 0.3, rr - 0.3, hw + 0.2),
                               grip_section(z0 + 3.0, fr - 0.6, rr + 0.6, hw - 0.6)], "Z", f)
     W.boolean(lip, magwell(f))
-    bevel_worn(lip, M["worn"], 0.8, segs=2)
+    bevel_worn(lip, M["worn"], 0.9, segs=2)
 
     parts = [body, dust, guard, tail, lip, grip_core(M)] + rubber_grip(M)
 
     # left side: long slide stop along the frame, barrel release button, magazine release
     stop = side("slide_stop", [(8.0, -28.6, 1.5), (43.0, -27.6, 1.5), (49.5, -30.5, 3.0), (48.5, -37.0, 3.0),
                                (43.0, -36.0, 1.0), (15.0, -32.6, 1.0), (8.0, -32.4, 1.5)], -FRAME_HW - 1.9, -FRAME_HW + 0.2, s)
-    W.boolean(stop, [cube("c", -FRAME_HW - 2.5, -FRAME_HW - 1.4, y - 0.4, y + 0.4, -34.0, -27.0, s)
-                     for y in (10.5, 12.6, 14.7, 16.8)])
+    hi_cut(stop, [cube("c", -FRAME_HW - 2.5, -FRAME_HW - 1.4, y - 0.4, y + 0.4, -34.0, -27.0, s)
+                  for y in (10.5, 12.6, 14.7, 16.8)])
     W.bevel(stop, 0.35 * MM, segs=1)
     stop_boss = pin_x("slide_stop_boss", 46.0, -33.3, 3.4, -FRAME_HW - 2.5, -FRAME_HW - 1.5, s, segs=18)
     barrel_btn = pin_x("barrel_release", 80.0, -31.0, 3.1, -FRAME_HW - 1.3, -FRAME_HW + 0.2, s, segs=18)
     mag_btn = pin_x("mag_release", 54.8, -50.0, 4.0, -FRAME_HW - 1.8, -FRAME_HW + 0.2, s, segs=20)
-    W.boolean(mag_btn, [cube("c", -FRAME_HW - 2.5, -FRAME_HW - 1.4, 50.0, 59.6, z - 0.3, z + 0.3, s)
-                        for z in (-51.6, -50.0, -48.4)])
+    hi_cut(mag_btn, [cube("c", -FRAME_HW - 2.5, -FRAME_HW - 1.4, 50.0, 59.6, z - 0.3, z + 0.3, s)
+                     for z in (-51.6, -50.0, -48.4)])
     # right side: barrel release lever, the magazine release's other end
     lever = side("barrel_lever", [(84.0, -29.2, 1.2), (98.5, -29.2, 1.0), (102.0, -32.8, 3.0), (99.5, -37.2, 3.0),
                                   (84.0, -31.6, 1.0)], FRAME_HW - 0.2, FRAME_HW + 1.4, s)
     W.bevel(lever, 0.3 * MM, segs=1)
     lever_pin = pin_x("barrel_lever_pin", 99.2, -33.3, 2.2, FRAME_HW + 1.2, FRAME_HW + 1.9, s, segs=14)
     mag_end = pin_x("mag_release_end", 54.8, -50.0, 3.2, FRAME_HW - 0.2, FRAME_HW + 0.7, s, segs=18)
-    W.boolean(mag_end, cube("c", FRAME_HW + 0.3, FRAME_HW + 1.2, 51.0, 58.6, -50.4, -49.6, s))
+    hi_cut(mag_end, [cube("c", FRAME_HW + 0.3, FRAME_HW + 1.2, 51.0, 58.6, -50.4, -49.6, s)])
     for p in (stop_boss, barrel_btn, mag_btn, lever_pin, mag_end):
         W.bevel(p, 0.35 * MM, segs=1)
     parts += [stop, stop_boss, barrel_btn, mag_btn, lever, lever_pin, mag_end]
@@ -497,7 +540,7 @@ def build_frame(M):
             pin_x("pin_sear", 1.0, -33.0, 1.6, *sx_range(sx, FRAME_HW - 0.2, FRAME_HW + 0.4), s, segs=10),
         ]
         head = pin_x("grip_screw", -7.0, -98.0, 3.2, *sx_range(sx, 16.1, 17.0), s, segs=16)
-        W.boolean(head, cube("c", *sx_range(sx, 16.6, 17.6), -10.6, -3.4, -98.4, -97.6, s))
+        hi_cut(head, [cube("c", *sx_range(sx, 16.6, 17.6), -10.6, -3.4, -98.4, -97.6, s)])
         pins.append(head)
     for p in pins:
         W.bevel(p, 0.25 * MM, segs=1)
@@ -516,7 +559,7 @@ def build_hammer(M):
     # serrated spur
     W.boolean(ham, [cube("c", -5.0, 5.0, v - 0.42, v + 0.42, u, 40.0, M["steel"])
                     for v, u in ((-0.6, 34.6), (-2.6, 35.0), (-4.6, 35.2), (-6.6, 35.2), (-8.6, 34.6))])
-    bevel_worn(ham, M["worn"], 0.4)
+    bevel_worn(ham, M["worn"], 0.55, segs=2)
     W.rotate(ham, HAMMER_REST_DEG, "X", (0, 0, 0))
     return W.transform(ham, Matrix.Translation(Vector((0, HAMMER_PIVOT[0] * MM, HAMMER_PIVOT[1] * MM))))
 
@@ -529,7 +572,7 @@ def build_trigger(M):
            (-2.5, 3.0, 2.0), (0.8, 1.8, 1.0)]
     pts = [p if len(p) == 3 else (p[0], p[1], 0.0) for p in pts]
     trig = side("trigger", [(py + y, pz + z, r) for y, z, r in pts], -3.4, 3.4, M["steel"])
-    return bevel_worn(trig, M["worn"], 0.45)
+    return bevel_worn(trig, M["worn"], 0.9, segs=2)
 
 
 def build_mag(M):
@@ -544,6 +587,9 @@ def build_mag(M):
     # top round: .50 ae case and bullet lying in the feed lips, nose forward
     prof = [(0.0, -20.2), (6.2, -20.2), (6.2, -19.1), (5.5, -18.7), (5.5, -17.9), (6.9, -17.3), (6.9, 12.3),
             (6.35, 12.5), (6.35, 14.8), (5.3, 17.6), (3.0, 19.8), (0.0, 20.2)]
+    if W.hi():
+        # a rounder ogive on the bullet nose
+        prof = prof[:9] + [(6.1, 15.8), (5.3, 17.6), (4.3, 18.9), (3.0, 19.8), (1.6, 20.1), (0.0, 20.2)]
     round_ = W.lathe("mag_round", [(r * MM, t * MM) for r, t in prof], 16, M["brass"], axis="Y",
                      center=(0, -0.5 * MM, (MAG_S_TOP + 5.4) * MM))
     W.mark_sharp_by_angle(round_, 50)
@@ -552,24 +598,33 @@ def build_mag(M):
     # the floorplate is square to the grip bottom, not to the magazine
     base = side("mag_base", [(BASE_Y[0], BASE_Z[0], 1.5), (BASE_Y[1] - 1.0, BASE_Z[0], 1.5), (BASE_Y[1] + 0.8, -135.6, 1.8),
                              (BASE_Y[1], BASE_Z[1], 1.4), (BASE_Y[0], BASE_Z[1], 1.4)], -11.0, 11.0, d)
-    bevel_worn(base, M["worn"], 0.8, segs=2)
+    bevel_worn(base, M["worn"], 1.2, segs=3)
     return W.join([mag, base], "mag_parts")
 
 
 # ---------------------------------------------------------------- assemble
 
-def build():
-    W.common.reset_scene()
-    M = make_materials()
+def build_parts(M):
+    """every node's geometry at the current detail level, already shifted so
+    socket_grip_r is the origin"""
     slide = build_slide(M)
     body = W.join(build_barrel(M) + build_frame(M), "body_parts")
     hammer = build_hammer(M)
     trigger = build_trigger(M)
     mag = build_mag(M)
-
     shift = Matrix.Translation(Vector(final(0, 0, 0)))
-    for obj in (slide, body, hammer, trigger, mag):
+    parts = {"body": body, "slide": slide, "hammer": hammer, "trigger": trigger, "mag": mag}
+    for obj in parts.values():
         obj.data.transform(shift)
+    return parts
+
+
+def build():
+    W.common.reset_scene()
+    M = make_materials()
+    W.set_hi(False)
+    p = build_parts(M)
+    body, slide, hammer, trigger, mag = p["body"], p["slide"], p["hammer"], p["trigger"], p["mag"]
 
     root = W.empty("deagle", (0, 0, 0))
     W.parent_static(body, root)
@@ -597,19 +652,45 @@ def build():
     return root, [body, slide, hammer, trigger, mag], sockets, M
 
 
+def build_high(M):
+    """the bake source: same parts at the high detail level, in world space"""
+    W.set_hi(True)
+    p = build_parts(M)
+    W.set_hi(False)
+    names = {"body": "body", "slide": "slide_mesh", "hammer": "hammer_mesh", "trigger": "trigger_mesh", "mag": "mag_mesh"}
+    out = {}
+    for key, obj in p.items():
+        obj.name = obj.data.name = f"hi_{key}"
+        out[names[key]] = obj
+    print(f"[deagle] high poly {W.tri_count(list(out.values()))} tris")
+    return out
+
+
+# texel density: parts near the eye get more of the atlas, the grip rubber (under
+# the hand) and the magazine (seen during reloads) less
+MAT_TEXELS = {"mat_rubber": 0.7, "mat_grip": 0.75, "mat_brass": 0.8}
+OBJ_TEXELS = {"mag_mesh": 0.75, "trigger_mesh": 0.9}
+
+
+def texel_weight(obj, centre, mat_name):
+    d = (centre - EYE).length
+    w = max(0.6, min(1.6, (0.42 / max(d, 0.05)) ** 1.5))
+    return w * MAT_TEXELS.get(mat_name, 1.0) * OBJ_TEXELS.get(obj.name, 1.0)
+
+
 def report(meshes):
     total = W.tri_count(meshes)
     for m in meshes:
         print(f"[deagle] {m.name}: {W.tri_count([m])} tris")
     print(f"[deagle] total {total} tris")
     lo = Vector((1e9, 1e9, 1e9))
-    hi = -lo
+    hi_ = -lo
     for m in meshes:
         for v in m.data.vertices:
             w = m.matrix_world @ v.co
             lo = Vector(map(min, lo, w))
-            hi = Vector(map(max, hi, w))
-    size = (hi - lo) / MM
+            hi_ = Vector(map(max, hi_, w))
+    size = (hi_ - lo) / MM
     print(f"[deagle] size {size.y:.1f} long, {size.z:.1f} tall, {size.x:.1f} wide (mm)")
     return total
 
@@ -638,12 +719,12 @@ def check_clearances(meshes):
                 print(f"[deagle]   {label} hits {obj.name} near design ({c.x / MM:.1f}, {c.y / MM:.1f}, {c.z / MM:.1f})")
 
 
-def bake(meshes):
-    body, slide, hammer, trigger, mag = meshes
-    W.bake_ao([body, slide, hammer, trigger], distance=0.02, samples=128, strength=0.85, floor=0.25)
-    W.bake_ao([mag], distance=0.02, samples=128, strength=0.85, floor=0.25, isolate=True)
-    for m in meshes:
-        print(f"[deagle] ao {m.name}: min/mean {W.ao_stats(m)}")
+def bake(meshes, M):
+    """high poly, uv atlas, bakes and the atlas material (replaces every material)"""
+    highs = build_high(M)
+    W.texture_set(meshes, highs, "deagle", SIZE, texel_weight, isolate=("mag_mesh",),
+                  look=dict(edge_gain=0.9, value_var=0.08))
+    W.delete_high(highs)
 
 
 def renders(outdir, sockets, quick=False):
@@ -678,8 +759,8 @@ def main():
     total = report(meshes)
     check_clearances(meshes)
     if not QUICK:
-        bake(meshes)
-    W.export(OUT, root)
+        bake(meshes, M)
+    W.export(OUT, root, tangents=not QUICK)
     if RENDERS or QUICK:
         renders(RENDERS or W.TMP, sockets, quick=QUICK)
     print(f"[deagle] done, {total} tris -> {OUT}")

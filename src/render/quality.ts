@@ -23,9 +23,16 @@ export interface QualityPreset {
   maxPixelRatio: number;
   /** scales particle counts for impacts and muzzle effects */
   effectDensity: number;
+  /** mips in the bloom chain, fewer is cheaper and tighter */
+  bloomLevels: number;
+  /** bullet holes alive at once, the oldest is reused */
+  maxDecals: number;
+  /** largest generated normal map for world textures, 0 on low (no normal maps) */
+  normalMapSize: number;
 }
 
 export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
+  // weak and software gpus: baked light only, one pass, fxaa
   low: {
     level: 'low',
     msaa: 0,
@@ -37,21 +44,29 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
     reflections: false,
     viewmodelProbe: false,
     maxPixelRatio: 1,
-    effectDensity: 0.5,
+    effectDensity: 0.4,
+    bloomLevels: 0,
+    maxDecals: 24,
+    normalMapSize: 0,
   },
+  // the default: the lit look without msaa or ao, aimed at 60 fps on a typical laptop
   medium: {
     level: 'medium',
-    msaa: 2,
-    fxaa: false,
+    msaa: 0,
+    fxaa: true,
     bloom: true,
     ao: false,
     shadowMapSize: 1024,
     detailedMaterials: true,
     reflections: true,
     viewmodelProbe: true,
-    maxPixelRatio: 1.5,
-    effectDensity: 0.8,
+    maxPixelRatio: 1.25,
+    effectDensity: 0.75,
+    bloomLevels: 4,
+    maxDecals: 48,
+    normalMapSize: 512,
   },
+  // strong gpus: 4x msaa, ao, sharper shadows and a wider bloom
   high: {
     level: 'high',
     msaa: 4,
@@ -64,31 +79,24 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
     viewmodelProbe: true,
     maxPixelRatio: 2,
     effectDensity: 1,
+    bloomLevels: 6,
+    maxDecals: 96,
+    normalMapSize: 1024,
   },
 };
 
 /**
- * picks a preset from the webgl renderer string. apple silicon and discrete
- * cards get high, integrated intel and older laptop parts medium, software gl
- * and phone gpus low. unknown strings get medium, adaptive resolution covers
- * the rest.
+ * picks a preset from the webgl renderer string. auto never picks high: every
+ * real gpu starts on balanced (medium) and high is opt-in in the settings.
+ * software gl, phone gpus and old intel hd/uhd graphics get low. adaptive
+ * resolution covers the rest.
  */
 export function detectQuality(rendererName: string | null | undefined): QualityLevel {
   const name = (rendererName ?? '').toLowerCase();
   if (!name) return 'medium';
   if (/swiftshader|llvmpipe|softpipe|software|microsoft basic/.test(name)) return 'low';
   if (/mali|adreno|powervr|apple gpu|videocore|tegra/.test(name)) return 'low';
-  if (/apple m\d/.test(name)) return 'high';
-  if (/nvidia|geforce|rtx|gtx|quadro|radeon|amd/.test(name)) {
-    // old laptop radeons and the vega igpus are closer to intel
-    if (/vega \d\b|radeon\(tm\) graphics|radeon graphics/.test(name)) return 'medium';
-    return 'high';
-  }
-  if (/intel/.test(name)) {
-    if (/arc/.test(name)) return 'high';
-    if (/uhd|hd graphics/.test(name)) return 'low';
-    return 'medium';
-  }
+  if (/intel/.test(name) && !/arc|iris/.test(name) && /uhd|hd graphics/.test(name)) return 'low';
   return 'medium';
 }
 
