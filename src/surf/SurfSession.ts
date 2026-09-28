@@ -341,6 +341,11 @@ export class SurfSession {
       scores: this.scores.map((r) => ({ ...r })),
       roster: [...this.roster.entries()].map(([id, p]) => ({ id, ...p })),
       boardsAvailable: this.deps.boards.available,
+      ghost: {
+        source: this.ghostSource,
+        visible: this.ghostRunner.root.visible,
+        pos: this.ghostRunner.root.position.toArray(),
+      },
       lastFinish: this.lastFinished ? { ...this.lastFinished.run } : null,
     };
   }

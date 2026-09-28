@@ -2551,6 +2551,13 @@ export class GameApp {
         }));
       },
       restartRun: () => this.resetToSpawn('Run restarted', true),
+      // what the menu's restart run does after a finish, minus the pointer lock
+      playAgain: () => {
+        this.hideRunSubmitOverlay();
+        this.resetToSpawn(null, true);
+        this.playing = true;
+        this.multiplayer.setCombatReady(true);
+      },
       nameplates: () => Array.from(document.querySelectorAll('.surf-nameplate:not([hidden])')).map((el) => el.textContent ?? ''),
       roomBoardText: () => document.querySelector('.surf-room-board')?.textContent ?? null,
       pvpBadgeText: () => document.querySelector('.surf-pvp')?.textContent ?? null,
