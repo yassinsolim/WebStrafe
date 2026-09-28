@@ -26,6 +26,7 @@ import {
   loadKnifeMesh,
   type ArmRig,
 } from './playerRig';
+import { remoteKnifeKey, setRemoteKnife } from './remoteKnife';
 
 interface RemotePlayerActor {
   id: string;
@@ -47,6 +48,8 @@ interface RemotePlayerActor {
   /** visual-only offset that eases out a mispredicted extrapolation */
   correction: Vector3;
   lastMode: 'interp' | 'extrap' | 'hold' | null;
+  /** which knife pick the weapon hand holds (see remoteKnife.ts) */
+  knifeKey: string;
 }
 
 /** how fast a leftover extrapolation error fades, 1/s */
@@ -155,6 +158,12 @@ export class RemotePlayersRenderer {
         this.actors.set(player.id, replacement);
         this.root.add(replacement.group);
         actor = replacement;
+      }
+
+      const knifeKey = remoteKnifeKey(player.cosmetics?.knife);
+      if (actor.rig && actor.knifeKey !== knifeKey) {
+        setRemoteKnife(actor.rig.rightWeaponHand, player.cosmetics?.knife);
+        actor.knifeKey = knifeKey;
       }
 
       actor.targetPosition.set(player.position[0], player.position[1], player.position[2]);
@@ -270,6 +279,7 @@ export class RemotePlayersRenderer {
       renderedSourceT: null,
       correction: new Vector3(),
       lastMode: null,
+      knifeKey: remoteKnifeKey(undefined),
     };
 
     this.applyRigPose(actor, performance.now() * 0.001);

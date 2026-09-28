@@ -1,3 +1,4 @@
+import type { PlayerCosmetics } from './cosmetics';
 import type { AttackKind, MultiplayerSnapshot, PlayerModel } from './types';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import type { HostSpawn } from './HostSimulation';
@@ -129,6 +130,8 @@ export interface MultiplayerTransport {
   setRoomContext(context: RoomContext | null): void;
   /** Smoothed round trip to the authority in ms, null when not measured. */
   getPingMs?(): number | null;
+  /** knife, finish and armour choices shown to other players */
+  setCosmetics?(cosmetics: PlayerCosmetics | null): void;
   /** peer-hosted transports: whether this client runs the host simulation */
   isHosting?(): boolean;
 }

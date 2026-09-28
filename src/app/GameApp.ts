@@ -372,6 +372,7 @@ export class GameApp {
       onKnifeSelected: (knifeId) => {
         this.viewmodel.setKnife(knifeId);
         saveKnifeStyle(knifeId);
+        this.syncCosmetics();
         this.showStatus(`Knife: ${getKnife(knifeId ?? DEFAULT_KNIFE_ID).name}`);
         this.syncHudKnifeName();
       },
@@ -394,6 +395,7 @@ export class GameApp {
     // Pick the transport: Supabase Realtime when configured (serverless deploy),
     // else the self-hosted WebSocket client (local dev / LAN).
     this.multiplayer = this.shot && !this.shot.qa ? new OfflineMultiplayer() : await createMultiplayer();
+    this.syncCosmetics();
 
     this.multiplayer.onSnapshot = (snapshot) => {
       if (snapshot.mapId !== this.selectedMapId) {
@@ -2500,6 +2502,11 @@ export class GameApp {
     const info = this.renderer.info.render;
     (window as unknown as { __shotInfo?: unknown }).__shotInfo = { calls: info.calls, triangles: info.triangles };
     (window as unknown as { __shotReady?: boolean }).__shotReady = true;
+  }
+
+  /** tells other players which knife (and finish) we hold */
+  private syncCosmetics(): void {
+    this.multiplayer?.setCosmetics?.({ knife: { id: this.viewmodel.getKnife() } });
   }
 
   /** sounds for viewmodel clip events GunAudio doesn't already schedule */

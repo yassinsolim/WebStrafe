@@ -17,6 +17,7 @@ import { HostSimulation, type HostBotRow, type HostEmitter } from './HostSimulat
 import { SendCadence } from '../netcode/SendCadence';
 import { broadcastRateHz, DEFAULT_BUDGET, MAX_ROOM_PLAYERS, type BudgetOptions } from '../netcode/RateBudget';
 import { RESPAWN_DELAY_MS } from '../combat/CombatState';
+import { decodeCosmetics, encodeCosmetics, sameCosmetics, type PlayerCosmetics } from './cosmetics';
 
 const SESSION_KEY = 'webstrafe:session-id:v1';
 /**
@@ -97,6 +98,7 @@ interface RemoteRecord {
   hostEpoch: number | null;
   weapon: string | null;
   deadForMs: number | null;
+  cosmetics: PlayerCosmetics | undefined;
   joinedAt: number;
   lastSeen: number;
 }
@@ -152,6 +154,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
   private pendingCombat: CombatWireEvent[] = [];
   private readonly detachVisibility: (() => void) | null;
   private localWeapon: string | null = null;
+  private localCosmetics: PlayerCosmetics | null = null;
   /** Date.now() when the local player respawns, while dead */
   private localDeadUntil: number | null = null;
   /** our claim epoch while hosting, and the highest epoch seen in this room */
@@ -381,7 +384,17 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       name: this.localName,
       model: this.localModel,
       j: this.joinedChannelAt,
+      ...(this.localCosmetics ? { c: encodeCosmetics(this.localCosmetics) } : {}),
     };
+  }
+
+  /** re-tracks presence only when the choice actually changed (presence is rate limited) */
+  setCosmetics(cosmetics: PlayerCosmetics | null): void {
+    if (sameCosmetics(this.localCosmetics ?? undefined, cosmetics ?? undefined)) return;
+    this.localCosmetics = cosmetics;
+    if (this.channel && this.subscribed) {
+      void this.channel.track(this.presencePayload());
+    }
   }
 
   /**
@@ -764,6 +777,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       name: string;
       model: PlayerModel;
       j?: number;
+      c?: unknown;
     }>();
     const present = new Set<string>();
     for (const entries of Object.values(state)) {
@@ -776,6 +790,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         existing.name = entry.name;
         existing.model = entry.model;
         existing.joinedAt = typeof entry.j === 'number' ? entry.j : existing.joinedAt;
+        existing.cosmetics = decodeCosmetics(entry.c);
         this.remotes.set(entry.id, existing);
       }
     }
@@ -856,6 +871,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         pitch: record.state.pitch,
         t: record.t ?? undefined,
         clock: id,
+        ...(record.cosmetics ? { cosmetics: record.cosmetics } : {}),
       });
     }
 
@@ -879,6 +895,7 @@ function newRecord(name: string, model: PlayerModel, now: number): RemoteRecord 
     eligibility: 0,
     hostEpoch: null,
     weapon: null,
+    cosmetics: undefined,
     deadForMs: null,
     // unknown join time sorts last, so an unseen peer never bumps a seated one
     joinedAt: Number.MAX_SAFE_INTEGER,

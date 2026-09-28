@@ -1,3 +1,4 @@
+import { decodeCosmetics, encodeCosmetics, sameCosmetics, type PlayerCosmetics } from './cosmetics';
 import type { AttackKind, MultiplayerSnapshot, PlayerModel } from './types';
 import { resolveWsUrl } from './endpoints';
 import type {
@@ -91,6 +92,8 @@ export class MultiplayerClient implements MultiplayerTransport {
   public getPingMs(): number | null {
     return this.pingMs === null ? null : Math.round(this.pingMs);
   }
+
+  private cosmetics: PlayerCosmetics | null = null;
 
   public join(mapId: string, name: string, model: PlayerModel): void {
     this.desiredJoin = {
@@ -272,7 +275,13 @@ export class MultiplayerClient implements MultiplayerTransport {
               return false;
             }
             return true;
-          }).map((entry) => (typeof entry.t === 'number' ? { ...entry, clock: 'server' } : entry));
+          }).map((entry) => {
+            const raw = entry as MultiplayerSnapshot['players'][number] & { c?: unknown };
+            const cosmetics = decodeCosmetics(raw.c);
+            const { c: _wire, ...rest } = raw;
+            const row = cosmetics ? { ...rest, cosmetics } : rest;
+            return typeof row.t === 'number' ? { ...row, clock: 'server' } : row;
+          });
 
           const serverTimeMs = typeof payload.serverTimeMs === 'number'
             ? payload.serverTimeMs
@@ -418,6 +427,18 @@ export class MultiplayerClient implements MultiplayerTransport {
       name: this.desiredJoin.name,
       model: this.desiredJoin.model,
     });
+    this.sendCosmetics();
+  }
+
+  public setCosmetics(cosmetics: PlayerCosmetics | null): void {
+    if (sameCosmetics(this.cosmetics ?? undefined, cosmetics ?? undefined)) return;
+    this.cosmetics = cosmetics;
+    this.sendCosmetics();
+  }
+
+  private sendCosmetics(): void {
+    if (!this.desiredJoin || !this.cosmetics) return;
+    this.send({ type: 'cosmetics', c: encodeCosmetics(this.cosmetics) });
   }
 
   private send(payload: unknown): void {

@@ -1,3 +1,4 @@
+import { decodeCosmetics, encodeCosmetics, type WireCosmetics } from '../src/network/cosmetics';
 import crypto from 'node:crypto';
 import { createReadStream, promises as fs } from 'node:fs';
 import http, { type IncomingMessage, type ServerResponse } from 'node:http';
@@ -48,6 +49,8 @@ interface ClientState {
   name: string;
   mapId: string;
   model: PlayerModel;
+  /** optional knife / armour choices in wire form, relayed in snapshots */
+  cosmetics?: WireCosmetics;
   position: [number, number, number];
   velocity: [number, number, number];
   yaw: number;
@@ -277,6 +280,14 @@ wss.on('connection', (ws, req) => {
         });
         arena.addPlayer(client.id, mapId, 'knife');
         botManager.resetTargeting(mapId);
+        break;
+      }
+      case 'cosmetics': {
+        if (!client.joined) {
+          return;
+        }
+        // re-encode the decoded form so only validated fields are relayed
+        client.cosmetics = encodeCosmetics(decodeCosmetics(payload.c));
         break;
       }
       case 'combat-ready': {
@@ -527,6 +538,7 @@ function snapshotTick(): void {
     health: number;
     alive: boolean;
     t: number;
+    c?: WireCosmetics;
   }>>();
 
   for (const client of clients.values()) {
@@ -553,6 +565,7 @@ function snapshotTick(): void {
       health: arena.getHealth(client.id) ?? 100,
       alive: arena.isAlive(client.id),
       t: client.sampleT,
+      ...(client.cosmetics ? { c: client.cosmetics } : {}),
     });
     groupedByMap.set(client.mapId, list);
   }
