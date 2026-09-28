@@ -5,6 +5,15 @@ import {
   weaponSlotForKey,
 } from './GameplayWeaponInput';
 import type { WeaponCycleDirection, WeaponSlot } from './GameplayWeaponInput';
+import { devToolsEnabled } from '../app/devTools';
+
+export interface InputManagerOptions {
+  /**
+   * V cycles third person and free camera, which see around and through walls,
+   * so it only exists on dev and preview builds
+   */
+  debugKeys?: boolean;
+}
 
 export interface InputActions {
   inspectPressed: boolean;
@@ -50,7 +59,10 @@ export class InputManager {
   private pointerLocked = false;
   private ignoreNextMouseMove = false;
 
-  constructor(private readonly domElement: HTMLElement) {
+  private readonly debugKeys: boolean;
+
+  constructor(private readonly domElement: HTMLElement, options: InputManagerOptions = {}) {
+    this.debugKeys = options.debugKeys ?? devToolsEnabled();
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('mousemove', this.onMouseMove);
@@ -276,7 +288,7 @@ export class InputManager {
     if (firstPress && event.code === 'KeyG') {
       this.toggleGridQueued = true;
     }
-    if (firstPress && event.code === 'KeyV') {
+    if (firstPress && event.code === 'KeyV' && this.debugKeys) {
       this.toggleDebugCameraQueued = true;
     }
     if (firstPress && event.code === 'KeyN') {
