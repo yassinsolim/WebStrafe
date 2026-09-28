@@ -3,8 +3,13 @@
   blender -b --factory-startup --python-exit-code 1 -P tools/blender/weapons/build_awp.py -- \
       [--out .blender-tmp/weapons/awp_raw.glb] [--renders docs/screenshots/weapons] [--quick]
 
-then optimize:
-  npx tsx tools/assets/optimize-glb.ts .blender-tmp/weapons/awp_raw.glb public/viewmodels/v2/awp.glb --texture-size 1024
+then optimize (keep png so ktx2 encodes from lossless sources) and convert the textures to ktx2:
+  npx tsx tools/assets/optimize-glb.ts .blender-tmp/weapons/awp_raw.glb public/viewmodels/v2/awp.glb --texture-size 1024 --no-webp
+  npx tsx tools/assets/ktx2-textures.ts public/viewmodels/v2/awp.glb public/viewmodels/v2/awp.glb
+
+like the deagle, the rifle is built twice (the shipped low poly and a high poly
+with knurling, hex sockets and engraved click marks) and the high poly is baked
+onto the low poly's uv atlas. --quick skips the high poly and the bake.
 
 design units are millimetres with y=0 on the receiver's rear face and z=0 on
 the bore axis. at the end everything is shifted so socket_grip_r is the origin.
@@ -30,6 +35,9 @@ def arg(name, default=None):
 QUICK = "--quick" in ARGS
 OUT = arg("--out", os.path.join(W.TMP, "awp_raw.glb"))
 RENDERS = arg("--renders", None)
+SIZE = int(arg("--size", "2048"))
+# the rifle has a lot of round parts: a looser chord keeps it near 40k triangles
+W.set_tolerance(lathe_mm=0.05)
 
 side, front, top, cube, pin_x, rod_y, lathe_mm, bevel_worn, sx_range = (
     W.side, W.front, W.top, W.cube, W.pin_x, W.rod_y, W.lathe_mm, W.bevel_worn, W.sx_range)
@@ -88,23 +96,54 @@ def capsule(name, p0, p1, r, segs, mat):
 # ---------------------------------------------------------------- materials
 
 def make_materials():
-    stipple = W.pebble_normal_map("tex_stock_stipple", size=256, count=1300, radius=(2.0, 3.6), seed=5)
+    # green polymer stock, anodised aluminium chassis and scope, black nitride
+    # action and barrel, a polished bolt. worn edges show bare metal on the
+    # coated parts and lighter scuffs on the polymer
     return {
-        "green": W.material("mat_polymer_green", 0x3d4a33, 0.62, 0.0),
-        "green_grip": W.material("mat_polymer_green_stipple", 0x3d4a33, 0.72, 0.0, normal_image=stipple,
-                                 normal_strength=0.75),
-        "rubber": W.material("mat_rubber", 0x161617, 0.86, 0.0),
-        "alu": W.material("mat_aluminium", 0x2f3135, 0.4, 0.85),
-        "dark": W.material("mat_steel_dark", 0x222326, 0.36, 0.85),
-        "steel": W.material("mat_steel", 0xa3a6aa, 0.2, 1.0),
-        "worn": W.material("mat_steel_worn", 0x7a7d82, 0.26, 1.0),
-        "scope": W.material("mat_scope", 0x151618, 0.4, 0.55),
-        "glass": W.material("mat_glass", 0x0b1c24, 0.03, 0.0),
-        "black": W.material("mat_polymer_black", 0x19191a, 0.5, 0.0),
-        "paint": W.material("mat_paint_white", 0xe6e3da, 0.5, 0.0),
-        "brass": W.material("mat_brass", 0xc49a4a, 0.28, 1.0),
-        "red": W.material("mat_indicator", 0xc0261d, 0.45, 0.0),
+        "green": W.finish("mat_polymer_green", base=0x3d4a33, rough=0.62, wear=0.35, wear_color=0x55624a,
+                          wear_rough=0.5, grime=0.55, rvar=0.08, scratch=0.35, bump="grain"),
+        "green_grip": W.finish("mat_polymer_green_stipple", base=0x3d4a33, rough=0.74, wear=0.4, wear_color=0x55624a,
+                               wear_rough=0.55, grime=0.6, rvar=0.05, scratch=0.1, bump="stipple", bump_scale=1.15),
+        "rubber": W.finish("mat_rubber", base=0x161617, rough=0.86, wear=0.15, wear_color=0x202023, wear_rough=0.7,
+                           grime=0.5, rvar=0.05, scratch=0.05, bump="grain"),
+        "alu": W.finish("mat_aluminium", base=0x2f3135, rough=0.4, metal=0.85, wear=0.8, wear_color=0xa7abb0,
+                        wear_rough=0.25, wear_metal=1.0, grime=0.45, rvar=0.07, scratch=0.5),
+        "dark": W.finish("mat_steel_dark", base=0x222326, rough=0.36, metal=0.85, wear=0.75, wear_color=0x8d9196,
+                         wear_rough=0.24, wear_metal=1.0, grime=0.4, rvar=0.07, scratch=0.5, detail="brushed"),
+        "steel": W.finish("mat_steel", base=0xa3a6aa, rough=0.2, metal=1.0, wear=0.3, wear_color=0xc4c7cb,
+                          wear_rough=0.12, grime=0.35, rvar=0.06, scratch=0.6, detail="brushed"),
+        "worn": None,
+        "scope": W.finish("mat_scope", base=0x151618, rough=0.4, metal=0.55, wear=0.6, wear_color=0x7d8186,
+                          wear_rough=0.3, wear_metal=1.0, grime=0.35, rvar=0.06, scratch=0.4),
+        # knurled rings: the ridges read as edges, so full wear would strip them bare
+        "scope_knurl": W.finish("mat_scope_knurl", base=0x151618, rough=0.42, metal=0.55, wear=0.2, wear_color=0x55595e,
+                                wear_rough=0.34, wear_metal=0.9, grime=0.45, rvar=0.05, scratch=0.2),
+        "glass": W.finish("mat_glass", base=0x0b1c24, rough=0.03, grime=0.0, rvar=0.01, scratch=0.05),
+        "black": W.finish("mat_polymer_black", base=0x19191a, rough=0.5, wear=0.2, wear_color=0x28282b,
+                          wear_rough=0.35, grime=0.4, rvar=0.06, scratch=0.2, bump="grain"),
+        "paint": W.finish("mat_paint_white", base=0xe6e3da, rough=0.5, grime=0.3, rvar=0.03),
+        "brass": W.finish("mat_brass", base=0xc49a4a, rough=0.28, metal=1.0, wear=0.4, wear_color=0xdcbc78,
+                          wear_rough=0.2, grime=0.4, rvar=0.1, scratch=0.3, detail="brushed"),
+        "red": W.finish("mat_indicator", base=0xc0261d, rough=0.45, grime=0.2, rvar=0.03),
     }
+
+
+def hi_cut(obj, cutters, transfer_material=False):
+    """small cuts only go into the high poly, the bake carries them"""
+    if W.hi():
+        W.boolean(obj, cutters, transfer_material=transfer_material)
+    else:
+        for c in cutters:
+            W.delete(c)
+    return obj
+
+
+def hex_socket(screw, y, z, r, sx, x_face, mat, axis="X"):
+    """hex key socket in a screw head (high poly only)"""
+    if not W.hi():
+        return screw
+    x0, x1 = sorted((sx * (x_face - 0.45), sx * (x_face + 1.0)))
+    return hi_cut(screw, [pin_x("c", y, z, r * 0.42, x0, x1, mat, segs=6)])
 
 
 # ---------------------------------------------------------------- stock and chassis
@@ -125,8 +164,8 @@ def build_stock(M):
         thin.append(side("c", [(-26.0, -46.0), (40.0, -46.0), (40.0, -160.0), (-40.0, -160.0), (-40.0, -112.0)],
                          *sx_range(sx, 16.5, 40.0), M["green_grip"]))
     W.boolean(rear, thin, transfer_material=True)
-    W.bevel(rear, 3.2 * MM, segs=3, angle=35.0)
-    W.box_uv(rear, 0.024, ["mat_polymer_green_stipple"])
+    # moulded polymer has big soft radii, not machined chamfers
+    W.bevel(rear, 4.5 * MM, segs=4, angle=35.0)
 
     fore = side("forend", [(205.0, -2.0), (452.0, -2.0, 10.0), (470.0, -12.0, 12.0), (473.0, FOREND_BOTTOM_Z + 9.0, 10.0),
                            (462.0, FOREND_BOTTOM_Z, 6.0), (205.0, FOREND_BOTTOM_Z)], -25.0, 25.0, M["green"], segs=5)
@@ -141,29 +180,31 @@ def build_stock(M):
                             (SUPPORT_Y + 45.0, -32.0, 4.0), (SUPPORT_Y - 70.0, -32.0, 4.0)],
                       *sx_range(sx, 24.4, 30.0), M["green_grip"]) for sx in (1, -1)]
     W.boolean(fore, grip_zone, transfer_material=True)
-    W.bevel(fore, 3.0 * MM, segs=3, angle=35.0)
-    W.box_uv(fore, 0.024, ["mat_polymer_green_stipple"])
+    W.bevel(fore, 4.0 * MM, segs=4, angle=35.0)
 
     cheek = side("cheek_rest", [(-252.0, 10.0, 3.0), (-166.0, 10.0, 3.0), (-168.0, 26.0, 10.0), (-200.0, 31.0, 14.0),
                                 (-250.0, 29.0, 8.0)], -19.0, 19.0, M["green"], segs=5)
-    W.bevel(cheek, 3.0 * MM, segs=3, angle=35.0)
+    W.bevel(cheek, 4.0 * MM, segs=4, angle=35.0)
     posts = [lathe_mm("cheek_post", [(4.2, 1.0), (4.2, 11.0)], 14, M["steel"], "Z", (0.0, y, 0.0)) for y in (-182.0, -234.0)]
-    wheel = lathe_mm("cheek_wheel", [(9.0, -21.0), (9.0, -25.5)], 28, M["alu"], "X", (0.0, -208.0, 3.0), ripple=0.06)
+    # knurled adjuster wheel: fine ridges in the high poly, smooth in the low
+    wheel = lathe_mm("cheek_wheel", [(9.0, -21.0), (9.0, -25.5)], 44 if W.hi() else 28, M["alu"], "X",
+                     (0.0, -208.0, 3.0), ripple=0.035 if W.hi() else None)
     W.bevel(wheel, 0.4 * MM, segs=1)
 
     spacer = side("butt_spacer", [(-265.0, 3.0), (-265.0, -141.0), (-269.0, -141.0), (-269.0, 3.0)], -20.0, 20.0, M["alu"])
     W.bevel(spacer, 0.6 * MM, segs=1)
     pad = side("butt_pad", [(-268.5, 2.0, 2.0), (-268.5, -140.0, 2.0), (-284.0, -137.0, 8.0), (-285.5, 0.0, 8.0)],
                -20.5, 20.5, M["rubber"], segs=5)
-    W.bevel(pad, 1.8 * MM, segs=2, angle=35.0)
+    W.bevel(pad, 3.0 * MM, segs=3, angle=35.0)
 
     chassis = front("chassis_rail", [(-19.5, -21.0), (19.5, -21.0), (19.5, -13.0, 1.5), (-19.5, -13.0, 1.5)], -8.0, 214.0,
                     M["alu"])
-    bevel_worn(chassis, M["worn"], 0.7)
+    bevel_worn(chassis, M["worn"], 0.8, segs=2)
     screws = []
     for sx in (1, -1):
         for y in (20.0, 185.0):
-            screws.append(pin_x("chassis_screw", y, -17.0, 3.2, *sx_range(sx, 19.0, 20.6), M["steel"], segs=12))
+            s_ = pin_x("chassis_screw", y, -17.0, 3.2, *sx_range(sx, 19.0, 20.6), M["steel"], segs=12)
+            screws.append(hex_socket(s_, y, -17.0, 3.2, sx, 20.6, M["steel"]))
     for s_ in screws:
         W.bevel(s_, 0.3 * MM, segs=1)
 
@@ -171,7 +212,7 @@ def build_stock(M):
                                    (34.0, -70.0, 8.0), (24.0, -58.0, 5.0)], -6.5, 6.5, M["alu"])
     W.boolean(guard, side("c", [(28.0, -44.0), (90.0, -44.0, 3.0), (88.5, -64.0, 5.0), (38.0, -64.5, 6.0), (30.0, -56.0)],
                           -9.0, 9.0, M["alu"]))
-    bevel_worn(guard, M["worn"], 0.9, segs=2)
+    bevel_worn(guard, M["worn"], 1.4, segs=3)
     release = side("mag_release", [(99.0, -44.0), (105.0, -44.0), (105.5, -60.0, 2.0), (100.5, -61.0, 2.0)], -6.0, 6.0,
                    M["alu"])
     W.bevel(release, 0.6 * MM, segs=1)
@@ -196,7 +237,7 @@ def build_action(M):
         cube("c", -17.5, -15.0, 40.0, 180.0, -6.0, -4.0, M["dark"]),    # machining line, left
         cube("c", 15.0, 17.5, 150.0, 205.0, -6.0, -4.0, M["dark"]),     # machining line, right front
     ])
-    bevel_worn(rec, M["worn"], 0.8)
+    bevel_worn(rec, M["worn"], 1.0, segs=2)
 
     rail = front("rail", [(-10.5, 14.0), (10.5, 14.0), (10.5, 20.0), (9.0, 22.0), (-9.0, 22.0), (-10.5, 20.0)],
                  0.0, 200.0, M["dark"])
@@ -211,7 +252,8 @@ def build_action(M):
     safety = side("safety", [(-15.0, -12.0, 1.5), (-3.0, -12.0, 1.5), (-3.0, -6.0, 1.5), (-15.0, -7.0, 1.5)], 16.0, 19.2,
                   M["alu"])
     W.bevel(safety, 0.5 * MM, segs=1)
-    screws = [pin_x("receiver_screw", y, -8.0, 2.6, *sx_range(sx, 15.6, 16.5), M["steel"], segs=12)
+    screws = [hex_socket(pin_x("receiver_screw", y, -8.0, 2.6, *sx_range(sx, 15.6, 16.5), M["steel"], segs=12),
+                         y, -8.0, 2.6, sx, 16.5, M["steel"])
               for sx in (1, -1) for y in (30.0, 188.0)]
     for s_ in screws:
         W.bevel(s_, 0.25 * MM, segs=1)
@@ -246,13 +288,19 @@ def build_action(M):
 
 def build_scope(M):
     z = SCOPE_Z
+    # the objective bell flares on a smooth s-curve instead of a straight cone
+    bell = [(16.5 + 12.0 * (0.5 - 0.5 * math.cos(math.pi * k / 8)), 220.0 + 40.0 * k / 8) for k in range(9)]
     body = lathe_mm("scope_body", [
         (17.5, -35.0), (21.0, SCOPE_REAR_Y), (22.5, SCOPE_REAR_Y + 1.5), (22.5, -14.0), (21.0, -10.0), (18.0, 20.0),
-        (18.8, 22.0), (18.8, 44.0), (15.2, 47.0), (15.2, 214.0), (16.5, 220.0), (28.5, 260.0), (29.5, 263.0),
+        (18.8, 22.0), (18.8, 44.0), (15.2, 47.0), (15.2, 214.0), (15.8, 217.5)] + bell + [(29.2, 261.8), (29.5, 263.5),
         (29.5, 306.0), (28.5, 310.0), (26.5, 310.0), (26.0, 306.0)], 40, M["scope"], "Y", (0.0, 0.0, z))
     W.bevel(body, 0.5 * MM, segs=1, angle=40.0)
-    diopter = lathe_mm("diopter_ring", [(22.9, -31.0), (22.9, -19.0)], 60, M["scope"], "Y", (0.0, 0.0, z), ripple=0.035)
-    power = lathe_mm("power_ring", [(19.4, 25.0), (19.4, 41.0)], 48, M["scope"], "Y", (0.0, 0.0, z), ripple=0.06)
+    # knurled diopter ring (ridges only in the high poly) and a ribbed power ring. the
+    # knurl pitch is about 3 mm: finer than that aliases at 1024 texels on the atlas
+    diopter = lathe_mm("diopter_ring", [(22.4, -31.0), (22.9, -30.5), (22.9, -19.5), (22.4, -19.0)],
+                       90 if W.hi() else 60, M["scope_knurl"], "Y", (0.0, 0.0, z), ripple=0.02 if W.hi() else None)
+    power = lathe_mm("power_ring", [(18.9, 25.0), (19.4, 25.5), (19.4, 40.5), (18.9, 41.0)], 192 if W.hi() else 96,
+                     M["scope"], "Y", (0.0, 0.0, z), ribs=(24, 1.1 * MM, 0.45))
     cup = lathe_mm("eye_cup", [(21.0, -41.5), (23.3, -41.5), (23.6, -39.0), (23.3, -36.5), (21.0, -36.5)], 40,
                    M["rubber"], "Y", (0.0, 0.0, z), closed=True)
     lever = cube("power_lever", 12.0, 16.0, 30.0, 36.0, z + 13.0, z + 22.5, M["scope"])
@@ -271,11 +319,28 @@ def build_scope(M):
         base_r, cap_r = (12.5, 14.8) if axis == "Z" else (11.5, 13.5)
         t0 = 17.5
         c = (0.0, 135.0, z)
+        base = lathe_mm("turret_base", [(0.0, sign * t0), (base_r, sign * t0), (base_r, sign * (t0 + 6.5)),
+                                        (0.0, sign * (t0 + 6.5))], 32, M["scope"], axis, c)
+        if W.hi():
+            # engraved click marks around the skirt, filled with white paint
+            ticks = []
+            for k in range(40):
+                long_ = k % 5 == 0
+                tk = cube("c", -0.35, 0.35, base_r - 0.4, base_r + 1.0, 0.0, 3.4 if long_ else 2.0, M["paint"])
+                W.transform(tk, Matrix.Translation(Vector((0.0, 0.0, (t0 + 6.5 - (3.4 if long_ else 2.0)) * MM))))
+                W.rotate(tk, 360.0 * k / 40, "Z", (0, 0, 0))
+                if axis == "X":
+                    W.rotate(tk, 90.0 * sign, "Y", (0, 0, 0))
+                elif sign < 0:
+                    W.rotate(tk, 180.0, "X", (0, 0, 0))
+                W.transform(tk, Matrix.Translation(Vector(c) * MM))
+                ticks.append(tk)
+            hi_cut(base, ticks, transfer_material=True)
         parts = [
-            lathe_mm("turret_base", [(0.0, sign * t0), (base_r, sign * t0), (base_r, sign * (t0 + 6.5)),
-                                     (0.0, sign * (t0 + 6.5))], 32, M["scope"], axis, c),
+            base,
             lathe_mm("turret_cap", [(0.0, sign * (t0 + 6.5)), (cap_r, sign * (t0 + 6.5)), (cap_r, sign * (t0 + 6.5 + h)),
-                                    (0.0, sign * (t0 + 6.5 + h))], 52, M["scope"], axis, c, ripple=0.05),
+                                    (0.0, sign * (t0 + 6.5 + h))], 72 if W.hi() else 52, M["scope_knurl"], axis, c,
+                     ripple=0.03 if W.hi() else None),
             lathe_mm("turret_top", [(0.0, sign * (t0 + 6.5 + h)), (cap_r - 0.6, sign * (t0 + 6.5 + h)),
                                     (cap_r - 1.4, sign * (t0 + 8.0 + h)), (0.0, sign * (t0 + 8.0 + h))], 32, M["scope"], axis, c),
         ]
@@ -299,12 +364,15 @@ def build_scope(M):
         W.bevel(stanchion, 0.8 * MM, segs=1)
         ring = lathe_mm("ring", [(15.2, y - 9.0), (19.8, y - 9.0), (19.8, y + 9.0), (15.2, y + 9.0)], 36, M["alu"], "Y",
                         (0.0, 0.0, z), closed=True)
-        W.bevel(ring, 0.7 * MM, segs=1)
+        W.bevel(ring, 0.8 * MM, segs=2)
         nut = pin_x("ring_nut", y, 21.0, 5.2, -19.8, -16.0, M["alu"], segs=6)
         bolt_end = pin_x("ring_bolt", y, 21.0, 2.4, 16.0, 17.2, M["steel"], segs=10)
         W.bevel(nut, 0.4 * MM, segs=1)
-        screws = [pin_x("ring_screw", y + dy, z + 5.0, 2.0, *sx_range(sx, 18.6, 20.8), M["steel"], segs=10)
+        screws = [hex_socket(pin_x("ring_screw", y + dy, z + 5.0, 2.0, *sx_range(sx, 18.6, 20.8), M["steel"], segs=10),
+                             y + dy, z + 5.0, 2.0, sx, 20.8, M["steel"])
                   for sx in (1, -1) for dy in (-4.5, 4.5)]
+        for s_ in screws:
+            W.bevel(s_, 0.25 * MM, segs=1)
         rings += [base, stanchion, ring, nut, bolt_end] + screws
     return [body, diopter, power, cup, lever, rear_lens, front_lens, saddle] + turrets + marks + rings
 
@@ -381,17 +449,55 @@ def build_mag(M):
 
 # ---------------------------------------------------------------- assemble
 
+def build_parts(M):
+    """every node's geometry at the current detail level, shifted so
+    socket_grip_r is the origin"""
+    parts = {
+        "body": W.join(build_stock(M) + build_action(M) + build_scope(M) + build_bipod(M), "body_parts"),
+        "bolt": build_bolt(M),
+        "trigger": build_trigger(M),
+        "mag": build_mag(M),
+    }
+    shift = Matrix.Translation(Vector(final(0, 0, 0)))
+    for obj in parts.values():
+        obj.data.transform(shift)
+    return parts
+
+
+def build_high(M):
+    """the bake source: same parts at the high detail level, in world space"""
+    W.set_hi(True)
+    p = build_parts(M)
+    W.set_hi(False)
+    names = {"body": "body", "bolt": "bolt_mesh", "trigger": "trigger_mesh", "mag": "mag_mesh"}
+    out = {}
+    for key, obj in p.items():
+        obj.name = obj.data.name = f"hi_{key}"
+        out[names[key]] = obj
+    print(f"[awp] high poly {W.tri_count(list(out.values()))} tris")
+    return out
+
+
+# the eye in weapon space (blender axes, metres from socket_grip_r) at the idle
+# viewmodel pose. the scope eyepiece is 19 cm from it, the brake over a metre
+EYE = Vector((-0.13, -0.17, 0.165))
+# the stock sits beside and below the camera, only the inspect shows it
+MAT_TEXELS = {"mat_polymer_green": 0.55, "mat_polymer_green_stipple": 0.6, "mat_rubber": 0.45, "mat_brass": 0.8}
+OBJ_TEXELS = {"mag_mesh": 0.7}
+
+
+def texel_weight(obj, centre, mat_name):
+    d = (centre - EYE).length
+    w = max(0.35, min(1.9, (0.33 / max(d, 0.05)) ** 1.2))
+    return w * MAT_TEXELS.get(mat_name, 1.0) * OBJ_TEXELS.get(obj.name, 1.0)
+
+
 def build():
     W.common.reset_scene()
     M = make_materials()
-    body = W.join(build_stock(M) + build_action(M) + build_scope(M) + build_bipod(M), "body_parts")
-    bolt = build_bolt(M)
-    trigger = build_trigger(M)
-    mag = build_mag(M)
-
-    shift = Matrix.Translation(Vector(final(0, 0, 0)))
-    for obj in (body, bolt, trigger, mag):
-        obj.data.transform(shift)
+    W.set_hi(False)
+    p = build_parts(M)
+    body, bolt, trigger, mag = p["body"], p["bolt"], p["trigger"], p["mag"]
 
     root = W.empty("awp", (0, 0, 0))
     W.parent_static(body, root)
@@ -425,12 +531,11 @@ def report(meshes):
     return total
 
 
-def bake(meshes):
-    body, bolt, trigger, mag = meshes
-    W.bake_ao([body, bolt, trigger], distance=0.035, samples=128, strength=0.85, floor=0.25)
-    W.bake_ao([mag], distance=0.035, samples=128, strength=0.85, floor=0.25, isolate=True)
-    for m in meshes:
-        print(f"[awp] ao {m.name}: min/mean {W.ao_stats(m)}")
+def bake(meshes, M):
+    """high poly, uv atlas, bakes and the atlas material (replaces every material)"""
+    highs = build_high(M)
+    W.texture_set(meshes, highs, "awp", SIZE, texel_weight, isolate=("mag_mesh",), look=dict(edge_gain=1.0))
+    W.delete_high(highs)
 
 
 def renders(outdir, sockets, quick=False):
@@ -458,8 +563,8 @@ def main():
     root, meshes, sockets, M = build()
     total = report(meshes)
     if not QUICK:
-        bake(meshes)
-    W.export(OUT, root)
+        bake(meshes, M)
+    W.export(OUT, root, tangents=not QUICK)
     if RENDERS or QUICK:
         renders(RENDERS or W.TMP, sockets, quick=QUICK)
     print(f"[awp] done, {total} tris -> {OUT}")

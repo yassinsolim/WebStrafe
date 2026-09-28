@@ -1412,9 +1412,6 @@ def texture_set(lows, highs, name, size, weight, look=None, samples_ao=96, isola
     bakes run at `size` and are box filtered down to out_sizes (base colour,
     normal, orm), the sizes that ship"""
     t0 = time.time()
-    if os.environ.get("WS_SAVE_LOW"):
-        bpy.ops.wm.save_as_mainfile(filepath=os.environ["WS_SAVE_LOW"])
-        raise SystemExit(0)
     for lo in lows:
         triangulate(lo)
     uv_atlas(lows, weight=weight, margin=pack_margin)
