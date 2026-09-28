@@ -379,6 +379,7 @@ export class GameApp {
       onReloadMap: () => {
         void this.reloadSelectedMap();
       },
+      canResume: (mapId) => this.loadedMap?.entry.id === mapId && !this.runComplete && this.finishedRunTimeMs === null,
       onMapSelected: (mapId) => {
         this.selectedMapId = mapId;
         this.persistSelectedMapId(mapId);

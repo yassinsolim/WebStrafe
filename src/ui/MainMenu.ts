@@ -22,6 +22,8 @@ interface MainMenuCallbacks {
   onNameChanged: (name: string) => void;
   /** null = the authored (legacy) viewmodel knife */
   onKnifeSelected?: (knifeId: KnifeId | null) => void;
+  /** true while this map is loaded and paused, so Play reads Resume */
+  canResume?: (mapId: string) => boolean;
 }
 
 interface LoadoutPreset {
@@ -64,6 +66,7 @@ export class MainMenu {
   private readonly root: HTMLDivElement;
   private readonly nameInput: HTMLInputElement;
   private readonly playMapLabel: HTMLSpanElement;
+  private readonly playWord: HTMLSpanElement;
 
   private readonly playPanel: PlayPanel;
   private readonly loadoutPanel: LoadoutPanel;
@@ -259,7 +262,10 @@ export class MainMenu {
     playButton.dataset.sfx = 'confirm';
     const playLabel = document.createElement('span');
     playLabel.className = 'menu-play-label';
-    playLabel.innerHTML = `${PLAY_GLYPH}<span>Play</span>`;
+    playLabel.innerHTML = PLAY_GLYPH;
+    this.playWord = document.createElement('span');
+    this.playWord.textContent = 'Play';
+    playLabel.appendChild(this.playWord);
     this.playMapLabel = document.createElement('span');
     this.playMapLabel.className = 'menu-play-map';
     playButton.append(playLabel, this.playMapLabel);
@@ -283,6 +289,7 @@ export class MainMenu {
   public setVisible(visible: boolean): void {
     this.root.style.display = visible ? 'grid' : 'none';
     this.visible = visible;
+    if (visible) this.refreshPlayLabel();
     this.syncPreview();
   }
 
@@ -430,6 +437,7 @@ export class MainMenu {
   }
 
   private refreshPlayLabel(): void {
+    this.playWord.textContent = this.callbacks.canResume?.(this.selectedMapId) ? 'Resume' : 'Play';
     const selected = this.maps.find((map) => map.id === this.selectedMapId);
     this.playMapLabel.textContent = selected
       ? `${selected.name} · ${MAP_TYPE_LABEL[mapTypeFromId(selected.id)]}`

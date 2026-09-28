@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultCrosshair, type CrosshairSettings } from '../SettingsStore';
-import { MAX_SPREAD_PX, computeCrosshairLayout, snapRect, spreadToPixels } from '../hud/crosshairGeometry';
+import { MAX_SPREAD_PX, computeCrosshairLayout, crosshairScale, snapRect, spreadToPixels } from '../hud/crosshairGeometry';
 
 const classic: CrosshairSettings = { ...defaultCrosshair, style: 'classic', size: 6, gap: 3, thickness: 2, outline: true };
 
@@ -45,6 +45,15 @@ describe('computeCrosshairLayout', () => {
     expect(wide.arms[3].x).toBe(-21);
     const fixed = computeCrosshairLayout({ ...classic, dynamicSpread: false }, 12);
     expect(fixed.arms[1].x).toBe(3);
+  });
+
+  it('scales the authored sizes but not the spread, which is already in screen px', () => {
+    const scaled = computeCrosshairLayout(classic, 12, 1.5);
+    expect(scaled.arms[1]).toEqual({ x: 3 * 1.5 + 12, y: -1.5, w: 9, h: 3 });
+    expect(crosshairScale(1080)).toBe(1);
+    expect(crosshairScale(1440)).toBeCloseTo(4 / 3, 6);
+    expect(crosshairScale(480)).toBe(0.75);
+    expect(crosshairScale(0)).toBe(1);
   });
 
   it('keeps arms symmetric with a negative gap', () => {
