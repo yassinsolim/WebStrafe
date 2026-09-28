@@ -1,0 +1,36 @@
+{
+ "players": 6,
+ "churn": false,
+ "secs": 15,
+ "hzPerClient": 1.8,
+ "eventsPerSec": {
+  "mean": 79.6,
+  "p95": 85,
+  "max": 85
+ },
+ "perSecond": [
+  85,
+  83,
+  84,
+  78,
+  79,
+  83,
+  78,
+  84,
+  78,
+  78,
+  79,
+  78,
+  72,
+  72,
+  83
+ ],
+ "byEventPerSec": {
+  "in:broadcast": 66.3,
+  "out:broadcast:st": 13.3
+ },
+ "hosts": [
+  "p_budf_2"
+ ],
+ "roomFullEvents": 0
+}
