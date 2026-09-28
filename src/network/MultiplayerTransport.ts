@@ -107,7 +107,12 @@ export interface MultiplayerTransport {
   disconnect(): void;
   getLocalId(): string | null;
   getActiveMapId(): string;
-  join(mapId: string, name: string, model: PlayerModel): void;
+  /**
+   * `cosmetics` is the look as an encodeLook() wire string. it's profile data
+   * like the name, so call again only when it changes (supabase presence only
+   * takes a few updates per 30 s)
+   */
+  join(mapId: string, name: string, model: PlayerModel, cosmetics?: string): void;
   /** Marks pointer-locked active play; false removes the player from bot targets. */
   setCombatReady(ready: boolean): void;
   /** Called every fixed sim tick; the transport decides which ticks to send. */

@@ -24,6 +24,11 @@ export interface MultiplayerSnapshotPlayer {
   t?: number;
   /** Which clock `t` is in: 'server', or the sending peer id in Supabase mode. */
   clock?: string;
+  /**
+   * look wire string (characters/look.ts), humans only. comes from presence or
+   * profile messages, never from state, and is left out when unknown
+   */
+  cosmetics?: string;
 }
 
 export interface MultiplayerSnapshot {
