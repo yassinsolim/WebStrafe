@@ -1,0 +1,10 @@
+# only needed for a locally-managed tunnel; the dashboard flow in
+# docs/DEPLOY.md configures the same route without this file.
+# copy to /etc/cloudflared/config.yml and fill in the tunnel id
+tunnel: <TUNNEL_ID>
+credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  - hostname: game.yassin.app
+    service: http://127.0.0.1:8080
+  - service: http_status:404

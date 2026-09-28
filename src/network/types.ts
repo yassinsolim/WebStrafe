@@ -20,6 +20,10 @@ export interface MultiplayerSnapshotPlayer {
   pitch: number;
   health?: number;
   alive?: boolean;
+  /** Sample time in the authority clock named by `clock`, ms. */
+  t?: number;
+  /** Which clock `t` is in: 'server', or the sending peer id in Supabase mode. */
+  clock?: string;
 }
 
 export interface MultiplayerSnapshot {

@@ -8,7 +8,7 @@ import {
   horizontalLength,
   projectDirectionOnPlane,
 } from './MovementMath';
-import type { CapsuleShape, GroundProbe, MoveInput, MovementDebugState, MovementMode, SourceCvars } from './types';
+import type { CapsuleShape, GroundProbe, MoveInput, MovementDebugState, MovementMode, MovementSnapshot, SourceCvars } from './types';
 import type { CollisionAdapter } from '../world/CollisionWorld';
 
 const UP = new Vector3(0, 1, 0);
@@ -74,6 +74,33 @@ export class MovementController {
 
   public setCvars(next: Partial<SourceCvars>): void {
     Object.assign(this.cvars, next);
+  }
+
+  /** Everything tick() reads from the previous tick, for rollback and replay. */
+  public captureState(): MovementSnapshot {
+    return {
+      position: [this.position.x, this.position.y, this.position.z],
+      velocity: [this.velocity.x, this.velocity.y, this.velocity.z],
+      surfContactNormal: [this.surfContactNormal.x, this.surfContactNormal.y, this.surfContactNormal.z],
+      surfContactGraceTicks: this.surfContactGraceTicks,
+      yawRad: this.yawRad,
+      pitchRad: this.pitchRad,
+    };
+  }
+
+  public restoreState(state: MovementSnapshot): void {
+    this.position.set(state.position[0], state.position[1], state.position[2]);
+    this.velocity.set(state.velocity[0], state.velocity[1], state.velocity[2]);
+    this.surfContactNormal.set(state.surfContactNormal[0], state.surfContactNormal[1], state.surfContactNormal[2]);
+    this.surfContactGraceTicks = state.surfContactGraceTicks;
+    this.yawRad = state.yawRad;
+    this.pitchRad = state.pitchRad;
+  }
+
+  /** Sets view angles directly (replaying a recorded input). */
+  public setView(yawRad: number, pitchRad: number): void {
+    this.yawRad = yawRad;
+    this.pitchRad = pitchRad;
   }
 
   public reset(position: Vector3, yawDeg: number): void {

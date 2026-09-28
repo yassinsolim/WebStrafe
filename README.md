@@ -13,7 +13,7 @@ The focus is movement feel: bunnyhop timing, air-strafe speed gain, and surf ram
 - Knife/glove loadout presets with animation ranges
 - Run timer + finish detection to lowest platform
 - Online leaderboard submission by player name
-- Multiplayer presence with remote player models (T/CT by loadout preset)
+- Multiplayer presence with original procedural T/CT player models
 - Debug HUD for movement, slope, collision and surf state
 
 ## Run Locally
@@ -64,6 +64,12 @@ owned children. Set `CHROME_PATH` when Chrome/Chromium is not in a standard
 location; `COMBAT_BROWSER_TIMEOUT_MS`, `COMBAT_BROWSER_HEADED=1`, and
 `COMBAT_BROWSER_OUTPUT=.artifacts/combat-browser` are optional.
 
+### Netcode bench
+
+`npm run bench:net` runs bot clients against the real server through a
+latency/jitter/loss proxy and reports visual error, stutter, bandwidth and hit
+rate. See `docs/revamp-plan.md` for the measured before/after numbers.
+
 ### Test + Build
 
 ```bash
@@ -80,6 +86,7 @@ npm run build
 - Run timer resets on `R`
 - `Y`: inspect
 - `LMB` / `RMB`: knife attacks
+- Menu → **Knives**: pick any of the 20 knife types (procedural, original models)
 - `Esc`: unlock pointer / return to menu
 
 ## Project Structure
@@ -104,10 +111,11 @@ npm run build
 
 ## Attribution
 
+- All 20 selectable knives are original procedural models generated in code (`src/cosmetics/ProceduralKnife.ts`); no external assets
+
 - `surf_skyworld_x` by EVAI (Creative Commons Attribution)
 - Knife animations by DJMaesen (Creative Commons Attribution)
-- `CTM_SAS | CS2 Agent Model` by Alex (Creative Commons Attribution)
-- `PHOENIX | CS2 Agent Model` by Alex (Creative Commons Attribution)
+- Both player models (T and CT) are original low-poly models generated in code (`src/multiplayer/ProceduralPlayer.ts`); no external assets
 - `Desert Eagle | First Person Animations` by 1Matzh — https://sketchfab.com/3d-models/desert-eagle-first-person-animations-09a213d8510a42d1b747135e85712eff (Creative Commons Attribution) — the production GLB preserves the authored textured two-hand rig, magazines, and reload clip
 - `AWP with Anims` by Addison Ye — https://sketchfab.com/3d-models/awp-with-anims-d45669ad333d4885a854fcf899628a39 (Creative Commons Attribution) — the production GLB preserves the authored textured two-hand rig, magazine, and reload clip
 - Knife swing sound effects by Joseph SARDIN from BigSoundBank (`Sword through the air 2`, `Sword that cuts 3`, plus two additional swipe variants)

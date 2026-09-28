@@ -28,3 +28,14 @@ describe('resolveApiBase', () => {
     expect(resolveApiBase({ VITE_API_BASE: 'https://api.example.com' })).toBe('https://api.example.com');
   });
 });
+
+describe('pickTransport', () => {
+  it('keeps supabase as the default when configured and lets previews force ws', async () => {
+    const { pickTransport } = await import('../createMultiplayer');
+    expect(pickTransport(undefined, true)).toBe('supabase');
+    expect(pickTransport(undefined, false)).toBe('ws');
+    expect(pickTransport('ws', true)).toBe('ws');
+    expect(pickTransport('supabase', false)).toBe('ws');
+    expect(pickTransport('nonsense', true)).toBe('supabase');
+  });
+});

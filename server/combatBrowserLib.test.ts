@@ -83,7 +83,9 @@ describe('combat browser harness support', () => {
   it('honors an explicit browser and rejects a missing one', () => {
     expect(findBrowserExecutable(import.meta.filename, process.platform, {}))
       .toBe(import.meta.filename);
-    expect(() => findBrowserExecutable('definitely-missing', 'linux', {}))
+    // win32 with an empty env only yields relative candidates that can't exist,
+    // so this holds on ci runners that ship /usr/bin/google-chrome
+    expect(() => findBrowserExecutable('definitely-missing', 'win32', {}))
       .toThrow(/CHROME_PATH/);
   });
 

@@ -7,6 +7,19 @@ export interface OutgoingState {
   velocity: [number, number, number];
   yaw: number;
   pitch: number;
+  /** Wall-clock (Date.now) time of the sim tick this state came from. */
+  t?: number;
+}
+
+/**
+ * What the shooter was looking at when it fired. `targets` maps each remote
+ * id to the source-clock time of the pose that was on screen; the authority
+ * rewinds each target to that time. `observedAtMs` is the server-clock
+ * fallback for authorities that only understand one timestamp.
+ */
+export interface FireView {
+  targets?: Record<string, number>;
+  observedAtMs?: number;
 }
 
 /** Per-map context the elected host needs to run the bot/combat simulation. */
@@ -83,6 +96,8 @@ export interface MultiplayerTransport {
   onRespawn: ((event: RespawnEvent) => void) | null;
   onShot: ((event: ShotEvent) => void) | null;
   onConnectedChange: ((connected: boolean) => void) | null;
+  /** set by transports with a room size limit; fired when this client was turned away */
+  onRoomFull?: (() => void) | null;
 
   connect(): void;
   disconnect(): void;
@@ -91,12 +106,13 @@ export interface MultiplayerTransport {
   join(mapId: string, name: string, model: PlayerModel): void;
   /** Marks pointer-locked active play; false removes the player from bot targets. */
   setCombatReady(ready: boolean): void;
+  /** Called every fixed sim tick; the transport decides which ticks to send. */
   sendState(state: OutgoingState): void;
   sendAttack(kind: AttackKind): void;
   sendFire(
     origin: [number, number, number],
     dir: [number, number, number],
-    observedAtMs?: number,
+    view?: FireView | number,
   ): void;
   sendReload(): void;
   sendEquip(weaponId: string): void;

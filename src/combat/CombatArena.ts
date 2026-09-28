@@ -9,6 +9,7 @@ import {
 import { resolveHit, type TargetCapsule } from './HitResolver';
 import { WeaponController } from './WeaponController';
 import { type WeaponId } from './weapons';
+import { interpolateSamples, MAX_EXTRAPOLATION_MS } from '../netcode/InterpolationBuffer';
 
 /** Default player capsule (mirrors MovementController.capsule). */
 export const PLAYER_CAPSULE_HEIGHT = 1.76;
@@ -26,12 +27,23 @@ export const SPAWN_PROTECTION_MS = 3500;
  * tolerating latency/interpolation.
  */
 export const MAX_ORIGIN_DEVIATION = 3;
-export const MAX_LAG_COMPENSATION_MS = 250;
+/**
+ * Covers the slowest render delay a client can use (900 ms at ~2 Hz in a full
+ * Supabase room) plus latency. CS:GO's sv_maxunlag default is 1 s as well.
+ */
+export const MAX_LAG_COMPENSATION_MS = 1000;
 const POSITION_HISTORY_RETENTION_MS = MAX_LAG_COMPENSATION_MS * 2;
+/**
+ * A shooter may be looking past the newest sample while it extrapolates; the
+ * rewind follows the same bounded extrapolation so both sides agree.
+ */
+const MAX_REWIND_LEAD_MS = MAX_EXTRAPOLATION_MS;
 
 interface PositionSample {
+  /** sample time in this player's authority clock */
   atMs: number;
   feet: Vector3;
+  velocity?: Vector3;
 }
 
 export interface HitEvent {
@@ -48,6 +60,13 @@ export interface DeathEvent {
   killerId: string;
   weaponId: WeaponId;
   headshot: boolean;
+}
+
+export interface LagCompensationInput {
+  /** per-target times (in each target's history clock) the shooter was rendering */
+  targetTimes?: Readonly<Record<string, number>>;
+  /** shooter's own sample-clock time at the shot, for the origin check */
+  shooterTimeMs?: number;
 }
 
 export interface FireOutcome {
@@ -133,11 +152,24 @@ export class CombatArena {
     if (position) {
       p.feet.set(position[0], position[1], position[2]);
     }
-    p.positionHistory = [{ atMs: nowMs, feet: p.feet.clone() }];
+    // history restarts from the next real sample, which may use another clock
+    p.positionHistory = [];
     return {
       playerId: id,
       position: position ?? [p.feet.x, p.feet.y, p.feet.z],
     };
+  }
+
+  /**
+   * Restores a death this arena didn't see (it happened under a previous
+   * host). The player respawns through tickRespawns at `respawnAtMs`.
+   */
+  markDead(id: string, respawnAtMs: number): void {
+    const p = this.players.get(id);
+    if (!p) return;
+    p.combat.health = 0;
+    p.combat.alive = false;
+    p.combat.respawnAtMs = respawnAtMs;
   }
 
   /** True while the player is within their post-spawn invulnerability window. */
@@ -146,11 +178,17 @@ export class CombatArena {
     return !!p && p.spawnProtectedUntilMs > nowMs;
   }
 
+  /**
+   * Records a position. `nowMs` is the sample time in whichever clock this
+   * player's samples are stamped with (server time, or the sending peer's clock
+   * in Supabase mode); lag compensation reads history back in that same clock.
+   */
   setPosition(
     id: string,
     feet: [number, number, number],
     mapId?: string,
     nowMs = Date.now(),
+    velocity?: [number, number, number],
   ): void {
     const p = this.players.get(id);
     if (!p) return;
@@ -158,11 +196,20 @@ export class CombatArena {
     if (mapId !== undefined) p.mapId = mapId;
     if (!Number.isFinite(nowMs)) return;
 
-    const sample = { atMs: nowMs, feet: p.feet.clone() };
+    const sample: PositionSample = {
+      atMs: nowMs,
+      feet: p.feet.clone(),
+      velocity: velocity ? new Vector3(velocity[0], velocity[1], velocity[2]) : undefined,
+    };
     const previous = p.positionHistory.at(-1);
-    if (previous && previous.atMs === nowMs) {
+    // clock domain changed (new host, reconnect): old samples are meaningless now
+    if (previous && nowMs < previous.atMs - 1000) {
+      p.positionHistory.length = 0;
+    }
+    const last = p.positionHistory.at(-1);
+    if (last && last.atMs === nowMs) {
       p.positionHistory[p.positionHistory.length - 1] = sample;
-    } else if (!previous || previous.atMs < nowMs) {
+    } else if (!last || last.atMs < nowMs) {
       p.positionHistory.push(sample);
     }
     const cutoff = nowMs - POSITION_HISTORY_RETENTION_MS;
@@ -208,7 +255,9 @@ export class CombatArena {
     nowMs: number,
     blockingDistance?: number,
     observedAtMs?: number,
+    lag?: LagCompensationInput,
   ): FireOutcome {
+    const targetTimes = lag?.targetTimes;
     const shooter = this.players.get(shooterId);
     if (!shooter || !shooter.combat.alive) {
       return { fired: false };
@@ -224,13 +273,23 @@ export class CombatArena {
     // fired (so the animation/ammo stay consistent) — it just can't hit.
     const eye = shooter.feet.clone().add(new Vector3(0, shooter.eyeHeight, 0));
     const originVec = new Vector3(origin[0], origin[1], origin[2]);
-    if (originVec.distanceTo(eye) > MAX_ORIGIN_DEVIATION) {
+    // fast surfers outrun the latest sample; project it to the shot time
+    // before judging the origin, or legit shots get dropped as teleports
+    const projected = projectTo(shooter.positionHistory, lag?.shooterTimeMs);
+    const projectedEye = projected?.add(new Vector3(0, shooter.eyeHeight, 0));
+    const deviation = Math.min(
+      originVec.distanceTo(eye),
+      projectedEye ? originVec.distanceTo(projectedEye) : Infinity,
+    );
+    if (deviation > MAX_ORIGIN_DEVIATION) {
       return { fired: true };
     }
 
     // Build capsules for every other alive player on the same map. Players
     // inside their spawn-protection window can't be hit (shots pass through).
-    const rewindAt = (
+    // Each target is rewound to the pose the shooter had on screen: per-target
+    // times when the client sent them, else the single legacy timestamp.
+    const legacyRewindAt = (
       observedAtMs !== undefined
       && Number.isFinite(observedAtMs)
       && observedAtMs <= nowMs
@@ -244,16 +303,12 @@ export class CombatArena {
       if (other.mapId !== shooter.mapId) continue;
       if (!other.combat.alive) continue;
       if (other.spawnProtectedUntilMs > nowMs) continue;
-      let targetFeet = other.feet;
-      if (rewindAt !== null) {
-        for (let index = other.positionHistory.length - 1; index >= 0; index -= 1) {
-          const sample = other.positionHistory[index];
-          if (sample.atMs <= rewindAt) {
-            targetFeet = sample.feet;
-            break;
-          }
-        }
-      }
+      const requested = targetTimes?.[other.id];
+      const targetFeet = typeof requested === 'number' && Number.isFinite(requested)
+        ? rewindTo(other.positionHistory, requested) ?? other.feet
+        : legacyRewindAt !== null
+          ? stepRewind(other.positionHistory, legacyRewindAt) ?? other.feet
+          : other.feet;
       targets.push({
         id: other.id,
         feet: targetFeet.clone(),
@@ -314,10 +369,73 @@ export class CombatArena {
         p.spawnProtectedUntilMs = nowMs + SPAWN_PROTECTION_MS;
         const pos = spawnFor?.(p.id) ?? [p.feet.x, p.feet.y, p.feet.z];
         p.feet.set(pos[0], pos[1], pos[2]);
-        p.positionHistory = [{ atMs: nowMs, feet: p.feet.clone() }];
+        p.positionHistory = [];
         events.push({ playerId: p.id, position: pos });
       }
     }
     return events;
   }
+}
+
+/**
+ * Pose at `atMs` rebuilt the same way clients render it (Hermite with the
+ * sampled velocities), clamped to the rewind window behind the newest sample.
+ */
+function rewindTo(history: readonly PositionSample[], atMs: number): Vector3 | null {
+  const newest = history.at(-1);
+  if (!newest) return null;
+  if (atMs > newest.atMs + MAX_REWIND_LEAD_MS) return null;
+  if (atMs > newest.atMs) {
+    // what the shooter's renderer showed: the newest pose carried forward
+    const aheadS = Math.min(atMs - newest.atMs, MAX_REWIND_LEAD_MS) / 1000;
+    return newest.velocity ? newest.feet.clone().addScaledVector(newest.velocity, aheadS) : newest.feet;
+  }
+  const t = Math.max(newest.atMs - MAX_LAG_COMPENSATION_MS, atMs);
+  if (t >= newest.atMs) return newest.feet;
+  let hi = history.length - 1;
+  while (hi > 0 && history[hi - 1].atMs > t) hi -= 1;
+  if (hi === 0) return history[0].feet;
+  const a = history[hi - 1];
+  const b = history[hi];
+  const zero: [number, number, number] = [0, 0, 0];
+  const hasVelocity = a.velocity !== undefined && b.velocity !== undefined;
+  const sampled = interpolateSamples(
+    {
+      t: a.atMs,
+      position: [a.feet.x, a.feet.y, a.feet.z],
+      velocity: hasVelocity ? [a.velocity!.x, a.velocity!.y, a.velocity!.z] : zero,
+      yaw: 0,
+      pitch: 0,
+    },
+    {
+      t: b.atMs,
+      position: [b.feet.x, b.feet.y, b.feet.z],
+      velocity: hasVelocity ? [b.velocity!.x, b.velocity!.y, b.velocity!.z] : zero,
+      yaw: 0,
+      pitch: 0,
+    },
+    t,
+  );
+  if (!hasVelocity) {
+    // no velocities: plain lerp (hermite with zero tangents would ease in/out)
+    const u = (t - a.atMs) / Math.max(1e-6, b.atMs - a.atMs);
+    return a.feet.clone().lerp(b.feet, u);
+  }
+  return new Vector3(sampled.position[0], sampled.position[1], sampled.position[2]);
+}
+
+/** Legacy behaviour: newest sample at or before `atMs`. */
+function stepRewind(history: readonly PositionSample[], atMs: number): Vector3 | null {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    if (history[index].atMs <= atMs) return history[index].feet;
+  }
+  return null;
+}
+
+/** Newest sample pushed forward (or back) along its velocity to `atMs`. */
+function projectTo(history: readonly PositionSample[], atMs: number | undefined): Vector3 | null {
+  const newest = history.at(-1);
+  if (!newest?.velocity || atMs === undefined || !Number.isFinite(atMs)) return null;
+  const dt = Math.max(-MAX_LAG_COMPENSATION_MS, Math.min(MAX_LAG_COMPENSATION_MS, atMs - newest.atMs)) / 1000;
+  return newest.feet.clone().addScaledVector(newest.velocity, dt);
 }

@@ -45,7 +45,6 @@ import { createMultiplayer } from '../network/createMultiplayer';
 import type { MultiplayerTransport } from '../network/MultiplayerTransport';
 import type { LeaderboardEntry, PlayerModel } from '../network/types';
 import {
-  REMOTE_PRESENTATION_DELAY_MS,
   RemotePlayersRenderer,
 } from '../multiplayer/RemotePlayersRenderer';
 import { CombatHud } from '../ui/CombatHud';
@@ -63,6 +62,7 @@ import {
 import { WeaponController } from '../combat/WeaponController';
 import { isCombatEnabled } from '../combat/combatConfig';
 import { getWeapon, type WeaponId } from '../combat/weapons';
+import { DEFAULT_KNIFE_ID, getKnife, isKnifeId, type KnifeId } from '../combat/knives';
 import { CollisionWorld } from '../world/CollisionWorld';
 import { deleteCustomMap, listCustomMaps } from '../world/CustomMapStore';
 import { MapLoader, type MapLoadReporter } from '../world/MapLoader';
@@ -89,6 +89,12 @@ const FIXED_TICK_DT = 1 / 128;
 /** Gives the slowest remote round several rendered arrival frames before UI cover. */
 const FATAL_CUE_LEAD_MS = 320;
 const RESPAWN_DELAY_MS = 3000;
+/**
+ * If the respawn for our death never arrives (the host that killed us left
+ * before sending it), respawn locally after this long. The next host restores
+ * the death from our state and respawns us itself, this only covers the gap.
+ */
+export const LOCAL_RESPAWN_FALLBACK_MS = RESPAWN_DELAY_MS + 3000;
 
 export class GameApp {
   private readonly container: HTMLElement;
@@ -118,11 +124,11 @@ export class GameApp {
   private readonly killFeed = new KillFeed();
   private readonly weapon = new WeaponController('knife');
   private localAlive = true;
+  private respawnFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   private deathPresentationTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly deadMoveInput = { forwardMove: 0, sideMove: 0, jumpPressed: false, jumpHeld: false };
   private readonly remotePlayerNames = new Map<string, string>();
   private backstabTargets: BackstabTarget[] = [];
-  private latestSnapshotServerTimeMs: number | null = null;
 
   private readonly cosmeticsGroup = new Group();
   private readonly weaponViewmodels = new WeaponViewmodels();
@@ -184,7 +190,6 @@ export class GameApp {
   private goalPad: GoalPad | null = null;
   private runComplete = false;
   private localPlayerName = loadPlayerName();
-  private multiplayerSendAccumulator = 0;
   private resumeToggleInFlight = false;
   private remotePlayersReady: Promise<void> = Promise.resolve();
 
@@ -287,6 +292,7 @@ export class GameApp {
     this.selectedMapId = loadSelectedMapId(this.mapSources.keys(), fallbackMapId);
 
     this.loadout = this.cosmeticsManager.getDefaultLoadout();
+    this.cosmeticsManager.setKnifeStyle(loadKnifeStyle());
     await this.cosmeticsManager.applyLoadout(this.loadout);
     this.activeKnifeSoundProfile = this.getKnifeSoundProfileFromLoadout(this.loadout);
     this.knifeAudio.setProfile(this.activeKnifeSoundProfile);
@@ -304,7 +310,6 @@ export class GameApp {
         this.persistSelectedMapId(mapId);
         this.remotePlayers.applySnapshot([], null);
         this.backstabTargets = [];
-        this.latestSnapshotServerTimeMs = null;
         void this.refreshLeaderboard(mapId);
         this.syncMultiplayerIdentity();
       },
@@ -315,7 +320,13 @@ export class GameApp {
         this.syncMultiplayerIdentity();
       },
       onNameChanged: (name) => this.applyPlayerName(name),
+      onKnifeSelected: (knifeId) => {
+        this.cosmeticsManager.setKnifeStyle(knifeId);
+        saveKnifeStyle(knifeId);
+        this.showStatus(`Knife: ${knifeId ? getKnife(knifeId).name : 'Legacy Knife'}`);
+      },
     });
+    this.menu.setSelectedKnife(this.cosmeticsManager.getKnifeStyle());
     this.menu.setMaps(this.getMapEntries(), this.selectedMapId);
     this.menu.setCosmetics(cosmeticsManifest, this.loadout);
     this.menu.setLeaderboard([], this.getMapNameById(this.selectedMapId));
@@ -335,7 +346,6 @@ export class GameApp {
         return;
       }
       const localId = this.multiplayer.getLocalId();
-      this.latestSnapshotServerTimeMs = snapshot.serverTimeMs;
       this.remotePlayers.applySnapshot(snapshot.players, localId);
       this.backstabTargets = snapshot.players
         .filter((player) => player.id !== localId)
@@ -551,8 +561,8 @@ export class GameApp {
         const sampledMove = this.input.sampleMoveInput();
         const moveInput = dead ? this.deadMoveInput : sampledMove;
         this.movement.tick(FIXED_TICK_DT, moveInput, this.collisionWorld);
-        this.multiplayerSendAccumulator += FIXED_TICK_DT;
-        this.sendMultiplayerStateIfReady();
+        // the tick ends where the leftover accumulator begins
+        this.sendMultiplayerState(Date.now() - this.accumulator * 1000);
         this.tryCompleteRun();
         if (this.loadedMap && this.movement.getFeetPosition().y < this.voidResetY) {
           const now = performance.now();
@@ -982,6 +992,9 @@ export class GameApp {
       }
       this.applyLocalHealth(health, alive);
     };
+    this.multiplayer.onRoomFull = () => {
+      this.showStatus('Room is full (6 players), playing solo', 6000);
+    };
     this.multiplayer.onRespawn = ({ playerId }) => {
       if (playerId === this.multiplayer.getLocalId()) {
         this.restoreLocalAfterRespawn();
@@ -1043,6 +1056,7 @@ export class GameApp {
       this.combatHud?.setHealth(health, alive, false);
     }
     if (wasAlive && !alive) {
+      this.armRespawnFallback();
       this.viewmodelPresentation.setAlive(false);
       this.combatEffects?.clearForDeath(performance.now());
       this.combatHud?.clearTransient(true);
@@ -1068,8 +1082,25 @@ export class GameApp {
     }
   }
 
+  private armRespawnFallback(): void {
+    if (this.respawnFallbackTimer !== null) {
+      clearTimeout(this.respawnFallbackTimer);
+    }
+    this.respawnFallbackTimer = setTimeout(() => {
+      this.respawnFallbackTimer = null;
+      if (!this.localAlive) {
+        console.warn('[Combat] no respawn from the host, respawning locally');
+        this.restoreLocalAfterRespawn();
+      }
+    }, LOCAL_RESPAWN_FALLBACK_MS);
+  }
+
   private resetLocalCombatState(): void {
     this.localAlive = true;
+    if (this.respawnFallbackTimer !== null) {
+      clearTimeout(this.respawnFallbackTimer);
+      this.respawnFallbackTimer = null;
+    }
     if (this.deathPresentationTimer !== null) {
       clearTimeout(this.deathPresentationTimer);
       this.deathPresentationTimer = null;
@@ -1134,9 +1165,7 @@ export class GameApp {
     this.multiplayer.sendFire(
       [origin.x, origin.y, origin.z],
       [forward.x, forward.y, forward.z],
-      this.latestSnapshotServerTimeMs === null
-        ? undefined
-        : this.latestSnapshotServerTimeMs - REMOTE_PRESENTATION_DELAY_MS,
+      this.remotePlayers.getFireView(),
     );
     if (result.magazineEmptied) {
       this.reloadCombatWeapon(nowMs);
@@ -1253,11 +1282,7 @@ export class GameApp {
     return model === 'terrorist' ? 'knifeGloves1' : 'knifeGloves2';
   }
 
-  private sendMultiplayerStateIfReady(): void {
-    if (this.multiplayerSendAccumulator < 1 / 20) {
-      return;
-    }
-    this.multiplayerSendAccumulator = 0;
+  private sendMultiplayerState(tickWallMs: number): void {
     if (!this.playing || !this.loadedMap) {
       return;
     }
@@ -1269,6 +1294,7 @@ export class GameApp {
       velocity: [velocity.x, velocity.y, velocity.z],
       yaw: this.movement.getYawRad(),
       pitch: this.movement.getPitchRad(),
+      t: tickWallMs,
     });
   }
 
@@ -1991,4 +2017,26 @@ function formatRunTime(totalMs: number): string {
   const minutePrefix = minutes > 0 ? `${minutes}:` : '';
   const secondText = minutes > 0 ? seconds.toString().padStart(2, '0') : seconds.toString();
   return `${minutePrefix}${secondText}.${ms.toString().padStart(3, '0')}`;
+}
+
+const KNIFE_STYLE_KEY = 'webstrafe:knife-style:v1';
+const LEGACY_KNIFE = 'legacy';
+
+/** Stored knife choice; defaults to the procedural karambit. */
+function loadKnifeStyle(): KnifeId | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(KNIFE_STYLE_KEY);
+    if (raw === LEGACY_KNIFE) return null;
+    return isKnifeId(raw) ? raw : DEFAULT_KNIFE_ID;
+  } catch {
+    return DEFAULT_KNIFE_ID;
+  }
+}
+
+function saveKnifeStyle(id: KnifeId | null): void {
+  try {
+    globalThis.localStorage?.setItem(KNIFE_STYLE_KEY, id ?? LEGACY_KNIFE);
+  } catch {
+    // storage blocked, the choice just won't persist
+  }
 }

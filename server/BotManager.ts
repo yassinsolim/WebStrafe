@@ -26,6 +26,8 @@ export interface BotSnapshotRow {
   pitch: number;
   health: number;
   alive: boolean;
+  /** server time of the bot tick that produced this pose */
+  t: number;
 }
 
 export interface BotFireEvent {
@@ -71,6 +73,7 @@ export class BotManager {
   private readonly failed = new Set<string>();
   private readonly botsByMap = new Map<string, Bot[]>();
   private nextBotSeq = 0;
+  private lastTickMs = Date.now();
 
   constructor(
     private readonly arena: CombatArena,
@@ -111,7 +114,8 @@ export class BotManager {
    * Advances every bot one fixed step. `targetsByMap` provides candidate targets
    * (the living humans) per map; each bot chases the nearest one.
    */
-  tick(dt: number, targetsByMap: Map<string, BotTarget[]>): void {
+  tick(dt: number, targetsByMap: Map<string, BotTarget[]>, nowMs = Date.now()): void {
+    this.lastTickMs = nowMs;
     for (const [mapId, world] of this.worlds) {
       if (!targetsByMap.has(mapId)) {
         continue;
@@ -148,7 +152,13 @@ export class BotManager {
             isBotWithinTargetView(candidate, bot.controller.getFeet()),
         });
         bot.controller.tick(dt, world.world, perception);
-        this.arena.setPosition(bot.id, toTuple(bot.controller.getFeet()), mapId);
+        this.arena.setPosition(
+          bot.id,
+          toTuple(bot.controller.getFeet()),
+          mapId,
+          nowMs,
+          toTuple(bot.controller.getVelocity()),
+        );
       }
     }
   }
@@ -169,6 +179,7 @@ export class BotManager {
       pitch: bot.controller.getPitchRad(),
       health: this.arena.getHealth(bot.id) ?? 100,
       alive: this.arena.isAlive(bot.id),
+      t: this.lastTickMs,
     }));
   }
 

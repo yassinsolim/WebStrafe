@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WebStrafe player model preview (dev only)</title>
+    <style>html, body { margin: 0; background: #14171c; } canvas { display: block; }</style>
+  </head>
+  <body>
+    <!-- dev tool: renders both procedural player models in bind pose, the menu
+         knife stance and the in-game remote renderer (mid-swing) -->
+    <script type="module">
+      import {
+        AmbientLight, DirectionalLight, HemisphereLight, PerspectiveCamera, Scene, WebGLRenderer, Group,
+      } from 'three';
+      import { createPlayerModel } from '/src/multiplayer/ProceduralPlayer.ts';
+      import { buildArmRig, applyKnifeIdlePose } from '/src/multiplayer/playerRig.ts';
+      import { RemotePlayersRenderer } from '/src/multiplayer/RemotePlayersRenderer.ts';
+
+      const width = 1400;
+      const height = 700;
+      const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setSize(width, height);
+      renderer.setClearColor(0x14171c);
+      document.body.appendChild(renderer.domElement);
+      const scene = new Scene();
+      scene.add(new HemisphereLight(0xdfeaff, 0x0a0c12, 1.1));
+      scene.add(new AmbientLight(0xffffff, 0.35));
+      const key = new DirectionalLight(0xfff2e6, 2.2);
+      key.position.set(-2.4, 3.4, 4);
+      scene.add(key);
+
+      const place = (obj, x, yaw = 0) => { obj.position.x = x; obj.rotation.y = yaw; scene.add(obj); };
+      // bind pose
+      place(createPlayerModel('terrorist'), -3.0);
+      place(createPlayerModel('counterterrorist'), -2.0);
+      // menu stance
+      for (const [i, model] of ['terrorist', 'counterterrorist'].entries()) {
+        const m = createPlayerModel(model);
+        const rig = buildArmRig(m);
+        if (rig) applyKnifeIdlePose(rig);
+        place(m, -0.5 + i);
+      }
+      // in-game remote renderer, one idle one mid-swing
+      const remotes = new RemotePlayersRenderer();
+      await remotes.load();
+      remotes.applySnapshot([
+        { id: 'a', name: 'a', model: 'terrorist', position: [2.0, 0, 0], velocity: [0, 0, 0], yaw: Math.PI, pitch: 0 },
+        { id: 'b', name: 'b', model: 'counterterrorist', position: [3.0, 0, 0], velocity: [0, 0, 0], yaw: Math.PI, pitch: 0 },
+      ], null);
+      remotes.update(0.016);
+      remotes.triggerAttack('b', 'primary');
+      remotes.update(0.14);
+      scene.add(remotes.root);
+
+      const camera = new PerspectiveCamera(32, width / height, 0.1, 50);
+      camera.position.set(0, 1.25, 8.2);
+      camera.lookAt(0, 0.95, 0);
+      renderer.render(scene, camera);
+      window.__playerPreviewReady = true;
+    </script>
+  </body>
+</html>

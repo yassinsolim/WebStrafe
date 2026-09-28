@@ -1,4 +1,5 @@
 import type { CosmeticsManifest, LoadoutSelection } from '../cosmetics/types';
+import { KNIVES, type KnifeId } from '../combat/knives';
 import type { MapManifestEntry } from '../world/types';
 import type { GameSettings } from './SettingsStore';
 import { CharacterPreview } from './CharacterPreview';
@@ -10,6 +11,8 @@ interface MainMenuCallbacks {
   onSettingsChanged: (settings: GameSettings) => void;
   onLoadoutChanged: (selection: LoadoutSelection) => void;
   onNameChanged: (name: string) => void;
+  /** null = the authored (legacy) viewmodel knife */
+  onKnifeSelected?: (knifeId: KnifeId | null) => void;
 }
 
 interface LoadoutPreset {
@@ -19,13 +22,8 @@ interface LoadoutPreset {
   selection: LoadoutSelection;
 }
 
-type TabId = 'maps' | 'character' | 'settings' | 'ranks';
+type TabId = 'maps' | 'character' | 'knives' | 'settings' | 'ranks';
 type TeamId = 'terrorist' | 'counterterrorist';
-
-const MODEL_BY_TEAM: Record<TeamId, string> = {
-  terrorist: '/playermodels/terrorist.glb',
-  counterterrorist: '/playermodels/counterterrorist.glb',
-};
 
 const TEAM_LABEL: Record<TeamId, string> = {
   terrorist: 'Terrorist',
@@ -58,6 +56,8 @@ export class MainMenu {
   private selectedMapId = '';
   private settings: GameSettings;
   private loadoutPresets: LoadoutPreset[] = [];
+  private readonly knifeGrid: HTMLDivElement;
+  private selectedKnifeId: KnifeId | null = null;
   private activeTeam: TeamId = 'terrorist';
   private preview: CharacterPreview | null = null;
 
@@ -128,6 +128,7 @@ export class MainMenu {
     const tabDefs: Array<[TabId, string]> = [
       ['maps', 'Maps'],
       ['character', 'Character'],
+      ['knives', 'Knives'],
       ['settings', 'Settings'],
       ['ranks', 'Ranks'],
     ];
@@ -162,6 +163,16 @@ export class MainMenu {
     this.teamGrid.className = 'menu-team-grid';
     characterSection.append(teamHeading, this.teamGrid);
     panels.appendChild(characterSection);
+
+    const knivesSection = this.makeSection('knives');
+    const knifeHint = document.createElement('p');
+    knifeHint.className = 'menu-section-hint';
+    knifeHint.textContent = 'Pick your blade';
+    this.knifeGrid = document.createElement('div');
+    this.knifeGrid.className = 'menu-map-grid menu-knife-grid';
+    knivesSection.append(knifeHint, this.knifeGrid);
+    panels.appendChild(knivesSection);
+    this.renderKnifeCards();
 
     const settingsSection = this.makeSection('settings');
     this.mouseSensitivityInput = this.makeRangeControl(settingsSection, 'Mouse Sensitivity', 0.1, 4, 0.05, this.settings.mouseSensitivity);
@@ -314,6 +325,38 @@ export class MainMenu {
     }
   }
 
+  /** Reflects the stored knife choice without firing the callback. */
+  public setSelectedKnife(knifeId: KnifeId | null): void {
+    this.selectedKnifeId = knifeId;
+    this.renderKnifeCards();
+  }
+
+  private renderKnifeCards(): void {
+    this.knifeGrid.innerHTML = '';
+    const entries: Array<{ id: KnifeId | null; name: string; detail: string }> = [
+      ...KNIVES.map((k) => ({ id: k.id, name: k.name, detail: k.referenceType })),
+      { id: null, name: 'Legacy Knife', detail: 'original imported model' },
+    ];
+    for (const entry of entries) {
+      const card = document.createElement('button');
+      card.className = 'menu-map-card';
+      card.classList.toggle('is-selected', entry.id === this.selectedKnifeId);
+      const name = document.createElement('span');
+      name.className = 'menu-map-name';
+      name.textContent = entry.name;
+      const detail = document.createElement('span');
+      detail.className = 'menu-map-author';
+      detail.textContent = entry.detail;
+      card.append(name, detail);
+      card.addEventListener('click', () => {
+        this.selectedKnifeId = entry.id;
+        this.renderKnifeCards();
+        this.callbacks.onKnifeSelected?.(entry.id);
+      });
+      this.knifeGrid.appendChild(card);
+    }
+  }
+
   private renderMapCards(): void {
     this.mapGrid.innerHTML = '';
     for (const map of this.maps) {
@@ -368,7 +411,7 @@ export class MainMenu {
   private applyTeam(team: TeamId, emit: boolean): void {
     this.activeTeam = team;
     this.stageTeam.textContent = TEAM_LABEL[team];
-    void this.preview?.setModel(MODEL_BY_TEAM[team]);
+    void this.preview?.setModel(team);
     this.renderTeamCards();
     if (emit) {
       const preset = this.loadoutPresets.find((p) => p.team === team);
@@ -386,8 +429,7 @@ export class MainMenu {
     details.appendChild(summary);
     const lines = [
       'Knife animated by DJMaesen — CC Attribution.',
-      '"CTM_SAS | CS2 Agent Model" (skfb.ly/oRO6P) by Alex — CC Attribution.',
-      '"PHOENIX | CS2 Agent Model" (skfb.ly/oQyER) by Alex — CC Attribution.',
+      'Player models and knives: original, generated in code.',
       '"Desert Eagle | First Person Animations" rig by 1Matzh — CC Attribution.',
       '"AWP with Anims" rig by Addison Ye (sketchfab.com/redethox) — CC Attribution.',
     ];

@@ -7,3 +7,13 @@ npm-debug.log*
 .DS_Store
 coverage
 .vscode
+# render-only assets, the server just needs public/maps/*/collision.glb + meta.json
+public/maps/*/scene.glb
+public/viewmodels
+public/audio
+public/cosmetics
+docs
+tools/netbench/results
+# secrets never go into the image
+.env
+.env.*

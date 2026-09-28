@@ -1,28 +1,25 @@
-# Backend image: the Node WebSocket + API + bot-sim server.
-# The static client is deployed separately (e.g. Vercel); this image serves the
-# multiplayer backend that Vercel cannot host.
-FROM node:20-slim
+# Backend image: the Node WebSocket + API + bot-sim server only.
+# The static client is deployed separately on Vercel, so no client build here.
+FROM node:24-slim
 
 WORKDIR /app
 
 # Install deps first for layer caching. tsx (used to run the TS server) lives in
 # devDependencies, so install everything.
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY --chown=node:node package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund && chown -R node:node /app
 
 # App source. public/maps/*/collision.glb is required for server-side bot
-# collision, so the full repo (minus .dockerignore) is copied.
-COPY . .
+# collision; render-only assets are dropped by .dockerignore.
+COPY --chown=node:node . .
 
-# Build the client bundle too, so this server can also serve it standalone if
-# desired (single-origin deploy). Harmless for the split (Vercel) deploy.
-RUN npm run build
+# the official node image ships an unprivileged "node" user; run as that
+USER node
 
 ENV NODE_ENV=production
 ENV PORT=8080
 ENV HOST=0.0.0.0
-# Persisted leaderboard lives on a mounted volume in production.
-ENV WEBSTRAFE_DATA_DIR=/data
+ENV WEBSTRAFE_DATA_DIR=/tmp/webstrafe
 
 EXPOSE 8080
-CMD ["npm", "run", "serve"]
+CMD ["node_modules/.bin/tsx", "server/index.ts"]

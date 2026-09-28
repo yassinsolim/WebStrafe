@@ -9,7 +9,8 @@ import { computeBotSpawnCandidate, groundBotSpawn } from '../combat/BotSpawn';
 import { CombatArena } from '../combat/CombatArena';
 import { shouldResetCombatEntry } from '../combat/CombatEntryPolicy';
 import { REMOTE_SHOT_VISUAL_DISTANCE } from '../combat/ShotPresentation';
-import { getWeapon } from '../combat/weapons';
+import { getWeapon, type WeaponId } from '../combat/weapons';
+import { RESPAWN_DELAY_MS } from '../combat/CombatState';
 import type { CollisionWorld } from '../world/CollisionWorld';
 import type { PlayerModel } from './types';
 import type { DeathEvent, HealthEvent, HitEvent, RespawnEvent, ShotEvent } from './MultiplayerTransport';
@@ -27,6 +28,20 @@ export interface HostHuman {
   combatReady: boolean;
   yaw?: number;
   pitch?: number;
+  velocity?: [number, number, number];
+  /** sample time in this human's own clock (their Date.now at the tick) */
+  t?: number;
+  /** weapon the player has out, so a new host doesn't reset everyone to the knife */
+  weapon?: string;
+  /** set while the player is dead: ms until their respawn is due */
+  deadForMs?: number;
+}
+
+export interface HostFireLag {
+  /** per-target source-clock times the shooter had on screen */
+  targetTimes?: Record<string, number>;
+  /** shooter's own clock time at the shot */
+  shooterTimeMs?: number;
 }
 
 export interface HostBotRow {
@@ -133,13 +148,21 @@ export class HostSimulation {
       const isNew = !this.humanPositions.has(h.id);
       const wasReady = this.humanCombatReady.get(h.id) ?? false;
       if (isNew) {
-        this.arena.addPlayer(h.id, MAP_ID, 'knife');
+        this.arena.addPlayer(h.id, MAP_ID, isWeaponId(h.weapon) ? h.weapon : 'knife');
+        // a player who died under the previous host stays dead until their
+        // respawn is due, and this host then sends the respawn they're waiting on
+        if (h.deadForMs !== undefined) {
+          this.arena.markDead(h.id, now + Math.min(h.deadForMs, RESPAWN_DELAY_MS));
+        }
         this.humanLastCombatAtMs.set(h.id, now);
         if (!h.combatReady) {
           this.humanPausedAtMs.set(h.id, now);
         }
       }
-      this.arena.setPosition(h.id, h.position, MAP_ID, now);
+      if (!isNew && isWeaponId(h.weapon) && this.arena.getActiveWeapon(h.id) !== h.weapon) {
+        this.arena.equip(h.id, h.weapon);
+      }
+      this.arena.setPosition(h.id, h.position, MAP_ID, h.t ?? now, h.velocity);
       this.humanPositions.set(h.id, new Vector3(h.position[0], h.position[1], h.position[2]));
       this.humanCombatReady.set(h.id, h.combatReady);
       if (Number.isFinite(h.yaw) && Number.isFinite(h.pitch)) {
@@ -185,6 +208,18 @@ export class HostSimulation {
     }
   }
 
+  /** Records a movement sample the moment it arrives (between host steps). */
+  recordHumanSample(
+    id: string,
+    position: [number, number, number],
+    t: number,
+    velocity?: [number, number, number],
+  ): void {
+    if (!this.humanPositions.has(id)) return;
+    this.arena.setPosition(id, position, MAP_ID, t, velocity);
+    this.humanPositions.get(id)?.set(position[0], position[1], position[2]);
+  }
+
   private resetBotEngagement(): void {
     for (const bot of this.bots) {
       bot.targetMemory.clear();
@@ -208,6 +243,7 @@ export class HostSimulation {
     origin: [number, number, number],
     dir: [number, number, number],
     observedAtMs?: number,
+    lag?: HostFireLag,
   ): void {
     if (this.humanCombatReady.has(shooterId) && !this.humanCombatReady.get(shooterId)) {
       return;
@@ -230,6 +266,7 @@ export class HostSimulation {
       now,
       worldImpact?.distance,
       observedAtMs,
+      lag,
     );
     if (outcome.fired && this.humanPositions.has(shooterId)) {
       this.humanLastCombatAtMs.set(shooterId, now);
@@ -303,7 +340,13 @@ export class HostSimulation {
           isBotWithinTargetView(candidate, bot.controller.getFeet()),
       });
       bot.controller.tick(dt, this.world, perception);
-      this.arena.setPosition(bot.id, tuple(bot.controller.getFeet()), MAP_ID, now);
+      this.arena.setPosition(
+        bot.id,
+        tuple(bot.controller.getFeet()),
+        MAP_ID,
+        now,
+        tuple(bot.controller.getVelocity()),
+      );
 
       if (bot.controller.wantsToFire()) {
         const aim = bot.controller.getAimTarget();
@@ -407,4 +450,8 @@ export class HostSimulation {
 
 function tuple(v: Vector3): [number, number, number] {
   return [v.x, v.y, v.z];
+}
+
+function isWeaponId(value: unknown): value is WeaponId {
+  return value === 'awp' || value === 'deagle' || value === 'knife';
 }
