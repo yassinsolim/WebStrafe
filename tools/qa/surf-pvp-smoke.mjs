@@ -229,12 +229,12 @@ try {
     check('the kill is on the daily kills board', kills.some((r) => r.name === names[0] && r.kills >= 1), { kills, killer: names[0] });
   }
 
-  const noisy = clients.flatMap((c) => c.errors).filter((e) => !/favicon|ERR_BLOCKED|net::ERR_ABORTED/.test(e));
-  check('no console errors', noisy.length === 0, noisy.slice(0, 5));
 } catch (err) {
   if (!err?.done) check('script ran to the end', false, String(err?.stack ?? err).slice(0, 600));
 } finally {
   for (const c of clients) report.errors[c.name] = c.errors;
+  const noisy = clients.flatMap((c) => c.errors).filter((e) => !/favicon|ERR_BLOCKED|net::ERR_ABORTED/.test(e));
+  check('no console errors', noisy.length === 0, noisy.slice(0, 5));
   writeFileSync(process.env.REPORT ?? '/tmp/surf-pvp-smoke.json', JSON.stringify(report, null, 2));
   await browser.close();
 }
