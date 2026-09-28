@@ -174,18 +174,22 @@ float finWearMask(FinishIn fi) {
   vec3 wp = fi.pos + finSeed.zxy * 0.002;
   float blotch = finFbm(wp * 45.0 + 11.0);
   float grunge = finFbm(wp * 190.0);
-  float score = exposure * 0.55 + blotch * 0.9 + grunge * 0.3;
+  // exposed spots only start to matter once the float leaves factory new
+  float score = exposure * mix(0.1, 0.55, smoothstep(0.06, 0.4, w)) + blotch * 0.9 + grunge * 0.3;
+#if defined(FINISH_WEAR_PAINT) || defined(FINISH_WEAR_ANODIZED)
+  // flats lose about 1% at FT, 6% at WW, 45% at a 0.75 BS
+  float threshold = 0.98 - 0.45 * w;
+#else
+  float threshold = 0.98 - 0.2 * w;
+#endif
 #if defined(FINISH_WEAR_PAINT)
-  float amount = w * 0.75;
   float scratchAmount = smoothstep(0.1, 0.6, w);
 #elif defined(FINISH_WEAR_ANODIZED)
-  float amount = w;
   float scratchAmount = smoothstep(0.02, 0.2, w) * 0.6;
 #else
-  float amount = w * 0.35;
   float scratchAmount = smoothstep(0.2, 1.0, w) * 0.4;
 #endif
-  float chips = finStep(1.25 - amount, score);
+  float chips = finStep(threshold, score);
   return clamp(max(chips, finScratches(fi.pos, scratchAmount)), 0.0, 1.0);
 #endif
 }
@@ -442,11 +446,11 @@ vec3 finSurface(FinishIn fi, inout float rough, inout float metal) {
   vec3 q = vec3(p2 * 30.0, fi.pos.z * 30.0) + finSeed.xyz;
   float w = finFbm(q * 0.8);
   float n = finFbm(q + vec3(w * 1.6));
-  float stain = finStep(0.54, n);
-  vec3 c = mix(finLin(vec3(0.78, 0.79, 0.81)), finLin(vec3(0.44, 0.45, 0.48)), stain);
+  float stain = finStep(0.57, n);
+  vec3 c = mix(finLin(vec3(0.78, 0.79, 0.81)), finLin(vec3(0.54, 0.55, 0.57)), stain);
   c = mix(c, finLin(vec3(0.8, 0.72, 0.48)), smoothstep(0.54, 0.66, finFbm(q * 1.4 + 5.0)) * (1.0 - stain) * 0.85);
   // acid stains leave darker blue rims
-  c = mix(c, finLin(vec3(0.3, 0.36, 0.66)), finLine(n - 0.54, 0.01) * 0.85);
+  c = mix(c, finLin(vec3(0.3, 0.36, 0.66)), finLine(n - 0.57, 0.01) * 0.85);
   c *= 1.0 - 0.35 * smoothstep(0.2, 1.0, finWear.x);
   rough = 0.28 + 0.12 * stain + 0.15 * finWear.x;
   metal = 1.0;
