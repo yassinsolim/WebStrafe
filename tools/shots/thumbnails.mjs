@@ -18,7 +18,7 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? 'playwright')
 // absolute in three.js axes (blender x, z, -y).
 export const VIEWS = {
   surf_prismline: { eye: [-58, 30.4, -32], target: [2, -19.6, 58] },
-  surf_lumen: { eye: [-60, 28.4, -30], target: [2, -17.6, 68] },
+  surf_lumen: { eye: [-26, 14, -14], target: [4, -14, 60] },
   surf_cascade: { eye: [-30, 24, -34], target: [2, -17.6, 60] },
   surf_vanta: { eye: [-50, 30, -40], target: [2, -13.6, 38] },
   bhop_emberdrift: { eye: [-22, 16, -26], target: [0, -8, 40] },
