@@ -5,7 +5,6 @@ import {
   accelerate,
   airAccelerate,
   applyFriction,
-  clampHorizontalSpeed,
   clipVelocity,
   horizontalLength,
 } from './MovementMath';
@@ -534,12 +533,13 @@ export class MovementController {
     );
   }
 
+  // no speed clamp after this: source's WalkMove only clamps wishspeed, so landing
+  // fast without jumping bleeds off through friction over a few ticks
   private accelerateGround(wishDir: Vector3, wishSpeed: number, dt: number): void {
     if (wishSpeed <= 0 || wishDir.lengthSq() <= 0) {
       return;
     }
     this.velocity.copy(accelerate(this.velocity, wishDir, wishSpeed, this.cvars.sv_accelerate, dt));
-    this.velocity.copy(clampHorizontalSpeed(this.velocity, this.cvars.sv_maxspeed));
   }
 
   private pickMode(groundProbe: GroundProbe | null): MovementMode {

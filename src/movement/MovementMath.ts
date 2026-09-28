@@ -94,19 +94,6 @@ export function clipVelocity(
   return next;
 }
 
-export function clampHorizontalSpeed(vel: Vector3, maxSpeed: number): Vector3 {
-  const next = vel.clone();
-  const horizontalSpeed = Math.hypot(next.x, next.z);
-  if (horizontalSpeed <= maxSpeed || horizontalSpeed <= EPSILON) {
-    return next;
-  }
-
-  const scale = maxSpeed / horizontalSpeed;
-  next.x *= scale;
-  next.z *= scale;
-  return next;
-}
-
 export function projectDirectionOnPlane(dir: Vector3, normal: Vector3): Vector3 {
   const projected = dir.clone().addScaledVector(normal, -dir.dot(normal));
   if (projected.lengthSq() <= EPSILON) {

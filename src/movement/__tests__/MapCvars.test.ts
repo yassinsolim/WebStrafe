@@ -88,17 +88,19 @@ describe('per-map cvars', () => {
   });
 
   it('the override really changes the simulation: S stops you slower at 100 than at 150', () => {
-    // S in the air at 9.5 m/s: addspeed = 0.762 + 9.5 = 10.26. at 150 one tick can add
-    // 150 * 9.5 / 128 = 11.13 so you flip to 0.762 backwards, at 100 only 7.42 so 2.08 is left
+    // S in the air at full run speed v = 8.128 (320 u/s): addspeed = 0.762 + v = 8.89. at 150
+    // one tick can add 150 * v / 128 = 9.53 so you flip to 0.762 backwards, at 100 only 6.35
+    // so 1.78 is left
+    const v = defaultCvars.sv_maxspeed;
     const speedAfterOneTickOfS = (overrides: string) => {
       const mc = new MovementController();
       mc.applyMapCvars(fromJson(overrides));
       mc.reset(new Vector3(0, 50, 0), 0);
-      mc.setVelocity(new Vector3(0, 0, -9.5));
+      mc.setVelocity(new Vector3(0, 0, -v));
       mc.tick(1 / 128, { forwardMove: -1, sideMove: 0, jumpPressed: false, jumpHeld: false }, emptyWorld());
       return horizontalSpeed(mc.getVelocity());
     };
     expect(speedAfterOneTickOfS('{}')).toBeCloseTo(0.762, 9);
-    expect(speedAfterOneTickOfS('{"sv_airaccelerate": 100}')).toBeCloseTo(9.5 - (100 * 9.5) / 128, 9);
+    expect(speedAfterOneTickOfS('{"sv_airaccelerate": 100}')).toBeCloseTo(v - (100 * v) / 128, 9);
   });
 });

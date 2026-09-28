@@ -66,12 +66,13 @@ describe('crouch', () => {
     expect(peak).toBeLessThanOrEqual(cap + 1e-9);
     expect(horizontalSpeed(walker.getVelocity())).toBeCloseTo(cap, 3);
 
-    // running at 9.5 then ducking slows down over a few ticks, no instant clamp
+    // running flat out then ducking slows down over a few ticks, no instant clamp:
+    // the first tick only loses one tick of friction
     const runner = new MovementController();
     runner.reset(new Vector3(0, 0, 0), 0);
     runner.setVelocity(new Vector3(0, 0, -defaultCvars.sv_maxspeed));
     runner.tick(DT, move({ forwardMove: 1, crouchHeld: true }), world);
-    expect(horizontalSpeed(runner.getVelocity())).toBeGreaterThan(9);
+    expect(horizontalSpeed(runner.getVelocity())).toBeCloseTo(defaultCvars.sv_maxspeed * (1 - defaultCvars.sv_friction * DT), 9);
     for (let i = 0; i < 128; i += 1) {
       runner.tick(DT, move({ forwardMove: 1, crouchHeld: true }), world);
     }

@@ -3,12 +3,13 @@ import { Vector3 } from 'three';
 import { MovementController } from '../MovementController';
 import { defaultCvars, METRES_PER_UNIT } from '../cvars';
 import type { MoveInput } from '../types';
-import { flatWorld } from './testWorlds';
+import { flatWorld, horizontalSpeed } from './testWorlds';
 
 // cs2 values from DumpSource2/convars.txt and scripts/weapons.vdata in
 // SteamTracking/GameTracking-CS2, see docs/movement-cs2.md for the links
 const U = METRES_PER_UNIT;
 const DT = 1 / 128;
+const UP = new Vector3(0, 1, 0);
 
 const move = (opts: Partial<MoveInput> = {}): MoveInput => ({
   forwardMove: 0,
@@ -48,5 +49,89 @@ describe('cs2 jump', () => {
     expect(apex / U).toBeGreaterThan(56.99);
     // 2 * 301.99 / 800 = 0.755 s in the air, the landing snap catches it on tick 96
     expect(airTicks).toBe(96);
+  });
+});
+
+describe('cs2 ground movement', () => {
+  it('uses cs2 sv_accelerate, sv_friction, sv_stopspeed, sv_maxspeed and the air cap', () => {
+    expect(defaultCvars.sv_accelerate).toBe(5.5);
+    expect(defaultCvars.sv_friction).toBe(5.2);
+    expect(defaultCvars.sv_stopspeed).toBeCloseTo(80 * U, 12);
+    expect(defaultCvars.sv_maxspeed).toBeCloseTo(320 * U, 12);
+    expect(defaultCvars.sv_air_max_wishspeed).toBeCloseTo(30 * U, 12);
+  });
+
+  it('running from a standstill tops out at wishspeed and never passes it', () => {
+    const world = flatWorld();
+    const mc = new MovementController();
+    mc.reset(new Vector3(0, 0, 0), 0);
+    let peak = 0;
+    for (let i = 0; i < 256; i += 1) {
+      mc.tick(DT, move({ forwardMove: 1 }), world);
+      peak = Math.max(peak, horizontalSpeed(mc.getVelocity()));
+    }
+    expect(peak).toBeLessThanOrEqual(defaultCvars.sv_maxspeed + 1e-9);
+    expect(horizontalSpeed(mc.getVelocity())).toBeCloseTo(defaultCvars.sv_maxspeed, 9);
+  });
+
+  it('brakes at a constant sv_stopspeed * sv_friction below 80 u/s', () => {
+    const world = flatWorld();
+    const mc = new MovementController();
+    mc.reset(new Vector3(0, 0, 0), 0);
+    mc.setVelocity(new Vector3(0, 0, -1.5));
+    const drop = defaultCvars.sv_stopspeed * defaultCvars.sv_friction * DT;
+    mc.tick(DT, move(), world);
+    expect(horizontalSpeed(mc.getVelocity())).toBeCloseTo(1.5 - drop, 12);
+    let ticks = 1;
+    while (horizontalSpeed(mc.getVelocity()) > 0) {
+      mc.tick(DT, move(), world);
+      ticks += 1;
+    }
+    expect(ticks).toBe(Math.ceil(1.5 / drop));
+  });
+
+  it('a fast landing without a jump bleeds off through friction, not a clamp', () => {
+    const world = flatWorld();
+    const mc = new MovementController();
+    mc.reset(new Vector3(0, 0.3, 0), 0);
+    mc.setVelocity(new Vector3(0, -1, -12));
+    while (!mc.getDebugState().grounded) {
+      mc.tick(DT, move({ forwardMove: 1 }), world);
+    }
+    expect(horizontalSpeed(mc.getVelocity())).toBeCloseTo(12, 9);
+    const k = defaultCvars.sv_friction * DT;
+    mc.tick(DT, move({ forwardMove: 1 }), world);
+    expect(horizontalSpeed(mc.getVelocity())).toBeCloseTo(12 * (1 - k), 9);
+    for (let i = 0; i < 32; i += 1) {
+      mc.tick(DT, move({ forwardMove: 1 }), world);
+    }
+    expect(horizontalSpeed(mc.getVelocity())).toBeCloseTo(defaultCvars.sv_maxspeed, 9);
+  });
+
+  it('turning while running stays within 3% of wishspeed', () => {
+    // with sv_accelerate only just above sv_friction the best turn each tick still keeps
+    // v^2 under (2 a w - a^2) / (1 - (1 - k)^2), a = accel w dt, k = friction dt: 8.35 m/s
+    const world = flatWorld();
+    const mc = new MovementController();
+    const w = defaultCvars.sv_maxspeed;
+    const a = defaultCvars.sv_accelerate * w * DT;
+    const k = defaultCvars.sv_friction * DT;
+    mc.reset(new Vector3(0, 0, 0), 0);
+    mc.setVelocity(new Vector3(0, 0, -w));
+    let peak = 0;
+    for (let i = 0; i < 512; i += 1) {
+      const v = mc.getVelocity().setY(0);
+      // the widest wishdir angle that still takes the full accel after friction
+      const theta = Math.acos(Math.min(1, (w - a) / (v.length() * (1 - k))));
+      const wish = v.normalize().applyAxisAngle(UP, -theta);
+      // D is (cos yaw, 0, -sin yaw)
+      mc.setView(Math.atan2(-wish.z, wish.x), 0);
+      mc.tick(DT, move({ sideMove: 1 }), world);
+      peak = Math.max(peak, horizontalSpeed(mc.getVelocity()));
+    }
+    const bound = Math.sqrt((2 * a * w - a * a) / (1 - (1 - k) ** 2));
+    expect(peak).toBeGreaterThan(w);
+    expect(peak).toBeLessThanOrEqual(bound + 1e-9);
+    expect(peak / w).toBeLessThan(1.03);
   });
 });

@@ -9,15 +9,20 @@ const U = METRES_PER_UNIT;
 export const defaultCvars: SourceCvars = {
   // cs2 sv_gravity 800 u/s^2
   sv_gravity: 800 * U,
-  sv_accelerate: 13.0,
+  // cs2 sv_accelerate 5.5. only just above sv_friction, so running tops out at
+  // wishspeed and ground strafing can't run away
+  sv_accelerate: 5.5,
   // typical cs bhop/surf server value. the 30 u/s air wishspeed cap below is
   // what keeps this from being too strong, gain only comes from synced turning.
   sv_airaccelerate: 150.0,
-  // 30 u/s * 0.0254 m/u
-  sv_air_max_wishspeed: 0.762,
+  // cs2 sv_air_max_wishspeed 30 u/s
+  sv_air_max_wishspeed: 30 * U,
+  // cs2 sv_friction 5.2
   sv_friction: 5.2,
-  sv_stopspeed: 2.4,
-  sv_maxspeed: 9.5,
+  // cs2 sv_stopspeed 80 u/s: friction acts as if you move at least this fast
+  sv_stopspeed: 80 * U,
+  // cs2 sv_maxspeed 320 u/s, a server-wide cap on wishspeed
+  sv_maxspeed: 320 * U,
   // cs2 sv_jump_impulse 301.99338 u/s = sqrt(2 * 800 * 57), a 57 u (1.45 m) jump
   sv_jump_impulse: 301.99338 * U,
   sv_bhop_enabled: true,
