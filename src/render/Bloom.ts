@@ -113,7 +113,7 @@ export class Bloom {
   private width = 0;
   private height = 0;
 
-  constructor(private readonly levelCount = 6) {
+  constructor(private levelCount = 6) {
     this.downMaterial = new ShaderMaterial({
       name: 'BloomDownsample',
       vertexShader: VERTEX,
@@ -146,6 +146,16 @@ export class Bloom {
       blendDst: OneFactor,
     });
     this.quad = new FullScreenQuad(this.downMaterial);
+  }
+
+  /** fewer mips on cheaper presets, rebuilds the chain */
+  setLevelCount(count: number): void {
+    const next = Math.max(1, Math.floor(count));
+    if (next === this.levelCount) return;
+    this.levelCount = next;
+    const [w, h] = [this.width, this.height];
+    this.width = 0;
+    if (w > 0) this.setSize(w, h);
   }
 
   setSize(width: number, height: number): void {

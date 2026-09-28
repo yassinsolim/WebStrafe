@@ -7,7 +7,7 @@ preset turns on, and which three.js techniques it borrows.
 
 `src/render/RenderPipeline.ts` owns the frame:
 
-1. The world renders into a half float (HDR) target, with MSAA on Medium and High.
+1. The world renders into a half float (HDR) target, with 4x MSAA on High.
 2. On High, SSAO (`Ssao.ts`) runs at half resolution on the world depth: Alchemy
    style AO over a Vogel spiral, then a depth aware blur in two passes.
 3. The viewmodel renders into the same target after a depth clear, with its own
@@ -27,22 +27,28 @@ lowest channel of dark colours to zero, which made warm shadows muddy.
 
 ## Presets
 
-`src/render/quality.ts`. Auto picks from the WebGL renderer string: Apple
-M-series and discrete GPUs get High, integrated Intel and older laptop GPUs get
-Medium, and software GL and phone GPUs get Low. Adaptive resolution
-(`src/app/AdaptiveResolution.ts`) steps the render scale down below 55 fps on
-every preset.
+`src/render/quality.ts`. Auto never picks High: every real GPU starts on
+Balanced (the `medium` id), and software GL, phone GPUs and old Intel HD/UHD
+graphics get Low. High is opt-in in Settings > Video. Adaptive resolution
+(`src/app/AdaptiveResolution.ts`) stays on for every preset and steps the
+render scale down whenever a one second window drops below 55 fps.
 
-| | Low | Medium | High |
+| | Low | Balanced | High |
 |---|---|---|---|
-| anti-aliasing | FXAA | 2x MSAA | 4x MSAA |
-| bloom | off | on | on |
+| anti-aliasing | FXAA | FXAA | 4x MSAA |
+| bloom | off | 4 mips | 6 mips |
 | SSAO | off | off | half res |
-| sun shadows (players) | off | 1024 | 2048 |
-| world materials | Lambert over the lightmap | standard, generated normal maps and gloss | same as Medium |
+| sun shadows (players, one cascade) | off | 1024 | 2048 |
+| world materials | Lambert over the lightmap | standard, generated normal maps and gloss | same as Balanced |
 | viewmodel light | sky capture | world probe | world probe |
-| pixel ratio cap | 1 | 1.5 | 2 |
-| particle density | 0.5 | 0.8 | 1 |
+| pixel ratio cap | 1 | 1.25 | 2 |
+| particle density | 0.4 | 0.75 | 1 |
+| bullet holes alive | 24 | 48 | 96 |
+
+Balanced drops MSAA on purpose. three.js resolves a multisampled target after
+every `render()` call and the frame renders the world and the viewmodel in two
+calls, so MSAA costs two full resolves per frame. On the M5 at 1440p that was
+the single biggest cost (about 3 ms for 4x).
 
 ## Lighting
 

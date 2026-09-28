@@ -83,7 +83,7 @@ export class ImpactDecals {
   private nextSlot = 0;
   private readonly geometry = new PlaneGeometry(1, 1);
   private readonly textures = new Map<SurfaceKind, DataTexture>();
-  private readonly maxDecals: number;
+  private maxDecals: number;
   private readonly holdMs: number;
   private readonly fadeMs: number;
   private readonly random: () => number;
@@ -167,6 +167,20 @@ export class ImpactDecals {
       this.textures.set(key, texture);
     }
     return texture;
+  }
+
+  /** quality presets cap how many holes stay alive, extra slots are freed */
+  public setMaxDecals(count: number): void {
+    const next = Math.max(1, Math.floor(count));
+    if (next === this.maxDecals) return;
+    this.maxDecals = next;
+    if (this.slots.length > next) {
+      for (const slot of this.slots.splice(next)) {
+        this.deactivate(slot);
+        slot.material.dispose();
+      }
+    }
+    this.nextSlot = this.nextSlot % next;
   }
 
   private acquire(): DecalSlot {

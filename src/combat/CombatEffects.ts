@@ -239,6 +239,7 @@ export class CombatEffects {
 
   public setQuality(preset: QualityPreset): void {
     this.density = preset.effectDensity;
+    this.decals?.setMaxDecals(preset.maxDecals);
   }
 
   /** drawing buffer size, so tracer widths are right in pixels */
