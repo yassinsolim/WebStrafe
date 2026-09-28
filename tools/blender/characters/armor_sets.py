@@ -555,14 +555,14 @@ def helmet(k, st):
                 (0.176, top + 0.054 * st["brow"]), (0.060, top + 0.074 * st["brow"]), (0.0, top + 0.084 * st["brow"]),
                 (-0.060, top + 0.074 * st["brow"]), (-0.176, top + 0.054 * st["brow"])]
         # grid filled: a ring fill pinched a crease along the middle of this wide, thin band
-        k.add(ak.band_plate("brow", T_H2, HEL, brow[:5], list(reversed(brow[5:])), cols=112, rows=10,
+        k.add(ak.band_plate("brow", T_H2, HEL, brow[:5], list(reversed(brow[5:])), cols=72, rows=6,
                             thickness=0.013 * st["thick"], bevel=0.004, smooth_iters=3), "head", "primary", "helmet")
         bottom = min(v for _, v in visor)
         jd = st["jaw_h"]
         jaw = [(-0.180, bottom + 0.010), (-0.082, bottom - 0.004), (0.0, bottom - 0.010), (0.082, bottom - 0.004),
                (0.180, bottom + 0.010), (0.172, bottom - 0.064 * jd), (0.060, bottom - 0.086 * jd),
                (-0.060, bottom - 0.086 * jd), (-0.172, bottom - 0.064 * jd)]
-        k.add(ak.band_plate("jaw", T_H2, HEL, jaw[:5], list(reversed(jaw[5:])), cols=112, rows=10,
+        k.add(ak.band_plate("jaw", T_H2, HEL, jaw[:5], list(reversed(jaw[5:])), cols=72, rows=6,
                             thickness=0.010 * st["thick"], bevel=0.0035, smooth_iters=3), "head", "primary", "helmet")
         for j in range(st["vents"]):
             e = bottom - 0.030 - 0.009 * j
