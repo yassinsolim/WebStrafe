@@ -2,7 +2,8 @@
 // scrolls an element into view (same chromium setup as capture.mjs).
 //   node tools/shots/menu-tab.mjs <url> <out.png> <tab label> [selector to scroll to]
 // env: PLAYWRIGHT_MODULE, CHROME, GPU=1, WIDTH, HEIGHT, SETTLE_MS,
-//      STORAGE='{"key":"value"}' (localStorage before the page loads), CLICK='sel1|sel2' (clicked in order)
+//      STORAGE='{"key":"value"}' (localStorage before the page loads), CLICK='sel1|sel2' (clicked in order),
+//      SCROLL_BLOCK=start|center|end (align the selector instead of the minimal scroll)
 const [url, out, tab, selector] = process.argv.slice(2);
 if (!url || !out || !tab) {
   console.error('usage: node tools/shots/menu-tab.mjs <url> <out.png> <tab label> [selector]');
@@ -37,7 +38,11 @@ for (const sel of (process.env.CLICK ?? '').split('|').filter(Boolean)) {
   await page.locator(sel).first().click();
   await page.waitForTimeout(200);
 }
-if (selector) await page.locator(selector).first().scrollIntoViewIfNeeded();
+if (selector && process.env.SCROLL_BLOCK) {
+  await page.locator(selector).first().evaluate((el, block) => el.scrollIntoView({ block }), process.env.SCROLL_BLOCK);
+} else if (selector) {
+  await page.locator(selector).first().scrollIntoViewIfNeeded();
+}
 await page.waitForTimeout(Number(process.env.SETTLE_MS ?? 2500));
 await page.screenshot({ path: out });
 console.log(`ok ${out}`);
