@@ -77,6 +77,8 @@ export interface ResolvedEnvironment {
   lightmapMode: LightmapMode;
   /** multiplier on baked indirect light in 'indirect' mode */
   indirectIntensity: number;
+  /** linear rgb gains on baked indirect light, luminance 1 */
+  indirectTint: Color;
   /** sky light and reflections on players and weapons */
   envIntensity: number;
   grade: ColorGrade;
@@ -86,6 +88,12 @@ const DEFAULT_BACKGROUND = '#9ab9d5';
 
 function finite(value: unknown, fallback: number, min = -Infinity, max = Infinity): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
+}
+
+/** scales a (linear) color so its luminance is 1, a pure hue shift when used as gains */
+export function unitLuminance(c: Color): Color {
+  const luma = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+  return luma > 1e-4 ? c.multiplyScalar(1 / luma) : new Color(1, 1, 1);
 }
 
 function color(value: unknown, fallback: string): Color {
@@ -123,6 +131,7 @@ export function resolveEnvironment(config?: MapEnvironmentConfig): ResolvedEnvir
       lightMapIntensity: 1,
       lightmapMode: 'full',
       indirectIntensity: 1,
+      indirectTint: new Color(1, 1, 1),
       envIntensity: 1,
       grade: resolveGrade(undefined, 1),
     };
@@ -178,6 +187,7 @@ export function resolveEnvironment(config?: MapEnvironmentConfig): ResolvedEnvir
     lightMapIntensity: finite(config.lightMapIntensity, Math.PI, 0, 100),
     lightmapMode: config.lightmapMode === 'indirect' ? 'indirect' : 'full',
     indirectIntensity: finite(config.indirectIntensity, 1, 0, 8),
+    indirectTint: unitLuminance(color(config.indirectTint, '#ffffff')),
     envIntensity: finite(config.envIntensity, 1, 0, 8),
     grade: resolveGrade(config.grade, exposure),
   };
@@ -745,6 +755,7 @@ export function applyLightmaps(
               preset: options.preset,
               lightMap: texture,
               lightMapIntensity: env.lightMapIntensity * env.indirectIntensity,
+              indirectTint: env.indirectTint,
               normals: options.normals,
               skyRef: 0.9,
             })

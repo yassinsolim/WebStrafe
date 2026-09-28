@@ -796,7 +796,16 @@ def setup_bake_world(env):
     h = sep.outputs["Z"]
     sky = env["sky"]
     up = _math(nt, "POWER", _math(nt, "MAXIMUM", h, 0.0), sky.get("exponent", 0.6))
-    upper = _mix_rgb(nt, lin(sky["horizon"]), lin(sky["zenith"]), up)
+    horizon = lin(sky["horizon"])
+    anti = sky.get("bake_anti_sun")
+    if anti:
+        # low sun: the half of the sky away from it is cooler than the glow around it.
+        # without this every shaded wall only sees the warm horizon and goes muddy
+        sun = sun_vector(env["sun_azimuth"], env["sun_elevation"])
+        away = Vector((-sun.x, -sun.y, 0.0)).normalized()
+        facing = _math(nt, "MAXIMUM", _vmath(nt, "DOT_PRODUCT", direction, tuple(away)), 0.0)
+        horizon = _mix_rgb(nt, horizon, lin(anti), _math(nt, "MULTIPLY", facing, sky.get("bake_anti_sun_mix", 0.75)))
+    upper = _mix_rgb(nt, horizon, lin(sky["zenith"]), up)
     below = _math(nt, "LESS_THAN", h, 0.0)
     ground = tuple(c * env.get("bake_ground_scale", 0.6) for c in lin(sky.get("bake_ground", sky["ground"])))
     col = _mix_rgb(nt, upper, ground, below)
@@ -1327,6 +1336,9 @@ def environment_meta(env, map_id, lightmap_scale, has_lightmap=True):
         # rgb is indirect light only, alpha the sun's visibility (see bake_lightmap)
         out["lightmapMode"] = "indirect"
         out["indirectIntensity"] = env.get("indirect_intensity", 1.0)
+        if "indirect_tint" in env:
+            # runtime hue shift on the baked shade, keeps its brightness
+            out["indirectTint"] = env["indirect_tint"]
     out["envIntensity"] = env.get("env_intensity", 1.0)
     if "grade" in env:
         out["grade"] = env["grade"]

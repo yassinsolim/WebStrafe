@@ -79,7 +79,10 @@ walls, trigger volumes and the layout file. Prismline keeps its own copies.
   compositor, chart borders are dilated and rgb is sRGB encoded as
   `light / scale`. The bake sky is scaled by `bake_sky_scale` (default 0.55)
   so the sun reads about 3:1 over the sky; it used to light as strongly as
-  the sun, which washed every shadow out. A plain full bake is still written
+  the sun, which washed every shadow out. Under a low sun an optional
+  `sky.bake_anti_sun` color (mixed by `bake_anti_sun_mix`, default 0.75) cools
+  the half of the bake horizon facing away from the sun, as a real sunset sky
+  is. A plain full bake is still written
   (`lightmap_full.png`, not shipped) for the preview renders.
 - **Runtime.** `src/world/MapEnvironment.ts` loads the lightmaps listed in
   `meta.environment.lightmaps` (`texture.channel = 1`, GLTFLoader names
@@ -92,7 +95,10 @@ walls, trigger volumes and the layout file. Prismline keeps its own copies.
   reflections are occluded where the bake saw less sky. Low uses a Lambert
   surface, medium and high a standard one. `lightMapIntensity` is
   `pi * scale` (Cycles bakes irradiance / pi) and `indirectIntensity` scales
-  the baked light at runtime. Normals are rebuilt from the triangle winding at
+  the baked light at runtime. `indirectTint` (hex, from the build's
+  `indirect_tint`) shifts the hue of the baked light at unit luminance, so the
+  shade can cool without touching the live sun: Emberdrift's shade was
+  khaki from its lava and ground bounce. Normals are rebuilt from the triangle winding at
   load, because some packed faces (the floor slabs) carry normals pointing
   against their winding; the old unlit materials never read normals. Maps
   without `lightmapMode` keep the v2 path, `MeshBasicMaterial(map, color,
