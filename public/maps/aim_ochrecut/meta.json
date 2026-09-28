@@ -159,6 +159,9 @@
         "path": "/maps/aim_ochrecut/lightmap.webp"
       }
     ],
-    "lightMapIntensity": 7.0686
+    "lightMapIntensity": 2.3562,
+    "lightmapMode": "indirect",
+    "indirectIntensity": 1.0,
+    "envIntensity": 1.0
   }
 }

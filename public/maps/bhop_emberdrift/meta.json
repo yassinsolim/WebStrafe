@@ -292,6 +292,9 @@
         "path": "/maps/bhop_emberdrift/lightmap.webp"
       }
     ],
-    "lightMapIntensity": 10.9956
+    "lightMapIntensity": 10.9956,
+    "lightmapMode": "indirect",
+    "indirectIntensity": 1.0,
+    "envIntensity": 1.0
   }
 }
