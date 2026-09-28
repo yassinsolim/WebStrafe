@@ -68,6 +68,27 @@ export interface MapEnvironmentConfig {
   exposure?: number;
   lightmaps?: MapLightmapConfig[];
   lightMapIntensity?: number;
+  /**
+   * 'full' (default): the lightmap holds every light and is drawn unlit.
+   * 'indirect': rgb is sky and bounce light only, alpha is the sun's baked
+   * visibility, and the sun is added live on top.
+   */
+  lightmapMode?: 'full' | 'indirect';
+  /** multiplier on baked indirect light, 'indirect' mode only */
+  indirectIntensity?: number;
+  /** sky light and reflections on players and weapons */
+  envIntensity?: number;
+  /** color grade overrides, see src/render/grade.ts */
+  grade?: {
+    exposure?: number;
+    contrast?: number;
+    saturation?: number;
+    temperature?: number;
+    tint?: number;
+    vignette?: number;
+    bloom?: number;
+    bloomThreshold?: number;
+  };
 }
 
 export interface MapMeta {

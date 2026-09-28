@@ -159,8 +159,9 @@ def tex_cliffstone(folder):
     return M.save_texture("cliffstone", col, folder)
 
 
+# ramps get 512 textures so the map fits the 16 MB texture memory budget (tools/assets/budgets.test.ts)
 def tex_ramp(folder, name, base, deep, seed):
-    tg = M.TexGen(1024, TEX_SEED + seed)
+    tg = M.TexGen(512, TEX_SEED + seed)
     u, v = tg.u, tg.v
     # big granite slabs, three courses up the face and one per tile along it
     edge, rand = _ashlar(tg, 3, 1)

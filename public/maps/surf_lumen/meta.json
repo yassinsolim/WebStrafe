@@ -270,7 +270,7 @@
     "exposure": 1.0,
     "lightmaps": [
       {
-        "path": "/maps/surf_lumen/lightmap.webp"
+        "path": "/maps/surf_lumen/lightmap.ktx2"
       }
     ],
     "lightMapIntensity": 11.781

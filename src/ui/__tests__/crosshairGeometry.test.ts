@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultCrosshair, type CrosshairSettings } from '../SettingsStore';
-import { MAX_SPREAD_PX, computeCrosshairLayout, snapRect, spreadToPixels } from '../hud/crosshairGeometry';
+import { MAX_SPREAD_PX, computeCrosshairLayout, crosshairScale, snapRect, spreadToPixels } from '../hud/crosshairGeometry';
 
 const classic: CrosshairSettings = { ...defaultCrosshair, style: 'classic', size: 6, gap: 3, thickness: 2, outline: true };
 
@@ -47,6 +47,15 @@ describe('computeCrosshairLayout', () => {
     expect(fixed.arms[1].x).toBe(3);
   });
 
+  it('scales the authored sizes but not the spread, which is already in screen px', () => {
+    const scaled = computeCrosshairLayout(classic, 12, 1.5);
+    expect(scaled.arms[1]).toEqual({ x: 3 * 1.5 + 12, y: -1.5, w: 9, h: 3 });
+    expect(crosshairScale(1080)).toBe(1);
+    expect(crosshairScale(1440)).toBeCloseTo(4 / 3, 6);
+    expect(crosshairScale(480)).toBe(0.75);
+    expect(crosshairScale(0)).toBe(1);
+  });
+
   it('keeps arms symmetric with a negative gap', () => {
     const layout = computeCrosshairLayout({ ...classic, gap: -2 });
     expect(layout.arms[0].y + layout.arms[0].h).toBe(2);
@@ -68,6 +77,29 @@ describe('computeCrosshairLayout', () => {
 
   it('draws nothing for a zero length classic crosshair', () => {
     expect(computeCrosshairLayout({ ...classic, size: 0 }).arms).toEqual([]);
+    expect(computeCrosshairLayout({ ...classic, size: 0 }).dot).toBeNull();
+  });
+
+  it('adds a centre dot to the classic style when asked', () => {
+    const layout = computeCrosshairLayout({ ...classic, dot: true });
+    expect(layout.arms).toHaveLength(4);
+    expect(layout.dot).toEqual({ x: -1, y: -1, w: 2, h: 2 });
+    // a dot alone survives a zero arm length
+    expect(computeCrosshairLayout({ ...classic, dot: true, size: 0 }).dot).not.toBeNull();
+  });
+
+  it('drops the top arm for the t style', () => {
+    const layout = computeCrosshairLayout({ ...classic, tStyle: true });
+    expect(layout.arms).toEqual([
+      { x: 3, y: -1, w: 6, h: 2 },
+      { x: -1, y: 3, w: 2, h: 6 },
+      { x: -9, y: -1, w: 6, h: 2 },
+    ]);
+  });
+
+  it('grows the extent with the outline thickness and ignores it without an outline', () => {
+    expect(computeCrosshairLayout({ ...classic, outlineThickness: 2.5 }).extent).toBe(11.5);
+    expect(computeCrosshairLayout({ ...classic, outline: false, outlineThickness: 2.5 }).extent).toBe(9);
   });
 });
 

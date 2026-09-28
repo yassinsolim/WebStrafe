@@ -292,9 +292,20 @@
     "exposure": 1.0,
     "lightmaps": [
       {
-        "path": "/maps/surf_prismline/lightmap.webp"
+        "path": "/maps/surf_prismline/lightmap.ktx2"
       }
     ],
-    "lightMapIntensity": 8.6394
+    "lightMapIntensity": 8.6394,
+    "lightmapMode": "indirect",
+    "indirectIntensity": 1.0,
+    "envIntensity": 1.0,
+    "grade": {
+      "exposure": 0.74,
+      "contrast": 1.16,
+      "saturation": 1.1,
+      "temperature": 0.03,
+      "vignette": 0.2,
+      "bloom": 0.08
+    }
   }
 }

@@ -351,7 +351,7 @@
     "exposure": 1.15,
     "lightmaps": [
       {
-        "path": "/maps/surf_vanta/lightmap.webp"
+        "path": "/maps/surf_vanta/lightmap.ktx2"
       }
     ],
     "lightMapIntensity": 34.5575

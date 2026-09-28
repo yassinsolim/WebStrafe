@@ -25,10 +25,11 @@ const SESSION_KEY = 'webstrafe:session-id:v1';
  * flagged melee with the cs knife damage table and backstabs, hits carry
  * melee/backstab, and fires carry the shooter's weapon. a p3 host would resolve
  * those differently, so p3 and p4 tabs must never share a room. p5 moves fires
- * and combat events onto state messages. p6 adds per player pvp opt-in (a p5
+ * and combat events onto state messages. p6 (knives, #51) swaps in the cs2 hull
+ * hit capsules and crouch on the wire. p7 adds per player pvp opt-in (an older
  * host would let peaceful players be hit) and the host's room scoreboard.
  */
-export const SUPABASE_PROTOCOL = 'p6';
+export const SUPABASE_PROTOCOL = 'p7';
 const PLAYER_STALE_MS = 8000;
 /** idle/paused clients only need to prove they are still here */
 const KEEPALIVE_MS = 1000;

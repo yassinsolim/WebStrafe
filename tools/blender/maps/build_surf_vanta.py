@@ -130,8 +130,9 @@ ARENA_SPAWNS = [(-7.0, 20.5), (7.5, 21.0), (-18.0, 19.5), (24.0, 18.0)]
 # textures
 
 
+# ramps get 512 textures so the map fits the 16 MB texture memory budget (tools/assets/budgets.test.ts)
 def tex_ramp(folder, name, neon, seed):
-    tg = M.TexGen(1024, TEX_SEED + seed)
+    tg = M.TexGen(512, TEX_SEED + seed)
     u, v = tg.u, tg.v
     grad = M.smoothstep(0.0, 1.0, v)
     # mid blue-grey rather than true graphite: the night comes from the light,

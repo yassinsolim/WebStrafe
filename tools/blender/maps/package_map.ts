@@ -3,11 +3,13 @@
  *
  *   npx tsx tools/blender/maps/package_map.ts <id>
  *
- * scene.glb goes through the shared optimizer (meshopt + webp), collision.glb is
- * copied untouched (plain float positions, the node server parses it without the
- * meshopt decoder), the lightmap and the menu thumbnail become webp, and the
- * preview renders are copied to docs/screenshots/maps/.
+ * scene.glb goes through the shared optimizer (meshopt) and its textures become
+ * ktx2, collision.glb is copied untouched (plain float positions, the node server
+ * parses it without the meshopt decoder), the lightmap becomes ktx2 (gpu
+ * compressed, a quarter of the memory of a decoded webp), the menu thumbnail
+ * webp, and the preview renders are copied to docs/screenshots/maps/.
  */
+import { execFileSync } from 'node:child_process';
 import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,8 +57,11 @@ export async function packageMap(mapId: string): Promise<void> {
     webp: true,
     simplifyRatio: null,
   });
+  const ktx2 = (...args: string[]) => execFileSync('npx', ['tsx', path.join(root, 'tools/assets/ktx2-textures.ts'), ...args], { stdio: 'inherit' });
+  ktx2(path.join(out, 'scene.glb'), path.join(out, 'scene.glb'));
   await copyFile(path.join(tmp, 'collision.glb'), path.join(out, 'collision.glb'));
-  await sharp(path.join(tmp, 'lightmap.png')).webp({ quality: 90, effort: 6 }).toFile(path.join(out, 'lightmap.webp'));
+  // srgb rgb (indirect light) and linear alpha (sun visibility) in one etc1s texture
+  ktx2(path.join(tmp, 'lightmap.png'), path.join(out, 'lightmap.ktx2'));
   await copyFile(path.join(tmp, 'meta.json'), path.join(out, 'meta.json'));
 
   if (await exists(path.join(tmp, 'thumb.png'))) {
@@ -71,7 +76,7 @@ export async function packageMap(mapId: string): Promise<void> {
     }
   }
 
-  const files = ['scene.glb', 'collision.glb', 'lightmap.webp', 'thumbnail.webp', 'meta.json'];
+  const files = ['scene.glb', 'collision.glb', 'lightmap.ktx2', 'thumbnail.webp', 'meta.json'];
   let total = 0;
   const rows: string[] = [];
   for (const file of files) {

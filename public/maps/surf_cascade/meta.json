@@ -385,7 +385,7 @@
     "exposure": 1.05,
     "lightmaps": [
       {
-        "path": "/maps/surf_cascade/lightmap.webp"
+        "path": "/maps/surf_cascade/lightmap.ktx2"
       }
     ],
     "lightMapIntensity": 6.2832

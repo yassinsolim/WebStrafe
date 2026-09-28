@@ -159,9 +159,20 @@
     "exposure": 1.0,
     "lightmaps": [
       {
-        "path": "/maps/aim_ochrecut/lightmap.webp"
+        "path": "/maps/aim_ochrecut/lightmap.ktx2"
       }
     ],
-    "lightMapIntensity": 7.0686
+    "lightMapIntensity": 2.3562,
+    "lightmapMode": "indirect",
+    "indirectIntensity": 1.0,
+    "envIntensity": 1.0,
+    "grade": {
+      "exposure": 0.8,
+      "contrast": 1.12,
+      "saturation": 1.04,
+      "temperature": 0.05,
+      "vignette": 0.2,
+      "bloom": 0.05
+    }
   }
 }
