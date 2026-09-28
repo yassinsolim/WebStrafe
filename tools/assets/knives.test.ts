@@ -18,18 +18,51 @@ const MATERIALS = ['knife_blade', 'knife_edge', 'knife_handle', 'knife_metal', '
 const REQUIRED = ['knife_blade', 'knife_edge', 'knife_handle'];
 // the paracord knife has no fittings: its exposed tang end is blade steel
 const NO_METAL: KnifeId[] = ['paracord'];
-const MAX_TRIANGLES = 8000;
-const MAX_BYTES = 200 * 1024;
+const MAX_TRIANGLES = 15000;
+const MAX_BYTES = 1.5 * 1024 * 1024;
+const MAX_TEXTURE_PX = 2048;
+const LOD1_MAX_BYTES = 400 * 1024;
+
+/**
+ * sockets (knife frame, metres) and userData hints the grips were fitted to
+ * (tools/assets/gripFit.ts). models may change, these may not move more than 1 mm.
+ */
+const FITTED: Record<KnifeId, { sockets: Record<string, V3>; hints: Record<string, number> }> = {
+  bayonet: { sockets: { socket_grip: [-0.062, 0.018, 0], socket_tip: [0.18, 0.0165, 0] }, hints: { handleLength: 0.131, handleThickness: 0.0286, handleHeight: 0.033, bladeLength: 0.18, bladeHeight: 0.036 } },
+  flip: { sockets: { socket_grip: [-0.062, 0.0145, 0], socket_pivot: [-0.009, 0.0159, 0], socket_tip: [0.1, 0.0135, 0] }, hints: { handleLength: 0.126, handleThickness: 0.0125, handleHeight: 0.036, bladeLength: 0.1, bladeHeight: 0.0306 } },
+  gut: { sockets: { socket_grip: [-0.058, 0.016, 0], socket_tip: [0.1, 0.012, 0] }, hints: { handleLength: 0.12, handleThickness: 0.025, handleHeight: 0.031, bladeLength: 0.1, bladeHeight: 0.032 } },
+  karambit: { sockets: { socket_grip: [-0.043, 0.0063, 0], socket_ring: [-0.0998, -0.0224, 0], socket_tip: [0.0713, -0.0307, 0] }, hints: { handleLength: 0.086, handleThickness: 0.013, handleHeight: 0.026, bladeLength: 0.0718, bladeHeight: 0.0255, ringInnerRadius: 0.0115 } },
+  m9_bayonet: { sockets: { socket_grip: [-0.063, 0.019, 0], socket_tip: [0.19, 0.017, 0] }, hints: { handleLength: 0.133, handleThickness: 0.03, handleHeight: 0.035, bladeLength: 0.19, bladeHeight: 0.038 } },
+  huntsman: { sockets: { socket_grip: [-0.062, 0.019, 0], socket_tip: [0.155, 0.018, 0] }, hints: { handleLength: 0.127, handleThickness: 0.027, handleHeight: 0.0335, bladeLength: 0.155, bladeHeight: 0.0383 } },
+  butterfly: { sockets: { socket_grip: [-0.064, 0.0115, 0], socket_pivot_bite: [-0.0065, 0.0047, 0], socket_pivot_safe: [-0.0065, 0.0182, 0], socket_tip: [0.102, 0.0105, 0] }, hints: { handleLength: 0.128, handleThickness: 0.0129, handleHeight: 0.027, bladeLength: 0.102, bladeHeight: 0.0232 } },
+  falchion: { sockets: { socket_grip: [-0.066, 0.0138, 0], socket_pivot: [-0.008, 0.0147, 0], socket_tip: [0.128, 0.03, 0] }, hints: { handleLength: 0.15, handleThickness: 0.0138, handleHeight: 0.036, bladeLength: 0.128, bladeHeight: 0.0325 } },
+  shadow_daggers: { sockets: { socket_grip: [-0.024, 0.013, 0], socket_tee: [-0.024, 0.013, 0], socket_tip: [0.066, 0.013, 0] }, hints: { handleLength: 0.092, handleThickness: 0.018, handleHeight: 0.014, bladeLength: 0.066, bladeHeight: 0.0253 } },
+  bowie: { sockets: { socket_grip: [-0.06, 0.02, 0], socket_tip: [0.185, 0.019, 0] }, hints: { handleLength: 0.125, handleThickness: 0.027, handleHeight: 0.033, bladeLength: 0.185, bladeHeight: 0.0422 } },
+  navaja: { sockets: { socket_grip: [-0.062, 0.0094, 0], socket_pivot: [-0.008, 0.0095, 0], socket_tip: [0.105, 0.013, 0] }, hints: { handleLength: 0.142, handleThickness: 0.0114, handleHeight: 0.025, bladeLength: 0.105, bladeHeight: 0.022 } },
+  stiletto: { sockets: { socket_grip: [-0.07, 0.008, 0], socket_pivot: [-0.011, 0.0086, 0], socket_tip: [0.125, 0.008, 0] }, hints: { handleLength: 0.15, handleThickness: 0.0122, handleHeight: 0.0208, bladeLength: 0.125, bladeHeight: 0.016 } },
+  talon: { sockets: { socket_grip: [-0.042, 0.0079, 0], socket_pivot: [-0.008, 0.0115, 0], socket_ring: [-0.0955, -0.0153, 0], socket_tip: [0.0643, -0.0244, 0] }, hints: { handleLength: 0.084, handleThickness: 0.0126, handleHeight: 0.026, bladeLength: 0.0648, bladeHeight: 0.0265, ringInnerRadius: 0.0115 } },
+  ursus: { sockets: { socket_grip: [-0.062, 0.016, 0], socket_pivot: [-0.009, 0.0171, 0], socket_tip: [0.108, 0.0165, 0] }, hints: { handleLength: 0.139, handleThickness: 0.0144, handleHeight: 0.039, bladeLength: 0.108, bladeHeight: 0.0333 } },
+  classic: { sockets: { socket_grip: [-0.063, 0.019, 0], socket_tip: [0.2, 0.017, 0] }, hints: { handleLength: 0.125, handleThickness: 0.026, handleHeight: 0.0325, bladeLength: 0.2, bladeHeight: 0.038 } },
+  paracord: { sockets: { socket_grip: [-0.052, 0.016, 0], socket_tip: [0.13, 0.0195, 0] }, hints: { handleLength: 0.116, handleThickness: 0.0154, handleHeight: 0.0344, bladeLength: 0.13, bladeHeight: 0.0323 } },
+  survival: { sockets: { socket_grip: [-0.066, 0.017, 0], socket_tip: [0.13, 0.013, 0] }, hints: { handleLength: 0.14, handleThickness: 0.026, handleHeight: 0.032, bladeLength: 0.13, bladeHeight: 0.034 } },
+  nomad: { sockets: { socket_grip: [-0.062, 0.0155, 0], socket_pivot: [-0.008, 0.0158, 0], socket_tip: [0.104, 0.02, 0] }, hints: { handleLength: 0.13, handleThickness: 0.0132, handleHeight: 0.04, bladeLength: 0.104, bladeHeight: 0.0335 } },
+  skeleton: { sockets: { socket_grip: [-0.044, 0.014, 0], socket_ring: [-0.097, 0.014, 0], socket_tip: [0.1, 0.012, 0] }, hints: { handleLength: 0.088, handleThickness: 0.0057, handleHeight: 0.028, bladeLength: 0.1, bladeHeight: 0.028, ringInnerRadius: 0.011 } },
+  kukri: { sockets: { socket_grip: [-0.062, 0.017, 0], socket_tip: [0.25, -0.014, 0] }, hints: { handleLength: 0.12, handleThickness: 0.026, handleHeight: 0.033, bladeLength: 0.25, bladeHeight: 0.0541 } },
+};
 
 type V3 = [number, number, number];
 
 const docs = new Map<string, Document>();
-const glb = (id: string) => path.join(repo, 'public', 'knives', `${id}.glb`);
+const lods = new Map<string, Document>();
+const glb = (id: string, suffix = '') => path.join(repo, 'public', 'knives', `${id}${suffix}.glb`);
 
 beforeAll(async () => {
   await MeshoptDecoder.ready;
   const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ 'meshopt.decoder': MeshoptDecoder });
-  for (const k of KNIVES) docs.set(k.id, await io.read(glb(k.id)));
+  for (const k of KNIVES) {
+    docs.set(k.id, await io.read(glb(k.id)));
+    lods.set(k.id, await io.read(glb(k.id, '_lod1')));
+  }
 });
 
 function find(doc: Document, name: string): Node | undefined {
@@ -204,16 +237,34 @@ describe.each(KNIVES.map((k) => [k.id, k] as const))('%s', (id) => {
     }
   });
 
-  it('uses only the contract materials, with baked ao and uvs on every primitive', () => {
+  it('uses only the contract materials, each with baked colour, normal and orm maps on a 0..1 uv atlas', () => {
     const used = new Set<string>();
     for (const n of meshNodes(doc())) {
       for (const prim of n.getMesh()!.listPrimitives()) {
-        const name = prim.getMaterial()?.getName() ?? '';
+        const mat = prim.getMaterial();
+        const name = mat?.getName() ?? '';
         expect(MATERIALS, `${n.getName()} ${name}`).toContain(name);
-        expect(prim.getAttribute('COLOR_0'), `${n.getName()} ${name} ao`).not.toBeNull();
-        expect(prim.getAttribute('TEXCOORD_0'), `${n.getName()} ${name} uv`).not.toBeNull();
+        expect(mat!.getBaseColorTexture(), `${name} colour`).not.toBeNull();
+        expect(mat!.getNormalTexture(), `${name} normal`).not.toBeNull();
+        expect(mat!.getMetallicRoughnessTexture(), `${name} roughness/metalness`).not.toBeNull();
+        expect(mat!.getOcclusionTexture(), `${name} ao`).not.toBeNull();
+        const uv = prim.getAttribute('TEXCOORD_0');
+        expect(uv, `${n.getName()} ${name} uv`).not.toBeNull();
+        const el: number[] = [];
+        for (let i = 0; i < uv!.getCount(); i += 97) {
+          uv!.getElement(i, el);
+          expect(el[0], `${name} u`).toBeGreaterThanOrEqual(-1e-3);
+          expect(el[0], `${name} u`).toBeLessThanOrEqual(1.001);
+          expect(el[1], `${name} v`).toBeGreaterThanOrEqual(-1e-3);
+          expect(el[1], `${name} v`).toBeLessThanOrEqual(1.001);
+        }
         used.add(name);
       }
+    }
+    for (const t of doc().getRoot().listTextures()) {
+      const [w, h] = t.getSize() ?? [0, 0];
+      expect(Math.max(w, h), t.getName()).toBeLessThanOrEqual(MAX_TEXTURE_PX);
+      expect(t.getMimeType(), t.getName()).toBe('image/webp');
     }
     for (const name of REQUIRED) expect([...used], name).toContain(name);
     expect(used.has('knife_metal'), 'knife_metal').toBe(!NO_METAL.includes(id));
@@ -251,6 +302,32 @@ describe.each(KNIVES.map((k) => [k.id, k] as const))('%s', (id) => {
     const bladeHeight = e.bladeHeight as number;
     expect(bladeHeight).toBeLessThanOrEqual((yHi - yLo) * 1.05);
     expect(bladeHeight).toBeGreaterThan((yHi - yLo) * (HAWKBILL.includes(id) || id === 'kukri' ? 0.35 : 0.6));
+  });
+
+  it('keeps the sockets and hints the grips were fitted to, within 1 mm', () => {
+    const fitted = FITTED[id];
+    for (const [name, want] of Object.entries(fitted.sockets)) {
+      const got = worldPos(node(doc(), name));
+      expect(Math.hypot(got[0] - want[0], got[1] - want[1], got[2] - want[2]), name).toBeLessThan(0.001);
+    }
+    const e = extras();
+    for (const [key, want] of Object.entries(fitted.hints)) expect(Math.abs((e[key] as number) - want), key).toBeLessThan(0.001);
+  });
+
+  it('ships a lod1 with the same nodes, sockets and hints at under half the triangles', () => {
+    const lod = lods.get(id)!;
+    expect(statSync(glb(id, '_lod1')).size).toBeLessThanOrEqual(LOD1_MAX_BYTES);
+    expect(triangles(lod)).toBeLessThan(triangles(doc()) * 0.5);
+    expect(triangles(lod)).toBeGreaterThan(triangles(doc()) * 0.25);
+    const names = (d: Document) => d.getRoot().listNodes().filter((n) => !n.getName().endsWith('_mesh') && n.getName() !== 'body')
+      .map((n) => n.getName()).sort();
+    expect(names(lod)).toEqual(names(doc()));
+    for (const n of doc().getRoot().listNodes().filter((x) => x.getName().startsWith('socket_'))) {
+      const a = worldPos(n);
+      const b = worldPos(node(lod, n.getName()));
+      expect(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]), n.getName()).toBeLessThan(1e-5);
+    }
+    expect(node(lod, id).getExtras()).toEqual(extras());
   });
 
   it('puts socket_grip in the middle of the handle, matching the handle hints', () => {
