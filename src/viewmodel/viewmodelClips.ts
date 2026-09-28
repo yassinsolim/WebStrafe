@@ -10,7 +10,7 @@ import type { Clip } from './clips';
  */
 
 export type GunClipName = 'draw' | 'fire' | 'reload' | 'inspect';
-export type KnifeClipName = 'draw' | 'inspect' | 'slashA' | 'slashB' | 'stab';
+export type KnifeClipName = 'draw' | 'inspect' | 'slashA' | 'slashB' | 'stab' | 'backstab';
 
 export const DEAGLE_CLIPS: Readonly<Record<GunClipName, Clip>> = {
   draw: {
@@ -123,18 +123,22 @@ export const AWP_CLIPS: Readonly<Record<GunClipName, Clip>> = {
   },
 };
 
-export type KnifeDrawStyle = 'unsheathe' | 'flip_open' | 'balisong_open' | 'spin_in' | 'dagger_pair';
-export type KnifeInspectStyle = 'flip_show' | 'balisong' | 'ring_spin' | 'toss_catch' | 'twirl' | 'heavy_show' | 'dagger_pair';
+export type KnifeDrawStyle = 'unsheathe' | 'flip_open' | 'switch_open' | 'flick_open' | 'spin_draw' | 'balisong_open' | 'spin_in' | 'dagger_pair';
+export type KnifeInspectStyle = 'flip_show' | 'switch_show' | 'flick_show' | 'balisong' | 'ring_spin' | 'toss_catch' | 'twirl' | 'heavy_show' | 'dagger_pair';
 
 const HEAVY: ReadonlySet<KnifeId> = new Set(['bowie', 'huntsman', 'survival', 'kukri']);
-const TWIRL: ReadonlySet<KnifeId> = new Set(['bayonet', 'm9_bayonet', 'stiletto']);
+const TWIRL: ReadonlySet<KnifeId> = new Set(['bayonet', 'm9_bayonet']);
 
 export function knifeDrawStyle(def: KnifeDef): KnifeDrawStyle {
   const mech = def.shape.mechanism ?? 'fixed';
   if (def.shape.pair) return 'dagger_pair';
   if (mech === 'balisong') return 'balisong_open';
-  if (mech === 'folder') return 'flip_open';
+  // the stiletto is a switchblade: the blade snaps out; the navaja is flicked open
+  if (def.id === 'stiletto') return 'switch_open';
+  if (def.id === 'navaja') return 'flick_open';
   if (def.shape.fingerRing) return 'spin_in';
+  if (mech === 'folder') return 'flip_open';
+  if (TWIRL.has(def.id)) return 'spin_draw';
   return 'unsheathe';
 }
 
@@ -143,6 +147,8 @@ export function knifeInspectStyle(def: KnifeDef): KnifeInspectStyle {
   if (def.shape.pair) return 'dagger_pair';
   if (mech === 'balisong') return 'balisong';
   if (def.shape.fingerRing) return 'ring_spin';
+  if (def.id === 'stiletto') return 'switch_show';
+  if (def.id === 'navaja') return 'flick_show';
   if (TWIRL.has(def.id)) return 'twirl';
   if (mech === 'folder') return 'flip_show';
   if (HEAVY.has(def.id)) return 'heavy_show';
@@ -175,6 +181,39 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
       knifeOpen: [[0, 0], [0.36, 0], [0.5, 1, 'back']],
     },
     events: [[0.46, 'sound:knife_open']],
+  },
+  switch_open: {
+    // button press, the blade swings out in a few frames and the knife kicks
+    duration: 0.9,
+    tracks: {
+      py: [[0, -0.16], [0.32, 0, 'out']],
+      rx: [[0, -35], [0.32, 0, 'out'], [0.45, 0], [0.49, 8, 'out'], [0.65, 0]],
+      knifeOpen: [[0, 0], [0.42, 0], [0.47, 1, 'out']],
+      rz: [[0, 12], [0.32, 0], [0.49, -6], [0.65, 0]],
+    },
+    events: [[0.44, 'sound:knife_open']],
+  },
+  flick_open: {
+    // a wrist flick throws the blade open against the lock
+    duration: 1.0,
+    tracks: {
+      py: [[0, -0.16], [0.35, 0, 'out']],
+      rx: [[0, -30], [0.35, 0, 'out']],
+      rz: [[0, 15], [0.35, 0], [0.45, 30, 'out'], [0.55, -18, 'in'], [0.8, 0]],
+      knifeOpen: [[0, 0], [0.47, 0], [0.56, 1, 'back']],
+    },
+    events: [[0.53, 'sound:knife_open']],
+  },
+  spin_draw: {
+    // the knife comes up spinning once about the grip and lands in hand
+    duration: 0.95,
+    tracks: {
+      py: [[0, -0.18], [0.4, 0, 'out']],
+      rx: [[0, -45], [0.4, 0, 'out']],
+      rollX: [[0, 0], [0.15, 0], [0.7, 360, 'inOut']],
+      gripOpen: [[0, 0], [0.2, 0], [0.26, 0.7], [0.62, 0.7], [0.7, 0]],
+    },
+    events: [[0.3, 'sound:knife_spin']],
   },
   balisong_open: {
     duration: 1.3,
@@ -227,6 +266,33 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
       ...WATCH_TAIL(2.4),
     },
     events: [[2.2, 'sound:knife_open'], [2.4, 'sound:knife_open']],
+  },
+  switch_show: {
+    // close and snap the blade out again, then turn it over
+    duration: 3.6,
+    tracks: {
+      ry: [[0, 0], [0.4, 30], [2.6, 30], [3.0, 0]],
+      rz: [[0, 0], [0.4, 50], [1.6, 50], [2.0, -30], [2.6, -30], [3.0, 0]],
+      py: [[0, 0], [0.4, 0.05], [2.6, 0.05], [3.0, 0]],
+      knifeOpen: [[0, 1], [0.7, 1], [0.95, 0, 'inOut'], [1.3, 0], [1.35, 1, 'out']],
+      rx: [[0, 0], [1.3, 0], [1.36, 8, 'out'], [1.5, 0]],
+      rollX: [[0, 0], [1.6, 0], [2.0, 180, 'inOut'], [2.6, 360, 'inOut']],
+      ...WATCH_TAIL(2.15),
+    },
+    events: [[0.95, 'sound:knife_open'], [1.33, 'sound:knife_open']],
+  },
+  flick_show: {
+    // fold it half shut, flick it open with the wrist, show both sides
+    duration: 3.8,
+    tracks: {
+      ry: [[0, 0], [0.4, 28], [2.8, 28], [3.2, 0]],
+      rz: [[0, 0], [0.4, 45], [1.1, 45], [1.2, 70, 'out'], [1.3, 40, 'in'], [2.0, -28], [2.8, -28], [3.2, 0]],
+      py: [[0, 0], [0.4, 0.05], [2.8, 0.05], [3.2, 0]],
+      knifeOpen: [[0, 1], [0.6, 1], [0.9, 0.35, 'inOut'], [1.18, 0.35], [1.28, 1, 'back']],
+      rollX: [[0, 0], [1.6, 0], [2.0, 180, 'inOut'], [2.8, 360, 'inOut']],
+      ...WATCH_TAIL(2.4),
+    },
+    events: [[1.26, 'sound:knife_open']],
   },
   balisong: {
     // opens and closes in a rhythm: the safe handle swings over the spine, the
@@ -317,7 +383,7 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
   },
 };
 
-const ATTACKS: Readonly<Record<'slashA' | 'slashB' | 'stab', Clip>> = {
+const ATTACKS: Readonly<Record<'slashA' | 'slashB' | 'stab' | 'backstab', Clip>> = {
   slashA: {
     duration: 0.45,
     tracks: {
@@ -338,6 +404,16 @@ const ATTACKS: Readonly<Record<'slashA' | 'slashB' | 'stab', Clip>> = {
       ry: [[0, 0], [0.07, 30, 'out'], [0.19, -30, 'in'], [0.45, 0, 'inOut']],
       rz: [[0, 0], [0.07, 50, 'out'], [0.19, -40, 'in'], [0.45, 0, 'inOut']],
       rx: [[0, 0], [0.07, 5], [0.19, -12], [0.45, 0]],
+    },
+  },
+  backstab: {
+    // raised overhand and driven down, the heavy stab from behind
+    duration: 0.95,
+    tracks: {
+      py: [[0, 0], [0.25, 0.09, 'out'], [0.42, -0.06, 'in'], [0.95, 0, 'inOut']],
+      pz: [[0, 0], [0.25, 0.04, 'out'], [0.42, -0.12, 'in'], [0.95, 0, 'inOut']],
+      rx: [[0, 0], [0.25, 45, 'out'], [0.42, -40, 'in'], [0.95, 0, 'inOut']],
+      rz: [[0, 0], [0.25, -15], [0.42, 10], [0.95, 0]],
     },
   },
   stab: {
