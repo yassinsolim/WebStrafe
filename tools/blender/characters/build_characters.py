@@ -201,7 +201,7 @@ def mpfb_body_parts(rig, arm, keep=False):
         for value in np.unique(q):
             vg.add(nz[q == value].tolist(), float(value), "REPLACE")
     ref = B.copy_object(body, "mpfb_reference")
-    hands = split_by_bones(body, weights, ["hand_l", "hand_r"], threshold=0.5)
+    hands = split_by_bones(body, weights, [b for b in weights if b.startswith(("hand_", "finger_"))], threshold=0.5)
     if keep == "sources":
         ref.vertex_groups.clear()
         return body, hands, ref, points

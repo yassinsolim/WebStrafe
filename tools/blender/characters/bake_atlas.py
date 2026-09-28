@@ -8,7 +8,8 @@ baked on lod0, per piece:
   normal  tangent space: rounded edges (bevel shader) plus cc0 micro detail
           per material, box projected (textures/, see CREDITS.md)
   orm     r ambient occlusion (each set baked against the body and itself only)
-          g roughness detail around 0.5, b edge wear mask
+          g roughness detail around 0.5, b edge wear mask, a grime (cavity dirt
+          and run-off streaks, 1 = clean)
 """
 
 import math
@@ -178,6 +179,43 @@ def setup(mat, slot, mode, target):
         else:
             em.inputs["Color"].default_value = (0.5, 0.5, 0.5, 1)
         nt.links.new(em.outputs["Emission"], out.inputs["Surface"])
+    elif mode == "grime":
+        # cavity dirt plus faint vertical run-off streaks; 1 = clean, towards 0.45 = grimy
+        em = nt.nodes.new("ShaderNodeEmission")
+        ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
+        ao.samples = 16
+        ao.inputs["Distance"].default_value = 0.035
+        coord = nt.nodes.new("ShaderNodeTexCoord")
+        mp = nt.nodes.new("ShaderNodeMapping")
+        mp.inputs["Scale"].default_value = (26.0, 26.0, 3.0)
+        nt.links.new(coord.outputs["Object"], mp.inputs["Vector"])
+        noise = nt.nodes.new("ShaderNodeTexNoise")
+        noise.inputs["Scale"].default_value = 1.0
+        noise.inputs["Detail"].default_value = 4.0
+        nt.links.new(mp.outputs["Vector"], noise.inputs["Vector"])
+        streak = nt.nodes.new("ShaderNodeMapRange")
+        streak.inputs["From Min"].default_value = 0.5
+        streak.inputs["From Max"].default_value = 0.75
+        streak.inputs["To Min"].default_value = 0.0
+        streak.inputs["To Max"].default_value = 0.18
+        nt.links.new(noise.outputs["Fac"], streak.inputs["Value"])
+        cav = nt.nodes.new("ShaderNodeMapRange")
+        cav.inputs["From Min"].default_value = 0.2
+        cav.inputs["From Max"].default_value = 1.0
+        cav.inputs["To Min"].default_value = 0.42
+        cav.inputs["To Max"].default_value = 0.0
+        nt.links.new(ao.outputs["AO"], cav.inputs["Value"])
+        add = nt.nodes.new("ShaderNodeMath")
+        add.operation = "ADD"
+        nt.links.new(cav.outputs["Result"], add.inputs[0])
+        nt.links.new(streak.outputs["Result"], add.inputs[1])
+        inv = nt.nodes.new("ShaderNodeMath")
+        inv.operation = "SUBTRACT"
+        inv.use_clamp = True
+        inv.inputs[0].default_value = 1.0
+        nt.links.new(add.outputs["Value"], inv.inputs[1])
+        nt.links.new(inv.outputs["Value"], em.inputs["Color"])
+        nt.links.new(em.outputs["Emission"], out.inputs["Surface"])
     elif mode == "edge":
         em = nt.nodes.new("ShaderNodeEmission")
         if bevel_r > 0:
@@ -229,7 +267,7 @@ def bake(kind, objs, target, samples, margin):
     sc = bpy.context.scene
     sc.cycles.samples = samples
     _select(objs)
-    bake_type = {"normal": "NORMAL", "rough": "EMIT", "edge": "EMIT", "ao": "AO"}[kind]
+    bake_type = {"normal": "NORMAL", "rough": "EMIT", "edge": "EMIT", "grime": "EMIT", "ao": "AO"}[kind]
     if kind == "ao":
         for mat in _materials(objs).values():
             setup(mat, _slot(mat), "edge", target)  # any tree with the target active
@@ -281,6 +319,7 @@ def run(lod0, groups, size, out_dir, samples_ao=24):
     nrm = _img("atlas_normal", size, (0.5, 0.5, 1.0))
     rough = _img("atlas_rough", size, (0.5, 0.5, 0.5))
     edge = _img("atlas_edge", size, (0.0, 0.0, 0.0))
+    grime = _img("atlas_grime", size, (1.0, 1.0, 1.0))
     ao = _img("atlas_ao", size, (1.0, 1.0, 1.0))
     # lod1/lod2 copies sit exactly on top of lod0: nothing but the bake objects may be visible to rays
     was_hidden = {o.name: o.hide_render for o in bpy.data.objects}
@@ -297,8 +336,9 @@ def run(lod0, groups, size, out_dir, samples_ao=24):
     for i, (grp, around) in enumerate(groups):
         target = joined(grp, f"bake_ao_{i}")
         occluder = joined(around, f"bake_occ_{i}") if around else None
-        log(f"baking ao group {i + 1}/{len(groups)} ({len(grp)} pieces)")
+        log(f"baking ao and grime group {i + 1}/{len(groups)} ({len(grp)} pieces)")
         bake("ao", [target], ao, samples_ao, margin)
+        bake("grime", [target], grime, 8, margin)
         bpy.data.objects.remove(target, do_unlink=True)
         if occluder:
             bpy.data.objects.remove(occluder, do_unlink=True)
@@ -314,10 +354,11 @@ def run(lod0, groups, size, out_dir, samples_ao=24):
     orm[..., 0] = px(ao)[..., 0]
     orm[..., 1] = px(rough)[..., 0]
     orm[..., 2] = px(edge)[..., 0]
+    orm[..., 3] = px(grime)[..., 0]
     os.makedirs(out_dir, exist_ok=True)
     written = []
     for name, data in (("armor_normal", px(nrm)), ("armor_orm", orm)):
-        img = bpy.data.images.new(name + "_out", size, size, alpha=False, float_buffer=False)
+        img = bpy.data.images.new(name + "_out", size, size, alpha=name == "armor_orm", float_buffer=False)
         img.colorspace_settings.name = "Non-Color"
         img.pixels.foreach_set(np.clip(data, 0, 1).ravel())
         path = os.path.join(out_dir, name + ".png")

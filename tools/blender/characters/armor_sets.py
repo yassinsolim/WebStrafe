@@ -585,6 +585,19 @@ def helmet(k, st):
             k.add(ak.plate(f"crest_{side}", T_H0, HEL_TOP, [(sx * 0.030, -0.120), (sx * 0.052, -0.120), (sx * 0.058, 0.070),
                                                           (sx * 0.036, 0.070)], n=40, rings=3, thickness=0.012,
                            bevel=0.0035, fillet_r=0.008), "head", "paint", "helmet")
+    elif crest == "plume":
+        # swept plume: a fan of tapered strands from a metal clip on the crown
+        clip = V((0, hc.y - 0.02, hc.z + 0.138))
+        k.add(ak.box("plume_clip", (0.03, 0.07, 0.022), clip, bevel=0.005, segments=2, taper=(0.7, 0.8)),
+              "head", "trim", "helmet")
+        for j in range(7):
+            t = (j - 3) / 3.0
+            length = 0.20 - 0.035 * abs(t)
+            k.add(ak.box(f"plume_{j}", (0.010, length, 0.018), clip + V((t * 0.016, 0.03 + length * 0.45, 0.03 - 0.02 * abs(t))),
+                         bevel=0.003, rot=(math.radians(-16 - 10 * abs(t)), 0, math.radians(t * 7)), taper=(0.35, 0.25)),
+                  "head", "paint" if j % 2 else "secondary", "helmet")
+        k.add(ak.strip("crest_light", T_H3, HEL_TOP, [(0.0, -0.10), (0.0, 0.03)], 0.006, thickness=0.004, n=32),
+              "head", "light", "helmet")
     elif crest == "fin":
         # tall swept crest fin
         top_z = hc.z + 0.150
@@ -633,6 +646,7 @@ def class_item(k, st):
         if kind == "reactor":
             k.add(ak.box("reactor_cap", (0.12, 0.03, 0.06), bp_c + V((0, 0.03, 0.15)), bevel=0.008, segments=2,
                          taper=(0.8, 0.8)), "spine_03", "paint", "classItem")
+            cloak(k, x0=0.02, x1=0.30, drop=0.62, name="half_cape")
     elif kind == "cloak":
         cloak(k)
     elif kind == "array":
@@ -645,19 +659,23 @@ def class_item(k, st):
                           rot=(math.radians(90), 0, 0)), "spine_03", "light", "classItem")
 
 
-def cloak(k):
-    """cloth panel from the shoulder blades to mid thigh, weighted down the cape bones"""
+def cloak(k, x0=None, x1=None, drop=None, name="cloak"):
+    """cloth panel from the shoulder blades down, weighted down the cape bones.
+    full width to mid thigh by default; x0/x1/drop cut a one-shoulder half cape."""
     T = k.torso(0.05)
-    top, bot = k.z_clav + 0.01, k.head("calf_l").z + 0.14
+    top = k.z_clav + 0.01
+    bot = top - drop if drop else k.head("calf_l").z + 0.14
     rows, cols = 12, 24
     secs = []
     for i in range(rows):
         t = i / (rows - 1)
         z = top + (bot - top) * t
         half = 0.20 + 0.10 * t
+        lo = -half if x0 is None else x0 - 0.04 * t
+        hi = half if x1 is None else x1 + 0.05 * t
         loop = []
         for j in range(cols):
-            x = -half + 2 * half * j / (cols - 1)
+            x = lo + (hi - lo) * j / (cols - 1)
             o = V((x, 0.6, z))
             hit = T.ray_cast(o, FWD, 1.0) if z > k.z_pel - 0.05 else (None,)
             y = (hit[0].y if hit[0] is not None else 0.16) + 0.012 + 0.10 * max(0.0, t - 0.4)
@@ -666,7 +684,7 @@ def cloak(k):
     verts = [v for row in secs for v in row]
     faces = [(i * cols + j, i * cols + j + 1, (i + 1) * cols + j + 1, (i + 1) * cols + j)
              for i in range(rows - 1) for j in range(cols - 1)]
-    ob = ak.mesh_object("cloak", verts, faces)
+    ob = ak.mesh_object(name, verts, faces)
     s = ob.modifiers.new("t", "SOLIDIFY"); s.thickness = 0.005; s.offset = 1
     sd = ob.modifiers.new("sub", "SUBSURF"); sd.levels = 1
     ak.apply_modifiers(ob); ak.shade(ob, 60)
@@ -694,8 +712,8 @@ STYLES = {
     "quill": dict(thick=0.9, bulk=1.0, chest_w=0.98, chest="chevron", abs=4, collar=1.25, paul=1.05, paul_layers=2,
                   lights=True, seams=True, fins=True, bicep=False, elbow=0.95, vam_w=0.95, wraps=False, legs="plate",
                   thigh_w=0.95, tasset=0.30, knee=0.95, greave_w=0.95, boot=1.0, belt=0.9, pouches=(),
-                  helm_w=1.0, helm_ex=0.9, jaw=1.2, visor="chevron", brow=0.8, jaw_h=0.9, vents=2, crest="fin",
-                  neckguard=2, ear=1.1, antenna=True, **{"class": "array"}),
+                  helm_w=1.0, helm_ex=0.9, jaw=1.2, visor="chevron", brow=0.8, jaw_h=0.9, vents=2, crest="plume",
+                  neckguard=2, ear=1.1, antenna=False, **{"class": "array"}),
 }
 
 

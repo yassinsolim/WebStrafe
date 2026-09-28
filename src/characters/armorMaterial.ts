@@ -23,6 +23,7 @@ export class ArmorMaterial extends MeshStandardMaterial {
   /** x roughness, y metalness, z emissive strength */
   public readonly slotPbr: Vector3[] = Array.from({ length: SLOT_COUNT }, () => new Vector3(0.6, 0, 0));
   public readonly wear = { value: 0 };
+  public readonly camo = { value: 0 };
   public readonly team = { value: new Color(TEAM_LIGHT.terrorist) };
   /** r ao, g roughness detail around 0.5, b edge wear; neutral until an atlas is set */
   public readonly orm = { value: NEUTRAL_ORM as Texture };
@@ -84,12 +85,14 @@ export class ArmorMaterial extends MeshStandardMaterial {
     this.slotPbr[S.cloth].set(0.92, 0, 0);
     this.slotPbr[S.trim].set(0.88, 0, 0);
     this.wear.value = finish.wear;
+    this.camo.value = finish.camo ? 1 : 0;
   }
 
   private patch(shader: WebGLProgramParametersWithUniforms): void {
     shader.uniforms.uSlotColor = { value: this.slotColor };
     shader.uniforms.uSlotPbr = { value: this.slotPbr };
     shader.uniforms.uWear = this.wear;
+    shader.uniforms.uCamo = this.camo;
     shader.uniforms.uTeam = this.team;
     shader.uniforms.uOrm = this.orm;
 
@@ -118,6 +121,7 @@ vBindPos = position;`,
 uniform vec3 uSlotColor[${SLOT_COUNT}];
 uniform vec3 uSlotPbr[${SLOT_COUNT}];
 uniform float uWear;
+uniform float uCamo;
 uniform vec3 uTeam;
 uniform sampler2D uOrm;
 flat varying float vSlot;
@@ -149,23 +153,33 @@ float armorMetal = armorPbr.y;
 float armorGlow = armorPbr.z;
 vec3 armorColor = uSlotColor[armorSlot];
 #ifdef USE_NORMALMAP
-vec3 armorOrm = texture2D(uOrm, vNormalMapUv).rgb;
+vec4 armorOrmA = texture2D(uOrm, vNormalMapUv);
 #else
-vec3 armorOrm = vec3(1.0, 0.5, 0.0);
+vec4 armorOrmA = vec4(1.0, 0.5, 0.0, 1.0);
 #endif
+vec3 armorOrm = armorOrmA.rgb;
 float armorAo = vOcc.x * armorOrm.r;
 float armorEdge = max(vOcc.y, armorOrm.b);
 bool armorPaint = armorSlot <= 2;
 bool armorFabric = armorSlot == 3 || armorSlot >= 8;
 // baked micro roughness: cc0 paint, fabric and leather detail
 armorRough = clamp(armorRough + (armorOrm.g - 0.5) * (armorPaint ? 0.55 : 0.8), 0.04, 1.0);
+if (armorPaint && uCamo > 0.5) {
+  // disruptive pattern in bind space (moves with the body), three paint colours
+  float c = armorNoise(vBindPos * vec3(7.0, 5.0, 7.0)) * 0.65 + armorNoise(vBindPos * 17.0) * 0.35;
+  vec3 p0 = uSlotColor[0];
+  vec3 p1 = uSlotColor[1];
+  vec3 p2 = mix(uSlotColor[2], uSlotColor[1], 0.45);
+  armorColor = c < 0.44 ? p0 : (c < 0.58 ? p1 : p2);
+}
 if (armorPaint) {
   float n1 = armorNoise(vBindPos * 60.0);
   float n2 = armorNoise(vBindPos * 210.0);
   armorRough = clamp(armorRough + (n1 - 0.5) * 0.05, 0.04, 1.0);
   // worn finish: paint chips off along the sharp edges, a few scratches elsewhere
   float edge = smoothstep(0.35, 0.8, armorEdge);
-  float chip = edge * smoothstep(0.35, 0.6, armorNoise(vBindPos * 150.0) + (n1 - 0.5) * 0.3) * uWear;
+  // every finish chips a little on its sharpest edges; worn goes much further
+  float chip = edge * smoothstep(0.35, 0.6, armorNoise(vBindPos * 150.0) + (n1 - 0.5) * 0.3) * max(uWear, 0.14);
   float scuff = smoothstep(0.86, 0.95, n2) * 0.3 * uWear;
   float bare = max(chip, scuff);
   armorColor = mix(armorColor, vec3(0.5, 0.49, 0.47), bare);
@@ -177,6 +191,11 @@ if (armorPaint) {
 } else if (armorFabric) {
   float weave = armorNoise(vBindPos * 380.0);
   armorColor *= 0.9 + 0.2 * weave;
+}
+// baked grime: cavity dirt and run-off streaks (stronger on worn paint)
+if (armorSlot != 5 && armorSlot != 6) {
+  float grime = mix(0.42, 1.0, smoothstep(0.62, 0.98, armorOrmA.a));
+  armorColor *= mix(1.0, grime, armorPaint ? 0.85 + 0.15 * uWear : 0.6);
 }
 diffuseColor.rgb = armorColor;`,
       )

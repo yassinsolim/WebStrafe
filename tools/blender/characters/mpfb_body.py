@@ -6,9 +6,9 @@ remote swing are tuned on the game skeleton's joints, and the netcode, hit
 boxes and first-person arms don't care what the body looks like. so the mpfb
 body is posed until every joint sits where the game expects it, that pose is
 baked into the rest shape, and its (good, hand painted) weights are renamed
-onto the game's bones. fingers are curled into a fist around the knife on the
-right and a relaxed half-fist on the left before baking, since the game rig
-has no finger bones.
+onto the game's bones. the game rig carries mpfb's finger bones
+(FINGER_JOINTS in skeleton.ts), so the hands stay open at rest and the grip
+is posed at runtime (playerRig.ts).
 
 needs the MPFB2 blender extension (tools/blender/README.md).
 """
@@ -46,7 +46,7 @@ for s in ("l", "r"):
     })
     for f in ("thumb", "index", "middle", "ring", "pinky"):
         for i in (1, 2, 3):
-            BONE_MAP[f"{f}_0{i}_{s}"] = f"hand_{s}"
+            BONE_MAP[f"{f}_0{i}_{s}"] = f"finger_{f}_{i - 1}_{s}"
 
 # the torso, neck and legs of the game skeleton are the mpfb joints, so only
 # the arms move: mpfb rests with the elbows bent forward, the game rig has
@@ -60,12 +60,6 @@ for s in ("l", "r"):
     })
 
 MACROS = {"gender": 1.0, "muscle": 0.78, "weight": 0.55, "height": 0.56, "proportions": 0.95}
-
-# finger curl per joint (degrees about each bone's local x): a closed grip on
-# the right (knife), a relaxed half fist on the left
-FIST = {"index": (62, 88, 58), "middle": (70, 92, 60), "ring": (74, 92, 58), "pinky": (78, 90, 55), "thumb": (18, 38, 32)}
-CURL_SIGN = 1.0
-RELAXED = {"index": (22, 34, 20), "middle": (26, 38, 22), "ring": (30, 40, 22), "pinky": (34, 42, 22), "thumb": (6, 14, 10)}
 
 
 def _mpfb(pkg, key):
@@ -132,22 +126,6 @@ def conform(rig_obj, rig_json):
     bpy.ops.object.mode_set(mode="OBJECT")
 
 
-def curl_fingers(rig_obj):
-    bpy.context.view_layer.objects.active = rig_obj
-    bpy.ops.object.mode_set(mode="POSE")
-    for side, table in (("r", FIST), ("l", RELAXED)):
-        for finger, angles in table.items():
-            for i, deg in enumerate(angles):
-                pb = rig_obj.pose.bones.get(f"{finger}_0{i + 1}_{side}")
-                if pb is None:
-                    continue
-                pb.rotation_mode = "XYZ"
-                # mpfb finger bones curl towards the palm about local x (+ on both sides, the rig mirrors roll)
-                pb.rotation_euler = (math.radians(deg) * CURL_SIGN, 0.0, 0.0)
-    bpy.context.view_layer.update()
-    bpy.ops.object.mode_set(mode="OBJECT")
-
-
 def bake_body(human):
     """the posed, masked human as a plain mesh in the conformed rest shape"""
     dg = bpy.context.evaluated_depsgraph_get()
@@ -188,7 +166,6 @@ def posed_points(rig_obj):
 def build(rig_json, with_points=False):
     """returns (body object in blender space, weights keyed by game bone[, posed mpfb landmarks])"""
     human, rig_obj = make_human()
-    curl_fingers(rig_obj)
     conform(rig_obj, rig_json)
     body = bake_body(human)
     weights = game_weights(body, human)

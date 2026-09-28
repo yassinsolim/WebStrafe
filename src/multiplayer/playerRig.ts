@@ -40,6 +40,11 @@ export interface ArmRig {
   rightFingers: Bone[];
   /** Right-hand thumb joints (0-2) for the menu fist grip. */
   rightThumb: Bone[];
+  /** left-hand finger and thumb joints (mpfb hands only) for a relaxed support hand */
+  leftFingers: Bone[];
+  leftThumb: Bone[];
+  /** mpfb finger bones (armored characters): per-finger grip tables instead of the legacy uniform curl */
+  mpfbHands: boolean;
 
   rightUpperBase: Quaternion;
   rightLowerBase: Quaternion;
@@ -56,7 +61,18 @@ export interface ArmRig {
   headBase: Quaternion | null;
   rightFingerBases: Quaternion[];
   rightThumbBases: Quaternion[];
+  leftFingerBases: Quaternion[];
+  leftThumbBases: Quaternion[];
 }
+
+// mpfb hands, radians about each joint's curl axis (local +z), knuckle to tip.
+// right: closed around the knife handle; left: a relaxed support hand.
+// rows follow the traversal order: index, middle, ring, pinky.
+const DEG = Math.PI / 180;
+const MPFB_FIST = [[62, 88, 58], [70, 92, 60], [74, 92, 58], [78, 90, 55]].map((r) => r.map((d) => d * DEG));
+const MPFB_FIST_THUMB = [18, 38, 32].map((d) => d * DEG);
+const MPFB_RELAXED = [[22, 34, 20], [26, 38, 22], [30, 40, 22], [34, 42, 22]].map((r) => r.map((d) => d * DEG));
+const MPFB_RELAXED_THUMB = [6, 14, 10].map((d) => d * DEG);
 
 const THIRD_PERSON_KNIFE = 'classic';
 
@@ -239,8 +255,12 @@ export function buildArmRig(root: Object3D): ArmRig | null {
   // Excludes the metacarpal (meta) and terminal (_end) bones.
   const rightFingers: Bone[] = [];
   const rightThumb: Bone[] = [];
+  const leftFingers: Bone[] = [];
+  const leftThumb: Bone[] = [];
+  let hasMeta = false;
   for (const bone of bones) {
     const name = bone.name.toLowerCase();
+    if (name.includes('meta')) hasMeta = true;
     if (name.includes('_end') || name.includes('meta')) {
       continue;
     }
@@ -248,8 +268,13 @@ export function buildArmRig(root: Object3D): ArmRig | null {
       rightFingers.push(bone);
     } else if (/finger_thumb_[012]_r_/.test(name)) {
       rightThumb.push(bone);
+    } else if (/finger_(index|middle|ring|pinky)_[012]_l_/.test(name)) {
+      leftFingers.push(bone);
+    } else if (/finger_thumb_[012]_l_/.test(name)) {
+      leftThumb.push(bone);
     }
   }
+  const mpfbHands = !hasMeta && rightFingers.length === 12 && leftFingers.length === 12;
 
   return {
     rightUpper,
@@ -267,6 +292,9 @@ export function buildArmRig(root: Object3D): ArmRig | null {
     head,
     rightFingers,
     rightThumb,
+    leftFingers,
+    leftThumb,
+    mpfbHands,
 
     rightUpperBase: rightUpper.quaternion.clone(),
     rightLowerBase: rightLower.quaternion.clone(),
@@ -283,6 +311,8 @@ export function buildArmRig(root: Object3D): ArmRig | null {
     headBase: head?.quaternion.clone() ?? null,
     rightFingerBases: rightFingers.map((bone) => bone.quaternion.clone()),
     rightThumbBases: rightThumb.map((bone) => bone.quaternion.clone()),
+    leftFingerBases: leftFingers.map((bone) => bone.quaternion.clone()),
+    leftThumbBases: leftThumb.map((bone) => bone.quaternion.clone()),
   };
 }
 
@@ -346,13 +376,18 @@ export function applyKnifeIdlePose(rig: ArmRig, breath = 0): void {
   // fingers visibly hug the wooden grip instead of clenching into a featureless
   // ball beside it. This only closes the fingers around the knife (which rides
   // the sibling weapon-hand bone) and never moves the blade.
-  const fingerCurl = [0.72, 0.98, 1.02]; // knuckle, middle, tip joints
-  for (let i = 0; i < rig.rightFingers.length; i++) {
-    applyBoneOffset(rig.rightFingers[i], rig.rightFingerBases[i], 0, 0, fingerCurl[i % 3]);
-  }
-  const thumbCurl = [0.5, 0.66, 0.66]; // base, middle, tip joints
-  for (let i = 0; i < rig.rightThumb.length; i++) {
-    applyBoneOffset(rig.rightThumb[i], rig.rightThumbBases[i], 0, 0, thumbCurl[Math.min(i, thumbCurl.length - 1)]);
+  if (rig.mpfbHands) {
+    curlHand(rig.rightFingers, rig.rightFingerBases, rig.rightThumb, rig.rightThumbBases, MPFB_FIST, MPFB_FIST_THUMB);
+    curlHand(rig.leftFingers, rig.leftFingerBases, rig.leftThumb, rig.leftThumbBases, MPFB_RELAXED, MPFB_RELAXED_THUMB);
+  } else {
+    const fingerCurl = [0.72, 0.98, 1.02]; // knuckle, middle, tip joints
+    for (let i = 0; i < rig.rightFingers.length; i++) {
+      applyBoneOffset(rig.rightFingers[i], rig.rightFingerBases[i], 0, 0, fingerCurl[i % 3]);
+    }
+    const thumbCurl = [0.5, 0.66, 0.66]; // base, middle, tip joints
+    for (let i = 0; i < rig.rightThumb.length; i++) {
+      applyBoneOffset(rig.rightThumb[i], rig.rightThumbBases[i], 0, 0, thumbCurl[Math.min(i, thumbCurl.length - 1)]);
+    }
   }
 
   // Seat the knife deeper in the palm and slid up to the balance point below the
@@ -372,6 +407,15 @@ export function applyKnifeIdlePose(rig: ArmRig, breath = 0): void {
   applyOptional(rig.leftUpper, rig.leftUpperBase, 0.021 + inhale * 0.005, -0.099, 0.411);
   applyOptional(rig.leftLower, rig.leftLowerBase, -0.067 + inhale * 0.004, -0.062, 1.031);
   applyOptional(rig.leftHand, rig.leftHandBase, 0, 0, 0);
+}
+
+function curlHand(fingers: Bone[], bases: Quaternion[], thumb: Bone[], thumbBases: Quaternion[], table: number[][], thumbTable: number[]): void {
+  for (let i = 0; i < fingers.length; i++) {
+    applyBoneOffset(fingers[i], bases[i], 0, 0, table[Math.floor(i / 3)]?.[i % 3] ?? 0);
+  }
+  for (let i = 0; i < thumb.length; i++) {
+    applyBoneOffset(thumb[i], thumbBases[i], 0, 0, thumbTable[i] ?? 0);
+  }
 }
 
 /** Attaches a knife clone to the right-hand bone (no-op if already attached). */

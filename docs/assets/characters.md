@@ -21,10 +21,12 @@ changes.
 
 1. `mpfb_body.py`: an MPFB2 human (MakeHuman CC0 assets) with the game_engine
    rig. The game skeleton uses its torso, neck and leg joints
-   (`mpfb_joints.json`); only the arms are posed straight into the game's
-   A-pose, and the fingers are curled into a knife grip (right) and a relaxed
-   hand (left) before the pose is baked into the rest shape. MPFB's weights are
-   renamed onto the game bones.
+   (`mpfb_joints.json`) and its 15 finger bones per hand (`mpfb_fingers.json`,
+   `FINGER_JOINTS` in `skeleton.ts`); only the arms are posed straight into the
+   game's A-pose before the pose is baked into the rest shape. MPFB's weights
+   are renamed onto the game bones. Hands stay open at rest: `playerRig.ts`
+   curls the fingers into a knife grip (right) and a relaxed hand (left) at
+   runtime.
 2. `armor_sets.py` with `armorkit.py` (the plate kit from the asset research
    prototype): smoothed shells are wrapped around the body, 2D plate outlines
    are projected onto them, then thickened and bevelled in two or three layers.
@@ -37,7 +39,8 @@ changes.
      plus CC0 micro detail per material (painted steel, panel seams, brushed
      metal, fabric, leather), box projected from `textures/`.
    - `armor_orm`: R = AO (each set baked against the body and itself only),
-     G = roughness detail around 0.5, B = edge wear.
+     G = roughness detail around 0.5, B = edge wear, A = grime (cavity dirt and
+     run-off streaks, 1 = clean).
 4. `build-armor.sh` optimizes the GLB (meshopt, 16-bit UVs) and writes WebP
    atlases (ORM at half size).
 
@@ -45,7 +48,8 @@ changes.
 
 `library.ts` loads the GLB and the atlas. `ArmorCharacter` merges the picked
 pieces, and `ArmorMaterial` colours by per-vertex material slot, samples the
-atlas for normals, AO, roughness detail and edge wear, and applies the finish.
+atlas for normals, AO, roughness detail, edge wear and grime, and applies the
+finish (Camo breaks the paint into a pattern of the three paint colours).
 The look travels in the `armor` part of the shared cosmetics field
 (`src/network/cosmetics.ts`, `lookToArmor` / `armorToLook`).
 

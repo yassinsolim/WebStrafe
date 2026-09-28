@@ -106,7 +106,7 @@ export function slotOptions(slot: ArmorSlot): PieceId[] {
   return slot === 'classItem' ? [...ARMOR_SETS, 'none'] : [...ARMOR_SETS];
 }
 
-export const FINISHES = ['matte', 'satin', 'gloss', 'metallic', 'worn'] as const;
+export const FINISHES = ['matte', 'satin', 'gloss', 'metallic', 'worn', 'camo'] as const;
 export type FinishId = (typeof FINISHES)[number];
 
 export interface FinishInfo {
@@ -118,6 +118,8 @@ export interface FinishInfo {
   metalness: number;
   /** how much bare metal shows through on worn edges, 0..1 */
   wear: number;
+  /** breaks the paint into a disruptive pattern of the three paint colours */
+  camo?: boolean;
 }
 
 export const FINISH_INFO: Record<FinishId, FinishInfo> = {
@@ -126,6 +128,7 @@ export const FINISH_INFO: Record<FinishId, FinishInfo> = {
   gloss: { id: 'gloss', code: 'g', name: 'Gloss', roughness: 0.2, metalness: 0.05, wear: 0 },
   metallic: { id: 'metallic', code: 'x', name: 'Metallic', roughness: 0.34, metalness: 0.88, wear: 0 },
   worn: { id: 'worn', code: 'w', name: 'Worn', roughness: 0.66, metalness: 0.08, wear: 1 },
+  camo: { id: 'camo', code: 'c', name: 'Camo', roughness: 0.74, metalness: 0.03, wear: 0.35, camo: true },
 };
 
 export const EMBLEMS = [
