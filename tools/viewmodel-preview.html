@@ -68,6 +68,16 @@
       }
       if (params.get('markers')) system.showFingerMarkers(true);
       system.seek(clip, t);
+      if (item === 'knife') {
+        // the blender model swaps in after it loads; shoot that, not the procedural stand-in
+        for (let i = 0; i < 200 && system.knife?.knife?.userData.source !== 'glb'; i += 1) {
+          await new Promise((r) => setTimeout(r, 25));
+        }
+        if (params.get('finish')) {
+          system.setKnifeFinish({ finishId: params.get('finish'), wear: Number(params.get('wear') ?? 0), seed: Number(params.get('seed') ?? 0) });
+        }
+        system.seek(clip, t);
+      }
 
       let camera = vm.camera;
       if (view !== 'fp') {

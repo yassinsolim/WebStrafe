@@ -1,6 +1,7 @@
 /**
  * shrinks the raw knife glbs from build_knives.py into public/knives/<id>.glb
- * (meshopt, webp textures at 512 px, names kept)
+ * (lod0, webp textures up to 2048 px) and public/knives/<id>_lod1.glb (third
+ * person, textures at 512 px), meshopt, names kept
  *
  *   npx tsx tools/blender/knives/optimize_knives.ts [raw_dir] [id ...]
  */
@@ -18,11 +19,13 @@ const outDir = path.join(repo, 'public', 'knives');
 await mkdir(outDir, { recursive: true });
 for (const knife of KNIVES) {
   if (only.length > 0 && !only.includes(knife.id)) continue;
-  await optimizeGlb({
-    input: path.join(rawDir, `${knife.id}.glb`),
-    output: path.join(outDir, `${knife.id}.glb`),
-    textureSize: 512,
-    webp: true,
-    simplifyRatio: null,
-  });
+  for (const [suffix, textureSize] of [['', 2048], ['_lod1', 512]] as const) {
+    await optimizeGlb({
+      input: path.join(rawDir, `${knife.id}${suffix}.glb`),
+      output: path.join(outDir, `${knife.id}${suffix}.glb`),
+      textureSize,
+      webp: true,
+      simplifyRatio: null,
+    });
+  }
 }

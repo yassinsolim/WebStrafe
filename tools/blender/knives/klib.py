@@ -33,6 +33,18 @@ REPO = W.REPO
 TMP = os.path.join(REPO, ".blender-tmp", "knives")
 TO_BLENDER = Matrix.Rotation(math.radians(90.0), 4, "X")
 
+# resolution for the viewmodel, where a knife can fill half of a 1440p screen:
+# curves get a point every CURVE_STEP mm, round sections and lathes get
+# RING_Q times the segments the builders ask for, blades STATION_Q times the
+# stations
+CURVE_STEP = 1.1
+RING_Q = 1.8
+STATION_Q = 2.0
+
+
+def _even(n, q):
+    return max(4, int(round(n * q / 2.0)) * 2)
+
 
 def kv(x, y, z=0.0):
     """knife-frame millimetres -> blender metres (after assemble's rotation)"""
@@ -56,7 +68,12 @@ def line(a, b, n=1):
     return [(lerp(a[0], b[0], i / n), lerp(a[1], b[1], i / n)) for i in range(n + 1)]
 
 
+def _poly_len(pts):
+    return sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(pts, pts[1:]))
+
+
 def quad(a, c, b, n=8):
+    n = max(n, int(math.ceil(_poly_len((a, c, b)) / CURVE_STEP)))
     out = []
     for i in range(n + 1):
         t = i / n
@@ -66,6 +83,7 @@ def quad(a, c, b, n=8):
 
 
 def cubic(a, c1, c2, b, n=10):
+    n = max(n, int(math.ceil(_poly_len((a, c1, c2, b)) / CURVE_STEP)))
     out = []
     for i in range(n + 1):
         t = i / n
@@ -77,6 +95,7 @@ def cubic(a, c1, c2, b, n=10):
 
 def arc(cx, cy, r, a0, a1, n=8):
     """arc in degrees, inclusive"""
+    n = max(n, int(math.ceil(abs(math.radians(a1 - a0)) * r / (CURVE_STEP * 0.6))))
     return [(cx + r * math.cos(math.radians(lerp(a0, a1, i / n))), cy + r * math.sin(math.radians(lerp(a0, a1, i / n))))
             for i in range(n + 1)]
 
@@ -92,9 +111,54 @@ def path(*parts):
     return out
 
 
-def rounded(points, segs=4):
+def fillet(points, segs=10):
+    """rounds polygon corners, points (a, b[, r]) in metres, about `segs` segments
+    per 90 degrees on large radii and never fewer than 3 on small ones"""
+    pts = [(p[0], p[1], p[2] if len(p) > 2 else 0.0) for p in points]
+    n = len(pts)
+    out = []
+    for i in range(n):
+        ax, ay, _ = pts[i - 1]
+        px, py, r = pts[i]
+        bx, by, _ = pts[(i + 1) % n]
+        if r <= 0:
+            out.append((px, py))
+            continue
+        v1 = Vector((ax - px, ay - py))
+        v2 = Vector((bx - px, by - py))
+        l1, l2 = v1.length, v2.length
+        if l1 < 1e-9 or l2 < 1e-9:
+            out.append((px, py))
+            continue
+        v1.normalize()
+        v2.normalize()
+        ang = math.acos(max(-1.0, min(1.0, v1.dot(v2))))
+        if ang < 1e-3 or math.pi - ang < 1e-3:
+            out.append((px, py))
+            continue
+        d = r / math.tan(ang / 2)
+        dmax = 0.49 * min(l1, l2)
+        if d > dmax:
+            d = dmax
+            r = d * math.tan(ang / 2)
+        p = Vector((px, py))
+        t1 = p + v1 * d
+        t2 = p + v2 * d
+        c = p + (v1 + v2).normalized() * (r / math.sin(ang / 2))
+        a1 = math.atan2(t1.y - c.y, t1.x - c.x)
+        a2 = math.atan2(t2.y - c.y, t2.x - c.x)
+        da = (a2 - a1 + math.pi) % (2 * math.pi) - math.pi
+        per90 = min(segs, 3.0 + r * 1000.0 * 1.4)
+        k = max(2, int(round(per90 * abs(da) / (math.pi / 2))))
+        for j in range(k + 1):
+            a = a1 + da * j / k
+            out.append((c.x + r * math.cos(a), c.y + r * math.sin(a)))
+    return out
+
+
+def rounded(points, segs=10):
     """closed polygon with per-corner fillet radii (x, y, r) in mm, result in mm"""
-    return [(x / MM, y / MM) for x, y in W.fillet(W.mm(points), segs)]
+    return [(x / MM, y / MM) for x, y in fillet(W.mm(points), segs)]
 
 
 def _cum(pts):
@@ -260,25 +324,25 @@ def xform(obj, m):
 
 # ---------------------------------------------------------------- primitives (mm in, knife frame)
 
-def prism(name, pts, z0, z1, mat, segs=4):
+def prism(name, pts, z0, z1, mat, segs=10):
     """side outline (x, y[, r]) extruded across the thickness from z0 to z1"""
-    pts = W.fillet(W.mm(pts), segs) if any(len(p) > 2 for p in pts) else W.mm(pts)
+    pts = fillet(W.mm(pts), segs) if any(len(p) > 2 for p in pts) else W.mm(pts)
     return W.prism(name, pts, "Z", z0 * MM, z1 * MM, mat)
 
 
-def plate(name, pts, thick, mat, segs=4):
+def plate(name, pts, thick, mat, segs=10):
     return prism(name, pts, -thick / 2, thick / 2, mat, segs)
 
 
-def front(name, pts, x0, x1, mat, segs=4):
+def front(name, pts, x0, x1, mat, segs=10):
     """front outline (y, z[, r]) extruded along the blade from x0 to x1"""
-    pts = W.fillet(W.mm(pts), segs) if any(len(p) > 2 for p in pts) else W.mm(pts)
+    pts = fillet(W.mm(pts), segs) if any(len(p) > 2 for p in pts) else W.mm(pts)
     return W.prism(name, pts, "X", x0 * MM, x1 * MM, mat)
 
 
 def lathe_x(name, prof, segs, mat, cy=0.0, cz=0.0, closed=False, ripple=None, phase=0.0):
     """revolves (r, x) mm around the knife x axis through (cy, cz)"""
-    return W.lathe(name, [(r * MM, x * MM) for r, x in prof], segs, mat, axis="X", center=(0.0, cy * MM, cz * MM),
+    return W.lathe(name, [(r * MM, x * MM) for r, x in prof], _even(segs, RING_Q), mat, axis="X", center=(0.0, cy * MM, cz * MM),
                    closed=closed, ripple=ripple, phase=phase)
 
 
@@ -286,7 +350,7 @@ def lathe_x(name, prof, segs, mat, cy=0.0, cz=0.0, closed=False, ripple=None, ph
 
 def lathe_z(name, prof, segs, mat, cx=0.0, cy=0.0, closed=False, phase=0.0):
     """revolves (r, z) mm around a knife z axis through (cx, cy): pins, rings, screws"""
-    return W.lathe(name, [(r * MM, z * MM) for r, z in prof], segs, mat, axis="Z", center=(cx * MM, cy * MM, 0.0),
+    return W.lathe(name, [(r * MM, z * MM) for r, z in prof], _even(segs, RING_Q), mat, axis="Z", center=(cx * MM, cy * MM, 0.0),
                    closed=closed, phase=phase)
 
 
@@ -303,16 +367,25 @@ def screw_head(name, x, y, r, z, side, mat, segs=14, height=0.9, socket=None):
     prof = [(0.0, z0), (r, z0), (r, z1 - side * 0.25), (r * 0.82, z1), (0.0, z1)]
     obj = lathe_z(name, prof, segs, mat, x, y)
     if socket:
-        n = 6
-        c = lathe_z("c", [(r * 0.42, z1 - side * 0.5), (r * 0.42, z1 + side * 1.0)], n, mat, x, y,
-                    phase=math.pi / 6)
-        W.boolean(obj, c)
+        if socket == "torx":
+            # six lobed star
+            pts = []
+            for i in range(36):
+                a = 2 * math.pi * i / 36
+                rr = r * (0.36 + 0.09 * math.cos(6 * a))
+                pts.append(((x + rr * math.cos(a)) * MM, (y + rr * math.sin(a)) * MM))
+        else:
+            pts = [((x + r * 0.42 * math.cos(math.pi / 6 + i * math.pi / 3)) * MM,
+                    (y + r * 0.42 * math.sin(math.pi / 6 + i * math.pi / 3)) * MM) for i in range(6)]
+        lo, hi = sorted(((z1 - side * 0.5) * MM, (z1 + side * 1.0) * MM))
+        W.boolean(obj, W.prism("c", pts, "Z", lo, hi, mat))
     return flat(obj) if socket else mark_sharp(obj, 40)
 
 
 def torus(name, cx, cy, R, rt, rw, mat, segs=32, tsegs=10, axis="Z", cz=0.0, e=2.0):
     """ring: tube radius rt in the ring plane, half width rw across it. axis Z lies in
     the blade plane (finger rings), axis X in the YZ plane (muzzle rings)"""
+    tsegs = _even(tsegs, 1.6)
     prof = []
     for k in range(tsegs):
         a = 2 * math.pi * k / tsegs
@@ -328,6 +401,7 @@ def torus(name, cx, cy, R, rt, rw, mat, segs=32, tsegs=10, axis="Z", cz=0.0, e=2
 def superellipse(cy, top, bottom, halfw, n, e=2.4, cz=0.0):
     """ring in the y/z plane: top/bottom half heights above/below cy, half width in z (mm).
     returns (y, z) in metres, starting at the spine side, counter-clockwise seen from +x"""
+    n = _even(n, RING_Q)
     out = []
     for i in range(n):
         a = 2 * math.pi * i / n
@@ -394,6 +468,7 @@ def loft(name, sections, mat, cap0=True, cap1=True, uv_scale=0.03, fan=True):
 
 def tube(name, pts, r, mat, sides=6, cap=True, uv_scale=0.01):
     """round tube along a 3d polyline in mm (parallel transport frames)"""
+    sides = _even(sides, 1.6)
     P = [Vector(p) * MM for p in pts]
     rr = r * MM
     normal = Vector((0.0, 1.0, 0.0))
@@ -425,10 +500,13 @@ def tube(name, pts, r, mat, sides=6, cap=True, uv_scale=0.01):
     return _new_obj(name, bm, [mat])
 
 
-def slab(name, top, bottom, z0, thick, side, mat, dome=0.55, rows=6, uv_scale=0.03):
+def slab(name, top, bottom, z0, thick, side, mat, dome=0.55, rows=6, uv_scale=0.03, round_mm=None):
     """domed scale on one side of the knife. top/bottom are (x, y) mm with matching x,
     front to back. inner face flat at |z| = z0, the crown rises by thick with rounded
-    shoulders. side +1 builds on +z, -1 on -z"""
+    shoulders (rows packed towards the edges), and the outside edges get a small
+    rounded bevel. side +1 builds on +z, -1 on -z"""
+    if dome > 0:
+        rows = max(rows, 16)
     bm = bmesh.new()
     uvl = bm.loops.layers.uv.new("UVMap")
     n = len(top)
@@ -438,7 +516,7 @@ def slab(name, top, bottom, z0, thick, side, mat, dome=0.55, rows=6, uv_scale=0.
         yb = bottom[i][1]
         row = []
         for r in range(rows + 1):
-            v = r / rows
+            v = 0.5 - 0.5 * math.cos(math.pi * r / rows) if dome > 0 else r / rows
             k = max(0.0, 1.0 - abs(2 * v - 1) ** 2.6) ** 0.5
             z = z0 + thick * ((1 - dome) + dome * k)
             row.append(bm.verts.new((x * MM, lerp(yb, yt, v) * MM, side * z * MM)))
@@ -468,7 +546,11 @@ def slab(name, top, bottom, z0, thick, side, mat, dome=0.55, rows=6, uv_scale=0.
             e.smooth = False
         elif len(lf) == 2 and lf[0] not in fo and lf[1] not in fo and e.calc_face_angle(0.0) > math.radians(30):
             e.smooth = False
-    return _new_obj(name, bm, [mat], recalc=False)
+    obj = _new_obj(name, bm, [mat], recalc=False)
+    rnd = round_mm if round_mm is not None else min(0.45, 0.35 * thick if dome > 0 else 0.3 * thick)
+    if rnd > 0.05:
+        bevel(obj, rnd, segs=2, angle=35.0)
+    return obj
 
 
 # ---------------------------------------------------------------- blades
@@ -499,6 +581,7 @@ def blade(name, edge, spine, mats, thick, stations=46, grind="flat", grind_h=0.6
     from the heel (the plunge), thickness tapers toward the tip and closes to a
     point. fuller={'from','to','lo','hi','depth'} cuts a rounded groove in the flats.
     returns (object, tip (x, y) mm, info with hmax / xmax / ymin / ymax in mm)."""
+    stations = int(stations * STATION_Q)
     ecum, scum = _cum(edge), _cum(spine)
     params = _stations(edge, ecum, spine, scum, stations, corner_deg)
     elen = ecum[-1]
@@ -509,7 +592,7 @@ def blade(name, edge, spine, mats, thick, stations=46, grind="flat", grind_h=0.6
         st.append({"s": s, "e": e, "p": p, "h": math.hypot(p[0] - e[0], p[1] - e[1])})
     h0 = max(x["h"] for x in st[:max(2, len(st) // 5)])
     ric = min(0.6, ricasso / max(1e-6, elen))
-    gsub = grind_sub or (3 if grind == "hollow" else 1)
+    gsub = grind_sub or (5 if grind == "hollow" else 1)
     dbl = double_from is not None
 
     keys = ["edge", "bevel"] + [f"g{k}" for k in range(1, gsub)] + ["grind"]
@@ -519,8 +602,12 @@ def blade(name, edge, spine, mats, thick, stations=46, grind="flat", grind_h=0.6
         keys += ["sw"]
     if dbl:
         keys += ["dgrind"] + [f"dg{k}" for k in range(gsub - 1, 0, -1)] + ["dbevel"]
+    else:
+        keys += ["ease"]
     keys += ["spine"]
-    sharp_rows = {"edge", "bevel", "grind", "sw", "dgrind", "dbevel", "spine", "f0", "f3"}
+    sharp_rows = {"edge", "bevel", "grind", "sw", "dgrind", "dbevel", "spine", "f0", "f3", "ease"}
+    # the spine's corners are eased by a small chamfer, like a finished blade
+    ease_mm = 0.4
     R = len(keys)
 
     def rows_for(x):
@@ -540,6 +627,8 @@ def blade(name, edge, spine, mats, thick, stations=46, grind="flat", grind_h=0.6
             vals["dbevel"] = 1.0 - vb
             for k in range(1, gsub):
                 vals[f"dg{k}"] = 1.0 - vals[f"g{k}"]
+        else:
+            vals["ease"] = 1.0 - min(0.2, ease_mm / h)
         out = [vals[k] for k in keys]
         for i in range(1, R):
             out[i] = max(out[i], out[i - 1] + 1e-4)
@@ -571,6 +660,10 @@ def blade(name, edge, spine, mats, thick, stations=46, grind="flat", grind_h=0.6
             vs = rowv[keys.index("sw")]
             if v > vs:
                 t = min(t, ts * (1.0 - sw * (v - vs) / max(1e-6, 1.0 - vs)))
+        if not dbl:
+            ve = rowv[keys.index("ease")]
+            if v > ve:
+                t -= min(0.45, 0.3 * t) * (v - ve) / max(1e-6, 1.0 - ve)
         if fuller and fuller["lo"] < v < fuller["hi"]:
             ramp = smoothstep(fuller["from"], fuller["from"] + 0.05, u) * (1 - smoothstep(fuller["to"] - 0.05, fuller["to"], u))
             t -= 2 * fuller["depth"] * ramp * math.sin(math.pi * (v - fuller["lo"]) / (fuller["hi"] - fuller["lo"]))
@@ -678,106 +771,29 @@ def teeth(name, spine, x0, x1, count, height, thick, mat, rake=0.62, sink=0.5, t
 
 # ---------------------------------------------------------------- textures and materials
 
-def _save(img, name):
-    os.makedirs(TMP, exist_ok=True)
-    img.filepath_raw = os.path.join(TMP, f"{name}.png")
-    img.file_format = "PNG"
-    img.save()
-    img.pack()
-    return img
-
-
-def _normal_image(name, height, k=2.5):
-    import numpy as np
-    gx = (np.roll(height, -1, axis=1) - np.roll(height, 1, axis=1)) * 0.5
-    gy = (np.roll(height, -1, axis=0) - np.roll(height, 1, axis=0)) * 0.5
-    nx, ny, nz = -gx * k, -gy * k, np.ones_like(height)
-    inv = 1.0 / np.sqrt(nx * nx + ny * ny + nz * nz)
-    size = height.shape[0]
-    rgba = np.stack([nx * inv * 0.5 + 0.5, ny * inv * 0.5 + 0.5, nz * inv * 0.5 + 0.5, np.ones_like(height)], axis=-1)
-    img = bpy.data.images.new(name, size, size, alpha=False, float_buffer=False)
-    img.colorspace_settings.name = "Non-Color"
-    img.pixels.foreach_set(rgba.astype(np.float32).ravel())
-    return _save(img, name)
-
-
-def tex_knurl(name="tex_knurl", size=256, cells=16, k=3.0):
-    """diamond checkering (moulded grips)"""
-    import numpy as np
-    yy, xx = np.mgrid[0:size, 0:size].astype(np.float32) / size * cells
-    u = (xx + yy) % 1.0
-    v = (xx - yy) % 1.0
-    h = 1.0 - np.maximum(np.abs(u - 0.5), np.abs(v - 0.5)) * 2.0
-    return _normal_image(name, np.clip(h * 1.4, 0, 1), k)
-
-
-def tex_grain(name="tex_grain", size=256, seed=5, k=3.5):
-    """fine g10 / stippled texture: blurred noise"""
-    import numpy as np
-    rng = np.random.default_rng(seed)
-    h = rng.random((size, size)).astype(np.float32)
-    for _ in range(2):
-        h = (h + np.roll(h, 1, 0) + np.roll(h, -1, 0) + np.roll(h, 1, 1) + np.roll(h, -1, 1)) / 5.0
-    h = (h - h.min()) / (h.max() - h.min())
-    return _normal_image(name, h, k)
-
-
-def tex_braid(name="tex_braid", size=256, k=2.2):
-    """woven paracord sheath: offset chevrons"""
-    import numpy as np
-    yy, xx = np.mgrid[0:size, 0:size].astype(np.float32) / size
-    a = ((xx * 8 + yy * 8) % 1.0)
-    b = ((xx * 8 - yy * 8) % 1.0)
-    cell = (np.floor(xx * 8) + np.floor(yy * 16)) % 2
-    h = np.where(cell > 0, np.sin(np.pi * a), np.sin(np.pi * b)) ** 0.7
-    return _normal_image(name, h.astype(np.float32), k)
-
-
-def tex_pebble(name="tex_pebble"):
-    img = W.pebble_normal_map(name, size=256, count=1500, seed=11)
-    return img
-
-
-def tex_wood(name="tex_wood", size=256, base=0x5a3822, seed=3):
-    """long wood grain albedo along u"""
-    import numpy as np
-    rng = np.random.default_rng(seed)
-    yy, xx = np.mgrid[0:size, 0:size].astype(np.float32) / size
-    warp = np.zeros_like(yy)
-    for f, amp in ((1, 0.05), (3, 0.02), (7, 0.008)):
-        ph = rng.uniform(0, 6.28)
-        warp += amp * np.sin(2 * np.pi * (xx * f) + ph)
-    rings = np.sin(2 * np.pi * (yy + warp) * 18.0) * 0.5 + 0.5
-    fine = rng.random((size, 1)).astype(np.float32) * 0.25
-    g = np.clip(0.72 + 0.28 * rings ** 3 - fine, 0, 1)
-    # byte images are srgb, so the grain multiplies the srgb base colour directly
-    r0, g0, b0 = ((base >> 16) & 255) / 255.0, ((base >> 8) & 255) / 255.0, (base & 255) / 255.0
-    rgba = np.stack([g * r0, g * g0, g * b0, np.ones_like(g)], axis=-1)
-    img = bpy.data.images.new(name, size, size, alpha=False, float_buffer=False)
-    img.pixels.foreach_set(rgba.astype(np.float32).ravel())
-    return _save(img, name)
+# material name -> spec, read by kbake.detail_shader when the knife is baked
+MAT_SPECS = {}
 
 
 def _mat(name, spec):
-    hexc, rough, metal = spec[:3]
-    opts = spec[3] if len(spec) > 3 else {}
-    m = W.material(name, hexc, rough, metal, normal_image=opts.get("normal"), normal_strength=opts.get("strength", 0.6))
-    if opts.get("albedo") is not None:
-        nodes, links = m.node_tree.nodes, m.node_tree.links
-        bsdf = nodes.get("Principled BSDF")
-        tex = nodes.new("ShaderNodeTexImage")
-        tex.image = opts["albedo"]
-        links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
-    return m
+    MAT_SPECS[name] = spec
+    return W.material(name, spec[0], spec[1], spec[2])
 
 
-STEEL = (0xc4c9d0, 0.3, 1.0)
-EDGE = (0xe9ecf0, 0.14, 1.0)
+STEEL = (0xc4c9d0, 0.3, 1.0, {"detail": "brushed"})
+EDGE = (0xe9ecf0, 0.14, 1.0, {"detail": "polished"})
 
 
-def materials(handle, metal=(0x9aa0a8, 0.34, 1.0), accent=(0x2a2c30, 0.5, 0.2), blade=STEEL, edge=EDGE):
+def materials(handle, metal=(0x9aa0a8, 0.34, 1.0, {"detail": "bead"}), accent=(0x2a2c30, 0.5, 0.2), blade=STEEL, edge=EDGE):
     """the five contract materials. each spec is (hex, roughness, metallic[, opts]) with
-    opts {'normal': image, 'strength': f, 'albedo': image}"""
+    opts {'detail': kind, 'strength': bump strength, 'color2': second colour}, see
+    kbake.detail_shader for the kinds (brushed, polished, bead, pebble, knurl, g10,
+    wood, ivory, cord, tape)"""
+    MAT_SPECS.clear()
+    if len(metal) < 4:
+        metal = (*metal, {"detail": "bead" if metal[2] >= 0.5 else "g10", "strength": 0.6})
+    if len(accent) < 4:
+        accent = (*accent, {"detail": "bead" if accent[2] >= 0.5 else "g10", "strength": 0.5})
     return {
         "blade": _mat("knife_blade", blade),
         "edge": _mat("knife_edge", edge),
@@ -843,17 +859,6 @@ def assemble(k):
         root[key] = value
     bpy.context.view_layer.update()
     return root, meshes
-
-
-def bake(meshes, isolate_moving=True, distance=0.012, samples=64):
-    body = meshes[0]
-    moving = meshes[1:]
-    if not isolate_moving:
-        W.bake_ao(meshes, distance=distance, samples=samples, strength=0.8, floor=0.32)
-        return
-    W.bake_ao([body], distance=distance, samples=samples, strength=0.8, floor=0.32)
-    for m in moving:
-        W.bake_ao([m], distance=distance, samples=samples, strength=0.8, floor=0.32, isolate=True)
 
 
 def export(root, path):

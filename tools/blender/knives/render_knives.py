@@ -249,6 +249,21 @@ def closeups():
     closeup("skeleton", "skeleton_handle", (0.02, 0.17, 0.08), kb(-58.0, 12.0), lens=55)
 
 
+def hires(ids, res=(2560, 1440)):
+    """one 2560x1440 close-up per knife, 3/4 from the -z side (what first person sees),
+    the knife filling the frame"""
+    for kid in ids:
+        reset()
+        root, objs = load(kid)
+        lo, hi = bounds(objs)
+        c = (lo + hi) / 2
+        length = hi.x - lo.x
+        lights(tuple(c), side=1.0)
+        off = Vector((-0.28, 0.62, 0.42)).normalized() * (length * 1.4 + 0.05)
+        W.render(os.path.join(OUT_DIR, f"hires_{kid}.png"), tuple(c + off), tuple(c), lens=50, resolution=res,
+                 samples=max(SAMPLES, 64))
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     os.makedirs(TILE_DIR, exist_ok=True)
@@ -261,6 +276,8 @@ def main():
         sheet_folding(ids)
     if "closeups" in MODES:
         closeups()
+    if "hires" in MODES:
+        hires(ids)
 
 
 main()

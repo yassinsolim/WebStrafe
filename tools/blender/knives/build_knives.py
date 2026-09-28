@@ -1,13 +1,16 @@
 """builds the 20 knife models (original geometry, nothing imported).
 
   blender -b --factory-startup --python-exit-code 1 -P tools/blender/knives/build_knives.py -- \
-      [ids...] [--out .blender-tmp/knives] [--no-ao] [--quick]
+      [ids...] [--out .blender-tmp/knives] [--no-bake] [--no-lod] [--quick]
 
 writes <out>/<id>.glb (raw), then optimize them all:
   npx tsx tools/blender/knives/optimize_knives.ts
 
---quick skips the ao bake and renders a side and a 3/4 view per knife into
-.blender-tmp/knives/quick/. the contact sheets come from render_knives.py.
+writes <out>/<id>.glb (lod0, baked textures) and <out>/<id>_lod1.glb (about
+40% of the triangles, same nodes and textures). --no-bake skips the texture
+bakes (plain materials, for geometry work), --quick also skips lod1 and renders
+a side and a 3/4 view per knife into .blender-tmp/knives/quick/. the contact
+sheets come from render_knives.py.
 
 every knife is authored in millimetres in the knife frame (+X tip, +Y spine,
 Z thickness, origin at the front of the handle on the edge heel line), see
@@ -20,6 +23,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import kbake  # noqa: E402
 import klib as K  # noqa: E402
 from klib import MM, W, arc, cubic, line, path, quad  # noqa: E402
 
@@ -32,7 +36,11 @@ def arg(name, default=None):
 
 OUT = arg("--out", K.TMP)
 QUICK = "--quick" in ARGS
-NO_AO = "--no-ao" in ARGS or QUICK
+NO_BAKE = "--no-bake" in ARGS
+NO_LOD = "--no-lod" in ARGS or QUICK
+MAX_TRIS = 15000
+LOD1_RATIO = 0.4
+STEEL_TEX, HANDLE_TEX, FITTING_TEX = 1024, 2048, 1024
 ONLY = [a for i, a in enumerate(ARGS) if not a.startswith("--") and (i == 0 or ARGS[i - 1] != "--out")]
 
 # cs2's ursus is a fixed blade ("no moving parts"); the contract lists it with the
@@ -254,7 +262,7 @@ def m9_pommel(M, cy, x0, half_h=(17.5, 15.0), half_w=14.0):
 
 def bayonet():
     k = K.Knife("bayonet")
-    M = K.materials(handle=(0x1c1d20, 0.72, 0.0, {"normal": K.tex_pebble(), "strength": 0.35}),
+    M = K.materials(handle=(0x1c1d20, 0.72, 0.0, {"detail": "pebble", "strength": 0.7}),
                     metal=(0x2b2d31, 0.42, 0.85), accent=(0x8c9198, 0.35, 1.0))
     L, H, T = 180.0, 36.0, 5.8
     ty = 16.5
@@ -283,7 +291,7 @@ def bayonet():
 
 def m9_bayonet():
     k = K.Knife("m9_bayonet")
-    M = K.materials(handle=(0x25271f, 0.7, 0.0, {"normal": K.tex_knurl(), "strength": 0.9}),
+    M = K.materials(handle=(0x25271f, 0.7, 0.0, {"detail": "knurl", "strength": 1.0}),
                     metal=(0x26282b, 0.4, 0.85), accent=(0x8c9198, 0.35, 1.0))
     L, H, T = 190.0, 38.0, 6.0
     ty = 17.0
@@ -325,7 +333,7 @@ def hawkbill(cx, cy, R, W0, th0, th1, n=40, taper=0.55, edge_k=0.96):
 
 def karambit():
     k = K.Knife("karambit")
-    M = K.materials(handle=(0x1a1b1d, 0.6, 0.0, {"normal": K.tex_grain(), "strength": 0.5}),
+    M = K.materials(handle=(0x232427, 0.6, 0.0, {"detail": "g10", "strength": 0.90}),
                     metal=(0xbfc4cb, 0.3, 1.0), accent=(0x9aa0a8, 0.3, 1.0))
     T = 4.2
     W0 = 13.0
@@ -374,7 +382,7 @@ def smooth(t, a, b):
 
 def butterfly():
     k = K.Knife("butterfly")
-    M = K.materials(handle=(0x2a2d31, 0.38, 0.85, {"normal": K.tex_grain("tex_grain_fine", seed=9), "strength": 0.15}),
+    M = K.materials(handle=(0x2a2d31, 0.38, 0.85, {"detail": "bead", "strength": 1.0}),
                     metal=(0xb8bdc4, 0.28, 1.0), accent=(0x1b1c1e, 0.5, 0.3))
     L, H, T = 102.0, 23.0, 3.6
     ty = 10.5
@@ -440,7 +448,7 @@ def butterfly():
 
 def flip():
     k = K.Knife("flip")
-    M = K.materials(handle=(0x1c1d20, 0.55, 0.0, {"normal": K.tex_grain(), "strength": 0.55}),
+    M = K.materials(handle=(0x1c1d20, 0.55, 0.0, {"detail": "g10", "strength": 0.99}),
                     metal=(0xa9aeb5, 0.32, 1.0), accent=(0x151618, 0.5, 0.3))
     L, H, T = 100.0, 30.0, 3.3
     ty = 13.5
@@ -485,7 +493,7 @@ def flip():
 
 def gut():
     k = K.Knife("gut")
-    M = K.materials(handle=(0x1b1c1e, 0.78, 0.0, {"normal": K.tex_pebble(), "strength": 0.45}),
+    M = K.materials(handle=(0x1b1c1e, 0.78, 0.0, {"detail": "pebble", "strength": 0.8}),
                     metal=(0xaab0b7, 0.32, 1.0), accent=(0x55595f, 0.45, 0.8))
     L, H, T = 100.0, 32.0, 4.5
     ty = 12.0
@@ -521,8 +529,8 @@ def gut():
 
 def huntsman():
     k = K.Knife("huntsman")
-    M = K.materials(handle=(0x2a221c, 0.8, 0.0, {"normal": K.tex_pebble(), "strength": 0.5}),
-                    metal=(0x9ba1a8, 0.34, 1.0), accent=(0x3d4a2e, 0.85, 0.0))
+    M = K.materials(handle=(0x2a221c, 0.8, 0.0, {"detail": "pebble", "strength": 0.8}),
+                    metal=(0x9ba1a8, 0.34, 1.0), accent=(0x3d4a2e, 0.85, 0.0, {"detail": "cord", "strength": 0.8}))
     L, H, T = 155.0, 38.0, 5.2
     ty = 18.0
     edge = path(line((-4, 0), (2.0, 0)), arc(7.5, 0.0, 5.5, 180, 0, 8), line((13.0, 0), (102, 0), 7),
@@ -559,7 +567,7 @@ def huntsman():
 
 def falchion():
     k = K.Knife("falchion")
-    M = K.materials(handle=(0x19191b, 0.45, 0.0, {"normal": K.tex_grain(), "strength": 0.35}),
+    M = K.materials(handle=(0x19191b, 0.45, 0.0, {"detail": "g10", "strength": 0.63}),
                     metal=(0xc9ced4, 0.22, 1.0), accent=(0x141416, 0.5, 0.3))
     L, H, T = 128.0, 30.0, 4.0
     ty = 30.0
@@ -609,7 +617,7 @@ def falchion():
 
 def shadow_daggers():
     k = K.Knife("shadow_daggers")
-    M = K.materials(handle=(0x1a1a1c, 0.7, 0.0, {"normal": K.tex_grain(), "strength": 0.45}),
+    M = K.materials(handle=(0x1a1a1c, 0.7, 0.0, {"detail": "g10", "strength": 0.81}),
                     metal=(0x9aa0a8, 0.34, 1.0), accent=(0x6d737b, 0.4, 0.9))
     L, H, T = 66.0, 26.0, 4.6
     cy = H / 2
@@ -651,7 +659,7 @@ def shadow_daggers():
 
 def bowie():
     k = K.Knife("bowie")
-    M = K.materials(handle=(0x4a2e1c, 0.55, 0.0, {"albedo": K.tex_wood(base=0x5b3a24)}),
+    M = K.materials(handle=(0x4a2e1c, 0.55, 0.0, {"detail": "wood", "color2": 0x2e1a0f}),
                     metal=(0xb58c4a, 0.3, 1.0), accent=(0x3a1d14, 0.6, 0.0))
     L, H, T = 185.0, 42.0, 5.2
     ty = 19.0
@@ -687,7 +695,7 @@ def bowie():
 
 def navaja():
     k = K.Knife("navaja")
-    M = K.materials(handle=(0x5b3a24, 0.5, 0.0, {"albedo": K.tex_wood(base=0x6a4428, seed=8)}),
+    M = K.materials(handle=(0x5b3a24, 0.5, 0.0, {"detail": "wood", "color2": 0x3a2212}),
                     metal=(0xc7ccd2, 0.26, 1.0), accent=(0xc49a4a, 0.3, 1.0))
     L, H, T = 105.0, 21.0, 3.2
     ty = 13.0
@@ -751,7 +759,7 @@ def navaja():
 
 def stiletto():
     k = K.Knife("stiletto")
-    M = K.materials(handle=(0x3a2417, 0.45, 0.0, {"albedo": K.tex_wood(base=0x4a2c1a, seed=12)}),
+    M = K.materials(handle=(0x3a2417, 0.45, 0.0, {"detail": "wood", "color2": 0x1f120a}),
                     metal=(0xcfd3d8, 0.2, 1.0), accent=(0xb9bec5, 0.25, 1.0))
     L, H, T = 125.0, 16.0, 2.8
     ty = 8.0
@@ -819,7 +827,7 @@ def stiletto():
 
 def talon():
     k = K.Knife("talon")
-    M = K.materials(handle=(0xe6dcc3, 0.42, 0.0, {"normal": K.tex_grain("tex_grain_ivory", seed=21), "strength": 0.2}),
+    M = K.materials(handle=(0xe6dcc3, 0.42, 0.0, {"detail": "ivory", "color2": 0xcfc2a2, "strength": 0.6}),
                     metal=(0xbcc1c8, 0.28, 1.0), accent=(0xc49a4a, 0.3, 1.0))
     T = 3.8
     W0 = 13.5
@@ -868,7 +876,7 @@ def talon():
 
 def ursus():
     k = K.Knife("ursus")
-    M = K.materials(handle=(0x4a5236, 0.62, 0.0, {"normal": K.tex_grain(), "strength": 0.6}),
+    M = K.materials(handle=(0x4a5236, 0.62, 0.0, {"detail": "g10", "strength": 1.00}),
                     metal=(0x9ea4ab, 0.32, 1.0), accent=(0x17181a, 0.5, 0.3))
     L, H, T = 108.0, 33.0, 4.6
     ty = 16.5
@@ -917,7 +925,7 @@ def ursus():
 
 def classic():
     k = K.Knife("classic")
-    M = K.materials(handle=(0x1e1f22, 0.58, 0.0, {"normal": K.tex_grain(), "strength": 0.3}),
+    M = K.materials(handle=(0x1e1f22, 0.58, 0.0, {"detail": "g10", "strength": 0.54}),
                     metal=(0xa3a9b0, 0.3, 1.0), accent=(0x3b3f45, 0.4, 0.8))
     L, H, T = 200.0, 38.0, 6.0
     ty = 17.0
@@ -969,8 +977,8 @@ def cord_wrap(M, x0, x1, cy, hh, hw, cord, ppt=10, mat=None):
 
 def paracord():
     k = K.Knife("paracord")
-    M = K.materials(handle=(0x4c5236, 0.9, 0.0, {"normal": K.tex_braid(), "strength": 0.8}),
-                    metal=(0x7c8189, 0.45, 0.9), accent=(0x1d1e1f, 0.85, 0.0))
+    M = K.materials(handle=(0x4c5236, 0.9, 0.0, {"detail": "cord", "color2": 0x33382a, "strength": 1.0}),
+                    metal=(0x7c8189, 0.45, 0.9), accent=(0x1d1e1f, 0.85, 0.0, {"detail": "cord", "strength": 0.8}))
     L, H, T = 130.0, 32.0, 5.0
     ty = 19.5
     edge = path(line((-4, 0), (2.0, 0)), arc(7.5, 0.0, 5.5, 180, 0, 8), line((13.0, 0), (100, 0), 8), line((100, 0), (L, ty), 5))
@@ -996,7 +1004,7 @@ def paracord():
 
 def survival():
     k = K.Knife("survival")
-    M = K.materials(handle=(0x1c1d1f, 0.74, 0.0, {"normal": K.tex_grain(), "strength": 0.6}),
+    M = K.materials(handle=(0x1c1d1f, 0.74, 0.0, {"detail": "g10", "strength": 1.00}),
                     metal=(0x8f959c, 0.36, 1.0), accent=(0x6e747c, 0.35, 1.0))
     L, H, T = 130.0, 34.0, 5.0
     ty = 13.0
@@ -1035,7 +1043,7 @@ def survival():
 
 def nomad():
     k = K.Knife("nomad")
-    M = K.materials(handle=(0x2c2a26, 0.62, 0.0, {"normal": K.tex_grain(), "strength": 0.5}),
+    M = K.materials(handle=(0x2c2a26, 0.62, 0.0, {"detail": "g10", "strength": 0.90}),
                     metal=(0xa7adb4, 0.3, 1.0), accent=(0x18191b, 0.5, 0.3))
     L, H, T = 104.0, 32.0, 4.0
     ty = 20.0
@@ -1083,7 +1091,7 @@ def nomad():
 
 def skeleton():
     k = K.Knife("skeleton")
-    M = K.materials(handle=(0x141416, 0.88, 0.0, {"normal": K.tex_grain("tex_tape", seed=17), "strength": 0.25}),
+    M = K.materials(handle=(0x141416, 0.88, 0.0, {"detail": "tape", "strength": 0.7}),
                     metal=(0xbfc4cb, 0.3, 1.0), accent=(0x2b2d30, 0.6, 0.2))
     L, H, T = 100.0, 28.0, 4.2
     ty = 12.0
@@ -1127,7 +1135,7 @@ def skeleton():
 
 def kukri():
     k = K.Knife("kukri")
-    M = K.materials(handle=(0x5a3a22, 0.55, 0.0, {"albedo": K.tex_wood(base=0x62402a, seed=4)}),
+    M = K.materials(handle=(0x5a3a22, 0.55, 0.0, {"detail": "wood", "color2": 0x33200f}),
                     metal=(0xb68b4c, 0.32, 1.0), accent=(0x2a1a10, 0.6, 0.0))
     T = 8.5
     spine = path(line((-6, 33), (22, 35.5), 3), cubic((22, 35.5), (95, 42.0), (195, 30.0), (250, -14.0), 22))
@@ -1218,14 +1226,28 @@ def build_one(kid):
     k = BUILDERS[kid]()
     root, meshes = K.assemble(k)
     total = K.report(kid, meshes)
-    assert total <= 8000, f"{kid} over budget: {total}"
-    if not NO_AO:
-        K.bake(meshes)
+    assert total <= MAX_TRIS, f"{kid} over budget: {total}"
     os.makedirs(OUT, exist_ok=True)
+    if not NO_BAKE:
+        used = {m.name: m for o in meshes for m in o.data.materials if m}
+        for name, mat in used.items():
+            kbake.detail_shader(mat, K.MAT_SPECS[name])
+        kbake.unwrap(meshes)
+        handle_kind = K.MAT_SPECS.get("knife_handle", (0, 0, 0, {}))[3].get("detail", "none")
+        sizes = {"steel": STEEL_TEX, "fittings": FITTING_TEX,
+                 # periodic checkering and weave cost four times as much at 2048 after webp
+                 "handle": HANDLE_TEX if handle_kind not in ("bead", "none", "knurl", "cord") else FITTING_TEX}
+        kbake.bake(kid, meshes, sizes)
     K.export(root, os.path.join(OUT, f"{kid}.glb"))
     if QUICK:
         quick_renders(kid, root)
-    return total
+    lod1 = 0
+    if not NO_LOD:
+        kbake.decimate(meshes, LOD1_RATIO)
+        lod1 = K.W.tri_count(meshes)
+        K.export(root, os.path.join(OUT, f"{kid}_lod1.glb"))
+        print(f"[knives] {kid} lod1: {lod1} tris")
+    return total, lod1
 
 
 def main():
@@ -1233,8 +1255,8 @@ def main():
     totals = {}
     for kid in ids:
         totals[kid] = build_one(kid)
-    for kid, t in totals.items():
-        print(f"[knives] {kid:15s} {t:5d} tris")
+    for kid, (t, t1) in totals.items():
+        print(f"[knives] {kid:15s} {t:6d} tris  lod1 {t1:6d}")
 
 
 main()
