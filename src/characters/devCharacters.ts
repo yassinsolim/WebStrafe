@@ -2,6 +2,7 @@ import type { MultiplayerSnapshotPlayer, PlayerModel } from '../network/types';
 import { devToolsEnabled } from '../app/devTools';
 import { ARMOR_SETS, ARMOR_SLOTS, type ArmorSetId } from './catalog';
 import type { CharacterLibrary } from './library';
+import type { CharacterDetail } from './ArmorCharacter';
 import { decodeLook, defaultLook, encodeLook, lookForBot, randomLook, type CharacterLook } from './look';
 import { BUILTIN_PRESETS } from './presets';
 
@@ -18,6 +19,8 @@ export interface DevCharacterRequest {
   spacing: number;
   /** start in the third-person debug camera (your own character from behind) */
   thirdPerson: boolean;
+  /** character level of detail preset for the run */
+  detail: CharacterDetail | null;
 }
 
 export function parseDevCharacters(search: string, enabled = devToolsEnabled()): DevCharacterRequest | null {
@@ -31,6 +34,7 @@ export function parseDevCharacters(search: string, enabled = devToolsEnabled()):
     distance: Number(params.get('chardist') ?? 4.5) || 4.5,
     spacing: Number(params.get('charspace') ?? 1.1) || 1.1,
     thirdPerson: params.get('cam') === 'third',
+    detail: ((d) => (d === 'low' || d === 'medium' || d === 'high' ? d : null))(params.get('chardetail')),
   };
 }
 

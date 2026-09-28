@@ -1,6 +1,9 @@
 import {
   Bone,
   BoxGeometry,
+  type Camera,
+  type Scene,
+  type WebGLRenderer,
   Euler,
   Group,
   MathUtils,
@@ -94,6 +97,27 @@ export class RemotePlayersRenderer {
     // anyone who showed up before the library did gets dressed now
     for (const actor of [...this.actors.values()]) {
       if (!actor.character) this.redress(actor, actor.model, actor.cosmetics);
+    }
+  }
+
+  /**
+   * compiles the armor shader against the real scene (lights, fog, environment)
+   * behind a loading screen, so the first player who shows up doesn't cost a
+   * visible stall. no-op until load() finished.
+   */
+  public async warmUp(renderer: WebGLRenderer, scene: Scene, camera: Camera): Promise<void> {
+    if (!this.loaded || !this.library) return;
+    // the probe wears the knife and decals too, their materials compile here as well
+    const probe = createCharacterSync(this.library, { ...defaultLook('terrorist'), tag: 'WARM' }, 'terrorist', { pose: 'none', lod: 0 });
+    if (probe.rig) attachKnifeModel(probe.rig.rightWeaponHand, this.knifeTemplate);
+    probe.root.position.set(0, -1000, 0);
+    scene.add(probe.root);
+    try {
+      await renderer.compileAsync(scene, camera);
+    } catch {
+      // older drivers without parallel compile just compile on first draw
+    } finally {
+      probe.dispose();
     }
   }
 

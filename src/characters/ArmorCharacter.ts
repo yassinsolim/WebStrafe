@@ -187,6 +187,9 @@ export class ArmorCharacter {
       geometry.boundingSphere = BOUNDS.clone();
       geometry.boundingBox = BOUNDS_BOX.clone();
       mesh.geometry = geometry;
+      // a skinned mesh otherwise skins every vertex on the cpu once to find its bounds
+      mesh.boundingSphere = BOUNDS.clone();
+      mesh.boundingBox = BOUNDS_BOX.clone();
       // the skeleton's inverses come from the bind pose at construction, so an
       // identity bind matrix is right wherever the root is now
       mesh.bind(this.skeleton, new Matrix4());

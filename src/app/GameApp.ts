@@ -93,6 +93,7 @@ import { showsRunTimer } from '../ui/menu/menuInfo';
 import { PlayerCharacter } from '../characters/PlayerCharacter';
 import { loadCharacterLibrary } from '../characters/CharacterFactory';
 import { devCharacterRows, parseDevCharacters } from '../characters/devCharacters';
+import { setCharacterDetail } from '../characters/ArmorCharacter';
 
 type MapSource =
   | {
@@ -860,6 +861,11 @@ export class GameApp {
       }
 
       this.activateLoadedMap(this.loadedMap);
+      // armor shader compiled against this map's lights while the loading screen is up
+      await this.remotePlayers.warmUp(this.renderer, this.worldScene, this.worldCamera);
+      if (loadToken !== this.currentLoadToken) {
+        return;
+      }
       if (this.combatEnabled) {
         this.resetLocalCombatState();
       }
@@ -2529,6 +2535,7 @@ export class GameApp {
   private async spawnDevCharacters(): Promise<void> {
     const request = parseDevCharacters(window.location.search);
     if (!request) return;
+    if (request.detail) setCharacterDetail(request.detail);
     const library = await loadCharacterLibrary();
     await this.remotePlayersReady;
     const eye = this.movement.getCameraPosition();
