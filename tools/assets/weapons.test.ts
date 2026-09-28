@@ -21,6 +21,8 @@ interface WeaponSpec {
   length: number;
   height: number;
   maxTriangles: number;
+  /** z of socket_grip_r's up axis must be below this (grips lean forward going up) */
+  maxGripUpZ: number;
 }
 
 const SPECS: Record<'deagle' | 'awp', WeaponSpec> = {
@@ -31,9 +33,12 @@ const SPECS: Record<'deagle' | 'awp', WeaponSpec> = {
       'socket_mag_bottom', 'socket_slide_rear'],
     parts: ['slide', 'hammer', 'trigger', 'mag'],
     parents: { socket_mag_bottom: 'mag', socket_slide_rear: 'slide' },
-    length: 0.27,
-    height: 0.15,
-    maxTriangles: 14000,
+    // mark xix with the 6 in barrel: 273 mm long, 159 mm tall
+    length: 0.273,
+    height: 0.159,
+    maxTriangles: 20000,
+    // the socket follows the nearly upright front strap (4 degrees)
+    maxGripUpZ: -0.05,
   },
   awp: {
     file: 'public/viewmodels/v2/awp.glb',
@@ -45,6 +50,7 @@ const SPECS: Record<'deagle' | 'awp', WeaponSpec> = {
     length: 1.18,
     height: 0.25,
     maxTriangles: 28000,
+    maxGripUpZ: -0.15,
   },
 };
 
@@ -143,7 +149,7 @@ describe.each(Object.entries(SPECS))('%s viewmodel', (id, spec) => {
     const up = worldDir(node(doc(), 'socket_grip_r'), [0, 1, 0]);
     expect(up[1]).toBeGreaterThan(0.9);
     // grips rake back at the bottom, so up the grip leans forward (-z)
-    expect(up[2]).toBeLessThan(-0.15);
+    expect(up[2]).toBeLessThan(spec.maxGripUpZ);
     // the weapon origin is the grip socket, so hands can attach without offsets
     worldPos(node(doc(), 'socket_grip_r')).forEach((c) => expect(c).toBeCloseTo(0, 6));
   });

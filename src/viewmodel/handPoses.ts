@@ -16,6 +16,7 @@ export type HandPoseName =
   | 'open'
   | 'fist'
   | 'pistol'
+  | 'deagle'
   | 'pistolSupport'
   | 'forend'
   | 'knife'
@@ -37,6 +38,11 @@ export const HAND_POSES: Readonly<Record<HandPoseName, HandPose>> = {
   // thicker grip, index straight along the frame onto the trigger
   pistol: {
     index: [16, 34, 18], middle: [62, 74, 38], ring: [66, 78, 40], pinky: [70, 78, 38], thumb: [16, 26, 8],
+  },
+  // the deagle's trigger sits close in front of its deep grip: the first index
+  // segment lies along the frame, then the finger bends in onto the trigger face
+  deagle: {
+    index: [-4, 60, 36], middle: [62, 74, 38], ring: [66, 78, 40], pinky: [70, 78, 38], thumb: [16, 26, 8],
   },
   pistolSupport: {
     index: [48, 58, 30], middle: [56, 66, 34], ring: [60, 70, 36], pinky: [64, 70, 34], thumb: [4, 8, 4],
