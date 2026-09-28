@@ -529,15 +529,26 @@ export class CombatHud {
       return;
     }
     this.lastKillFeedSig = sig;
+    // keyed update: lines already on screen stay attached so their entry
+    // animation doesn't replay; new kills are always the newest, so they append
+    const seen = new Map<number, number>();
+    const keyed = entries.map((entry) => {
+      const n = seen.get(entry.createdAtMs) ?? 0;
+      seen.set(entry.createdAtMs, n + 1);
+      return { entry, key: `${entry.createdAtMs}:${n}` };
+    });
+    const wanted = new Set(keyed.map((item) => item.key));
     const existing = new Map<string, HTMLDivElement>();
     for (const child of Array.from(this.killFeedEl.children) as HTMLDivElement[]) {
-      existing.set(child.dataset.key ?? '', child);
+      const key = child.dataset.key ?? '';
+      if (wanted.has(key)) {
+        existing.set(key, child);
+      } else {
+        child.remove();
+      }
     }
-    const lines: HTMLDivElement[] = [];
-    for (const entry of entries) {
-      const key = String(entry.createdAtMs);
+    for (const { entry, key } of keyed) {
       const view = killfeedLineView(entry, nowMs, KILLFEED_TTL_MS, KILLFEED_FADE_MS);
-      // keep lines that are already on screen so their entry animation doesn't replay
       let line = existing.get(key);
       if (!line) {
         line = div('combat-killfeed-line');
@@ -564,11 +575,10 @@ export class CombatHud {
         victim.classList.toggle('is-me', view.victimIsLocal);
         victim.textContent = view.victim;
         line.append(weapon, victim);
+        this.killFeedEl.appendChild(line);
       }
       line.classList.toggle('is-fading', view.fading);
-      lines.push(line);
     }
-    this.killFeedEl.replaceChildren(...lines);
   }
 
   dispose(): void {
