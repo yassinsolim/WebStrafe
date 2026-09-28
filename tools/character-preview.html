@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WebStrafe armored characters (dev only)</title>
+    <style>
+      html, body { margin: 0; background: #0d1015; overflow: hidden; }
+      canvas { display: block; }
+    </style>
+  </head>
+  <body>
+    <!-- dev tool: a line-up of armored characters in the knife stance.
+         ?looks=<wire>,<wire> picks looks (default: every preset), ?team=ct,
+         ?view=front|back|side|quarter, ?lod=0|1|2, ?w=&h= canvas size,
+         ?bind=1 shows the bind pose instead of the stance -->
+    <script type="module">
+      import {
+        ACESFilmicToneMapping, AmbientLight, CircleGeometry, Color, DirectionalLight, HemisphereLight, Mesh,
+        MeshStandardMaterial, PerspectiveCamera, PMREMGenerator, Scene, SRGBColorSpace, WebGLRenderer,
+      } from 'three';
+      import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+      import { createCharacter } from '/src/characters/CharacterFactory.ts';
+      import { BUILTIN_PRESETS } from '/src/characters/presets.ts';
+      import { decodeLook, defaultLook } from '/src/characters/look.ts';
+      import { attachKnifeModel, loadKnifeMesh } from '/src/multiplayer/playerRig.ts';
+
+      const params = new URLSearchParams(location.search);
+      const width = Number(params.get('w') ?? 1920);
+      const height = Number(params.get('h') ?? 1080);
+      const team = params.get('team') === 'ct' ? 'counterterrorist' : 'terrorist';
+      const view = params.get('view') ?? 'front';
+      const lod = params.has('lod') ? Number(params.get('lod')) : 0;
+      const bind = params.get('bind') === '1';
+      const looks = params.get('looks')
+        ? params.get('looks').split(',').map((w) => decodeLook(w, defaultLook(team)) ?? defaultLook(team))
+        : BUILTIN_PRESETS.map((p) => p.look);
+
+      const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(1);
+      renderer.setSize(width, height);
+      renderer.outputColorSpace = SRGBColorSpace;
+      renderer.toneMapping = ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
+      document.body.appendChild(renderer.domElement);
+      const scene = new Scene();
+      scene.background = new Color(0x0d1015);
+      const pmrem = new PMREMGenerator(renderer);
+      scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      scene.environmentIntensity = 0.55;
+      scene.add(new HemisphereLight(0xcfe0ff, 0x1a1712, 0.6));
+      scene.add(new AmbientLight(0xffffff, 0.08));
+      const key = new DirectionalLight(0xfff0e0, 2.4);
+      key.position.set(-3, 5, 4);
+      scene.add(key);
+      const rim = new DirectionalLight(0x9fc4ff, 1.6);
+      rim.position.set(3, 3, -4);
+      scene.add(rim);
+      const floor = new Mesh(new CircleGeometry(40, 64), new MeshStandardMaterial({ color: 0x181c22, roughness: 0.9 }));
+      floor.rotation.x = -Math.PI / 2;
+      scene.add(floor);
+
+      const knife = await loadKnifeMesh();
+      const spacing = 1.05;
+      const chars = [];
+      for (const [i, look] of looks.entries()) {
+        const ch = await createCharacter(look, i % 2 === 0 ? team : (team === 'terrorist' ? 'counterterrorist' : 'terrorist'), { pose: bind ? 'none' : 'stance', lod });
+        ch.root.position.x = (i - (looks.length - 1) / 2) * spacing;
+        const yaw = { front: 0, back: Math.PI, side: Math.PI / 2, quarter: 0.6 }[view] ?? 0;
+        ch.root.rotation.y = yaw;
+        if (ch.rig && !bind) attachKnifeModel(ch.rig.rightWeaponHand, knife);
+        scene.add(ch.root);
+        chars.push(ch);
+      }
+      const fov = Number(params.get('fov') ?? 24);
+      const camera = new PerspectiveCamera(fov, width / height, 0.05, 100);
+      const span = Math.max(2.0, looks.length * spacing * 0.62);
+      const dist = params.has('dist') ? Number(params.get('dist')) : span / Math.tan((fov * Math.PI) / 360) * 0.55;
+      const lookY = Number(params.get('y') ?? 0.95);
+      camera.position.set(Number(params.get('x') ?? 0), lookY + Number(params.get('up') ?? 0.3), dist);
+      camera.lookAt(Number(params.get('x') ?? 0), lookY, 0);
+      let t = 0;
+      function frame() {
+        t += 1 / 60;
+        for (const ch of chars) ch.update(1 / 60, 1.2 + (bind ? 0 : t * 0));
+        renderer.render(scene, camera);
+      }
+      for (let i = 0; i < 20; i += 1) frame();
+      const info = renderer.info.render;
+      window.__shotInfo = { calls: info.calls, triangles: info.triangles };
+      window.__shotReady = true;
+    </script>
+  </body>
+</html>
