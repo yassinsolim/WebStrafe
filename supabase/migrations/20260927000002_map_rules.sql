@@ -3,7 +3,10 @@
 insert into public.webstrafe_map_rules (map_id, modes, stages, min_time_ms, min_stage_ms)
 values
   ('bhop_emberdrift', '{"surf"}'::text[], '{1,2,3,4}'::integer[], 4526, '{888,937,663,1068,970}'::integer[]),
-  ('surf_prismline', '{"surf"}'::text[], '{2,3,4}'::integer[], 8713, '{1957,2279,1935,2542}'::integer[])
+  ('surf_cascade', '{"surf"}'::text[], '{2,3,4,5,6}'::integer[], 39645, '{1571,1509,1987,1586,1497,2235}'::integer[]),
+  ('surf_lumen', '{"surf"}'::text[], '{}'::integer[], 12105, '{5970}'::integer[]),
+  ('surf_prismline', '{"surf"}'::text[], '{2,3,4}'::integer[], 8713, '{1957,2279,1935,2542}'::integer[]),
+  ('surf_vanta', '{"surf","combat"}'::text[], '{2,3,4}'::integer[], 32760, '{2861,2414,3128,2616}'::integer[])
 on conflict (map_id) do update set
   modes = excluded.modes,
   stages = excluded.stages,

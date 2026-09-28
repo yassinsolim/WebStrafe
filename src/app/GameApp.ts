@@ -1906,7 +1906,8 @@ export class GameApp {
     if (!this.loadedMap) {
       return;
     }
-    const pick = this.spawnPoints.length > 1
+    // peaceful surfers go straight back to the run spawn, the arena spawns are for fighters
+    const pick = this.spawnPoints.length > 1 && !(this.surf.isTimed && !this.surf.pvp)
       ? pickSpawnAwayFrom(this.spawnPoints, this.backstabTargets)
       : null;
     if (pick) {

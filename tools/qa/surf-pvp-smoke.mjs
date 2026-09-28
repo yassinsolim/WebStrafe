@@ -98,7 +98,13 @@ try {
   check('pvp flags reach other clients', flag(idA) === true && flag(idB) === true, { rosterOnC });
   const rosterOnA = (await state(A)).surf.roster;
   check('the peaceful player shows as peaceful', rosterOnA.find((p) => p.id === idC)?.pvp === false, { rosterOnA });
-  check('no host bots on a surf map', !rosterOnA.some((p) => p.id.startsWith('bot:')), {});
+  const wantBots = s0.modes.includes('combat');
+  let hasBots = rosterOnA.some((p) => p.id.startsWith('bot:'));
+  for (let i = 0; i < 10 && wantBots && !hasBots; i += 1) {
+    await sleep(500);
+    hasBots = (await state(A)).surf.roster.some((p) => p.id.startsWith('bot:'));
+  }
+  check(wantBots ? 'a host bot on a map tagged combat' : 'no host bots on a surf only map', hasBots === wantBots, { modes: s0.modes });
   const badgeA = await qa(A, (q) => q.pvpBadgeText());
   const badgeC = await qa(C, (q) => q.pvpBadgeText());
   check('pvp badge shows each player their mode', /pvp on/i.test(badgeA ?? '') && /peaceful/i.test(badgeC ?? ''), { badgeA, badgeC });

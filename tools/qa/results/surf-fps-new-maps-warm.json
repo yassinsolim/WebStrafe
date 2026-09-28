@@ -1,0 +1,116 @@
+{
+  "base": "http://127.0.0.1:4180",
+  "viewport": "1600x900",
+  "maps": [
+    {
+      "map": "surf_prismline",
+      "minFps": 120.3,
+      "meanFps": 120.3,
+      "samples": [
+        {
+          "view": "spawn",
+          "fps": 120.3,
+          "p95FrameMs": 10.3
+        },
+        {
+          "view": "stage2",
+          "fps": 120.3,
+          "p95FrameMs": 10.1
+        },
+        {
+          "view": "stage3",
+          "fps": 120.3,
+          "p95FrameMs": 10.2
+        },
+        {
+          "view": "stage4",
+          "fps": 120.3,
+          "p95FrameMs": 10.2
+        },
+        {
+          "view": "finish",
+          "fps": 120.3,
+          "p95FrameMs": 10.1
+        }
+      ]
+    },
+    {
+      "map": "surf_cascade",
+      "minFps": 120.3,
+      "meanFps": 120.3,
+      "samples": [
+        {
+          "view": "spawn",
+          "fps": 120.3,
+          "p95FrameMs": 10.2
+        },
+        {
+          "view": "stage2",
+          "fps": 120.3,
+          "p95FrameMs": 10.3
+        },
+        {
+          "view": "stage3",
+          "fps": 120.3,
+          "p95FrameMs": 10.2
+        },
+        {
+          "view": "stage4",
+          "fps": 120.3,
+          "p95FrameMs": 10.2
+        },
+        {
+          "view": "stage5",
+          "fps": 120.3,
+          "p95FrameMs": 10
+        },
+        {
+          "view": "stage6",
+          "fps": 120.3,
+          "p95FrameMs": 10.1
+        },
+        {
+          "view": "finish",
+          "fps": 120.3,
+          "p95FrameMs": 10.3
+        }
+      ]
+    },
+    {
+      "map": "surf_lumen",
+      "minFps": 120,
+      "meanFps": 120.2,
+      "samples": [
+        {
+          "view": "spawn",
+          "fps": 120.3,
+          "p95FrameMs": 10.3
+        },
+        {
+          "view": "finish",
+          "fps": 120,
+          "p95FrameMs": 10.3
+        }
+      ]
+    },
+    {
+      "map": "surf_lumen",
+      "minFps": 120.3,
+      "meanFps": 120.3,
+      "samples": [
+        {
+          "view": "spawn",
+          "fps": 120.3,
+          "p95FrameMs": 10.3
+        },
+        {
+          "view": "finish",
+          "fps": 120.3,
+          "p95FrameMs": 10
+        }
+      ]
+    }
+  ],
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "errors": []
+}
