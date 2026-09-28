@@ -365,6 +365,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.hostEpoch = 0;
     this.maxEpochSeen = 0;
     this.roomFull = false;
+    this.pendingFires = [];
     this.joinedChannelAt = this.now();
 
     const channel = this.client.channel(
@@ -394,6 +395,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         this.localCosmetics = this.cosmeticsPublisher.joined();
         void channel.track(this.presencePayload());
         this.cadence.flush();
+        // everything dropped while joining (weapon, ready, pvp, score) rides on this one state
+        this.broadcastState();
         this.startPump();
         this.onConnectedChange?.(true);
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
@@ -456,8 +459,8 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
       this.flushCombat();
       return;
     }
-    if (this.roomFull) {
-      // turned away by a full room: nobody hosts for us, nothing to send
+    if (this.roomFull || !this.joined()) {
+      // turned away by a full room, or not in one yet: nobody hosts for us, nothing to send
       return;
     }
     this.pendingFires.push({
@@ -865,7 +868,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
    * carries, never "now": a repeated pose must look like the same sample.
    */
   private broadcastState(): void {
-    if (!this.channel || !this.subscribed || this.roomFull) {
+    if (!this.joined() || this.roomFull) {
       return;
     }
     const now = this.now();
@@ -913,8 +916,18 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
     this.broadcast('st', payload);
   }
 
+  /**
+   * realtime-js sends a broadcast it can't push over the socket (joining, leaving,
+   * socket closing) as a REST post instead, billed like any message. so nothing
+   * goes out unless the channel is joined; what matters rides on the first state
+   * after the join
+   */
+  private joined(): boolean {
+    return this.channel !== null && this.subscribed && String(this.channel.state) === 'joined';
+  }
+
   private broadcast(event: string, payload: unknown): void {
-    if (!this.channel) {
+    if (!this.channel || !this.joined()) {
       return;
     }
     this.sentCounts.set(event, (this.sentCounts.get(event) ?? 0) + 1);

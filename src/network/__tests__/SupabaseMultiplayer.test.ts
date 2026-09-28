@@ -25,6 +25,16 @@ class FakeBus {
   readonly byEvent = new Map<string, number>();
   /** presence track calls per client */
   readonly tracks = new Map<string, number>();
+  /** broadcasts sent while not joined: realtime-js posts those to /realtime/v1/api/broadcast (billed) */
+  readonly restBroadcasts: Array<{ from: string; event: string }> = [];
+  /** while set, subscribe() waits in 'joining' until releaseJoins() */
+  holdJoins = false;
+  readonly pendingJoins: Array<() => void> = [];
+
+  releaseJoins(): void {
+    this.holdJoins = false;
+    for (const join of this.pendingJoins.splice(0)) join();
+  }
 
   join(ch: FakeChannel): void {
     const set = this.topics.get(ch.topic) ?? new Set();
@@ -33,6 +43,7 @@ class FakeBus {
   }
 
   leave(ch: FakeChannel): void {
+    ch.state = 'closed';
     const had = this.topics.get(ch.topic)?.delete(ch) ?? false;
     // presence tells everyone left that this client went
     if (had && ch.presence) {
@@ -73,6 +84,8 @@ class FakeBus {
 
 class FakeChannel {
   presence: Record<string, unknown> | null = null;
+  /** like realtime-js: closed, joining, joined, leaving, errored */
+  state = 'closed';
   private readonly handlers: Array<{ type: string; event: string; cb: (arg: any) => void }> = [];
 
   constructor(private readonly bus: FakeBus, readonly topic: string, readonly key: string) {}
@@ -89,8 +102,15 @@ class FakeChannel {
   }
 
   subscribe(cb: (status: string) => void): this {
-    this.bus.join(this);
-    cb('SUBSCRIBED');
+    this.state = 'joining';
+    const join = () => {
+      if (this.state !== 'joining') return;
+      this.state = 'joined';
+      this.bus.join(this);
+      cb('SUBSCRIBED');
+    };
+    if (this.bus.holdJoins) this.bus.pendingJoins.push(join);
+    else join();
     return this;
   }
 
@@ -115,6 +135,11 @@ class FakeChannel {
   }
 
   send(msg: { event: string; payload: unknown }): Promise<string> {
+    if (this.state !== 'joined') {
+      // realtime-js 2.110 falls back to a REST post here instead of failing
+      this.bus.restBroadcasts.push({ from: this.key, event: msg.event });
+      return Promise.resolve('ok');
+    }
     this.bus.broadcast(this, msg.event, msg.payload);
     return Promise.resolve('ok');
   }
@@ -872,6 +897,110 @@ describe('SupabaseMultiplayer (p7 protocol)', () => {
       host.disconnect();
       other.disconnect();
     }, 30_000);
+  });
+
+  describe('never falls back to REST broadcast', () => {
+    beforeEach(() => {
+      (globalThis as any).document = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+    });
+    const pose = () => ({ position: [0, 0, 0] as [number, number, number], velocity: [0, 0, 0] as [number, number, number], yaw: 0, pitch: 0, t: Date.now() });
+    // everything a player can trigger that used to reach channel.send
+    const everything = (p: SupabaseMultiplayer, weapon: string) => {
+      p.sendEquip(weapon);
+      p.sendAttack('primary');
+      p.sendReload();
+      p.sendFire([0, 1, 0], [0, 0, 1]);
+      p.sendState(pose());
+    };
+
+    it('the fake counts a send before the join as a REST post', () => {
+      const bus = new FakeBus();
+      const ch = new FakeChannel(bus, 'test_room', 'p_raw');
+      void ch.send({ event: 'equip', payload: {} });
+      expect(bus.restBroadcasts).toEqual([{ from: 'p_raw', event: 'equip' }]);
+    });
+
+    it('connect with an equip before the join: nothing over REST, the weapon rides on the first state', () => {
+      const bus = new FakeBus();
+      bus.holdJoins = true;
+      const a = makePeer(bus, 'p_a');
+      a.join('map1', 'Player', 'terrorist');
+      a.setRoomContext(ctx());
+      a.setCombatReady(true);
+      everything(a, 'awp');
+      vi.advanceTimersByTime(500);
+      expect(bus.restBroadcasts).toEqual([]);
+      expect(bus.sent).toHaveLength(0);
+
+      bus.releaseJoins();
+      const first = statesFrom(bus, 'p_a')[0];
+      expect(first?.w).toBe('awp');
+      expect(first?.r).toBe(1);
+      // a fire from before the room existed is not carried into it
+      expect(first?.f).toBeUndefined();
+      tickAll([a], 2000);
+      expect(bus.restBroadcasts).toEqual([]);
+      a.disconnect();
+    });
+
+    it('handoff, park and rejoin: nothing over REST', () => {
+      const bus = new FakeBus();
+      let hidden = false;
+      const host = makePeer(bus, 'p_a', () => !hidden);
+      const other = makePeer(bus, 'p_b');
+      enter(host);
+      tickAll([host], JOIN_GRACE_MS + 500);
+      enter(other);
+      tickAll([host, other], JOIN_GRACE_MS + 500);
+      expect(hosting(host)).toBe(true);
+
+      hidden = true;
+      document.dispatchEvent(new Event('visibilitychange'));
+      tickAll([other], 3000);
+      expect(hosting(other)).toBe(true);
+      tickAll([other], IDLE_DISCONNECT_MS);
+      expect(host.isParked()).toBe(true);
+      everything(host, 'deagle');
+      expect(bus.restBroadcasts).toEqual([]);
+
+      // back, and busy during the rejoin
+      bus.holdJoins = true;
+      hidden = false;
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(host.isParked()).toBe(false);
+      everything(host, 'awp');
+      vi.advanceTimersByTime(300);
+      expect(bus.restBroadcasts).toEqual([]);
+      const before = bus.sent.length;
+      bus.releaseJoins();
+      expect(bus.sent.slice(before).find((m) => m.from === 'p_a' && m.event === 'st')?.payload.w).toBe('awp');
+      tickAll([host, other], 3000);
+      expect(bus.restBroadcasts).toEqual([]);
+      host.disconnect();
+      other.disconnect();
+    }, 30_000);
+
+    it('unload: a socket or channel already closing sends nothing over REST', () => {
+      const bus = new FakeBus();
+      const a = makePeer(bus, 'p_a');
+      const b = makePeer(bus, 'p_b');
+      enter(a);
+      enter(b);
+      tickAll([a, b], JOIN_GRACE_MS + 500);
+      // pagehide: the socket drops (phoenix marks the channel errored before any callback) or the leave is in flight
+      (a as any).channel.state = 'errored';
+      (b as any).channel.state = 'leaving';
+      for (const p of [a, b]) {
+        everything(p, 'deagle');
+        p.setCombatReady(false);
+      }
+      (globalThis as any).document.visibilityState = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+      tickAll([a, b], 3000);
+      a.disconnect();
+      b.disconnect();
+      expect(bus.restBroadcasts).toEqual([]);
+    });
   });
 
   describe('cosmetics', () => {
