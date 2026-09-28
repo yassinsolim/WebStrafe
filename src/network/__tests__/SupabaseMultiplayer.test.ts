@@ -1,11 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Vector3 } from 'three';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { HOST_STALE_MS, JOIN_GRACE_MS, SupabaseMultiplayer } from '../SupabaseMultiplayer';
+import {
+  HOST_STALE_MS,
+  JOIN_GRACE_MS,
+  PRESENCE_TRACK_LIMIT,
+  PRESENCE_TRACK_WINDOW_MS,
+  SUPABASE_PROTOCOL,
+  SupabaseMultiplayer,
+} from '../SupabaseMultiplayer';
 import type { MultiplayerSnapshot } from '../types';
 import { CollisionWorld } from '../../world/CollisionWorld';
 import { MAX_ROOM_PLAYERS, SUPABASE_FREE_EVENTS_PER_SEC } from '../../netcode/RateBudget';
 import { RESPAWN_DELAY_MS } from '../../combat/CombatState';
+import { defaultLook, encodeLook, MAX_LOOK_WIRE_LENGTH } from '../../characters/look';
 
 // in-memory stand-in for supabase realtime: broadcast (self: false) + presence,
 // with a counter that bills events the way supabase does (sent + each delivery)
@@ -30,6 +38,7 @@ class FakeBus {
   }
 
   readonly sent: Array<{ from: string; event: string; payload: any; at: number }> = [];
+  readonly tracks: Array<{ key: string; topic: string; payload: Record<string, unknown>; at: number }> = [];
 
   broadcast(from: FakeChannel, event: string, payload: unknown): void {
     this.sent.push({ from: from.key, event, payload, at: Date.now() });
@@ -67,6 +76,7 @@ class FakeChannel {
   }
 
   track(payload: Record<string, unknown>): Promise<string> {
+    this.bus.tracks.push({ key: this.key, topic: this.topic, payload, at: Date.now() });
     this.presence = payload;
     this.bus.syncPresence(this.topic);
     return Promise.resolve('ok');
@@ -412,5 +422,258 @@ describe('SupabaseMultiplayer (p4 protocol)', () => {
     tickAll(peers, 5000);
     expect(bus.events / 5).toBeLessThan(SUPABASE_FREE_EVENTS_PER_SEC);
     for (const p of peers) p.disconnect();
+  });
+});
+
+const LOOK = '1.qu.an.ve.st.no.123abc.ffeedd.00ff7f.w.rt.0.YS-07';
+/** distinct valid looks, only the tag differs */
+const lookN = (i: number) => encodeLook({ ...defaultLook(), tag: `L${i}` });
+const ROOM = `${config.lobbyChannelPrefix}_${SUPABASE_PROTOCOL}_map1`;
+
+/** a peer driven by hand with raw presence and st payloads, like a p4 build from before looks */
+function rawPeer(bus: FakeBus, id: string, extra: Record<string, unknown> = {}): FakeChannel {
+  const ch = new FakeChannel(bus, ROOM, id);
+  ch.subscribe(() => {});
+  // joined after the real peers, so the room cap never seats one of these first
+  void ch.track({ id, name: 'Old', model: 'terrorist', j: Date.now() + 1, ...extra });
+  return ch;
+}
+
+function rawState(ch: FakeChannel): void {
+  void ch.send({ event: 'st', payload: { id: ch.key, t: Date.now(), s: [1, 0, 1, 0, 0, 0, 0, 0], r: 1, e: 0 } });
+}
+
+function lastSnapshot(p: SupabaseMultiplayer): () => MultiplayerSnapshot | null {
+  let last: MultiplayerSnapshot | null = null;
+  p.onSnapshot = (s) => { last = s; };
+  return () => last;
+}
+
+const rowOf = (snap: MultiplayerSnapshot | null, id: string) => snap?.players.find((p) => p.id === id);
+const tracksBy = (bus: FakeBus, key: string) => bus.tracks.filter((t) => t.key === key);
+
+describe('SupabaseMultiplayer looks', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('puts a peer look from presence on its rows and ours on our own row', () => {
+    const bus = new FakeBus();
+    const a = makePeer(bus, 'p_a');
+    const b = makePeer(bus, 'p_b');
+    const seenByA = lastSnapshot(a);
+    const seenByB = lastSnapshot(b);
+    a.join('map1', 'Player', 'terrorist', LOOK);
+    b.join('map1', 'Other', 'counterterrorist');
+    tickAll([a, b], 500);
+
+    expect(tracksBy(bus, 'p_a').at(-1)?.payload.c).toBe(LOOK);
+    expect(tracksBy(bus, 'p_b').at(-1)?.payload).not.toHaveProperty('c');
+    expect(rowOf(seenByB(), 'p_a')).toMatchObject({ name: 'Player', cosmetics: LOOK });
+    expect(rowOf(seenByA(), 'p_a')?.cosmetics).toBe(LOOK);
+    expect(rowOf(seenByA(), 'p_b')).toMatchObject({ name: 'Other' });
+    expect(rowOf(seenByA(), 'p_b')).not.toHaveProperty('cosmetics');
+    expect(rowOf(seenByB(), 'p_b')).not.toHaveProperty('cosmetics');
+    a.disconnect();
+    b.disconnect();
+  });
+
+  it('shares the p4 room with peers from before looks, their rows just have no look', () => {
+    const bus = new FakeBus();
+    const a = makePeer(bus, 'p_a');
+    const seen = lastSnapshot(a);
+    a.join('map1', 'Player', 'terrorist', LOOK);
+    expect(SUPABASE_PROTOCOL).toBe('p4');
+    expect((a as any).channel.topic).toBe('test_room_p4_map1');
+
+    const old = rawPeer(bus, 'p_old');
+    rawState(old);
+    const row = rowOf(seen(), 'p_old');
+    expect(row).toMatchObject({ name: 'Old', model: 'terrorist', position: [1, 0, 1] });
+    expect(row).not.toHaveProperty('cosmetics');
+    // the old peer sees our usual presence keys plus a `c` it never reads
+    expect(old.presenceState().p_a).toEqual([{ id: 'p_a', name: 'Player', model: 'terrorist', j: 1_000_000, c: LOOK }]);
+    a.disconnect();
+  });
+
+  it('drops malformed looks from presence', () => {
+    const bus = new FakeBus();
+    const a = makePeer(bus, 'p_a');
+    const seen = lastSnapshot(a);
+    a.join('map1', 'Player', 'terrorist');
+    const bad: Record<string, unknown> = {
+      p_number: 42,
+      p_object: { c: LOOK },
+      p_empty: '',
+      p_long: `${LOOK}.${'A'.repeat(MAX_LOOK_WIRE_LENGTH)}`,
+      p_charset: '1.qu.an.ve.st.no.123abc.ffeedd.00ff7f.w.rt.0.<b>',
+      p_version: '9.qu.an.ve.st.no.123abc.ffeedd.00ff7f.w.rt.0.YS',
+      p_short: '1.qu.an',
+    };
+    for (const [id, c] of Object.entries(bad)) rawState(rawPeer(bus, id, { c }));
+    rawState(rawPeer(bus, 'p_good', { c: LOOK }));
+
+    for (const id of Object.keys(bad)) {
+      expect(rowOf(seen(), id), id).toBeDefined();
+      expect(rowOf(seen(), id), id).not.toHaveProperty('cosmetics');
+    }
+    expect(rowOf(seen(), 'p_good')?.cosmetics).toBe(LOOK);
+    a.disconnect();
+  });
+
+  it('never puts a look on st or any other broadcast, and bots never get one', () => {
+    const bus = new FakeBus();
+    const a = makePeer(bus, 'p_a');
+    const b = makePeer(bus, 'p_b');
+    const seenByB = lastSnapshot(b);
+    for (const [p, look] of [[a, LOOK], [b, lookN(2)]] as const) {
+      p.join('map1', 'Player', 'terrorist', look);
+      p.setRoomContext(ctx());
+      p.setCombatReady(true);
+    }
+    tickAll([a, b], JOIN_GRACE_MS + 2000);
+    expect(hosting(a)).toBe(true);
+
+    const states = bus.sent.filter((m) => m.event === 'st');
+    expect(states.length).toBeGreaterThan(20);
+    expect(states.some((m) => Array.isArray(m.payload.b) && m.payload.b.length > 0)).toBe(true);
+    const stKeys = new Set(['id', 't', 's', 'r', 'e', 'h', 'w', 'd', 'b', 'bt']);
+    for (const m of states) {
+      expect(Object.keys(m.payload).filter((k) => !stKeys.has(k))).toEqual([]);
+    }
+    for (const m of bus.sent) {
+      const text = JSON.stringify(m.payload);
+      expect(text).not.toContain(LOOK);
+      expect(text).not.toContain(lookN(2));
+      expect(text).not.toContain('cosmetics');
+    }
+    const bots = seenByB()!.players.filter((p) => p.id.startsWith('bot:'));
+    expect(bots.length).toBeGreaterThan(0);
+    for (const bot of bots) expect(bot).not.toHaveProperty('cosmetics');
+    expect(rowOf(seenByB(), 'p_a')?.cosmetics).toBe(LOOK);
+    a.disconnect();
+    b.disconnect();
+  });
+
+  it('re-tracks on a look-only change on the same map, not on an unchanged join', () => {
+    const bus = new FakeBus();
+    const a = makePeer(bus, 'p_a');
+    const b = makePeer(bus, 'p_b');
+    const seenByB = lastSnapshot(b);
+    a.join('map1', 'Player', 'terrorist', lookN(1));
+    b.join('map1', 'Other', 'terrorist');
+    const channel = (a as any).channel;
+    const tracks = () => tracksBy(bus, 'p_a');
+    expect(tracks()).toHaveLength(1);
+
+    a.join('map1', 'Player', 'terrorist', lookN(1));
+    expect(tracks()).toHaveLength(1);
+    a.join('map1', 'Player', 'terrorist', lookN(2));
+    expect(tracks()).toHaveLength(2);
+    expect(tracks()[1].payload).toMatchObject({ name: 'Player', c: lookN(2) });
+    expect((a as any).channel).toBe(channel);
+    tickAll([a, b], 200);
+    expect(rowOf(seenByB(), 'p_a')?.cosmetics).toBe(lookN(2));
+
+    // dropping the look is a change too; junk counts as no look and is never sent
+    a.join('map1', 'Player', 'terrorist');
+    expect(tracks()).toHaveLength(3);
+    expect(tracks()[2].payload).not.toHaveProperty('c');
+    a.join('map1', 'Player', 'terrorist', 'not a look!');
+    expect(tracks()).toHaveLength(3);
+    tickAll([a, b], 200);
+    expect(rowOf(seenByB(), 'p_a')).not.toHaveProperty('cosmetics');
+    a.disconnect();
+    b.disconnect();
+  });
+
+  it('coalesces a burst of 7 look changes into 4 tracks plus one late track with the latest look', () => {
+    const bus = new FakeBus();
+    const a = makePeer(bus, 'p_a');
+    const b = makePeer(bus, 'p_b');
+    const seenByB = lastSnapshot(b);
+    b.join('map1', 'Other', 'terrorist');
+    a.join('map1', 'Player', 'terrorist', lookN(0));
+    const t0 = Date.now();
+    for (let i = 1; i <= 7; i += 1) {
+      vi.advanceTimersByTime(400);
+      a.join('map1', 'Player', 'terrorist', lookN(i));
+    }
+    const tracks = () => tracksBy(bus, 'p_a');
+    expect(tracks().map((t) => t.payload.c)).toEqual([lookN(0), lookN(1), lookN(2), lookN(3)]);
+    expect(PRESENCE_TRACK_LIMIT).toBe(4);
+
+    vi.advanceTimersByTime(t0 + PRESENCE_TRACK_WINDOW_MS - 1 - Date.now());
+    expect(tracks()).toHaveLength(4);
+    vi.advanceTimersByTime(1);
+    expect(tracks()).toHaveLength(5);
+    expect(tracks()[4]).toMatchObject({ at: t0 + PRESENCE_TRACK_WINDOW_MS, payload: { c: lookN(7) } });
+    vi.advanceTimersByTime(2 * PRESENCE_TRACK_WINDOW_MS);
+    expect(tracks()).toHaveLength(5);
+    tickAll([a, b], 200);
+    expect(rowOf(seenByB(), 'p_a')?.cosmetics).toBe(lookN(7));
+    a.disconnect();
+    b.disconnect();
+  });
+
+  it('never goes past 4 tracks in any rolling 30 s window and ends on the latest look', () => {
+    const bus = new FakeBus();
+    const a = makePeer(bus, 'p_a');
+    a.join('map1', 'Player', 'terrorist', lookN(0));
+    // one edit every 1.5 s for two minutes
+    for (let i = 1; i <= 80; i += 1) {
+      vi.advanceTimersByTime(1500);
+      a.join('map1', 'Player', 'terrorist', lookN(i));
+    }
+    vi.advanceTimersByTime(PRESENCE_TRACK_WINDOW_MS);
+    const times = tracksBy(bus, 'p_a').map((t) => t.at);
+    // supabase allows 5 per 30 s, we keep to 4
+    for (let i = 4; i < times.length; i += 1) {
+      expect(times[i] - times[i - 4]).toBeGreaterThanOrEqual(30_000);
+    }
+    expect(times.length).toBeGreaterThanOrEqual(16);
+    expect(tracksBy(bus, 'p_a').at(-1)?.payload.c).toBe(lookN(80));
+    a.disconnect();
+  });
+
+  it('drops a pending late track on a map switch or disconnect; a new channel tracks right away', () => {
+    const bus = new FakeBus();
+    const a = makePeer(bus, 'p_a');
+    const tracks = () => tracksBy(bus, 'p_a');
+    for (let i = 0; i <= 4; i += 1) a.join('map1', 'Player', 'terrorist', lookN(i));
+    expect(tracks()).toHaveLength(4);
+
+    // a new channel join has its own budget on the server, so no waiting
+    a.join('map2', 'Player', 'terrorist', lookN(5));
+    expect(tracks()).toHaveLength(5);
+    expect(tracks()[4]).toMatchObject({ topic: 'test_room_p4_map2', payload: { c: lookN(5) } });
+    vi.advanceTimersByTime(2 * PRESENCE_TRACK_WINDOW_MS);
+    expect(tracks()).toHaveLength(5);
+
+    for (let i = 6; i <= 10; i += 1) a.join('map2', 'Player', 'terrorist', lookN(i));
+    expect(tracks()).toHaveLength(9);
+    expect((a as any).trackTimer).not.toBeNull();
+    a.disconnect();
+    expect((a as any).trackTimer).toBeNull();
+    vi.advanceTimersByTime(2 * PRESENCE_TRACK_WINDOW_MS);
+    expect(tracks()).toHaveLength(9);
+  });
+
+  it('counts the track budget on the injected clock', () => {
+    const bus = new FakeBus();
+    let clock = 5_000_000;
+    const a = new SupabaseMultiplayer(fakeClient(bus), config, { sessionId: 'p_a', isVisible: () => true, now: () => clock });
+    for (let i = 0; i < PRESENCE_TRACK_LIMIT; i += 1) a.join('map1', 'Player', 'terrorist', lookN(i));
+    expect(tracksBy(bus, 'p_a')).toHaveLength(4);
+    // Date.now and the timers stay put, only the injected clock frees the budget
+    clock += PRESENCE_TRACK_WINDOW_MS;
+    a.join('map1', 'Player', 'terrorist', lookN(4));
+    expect(tracksBy(bus, 'p_a')).toHaveLength(5);
+    expect(tracksBy(bus, 'p_a')[4].payload.c).toBe(lookN(4));
+    a.disconnect();
   });
 });
