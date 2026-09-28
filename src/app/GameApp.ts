@@ -38,6 +38,8 @@ import { FramePerf } from './FramePerf';
 import { AdaptiveResolution } from './AdaptiveResolution';
 import { RenderPipeline } from '../render/RenderPipeline';
 import { readRendererName, resolveQuality, type QualityPreset } from '../render/quality';
+import { EFFECTS_LAYER } from '../render/layers';
+import { ViewmodelProbe } from '../render/ViewmodelProbe';
 import type { LoadoutSelection } from '../cosmetics/types';
 import { HUD } from '../ui/HUD';
 import { LoadingScreen } from '../ui/LoadingScreen';
@@ -128,6 +130,7 @@ export class GameApp {
   private readonly container: HTMLElement;
   private readonly renderer: WebGLRenderer;
   private readonly pipeline: RenderPipeline;
+  private readonly viewmodelProbe: ViewmodelProbe;
   private quality: QualityPreset;
   private readonly worldScene = new Scene();
   private readonly worldCamera: PerspectiveCamera;
@@ -257,6 +260,7 @@ export class GameApp {
     this.container = rootElement;
     this.worldCamera = new PerspectiveCamera(100, window.innerWidth / window.innerHeight, 0.1, 6000);
     this.worldCamera.rotation.order = 'YXZ';
+    this.worldCamera.layers.enable(EFFECTS_LAYER);
 
     // the scene renders into the hdr pipeline's own msaa target, so the canvas
     // itself needs no multisampling
@@ -270,6 +274,7 @@ export class GameApp {
     this.renderer.shadowMap.type = PCFSoftShadowMap;
     this.container.appendChild(this.renderer.domElement);
     this.pipeline = new RenderPipeline(this.renderer);
+    this.viewmodelProbe = new ViewmodelProbe(this.renderer);
     this.quality = resolveQuality('auto', readRendererName(this.renderer));
 
     this.input = new InputManager(this.renderer.domElement);
@@ -915,6 +920,7 @@ export class GameApp {
     this.worldScene.add(root);
     // sky, fog, grade, lights and lightmaps from meta.environment (or the old defaults)
     this.mapEnvironment.apply(map);
+    this.viewmodelProbe.reset();
     this.pipeline.setGrade(this.mapEnvironment.getGrade());
 
     this.collisionWorld.setCollisionFromRoot(map.collisionRoot);
@@ -1840,8 +1846,9 @@ export class GameApp {
   }
 
   /**
-   * the gun and arms take the world's light: sky capture, sun direction and
-   * color, and a sun ray from the eye so standing in a shadow darkens them
+   * the gun and arms take the world's light: a probe of the world around the
+   * eye (the sky capture on low), sun direction and color, and a sun ray from
+   * the eye so standing in a shadow darkens them
    */
   private syncViewmodelLighting(dt: number): void {
     const env = this.mapEnvironment.getResolved();
@@ -1854,8 +1861,16 @@ export class GameApp {
     // ease so walking past a pole doesn't flicker the gun
     this.viewmodelSunVisibility += (target - this.viewmodelSunVisibility) * (1 - Math.exp(-dt / 0.12));
     const hemi = this.mapEnvironment.getHemisphereLight();
+    let environment = this.mapEnvironment.getEnvironmentTexture();
+    if (this.loadedMap && this.quality.viewmodelProbe) {
+      // only refresh while the viewmodel is on screen
+      if (this.playing && this.debugCameraMode === 'firstPerson') {
+        this.viewmodelProbe.update(this.worldScene, this.worldCamera.position, dt);
+      }
+      environment = this.viewmodelProbe.getTexture() ?? environment;
+    }
     this.viewmodelRenderer.syncWorldLighting({
-      environment: this.mapEnvironment.getEnvironmentTexture(),
+      environment,
       environmentIntensity: env.envIntensity,
       sunDirection: env.sunDirection,
       sunColor: sun.color,

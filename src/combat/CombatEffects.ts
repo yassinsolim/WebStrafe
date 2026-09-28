@@ -13,6 +13,7 @@ import {
 import type { FirearmId as GunId } from './FirearmTiming';
 import { ImpactDecals } from './ImpactDecals';
 import type { QualityPreset } from '../render/quality';
+import { onEffectsLayer } from '../render/layers';
 import type { SurfaceKind } from '../render/worldMaterials';
 import { TracerRibbon } from './effects/TracerRibbon';
 import { ParticleBurst, type BurstStyle, type Particle } from './effects/ParticleBurst';
@@ -397,7 +398,7 @@ export class CombatEffects {
       ? request.fatal ? remoteProfile.fatalTracerMs : remoteProfile.tracerMs
       : Math.max(profile.tracerMs, travelMs + (length / speed) * 1000 + 30, profile.wakeMs);
     ribbon.userData.clearMs = remote ? travelMs + (length / speed) * 1000 : travelMs + (length / speed) * 1000;
-    this.scene.add(ribbon);
+    this.scene.add(onEffectsLayer(ribbon));
     this.active.push({
       object: ribbon,
       parent: this.scene,
@@ -485,7 +486,7 @@ export class CombatEffects {
     group.userData.weaponId = request.weaponId;
     group.userData.origin = request.from.toArray();
     group.userData.forwardOffset = forwardOffset;
-    parent.add(group);
+    parent.add(parent === this.scene ? onEffectsLayer(group) : group);
     if (!remote) this.options.onLocalMuzzleFlash?.(request.weaponId);
     const lifetimeMs = remote ? REMOTE_SHOT_EFFECTS[request.weaponId].muzzleMs : profile.flashMs;
     const apply = (opacity: number, ageMs: number) => {
@@ -688,7 +689,7 @@ export class CombatEffects {
     if (particles.length === 0) return;
     const burst = new ParticleBurst(origin, particles, style);
     burst.userData.effectType = effectType;
-    this.scene.add(burst);
+    this.scene.add(onEffectsLayer(burst));
     this.active.push({
       object: burst,
       parent: this.scene,
@@ -733,7 +734,7 @@ export class CombatEffects {
     flash.userData.effectType = 'impact';
     flash.userData.weaponId = request.weaponId;
     flash.userData.radius = scale * 0.5;
-    this.scene.add(flash);
+    this.scene.add(onEffectsLayer(flash));
     this.active.push({
       object: flash,
       parent: this.scene,
@@ -790,7 +791,7 @@ export class CombatEffects {
     // The impact is an arrival cue, not a second muzzle flash. Hold it until the
     // round reaches the authoritative endpoint.
     spark.visible = false;
-    this.scene.add(spark);
+    this.scene.add(onEffectsLayer(spark));
     this.active.push({
       object: spark,
       parent: this.scene,

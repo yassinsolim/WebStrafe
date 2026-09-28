@@ -14,6 +14,12 @@ import type { Camera, Texture } from 'three';
 import type { FirearmId as GunId } from '../combat/FirearmTiming';
 import type { QualityPreset } from '../render/quality';
 
+/**
+ * the world's environment light on the viewmodel is scaled up a little so dark
+ * gloves and steel still read against a sunlit floor the exposure is set for
+ */
+const VIEWMODEL_ENV_LIFT = 1.2;
+
 export interface ViewmodelWorldLighting {
   environment: Texture | null;
   environmentIntensity: number;
@@ -175,7 +181,7 @@ export class ViewmodelRenderer {
   public syncWorldLighting(world: ViewmodelWorldLighting): void {
     if (world.environment) {
       this.scene.environment = world.environment;
-      this.scene.environmentIntensity = world.environmentIntensity;
+      this.scene.environmentIntensity = world.environmentIntensity * VIEWMODEL_ENV_LIFT;
     } else {
       this.scene.environment = this.studioEnvironment;
       this.scene.environmentIntensity = 1;

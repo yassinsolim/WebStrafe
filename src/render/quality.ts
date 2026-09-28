@@ -17,6 +17,8 @@ export interface QualityPreset {
   detailedMaterials: boolean;
   /** sky reflections on world and weapon materials */
   reflections: boolean;
+  /** light the viewmodel from a small cube capture at the eye instead of the sky alone */
+  viewmodelProbe: boolean;
   /** caps the device pixel ratio before render scale and adaptive resolution */
   maxPixelRatio: number;
   /** scales particle counts for impacts and muzzle effects */
@@ -33,6 +35,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
     shadowMapSize: 0,
     detailedMaterials: false,
     reflections: false,
+    viewmodelProbe: false,
     maxPixelRatio: 1,
     effectDensity: 0.5,
   },
@@ -45,6 +48,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
     shadowMapSize: 1024,
     detailedMaterials: true,
     reflections: true,
+    viewmodelProbe: true,
     maxPixelRatio: 1.5,
     effectDensity: 0.8,
   },
@@ -57,6 +61,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
     shadowMapSize: 2048,
     detailedMaterials: true,
     reflections: true,
+    viewmodelProbe: true,
     maxPixelRatio: 2,
     effectDensity: 1,
   },
