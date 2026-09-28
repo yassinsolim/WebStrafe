@@ -33,6 +33,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import type { FirearmId as GunId } from '../combat/FirearmTiming';
 import { ViewmodelSystem, type ViewAction } from '../viewmodel/ViewmodelSystem';
 import { parseShotRequest, type ShotRequest } from './shotMode';
+import { runGripCheck } from '../viewmodel/gripCheckRun';
 import { FramePerf } from './FramePerf';
 import { AdaptiveResolution } from './AdaptiveResolution';
 import type { LoadoutSelection } from '../cosmetics/types';
@@ -2487,6 +2488,8 @@ export class GameApp {
   }
 
   private async runShot(shot: ShotRequest): Promise<void> {
+    // dev and preview builds only (shot mode is gated): lets capture tools inspect the live rig
+    (window as unknown as { __viewmodel?: ViewmodelSystem }).__viewmodel = this.viewmodel;
     if (shot.time) this.viewmodel.setClockOverride(shot.time);
     if (shot.knife) this.viewmodel.setKnife(shot.knife as KnifeId);
     await this.viewmodel.load();
@@ -2520,6 +2523,11 @@ export class GameApp {
       }
     }
     this.viewmodel.seek(shot.clip as ViewAction, shot.t);
+    if (shot.gripCheck) {
+      (window as unknown as { __gripReport?: unknown }).__gripReport = await runGripCheck(this.viewmodel);
+      (window as unknown as { __shotReady?: boolean }).__shotReady = true;
+      return;
+    }
     if (shot.qa) {
       this.installQaHooks();
       this.viewmodel.setPaused(false);

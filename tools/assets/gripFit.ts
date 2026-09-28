@@ -13,6 +13,7 @@ import { Vector3 } from 'three';
 import { KNIVES, type KnifeId } from '../../src/combat/knives';
 import { DIGIT_NAMES } from '../../src/viewmodel/ArmsRig';
 import { createHandPose, type MutableHandPose } from '../../src/viewmodel/handPoses';
+import type { RingFit } from '../../src/viewmodel/knifeGrips';
 import { digitSamples, distanceTo, gripScene, isInside, palmSamples, poseScene, setHandOffset, type GripScene, type KnifeHandFit } from './gripProbe';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -40,7 +41,8 @@ function blocked(scene: GripScene, d: Digit): boolean {
 function fitDigit(scene: GripScene, pose: MutableHandPose, d: Digit): number {
   const base = [...pose[d]] as [number, number, number];
   let best = 0.35;
-  for (let k = 0.35; k <= 1.8 + 1e-9; k += 0.025) {
+  // past about 1.3x the wrap pose a finger curls tighter than a real fist
+  for (let k = 0.35; k <= 1.3 + 1e-9; k += 0.025) {
     pose[d][0] = base[0] * k;
     pose[d][1] = base[1] * k;
     pose[d][2] = base[2] * k;
@@ -79,6 +81,15 @@ function fitAt(scene: GripScene, offset: [number, number, number]): { cost: numb
   return { cost, pose };
 }
 
+/** 0 when a ring knife's handle (ring to grip) runs along the fist, index to little finger */
+function handleAlongFist(scene: GripScene): number {
+  if (!scene.ring) return 0;
+  const hand = scene.digits.index[0].parent!;
+  const along = new Vector3(1, 0, 0).transformDirection(hand.matrixWorld);
+  const handle = scene.grip.clone().sub(scene.ring).normalize();
+  return 1 - Math.max(0, handle.dot(along));
+}
+
 function range(a: number, b: number, step: number): number[] {
   const out: number[] = [];
   for (let v = a; v <= b + 1e-9; v += step) out.push(Math.round(v * 10000) / 10000);
@@ -86,7 +97,27 @@ function range(a: number, b: number, step: number): number[] {
 }
 
 export async function fitKnife(id: KnifeId): Promise<KnifeHandFit> {
-  const scene = await gripScene(id);
+  let scene = await gripScene(id);
+  let ringFit: RingFit | undefined;
+  if (scene.ring) {
+    // the ring pins the knife to the index finger; what's left is how far the index
+    // curls (which moves the ring) and how the knife turns about the ring. pick the
+    // pair that lets the other fingers close fully around the handle
+    let bestRing: { cost: number; ring: RingFit } | null = null;
+    for (let curl = 45; curl <= 75; curl += 5) {
+      // small turns only: the handle has to run down the fist toward the little
+      // finger, not out between the fingers
+      for (let twist = -12; twist <= 12; twist += 4) {
+        const ring = { curl, twist };
+        const s = await gripScene(id, {}, undefined, ring);
+        const r = fitAt(s, [0, 0, 0]);
+        const cost = r.cost + handleAlongFist(s) * 0.05;
+        if (!bestRing || cost < bestRing.cost) bestRing = { cost, ring };
+      }
+    }
+    ringFit = bestRing!.ring;
+    scene = await gripScene(id, {}, undefined, ringFit);
+  }
   // ring knives stay seated on the index finger, so only the fingers move
   const xs = scene.kind === 'tee' ? range(-0.004, 0.008, 0.004) : [0];
   const ys = scene.ring ? [0] : range(-0.027, 0.006, 0.003);
@@ -104,7 +135,7 @@ export async function fitKnife(id: KnifeId): Promise<KnifeHandFit> {
   const [, i2, i3] = scene.digits.index;
   const overIndex = () => i2.getWorldPosition(new Vector3()).lerp(i3.getWorldPosition(new Vector3()), 0.5);
   fitThumb(scene, pose, overIndex, 0.019);
-  const fit: KnifeHandFit = { pose, offset: best!.offset };
+  const fit: KnifeHandFit = { pose, offset: best!.offset, ...(ringFit ? { ring: ringFit } : {}) };
   // folders: where the thumb sits to work the opener (pivot, stud or button)
   if (scene.pivot) {
     const opener = createHandPose(pose);

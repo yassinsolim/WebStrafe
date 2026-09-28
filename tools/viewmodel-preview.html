@@ -59,17 +59,32 @@
       }
       if (params.get('knife')) system.setKnife(params.get('knife'));
       system.equip(item);
+      // the blender knife loads after the procedural stand-in: wait for it so the
+      // preview shows what the game shows
+      if (item === 'knife') {
+        for (let i = 0; i < 60 && system.getKnifeObjects()[0]?.userData.source !== 'glb'; i += 1) {
+          await new Promise((r) => setTimeout(r, 50));
+        }
+      }
+      if (params.get('markers')) system.showFingerMarkers(true);
       system.seek(clip, t);
 
       let camera = vm.camera;
       if (view !== 'fp') {
         // outside views for checking hand placement
         camera = new PerspectiveCamera(40, width / height, 0.01, 20);
-        const target = (params.get('target') ?? '0.05,-0.18,-0.3').split(',').map(Number);
+        // target=hand centres the outside views on the live right hand
+        const handAt = () => {
+          const v = system.getHandWorldPosition();
+          return [v.x, v.y, v.z];
+        };
+        const target = params.get('target') === 'hand' ? handAt() : (params.get('target') ?? '0.05,-0.18,-0.3').split(',').map(Number);
         const dist = Number(params.get('dist') ?? 0.9);
         const pos = view === 'side' ? [target[0] + dist, target[1] + 0.05, target[2]]
           : view === 'left' ? [target[0] - dist, target[1] + 0.05, target[2]]
           : view === 'top' ? [target[0], target[1] + dist, target[2] + 0.001]
+          : view === 'bottom' ? [target[0], target[1] - dist, target[2] + 0.001]
+          : view === 'front' ? [target[0], target[1] + 0.02, target[2] - dist]
           : [target[0] + dist * 0.6, target[1] + dist * 0.3, target[2] - dist * 0.6];
         camera.position.set(...pos);
         camera.lookAt(...target);

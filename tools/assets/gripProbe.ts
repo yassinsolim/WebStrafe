@@ -14,7 +14,7 @@ import { BufferAttribute, BufferGeometry, DoubleSide, Matrix4, Mesh, Object3D, Q
 import { MeshBVH } from 'three-mesh-bvh';
 import { getKnife, KNIVES, type KnifeId } from '../../src/combat/knives';
 import { applyDigitPose, DIGIT_NAMES, type DigitBones, type DigitRest } from '../../src/viewmodel/ArmsRig';
-import { alignRingGrip, gripKindFor, knifeGripSpec, measureHandleDiameter, type KnifeGripKind } from '../../src/viewmodel/knifeGrips';
+import { alignRingGrip, gripKindFor, knifeGripSpec, measureHandleDiameter, type KnifeGripKind, type RingFit } from '../../src/viewmodel/knifeGrips';
 import type { HandPose } from '../../src/viewmodel/handPoses';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -159,6 +159,8 @@ export interface GripScene {
   ringInnerRadius: number | null;
   /** folders: the blade pivot, where the opener is */
   pivot: Vector3 | null;
+  /** the grip socket (hammer-grip centre) in world space */
+  grip: Vector3;
   /** to move the hand along the handle without reloading (the fitter) */
   anchor: Vector3;
   anchorInHand: Vector3;
@@ -185,12 +187,15 @@ export interface KnifeHandFit {
   offset: [number, number, number];
   /** folders: thumb curls that put it on the opener */
   opener?: [number, number, number];
+  /** ring knives: index curl and turn about the ring */
+  ring?: RingFit;
 }
 
 export async function gripScene(
   id: KnifeId,
   poseTable: Record<string, HandPose | KnifeHandFit> = {},
   offsetOverride?: [number, number, number],
+  ringOverride?: RingFit,
 ): Promise<GripScene> {
   const knife = await loadScene(`public/knives/${id}.glb`);
   const top = knife.children.length === 1 ? knife.children[0] : knife;
@@ -210,7 +215,7 @@ export async function gripScene(
   const entry = poseTable[id];
   const fit = entry && 'pose' in entry ? entry : null;
   const offset = offsetOverride ?? fit?.offset;
-  let spec = knifeGripSpec(kind, measureHandleDiameter(knife), offset);
+  let spec = knifeGripSpec(kind, measureHandleDiameter(knife), offset, ringOverride ?? fit?.ring);
   if (ring) spec = alignRingGrip(spec, ring, grip);
   const anchor = spec.anchor === 'ring' && ring ? ring : spec.anchor === 'tee' && tee ? tee : grip;
 
@@ -240,6 +245,7 @@ export async function gripScene(
     ring: ring && kind === 'reverse_ring' ? ring : null,
     ringInnerRadius: typeof knife.userData.ringInnerRadius === 'number' ? knife.userData.ringInnerRadius : null,
     pivot: socket('socket_pivot'),
+    grip: grip.clone(),
     anchor: anchor.clone(),
     anchorInHand: spec.anchorInHand.clone().sub(new Vector3(...(offset ?? [0, 0, 0]))),
     knifeInHand: spec.knifeInHand.clone(),

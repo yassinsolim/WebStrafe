@@ -34,6 +34,8 @@ export interface KnifeGripSpec {
   handInAnchor: Matrix4;
   /** folders: thumb curls that put it on the opener, blended in while opening */
   openerThumb?: [number, number, number];
+  /** ring knives: extra turn about the ring axis after the handle is aimed into the fist */
+  ringTwistDeg?: number;
 }
 
 export function gripKindFor(def: KnifeDef): KnifeGripKind {
@@ -53,17 +55,27 @@ const axes = (x: [number, number, number], y: [number, number, number], z: [numb
   ));
 
 // index finger: knuckle at (-0.024, 0.101, 0), first phalanx 3.8 cm. curled
-// 60 degrees toward the palm, the middle of that phalanx is where the ring sits
+// toward the palm, the middle of that phalanx is where the ring sits
 const INDEX_CURL_DEG = 60;
-const ringAxis = new Vector3(0, Math.cos((INDEX_CURL_DEG * Math.PI) / 180), -Math.sin((INDEX_CURL_DEG * Math.PI) / 180));
-const RING_IN_HAND = new Vector3(-0.024, 0.101, 0).addScaledVector(ringAxis, 0.019);
+
+/** ring centre and ring axis (along the index's first phalanx) for an index curl */
+function ringSeat(curlDeg: number): { axis: Vector3; centre: Vector3 } {
+  const a = (curlDeg * Math.PI) / 180;
+  const axis = new Vector3(0, Math.cos(a), -Math.sin(a));
+  return { axis, centre: new Vector3(-0.024, 0.101, 0).addScaledVector(axis, 0.019) };
+}
+
+function ringKnifeInHand(curlDeg: number): Quaternion {
+  const { axis } = ringSeat(curlDeg);
+  // edge (and the hook's curve) forward past the little finger
+  return axes([1, 0, 0], [0, -axis.z, axis.y], [0, -axis.y, -axis.z]);
+}
 
 const KNIFE_IN_HAND: Record<KnifeGripKind, Quaternion> = {
   hammer: axes([-1, 0, 0], [0, -1, 0], [0, 0, 1]),
   balisong: axes([-1, 0, 0], [0, -1, 0], [0, 0, 1]),
   // ring axis is the knife's z (the ring lies in the blade plane)
-  // edge (and the hook's curve) forward past the little finger
-  reverse_ring: axes([1, 0, 0], [0, -ringAxis.z, ringAxis.y], [0, -ringAxis.y, -ringAxis.z]),
+  reverse_ring: ringKnifeInHand(INDEX_CURL_DEG),
   tee: axes([0, 1, 0], [-1, 0, 0], [0, 0, 1]),
 };
 
@@ -75,7 +87,7 @@ function anchorFor(kind: KnifeGripKind, handleDiameter: number): Vector3 {
   const extra = Math.max(-0.006, Math.min(0.01, handleDiameter - REFERENCE_HANDLE_M));
   switch (kind) {
     case 'reverse_ring':
-      return RING_IN_HAND.clone();
+      return ringSeat(INDEX_CURL_DEG).centre;
     case 'tee':
       // between the middle (x 0) and ring (x 0.021) fingers
       return new Vector3(0.011, 0.098, -0.022);
@@ -110,19 +122,34 @@ export function wrapPose(kind: KnifeGripKind, handleDiameter: number, out: Mutab
   return out;
 }
 
-export function knifeGripSpec(kind: KnifeGripKind, handleDiameter: number, offset?: readonly [number, number, number]): KnifeGripSpec {
-  const anchorInHand = anchorFor(kind, handleDiameter);
+export interface RingFit {
+  /** index first-joint curl the ring sits on, degrees */
+  curl: number;
+  /** turn about the ring axis on top of the automatic alignment, degrees */
+  twist: number;
+}
+
+export function knifeGripSpec(
+  kind: KnifeGripKind,
+  handleDiameter: number,
+  offset?: readonly [number, number, number],
+  ring?: RingFit,
+): KnifeGripSpec {
+  const anchorInHand = kind === 'reverse_ring' && ring ? ringSeat(ring.curl).centre : anchorFor(kind, handleDiameter);
   // per knife nudge fitted to the model (see tools/assets/gripFit.ts)
   if (offset) anchorInHand.add(new Vector3(offset[0], offset[1], offset[2]));
-  const knifeInHand = KNIFE_IN_HAND[kind].clone();
+  const knifeInHand = kind === 'reverse_ring' && ring ? ringKnifeInHand(ring.curl) : KNIFE_IN_HAND[kind].clone();
   const handInAnchor = new Matrix4().compose(anchorInHand, knifeInHand, new Vector3(1, 1, 1)).invert();
+  const pose = wrapPose(kind, handleDiameter);
+  if (kind === 'reverse_ring' && ring) pose.index[0] = ring.curl;
   return {
     kind,
     anchor: kind === 'reverse_ring' ? 'ring' : kind === 'tee' ? 'tee' : 'grip',
     anchorInHand,
     knifeInHand,
-    pose: wrapPose(kind, handleDiameter),
+    pose,
     handInAnchor,
+    ringTwistDeg: ring?.twist,
   };
 }
 
@@ -147,7 +174,7 @@ export function alignRingGrip(spec: KnifeGripSpec, ringLocal: Vector3, gripLocal
   if (vA.lengthSq() < 1e-8 || vB.lengthSq() < 1e-8) return spec;
   vA.normalize();
   vB.normalize();
-  const angle = Math.atan2(vA.clone().cross(vB).dot(vAxis), vA.dot(vB));
+  const angle = Math.atan2(vA.clone().cross(vB).dot(vAxis), vA.dot(vB)) + ((spec.ringTwistDeg ?? 0) * Math.PI) / 180;
   const knifeInHand = new Quaternion().setFromAxisAngle(vAxis, angle).multiply(spec.knifeInHand);
   return {
     ...spec,
@@ -194,6 +221,7 @@ interface FittedEntry {
   pose: HandPose;
   offset: [number, number, number];
   opener?: [number, number, number];
+  ring?: RingFit;
 }
 const FITTED_POSES = FITTED as unknown as Partial<Record<KnifeId, FittedEntry>>;
 
@@ -204,7 +232,7 @@ const FITTED_POSES = FITTED as unknown as Partial<Record<KnifeId, FittedEntry>>;
  */
 export function fittedGripSpec(id: KnifeId, kind: KnifeGripKind, handleDiameter: number): KnifeGripSpec {
   const fit = FITTED_POSES[id];
-  const spec = knifeGripSpec(kind, handleDiameter, fit?.offset);
+  const spec = knifeGripSpec(kind, handleDiameter, fit?.offset, fit?.ring);
   if (fit) spec.pose = createHandPose(fit.pose);
   if (fit?.opener) spec.openerThumb = [...fit.opener];
   return spec;

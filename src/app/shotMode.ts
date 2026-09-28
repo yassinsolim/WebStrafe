@@ -37,6 +37,8 @@ export interface ShotRequest {
   adaptiveLowFps: number | null;
   /** exposes window.__qa for automated multiplayer tests */
   qa: boolean;
+  /** runs the in-engine grip check over every knife and frame (window.__gripReport) */
+  gripCheck: boolean;
 }
 
 export function parseShotRequest(search: string, enabled = devToolsEnabled()): ShotRequest | null {
@@ -76,6 +78,7 @@ export function parseShotRequest(search: string, enabled = devToolsEnabled()): S
     dpr: num('dpr'),
     adaptiveLowFps: num('adaptiveLow'),
     qa: params.get('qa') === '1',
+    gripCheck: params.get('gripcheck') === '1',
     adaptive: params.has('adaptive') ? params.get('adaptive') !== '0' : null,
   };
 }

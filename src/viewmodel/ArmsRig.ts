@@ -174,6 +174,10 @@ export class ArmsRig {
     if (this.watchHands.second) this.watchHands.second.rotation.y = clockwise * ((s - 1 + tick) / 60);
   }
 
+  public getDigits(side: Side): DigitBones {
+    return this.arms[side].digits;
+  }
+
   public getHandBone(side: Side): Object3D {
     return this.arms[side].hand;
   }
