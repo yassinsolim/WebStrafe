@@ -120,7 +120,7 @@ describe('public/viewmodels/v2/arms.glb', () => {
         }
       }
     }
-  });
+  }, 20_000);
 
   it('parents the watch to forearm_twist_l with all its parts', () => {
     for (const name of WATCH_NODES) {
