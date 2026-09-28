@@ -13,6 +13,7 @@ import { loadCharacterLibrary } from './CharacterFactory';
 import { FP_PART, transplantArms, type ArmsSurface } from './fpTransplant';
 import { mergeParts, type CharacterLibrary } from './library';
 import type { CharacterLook } from './look';
+import type { PlayerModel } from '../network/types';
 
 // linear average of the arms atlas regions (tools/blender/arms/texture.py), used to
 // retint the baked sleeve so its average lands on the wanted colour
@@ -37,6 +38,7 @@ export class FirstPersonArmor {
   private readonly bySet = new Map<string, SkinnedMesh>();
   private readonly watchLift = new Map<string, number>();
   private look: CharacterLook | null = null;
+  private team: PlayerModel = 'terrorist';
   private sleeve: ArmsMaterial | null = null;
   private glove: ArmsMaterial | null = null;
   private skin: ArmsMaterial | null = null;
@@ -111,9 +113,10 @@ export class FirstPersonArmor {
       });
   }
 
-  setLook(look: CharacterLook): void {
+  setLook(look: CharacterLook, team: PlayerModel = this.team): void {
     this.look = look;
-    this.material.applyLook(look, 'terrorist');
+    this.team = team;
+    this.material.applyLook(look, team);
     for (const [set, mesh] of this.bySet) mesh.visible = set === look.arms;
     const info = ARMOR_SET_INFO[look.arms];
     const secondary = new Color(look.secondary);

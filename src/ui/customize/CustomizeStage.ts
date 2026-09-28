@@ -253,7 +253,7 @@ export class CustomizeStage {
     const team = this.wantTeam;
     this.loading = true;
     this.onStatus?.('loading');
-    createCharacter(look, team, { pose: 'stance' }).then(
+    createCharacter(look, team, { pose: 'stance', toneMap: 'aces' }).then(
       (handle) => {
         this.loading = false;
         if (this.disposed) {

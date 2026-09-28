@@ -165,7 +165,7 @@ export class CharacterPreview {
       return;
     }
     const [character, knife] = await Promise.all([
-      createCharacter(this.look, this.team, { pose: 'stance', lod: 0 }),
+      createCharacter(this.look, this.team, { pose: 'stance', lod: 0, toneMap: 'aces' }),
       this.getKnife(),
     ]);
     if (token !== this.loadToken) {

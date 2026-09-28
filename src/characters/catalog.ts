@@ -168,6 +168,23 @@ export const TEAM_LIGHT = {
   counterterrorist: '#3aa8ff',
 } as const;
 
+/** how the stage the character is drawn in tone maps: the menu stages use aces, the world the map's grade */
+export type CharacterToneMap = 'aces' | 'grade';
+
+/** team light glow as the menu stages draw it (TEAM_LIGHT at this strength, then aces) */
+export const TEAM_GLOW_STRENGTH = 3.2;
+
+/**
+ * the team light in the world. aces turns the bright t orange pale gold, the
+ * grade's neutral tone map keeps it orange and washes it to peach, so the world
+ * gets a yellower, slightly stronger light that grades to the menu's look
+ * (within a few levels on every map's grade). ct already reads the same blue
+ */
+export const WORLD_TEAM_LIGHT: Record<keyof typeof TEAM_LIGHT, { color: string; strength: number }> = {
+  terrorist: { color: '#ffde42', strength: 3.55 },
+  counterterrorist: { color: TEAM_LIGHT.counterterrorist, strength: TEAM_GLOW_STRENGTH },
+};
+
 export interface Swatch {
   name: string;
   hex: string;

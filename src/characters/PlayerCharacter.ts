@@ -15,7 +15,7 @@ export interface PlayerCharacterOptions {
   /** the look changed for good (Done in the customize screen, or a team default swap) */
   onLookChanged: (look: CharacterLook) => void;
   /** first-person arms that wear the look */
-  viewmodel?: { setArmsLook(look: CharacterLook): void };
+  viewmodel?: { setArmsLook(look: CharacterLook, team: PlayerModel): void };
 }
 
 /**
@@ -34,7 +34,7 @@ export class PlayerCharacter {
     this.lookValue = parseDevLook(globalThis.location?.search ?? '', options.team) ?? loadLook(options.team);
     this.avatar = new LocalAvatar(this.lookValue, this.team);
     options.worldScene.add(this.avatar.root);
-    options.viewmodel?.setArmsLook(this.lookValue);
+    options.viewmodel?.setArmsLook(this.lookValue, this.team);
     // start fetching the armor library behind the menu
     void loadCharacterLibrary();
   }
@@ -97,7 +97,7 @@ export class PlayerCharacter {
     this.lookValue = look;
     this.avatar.setLook(look, this.team);
     this.menu?.setCharacterLook(look);
-    this.options.viewmodel?.setArmsLook(look);
+    this.options.viewmodel?.setArmsLook(look, this.team);
     if (notify) this.options.onLookChanged(look);
   }
 }

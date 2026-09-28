@@ -5,12 +5,15 @@ import { applyKnifeIdlePose, buildArmRig, type ArmRig } from '../multiplayer/pla
 import { ArmorCharacter } from './ArmorCharacter';
 import { CharacterLibrary } from './library';
 import type { CharacterLook } from './look';
+import type { CharacterToneMap } from './catalog';
 
 export interface CharacterOptions {
   /** 'stance' holds the knife idle and breathes on update, 'none' leaves the bones to the caller */
   pose?: 'stance' | 'none';
   /** pin a level of detail, default switches by camera distance */
   lod?: 0 | 1 | 2 | 'auto';
+  /** the menu stages tone map with aces, the world with the map's grade (default) */
+  toneMap?: CharacterToneMap;
 }
 
 /** one dressed character. feet at y = 0, facing +z, left side on +x */

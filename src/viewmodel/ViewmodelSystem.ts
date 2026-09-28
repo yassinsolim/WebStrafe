@@ -8,6 +8,7 @@ import { ArmsRig, type DigitSpread } from './ArmsRig';
 import { checkGrip, type GripCheck } from './gripCheck';
 import { FirstPersonArmor } from '../characters/fpArmor';
 import type { CharacterLook } from '../characters/look';
+import type { PlayerModel } from '../network/types';
 import { sampleClip, retime, type Clip } from './clips';
 import { blendHandPose, createHandPose, HAND_POSES, type HandPose, type HandPoseName, type MutableHandPose } from './handPoses';
 import { frameFromXZ, frameFromYZ } from './ik';
@@ -327,8 +328,8 @@ export class ViewmodelSystem {
   }
 
   /** dresses the arms in the player's armor set and paint */
-  public setArmsLook(look: CharacterLook): void {
-    this.armsArmor.setLook(look);
+  public setArmsLook(look: CharacterLook, team?: PlayerModel): void {
+    this.armsArmor.setLook(look, team);
   }
 
   /** finish for the knife in hand; kept and reapplied whenever the knife rig is rebuilt */

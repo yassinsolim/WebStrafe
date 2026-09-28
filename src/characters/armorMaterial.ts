@@ -1,5 +1,5 @@
 import { Color, DataTexture, MeshStandardMaterial, Vector2, Vector3, type Texture, type WebGLProgramParametersWithUniforms } from 'three';
-import { FINISH_INFO, TEAM_LIGHT, type FinishId } from './catalog';
+import { FINISH_INFO, TEAM_GLOW_STRENGTH, TEAM_LIGHT, WORLD_TEAM_LIGHT, type CharacterToneMap, type FinishId } from './catalog';
 import type { CharacterLook } from './look';
 import { MATERIAL_SLOTS } from './library';
 import type { PlayerModel } from '../network/types';
@@ -54,7 +54,7 @@ export class ArmorMaterial extends MeshStandardMaterial {
     this.needsUpdate = true;
   }
 
-  applyLook(look: CharacterLook, team: PlayerModel): void {
+  applyLook(look: CharacterLook, team: PlayerModel, toneMap: CharacterToneMap = 'grade'): void {
     const finish = FINISH_INFO[look.finish as FinishId] ?? FINISH_INFO.satin;
     const lin = (hex: string) => {
       const c = new Color(hex);
@@ -71,7 +71,9 @@ export class ArmorMaterial extends MeshStandardMaterial {
     // the undersuit is charcoal with a hint of the secondary paint
     this.slotColor[S.suit].set(0.028, 0.03, 0.034).lerp(secondary.clone().multiplyScalar(0.3), 0.15);
     this.slotColor[S.dark].set(0.032, 0.034, 0.038);
-    this.slotColor[S.light].set(teamColor.r, teamColor.g, teamColor.b);
+    const glow = toneMap === 'aces' ? { color: TEAM_LIGHT[team], strength: TEAM_GLOW_STRENGTH } : WORLD_TEAM_LIGHT[team];
+    const light = new Color(glow.color);
+    this.slotColor[S.light].set(light.r, light.g, light.b);
     // tinted glass: the accent paint, deep and glossy, so reflections take its colour
     this.slotColor[S.visor].copy(accent).multiplyScalar(0.22).addScalar(0.004);
     this.slotColor[S.metal].set(0.6, 0.61, 0.63);
@@ -85,7 +87,7 @@ export class ArmorMaterial extends MeshStandardMaterial {
     paint(S.accent, 0.06);
     this.slotPbr[S.suit].set(0.86, 0, 0);
     this.slotPbr[S.dark].set(0.5, 0.25, 0);
-    this.slotPbr[S.light].set(0.35, 0, 3.2);
+    this.slotPbr[S.light].set(0.35, 0, glow.strength);
     this.slotPbr[S.visor].set(0.07, 0.55, 0);
     this.slotPbr[S.metal].set(0.3, 1, 0);
     this.slotPbr[S.cloth].set(0.92, 0, 0);

@@ -14,7 +14,7 @@ import {
 import type { PlayerModel } from '../network/types';
 import { applyKnifeIdlePose, buildArmRig, type ArmRig } from '../multiplayer/playerRig';
 import { ArmorMaterial } from './armorMaterial';
-import { ARMOR_SLOTS } from './catalog';
+import { ARMOR_SLOTS, type CharacterToneMap } from './catalog';
 import { attachDecals } from './decals';
 import { LOD_LEVELS, mergeParts, type CharacterLibrary, type PartMesh } from './library';
 import type { CharacterLook } from './look';
@@ -50,6 +50,8 @@ export interface ArmorCharacterOptions {
   pose?: 'stance' | 'none';
   /** pin one level of detail (screenshots, the menu); default switches by distance */
   lod?: 0 | 1 | 2 | 'auto';
+  /** the menu stages tone map with aces, the world with the map's grade (default) */
+  toneMap?: CharacterToneMap;
 }
 
 const BOUNDS = new Sphere(new Vector3(0, 0.95, 0), 1.25);
@@ -153,8 +155,8 @@ export class ArmorCharacter {
   setLook(look: CharacterLook, team: PlayerModel = this.team): void {
     this.look = look;
     this.team = team;
-    this.material.applyLook(look, team);
-    this.farMaterial.applyLook(look, team);
+    this.material.applyLook(look, team, this.options.toneMap);
+    this.farMaterial.applyLook(look, team, this.options.toneMap);
     const key = [look.helmet, look.arms, look.chest, look.legs, look.classItem].join('|');
     if (key !== this.piecesKey) {
       this.piecesKey = key;
