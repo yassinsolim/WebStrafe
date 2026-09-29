@@ -112,8 +112,8 @@ vercel env add VITE_MULTIPLAYER_TRANSPORT preview revamp/netcode-phase1   # valu
 vercel env add VITE_WS_URL preview revamp/netcode-phase1                  # value: wss://game.yassin.app/ws
 ```
 
-Then redeploy the preview (push to the branch, or Redeploy in the Vercel
-dashboard) and bench it from anywhere:
+Then deploy a preview from the branch's worktree with `vercel deploy` (pushing
+no longer builds previews, see `AGENTS.md`) and bench it from anywhere:
 
 ```bash
 npx tsx tools/netbench/bench.ts --target wss://game.yassin.app/ws --secs 30
