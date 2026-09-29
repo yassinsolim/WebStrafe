@@ -13,6 +13,7 @@ import {
   type Material,
 } from 'three';
 import type { PlayerModel } from '../network/types';
+import { boneAxisSign, buildSkeleton } from '../characters/skeleton';
 
 /**
  * Original low-poly player models, generated in code (no external assets).
@@ -26,45 +27,6 @@ import type { PlayerModel } from '../network/types';
  * all geometry are our own; armour parts are parented straight to bones, like
  * a rigid action figure, so there are no skin weights to author.
  */
-
-interface JointSpec {
-  name: string;
-  parent: string | null;
-  /** bind orientation in model space (x, y, z, w) */
-  q: [number, number, number, number];
-  /** either a model-space position (root / branches) or a length along the parent's +X */
-  at?: [number, number, number];
-  along?: number;
-}
-
-// branch offsets are relative to the parent joint, in model space
-const JOINTS: JointSpec[] = [
-  { name: 'pelvis', parent: null, q: [0.5, 0.5, 0.5, 0.5], at: [0, 0.975, -0.06] },
-  { name: 'spine_0', parent: 'pelvis', q: [0.528, 0.4703, 0.528, 0.4703], along: 0.025 },
-  { name: 'spine_1', parent: 'spine_0', q: [0.4995, 0.5005, 0.4995, 0.5005], along: 0.095 },
-  { name: 'spine_2', parent: 'spine_1', q: [0.4516, 0.5441, 0.4516, 0.5441], along: 0.11 },
-  { name: 'spine_3', parent: 'spine_2', q: [0.5146, 0.485, 0.5146, 0.485], along: 0.145 },
-  { name: 'neck_0', parent: 'spine_3', q: [0.5698, 0.4187, 0.5698, 0.4187], along: 0.15 },
-  { name: 'head_0', parent: 'neck_0', q: [0.5, 0.5, 0.5, 0.5], along: 0.13 },
-  { name: 'clavicle_l', parent: 'spine_3', q: [0.7022, 0.087, -0.227, 0.6692], at: [0.03, 0.095, 0.075] },
-  { name: 'arm_upper_l', parent: 'clavicle_l', q: [0.6895, -0.2721, -0.3286, 0.5854], along: 0.15 },
-  { name: 'arm_lower_l', parent: 'arm_upper_l', q: [0.6125, -0.4175, -0.1914, 0.6434], along: 0.27 },
-  { name: 'hand_l', parent: 'arm_lower_l', q: [0.8709, -0.4586, 0.1681, 0.0549], along: 0.255 },
-  { name: 'weapon_hand_l', parent: 'hand_l', q: [0.4586, 0.8709, -0.0549, 0.1681], along: 0.068 },
-  { name: 'clavicle_r', parent: 'spine_3', q: [-0.6692, -0.227, -0.087, 0.7022], at: [-0.03, 0.095, 0.075] },
-  { name: 'arm_upper_r', parent: 'clavicle_r', q: [-0.5853, -0.3286, 0.2721, 0.6895], along: 0.15 },
-  { name: 'arm_lower_r', parent: 'arm_upper_r', q: [-0.6434, -0.1914, 0.4175, 0.6125], along: 0.27 },
-  { name: 'hand_r', parent: 'arm_lower_r', q: [-0.0549, 0.1681, 0.4586, 0.8709], along: 0.255 },
-  { name: 'weapon_hand_r', parent: 'hand_r', q: [0.1681, 0.0549, 0.8709, -0.4586], along: 0.068 },
-  { name: 'leg_upper_l', parent: 'pelvis', q: [0.5752, -0.5467, 0.4258, -0.4347], at: [0.085, -0.085, 0.02] },
-  { name: 'leg_lower_l', parent: 'leg_upper_l', q: [-0.5389, 0.5825, -0.397, 0.4612], along: 0.41 },
-  { name: 'ankle_l', parent: 'leg_lower_l', q: [0.158, -0.6007, -0.1907, 0.7602], along: 0.385 },
-  { name: 'ball_l', parent: 'ankle_l', q: [0.0043, -0.6211, 0.0034, 0.7837], along: 0.13 },
-  { name: 'leg_upper_r', parent: 'pelvis', q: [0.4347, 0.4258, 0.5467, 0.5752], at: [-0.085, -0.085, 0.02] },
-  { name: 'leg_lower_r', parent: 'leg_upper_r', q: [0.4612, 0.397, 0.5825, 0.5389], along: 0.41 },
-  { name: 'ankle_r', parent: 'leg_lower_r', q: [0.7602, 0.1907, -0.6007, -0.158], along: 0.385 },
-  { name: 'ball_r', parent: 'ankle_r', q: [0.7837, -0.0034, -0.6211, -0.0043], along: 0.13 },
-];
 
 interface Palette {
   cloth: number;
@@ -214,50 +176,6 @@ export function createPlayerModel(model: PlayerModel): Group {
   });
   root.userData.proceduralPlayer = model;
   return root;
-}
-
-function buildSkeleton(): Map<string, Bone> {
-  const bones = new Map<string, Bone>();
-  const worldQuat = new Map<string, Quaternion>();
-  const worldPos = new Map<string, Vector3>();
-  for (const [index, spec] of JOINTS.entries()) {
-    const q = new Quaternion(spec.q[0], spec.q[1], spec.q[2], spec.q[3]).normalize();
-    let p: Vector3;
-    if (!spec.parent) {
-      p = new Vector3(...spec.at!);
-    } else {
-      const parentPos = worldPos.get(spec.parent)!;
-      if (spec.at) {
-        p = parentPos.clone().add(new Vector3(...spec.at));
-      } else {
-        const dir = new Vector3(boneAxisSign(spec.parent), 0, 0).applyQuaternion(worldQuat.get(spec.parent)!);
-        p = parentPos.clone().addScaledVector(dir, spec.along ?? 0);
-      }
-    }
-    worldQuat.set(spec.name, q);
-    worldPos.set(spec.name, p);
-
-    const bone = new Bone();
-    // numbered suffix like other humanoid exports, the rig matches on the prefix
-    bone.name = `${spec.name}_${index}`;
-    if (spec.parent) {
-      const parentQ = worldQuat.get(spec.parent)!;
-      const parentInv = parentQ.clone().invert();
-      bone.position.copy(p.clone().sub(worldPos.get(spec.parent)!).applyQuaternion(parentInv));
-      bone.quaternion.copy(parentInv.multiply(q));
-      bones.get(spec.parent)!.add(bone);
-    } else {
-      bone.position.copy(p);
-      bone.quaternion.copy(q);
-    }
-    bones.set(spec.name, bone);
-  }
-  return bones;
-}
-
-/** right-side chains are mirrored: they point at their child along -X */
-function boneAxisSign(name: string): 1 | -1 {
-  return name.endsWith('_r') ? -1 : 1;
 }
 
 function axisX(bone: Bone): Vector3 {

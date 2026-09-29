@@ -78,6 +78,7 @@ import { DEFAULT_ZOOM_SENSITIVITY_RATIO } from '../combat/Scope';
 import { ScopeOverlay } from '../ui/ScopeOverlay';
 import { isCombatEnabled } from '../combat/combatConfig';
 import { getWeapon, weaponMaxSpeed, type WeaponId } from '../combat/weapons';
+import { RoomFullNotice } from '../ui/RoomFullNotice';
 import { DEFAULT_KNIFE_ID, getKnife, type KnifeId } from '../combat/knives';
 import {
   defaultKnifeSelection,
@@ -85,7 +86,6 @@ import {
   saveKnifeSelection,
   type KnifeLoadoutSelection,
 } from '../cosmetics/finishes/selection';
-import { RoomFullNotice } from '../ui/RoomFullNotice';
 import { CollisionWorld } from '../world/CollisionWorld';
 import { deleteCustomMap, listCustomMaps } from '../world/CustomMapStore';
 import { MapLoader, type MapLoadReporter } from '../world/MapLoader';
@@ -107,6 +107,11 @@ import { GameHud } from '../ui/hud/GameHud';
 import { runHudDemo } from '../ui/hud/hudDemo';
 import { damageDirection } from '../ui/hud/hudMath';
 import { showsRunTimer } from '../ui/menu/menuInfo';
+import { PlayerCharacter } from '../characters/PlayerCharacter';
+import { loadCharacterLibrary } from '../characters/CharacterFactory';
+import { devCharacterRows, parseDevCharacters } from '../characters/devCharacters';
+import { setCharacterDetail } from '../characters/ArmorCharacter';
+import { decodeLook, encodeLook, lookToArmor } from '../characters/look';
 import { SurfSession } from '../surf/SurfSession';
 import { getSurfBoards } from '../surf/SurfBoards';
 import { PRESPEED_CAP_FACTOR } from '../surf/RunTimer';
@@ -230,6 +235,7 @@ export class GameApp {
   private readonly freecamPosition = new Vector3();
 
   private menu: MainMenu | null = null;
+  private playerCharacter: PlayerCharacter | null = null;
   private settings: GameSettings = { ...defaultSettings };
   private loadout: LoadoutSelection | null = null;
 
@@ -399,6 +405,13 @@ export class GameApp {
     this.selectedMapId = loadSelectedMapId(this.mapSources.keys(), fallbackMapId);
 
     this.loadout = defaultLoadout(cosmeticsManifest);
+    this.playerCharacter = new PlayerCharacter({
+      container: this.container,
+      worldScene: this.worldScene,
+      team: this.getPlayerModelFromLoadout(this.loadout),
+      onLookChanged: () => this.syncCosmetics(),
+      viewmodel: this.viewmodel,
+    });
     this.knifeSelection = loadKnifeSelection();
     this.viewmodel.setKnifeFinish(this.knifeSelection);
     this.viewmodel.setKnife(this.knifeSelection.knifeId);
@@ -427,8 +440,10 @@ export class GameApp {
       onLoadoutChanged: (next) => {
         this.loadout = next;
         void this.applyLoadout(next);
+        this.playerCharacter?.setTeam(this.getPlayerModelFromLoadout(next));
         this.syncMultiplayerIdentity();
       },
+      onCustomize: () => this.playerCharacter?.openCustomize(),
       onNameChanged: (name) => this.applyPlayerName(name),
       onKnifeSelected: (knifeId) => {
         this.viewmodel.setKnife(knifeId);
@@ -450,6 +465,7 @@ export class GameApp {
     this.menu.setKnifeFinish(this.knifeSelection);
     this.menu.setMaps(this.getMapEntries(), this.selectedMapId);
     this.menu.setCosmetics(cosmeticsManifest, this.loadout);
+    this.playerCharacter.attachMenu(this.menu);
     this.menu.setLeaderboard([], this.getMapNameById(this.selectedMapId));
     this.menu.setPlayerName(this.localPlayerName);
     // Persist the (possibly auto-generated) name so identity is stable across reloads.
@@ -800,6 +816,13 @@ export class GameApp {
     this.viewmodel.root.rotation.copy(this.viewmodelRenderer.motionRot);
     this.viewmodel.update(frameDt);
     this.remotePlayers.update(frameDt);
+    this.playerCharacter?.update(
+      frameDt,
+      time / 1000,
+      this.movement.getFeetPosition(),
+      this.movement.getYawRad(),
+      this.playing && this.debugCameraMode === 'thirdPerson',
+    );
     if (this.combatEnabled) {
       this.updateCombat(time);
     }
@@ -940,6 +963,8 @@ export class GameApp {
       }
 
       this.activateLoadedMap(this.loadedMap);
+      // armor shader compiled against this map's lights while the loading screen is up
+      await this.remotePlayers.warmUp(this.renderer, this.worldScene, this.worldCamera);
       // compile the map's shaders behind the loading screen, not in the first frames of play
       await this.precompileShaders();
       if (loadToken !== this.currentLoadToken) {
@@ -2639,7 +2664,11 @@ export class GameApp {
         weapon: this.weapon.getActive(),
         ammo: this.weapon.getAmmo(),
         feet: this.movement.getFeetPosition().toArray(),
-        players: this.remotePlayers.getDisplayedPlayers().map((p) => ({ id: p.id, pos: p.position.toArray() })),
+        players: this.remotePlayers.getDisplayedPlayers().map((p) => {
+          const look = this.remotePlayers.getPlayerLook(p.id);
+          return { id: p.id, pos: p.position.toArray(), look: look ? encodeLook(look) : null };
+        }),
+        look: this.playerCharacter?.wire() ?? null,
         health: this.lastLocalHealth,
         surf: this.surf.qaState(),
       }),
@@ -2669,6 +2698,11 @@ export class GameApp {
       pvpBadgeText: () => document.querySelector('.surf-pvp')?.textContent ?? null,
       timerText: () => document.querySelector('.surf-timer')?.textContent ?? null,
       equip: (id: WeaponId) => this.equipCombatWeapon(id),
+      setLook: (wire: string) => {
+        const look = decodeLook(wire);
+        if (look) this.playerCharacter?.wearForTest(look);
+        return look !== null;
+      },
       teleport: (x: number, y: number, z: number, yawDeg: number) => this.movement.reset(new Vector3(x, y, z), yawDeg),
       move: (forwardMove: number, sideMove: number, jump = false) => {
         this.qaMove = forwardMove === 0 && sideMove === 0 && !jump ? null : { forwardMove, sideMove, jumpHeld: jump, jumpPressed: jump };
@@ -2770,6 +2804,8 @@ export class GameApp {
     this.mapEnvironment.setQuality(next);
     this.combatEffects?.setQuality(next);
     this.viewmodelRenderer.setQuality(next);
+    // characters switch to their lighter lods sooner on the lighter presets (a dev ?chardetail wins)
+    if (!parseDevCharacters(window.location.search)?.detail) setCharacterDetail(next.level);
     if (changed) {
       this.adaptiveResolution.reset();
     }
@@ -2826,6 +2862,7 @@ export class GameApp {
         this.combatAim.toggleScope(performance.now() + i * 100, { reloading: false, alive: true });
       }
     }
+    await this.spawnDevCharacters();
     this.viewmodel.seek(shot.clip as ViewAction, shot.t);
     if (shot.gripCheck) {
       (window as unknown as { __gripReport?: unknown }).__gripReport = await runGripCheck(this.viewmodel, shot.gripStep);
@@ -2863,10 +2900,26 @@ export class GameApp {
     (window as unknown as { __shotReady?: boolean }).__shotReady = true;
   }
 
+  /** dev/preview only: ?chars=n lines up armored characters for perf and screenshots */
+  private async spawnDevCharacters(): Promise<void> {
+    const request = parseDevCharacters(window.location.search);
+    if (!request) return;
+    if (request.detail) setCharacterDetail(request.detail);
+    const library = await loadCharacterLibrary();
+    await this.remotePlayersReady;
+    const eye = this.movement.getCameraPosition();
+    const rows = devCharacterRows(request, eye, this.movement.getFeetPosition().y, this.movement.getYawRad(), library);
+    this.remotePlayers.applySnapshot(rows, null);
+    if (request.thirdPerson) this.debugCameraMode = 'thirdPerson';
+  }
+
   /** tells other players which knife (and finish) we hold */
   private syncCosmetics(): void {
     const { finishId, wear, seed } = this.knifeSelection;
-    this.multiplayer?.setCosmetics?.({ knife: { id: this.viewmodel.getKnife(), finish: finishId, wear, seed } });
+    this.multiplayer?.setCosmetics?.({
+      knife: { id: this.viewmodel.getKnife(), finish: finishId, wear, seed },
+      ...(this.playerCharacter ? { armor: lookToArmor(this.playerCharacter.look) } : {}),
+    });
   }
 
   /** sounds for viewmodel clip events GunAudio doesn't already schedule */

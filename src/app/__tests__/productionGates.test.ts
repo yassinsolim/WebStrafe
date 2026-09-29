@@ -3,6 +3,8 @@ import { devToolsEnabled } from '../devTools';
 import { parseShotRequest } from '../shotMode';
 import { qaRoomPrefix } from '../../network/createMultiplayer';
 import { InputManager } from '../../core/InputManager';
+import { parseDevCharacters, parseDevLook } from '../../characters/devCharacters';
+import { defaultLook, encodeLook } from '../../characters/look';
 
 // the env object a production build inlines (see the served bundle): no DEV, no VITE_DEV_TOOLS
 const PRODUCTION_ENV = { BASE_URL: '/', DEV: false, MODE: 'production', PROD: true, SSR: false, VITE_ENABLE_COMBAT: 'true' };
@@ -42,6 +44,15 @@ describe('a production build ignores dev and debug controls', () => {
   it('keeps everyone in the shared lobby, ?room= is preview only', () => {
     expect(qaRoomPrefix('webstrafe_room_v1', EVERYTHING, devToolsEnabled(PRODUCTION_ENV))).toBe('webstrafe_room_v1');
     expect(qaRoomPrefix('webstrafe_room_v1', EVERYTHING, devToolsEnabled(PREVIEW_ENV))).toBe('webstrafe_room_v1_qacheat');
+  });
+
+  it('ignores the character dev controls: ?chars= lineups, ?look=, ?chardetail= and the third person start', () => {
+    const search = `?chars=6&charlook=max&chardist=3&chardetail=low&cam=third&look=${encodeLook(defaultLook('counterterrorist'))}`;
+    expect(parseDevCharacters(search, devToolsEnabled(PRODUCTION_ENV))).toBeNull();
+    expect(parseDevLook(search, 'terrorist', devToolsEnabled(PRODUCTION_ENV))).toBeNull();
+    const preview = parseDevCharacters(search, devToolsEnabled(PREVIEW_ENV));
+    expect(preview).toMatchObject({ count: 6, thirdPerson: true, detail: 'low' });
+    expect(parseDevLook(search, 'terrorist', devToolsEnabled(PREVIEW_ENV))).toEqual(defaultLook('counterterrorist'));
   });
 
   it('never queues the V debug camera (third person, free camera)', () => {

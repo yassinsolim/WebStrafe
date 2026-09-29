@@ -1,4 +1,5 @@
 import type { CosmeticsManifest, LoadoutSelection } from '../cosmetics/types';
+import type { CharacterLook } from '../characters/look';
 import type { KnifeId } from '../combat/knives';
 import type { KnifeFinishSelection } from '../cosmetics/finishes/catalog';
 import type { KnifeLoadoutSelection } from '../cosmetics/finishes/selection';
@@ -14,6 +15,7 @@ import { attachMenuSounds } from './menu/menuSounds';
 import { MAP_TYPE_LABEL, mapTypeFromId } from './menu/menuInfo';
 import { PlayPanel } from './menu/PlayPanel';
 import { SETTINGS_SECTIONS, SettingsPanel, type SettingsSectionId } from './menu/SettingsPanel';
+import './customize/customize.css';
 
 interface MainMenuCallbacks {
   onPlay: (mapId: string) => void;
@@ -24,6 +26,8 @@ interface MainMenuCallbacks {
   onNameChanged: (name: string) => void;
   /** null = the authored (legacy) viewmodel knife */
   onKnifeSelected?: (knifeId: KnifeId | null) => void;
+  /** opens the customize screen; the character tab only shows its button when this is set */
+  onCustomize?: () => void;
   /** finish, wear or pattern seed of the equipped knife changed */
   onKnifeFinishChanged?: (selection: KnifeLoadoutSelection) => void;
   /** true while this map is loaded and paused, so Play reads Resume */
@@ -195,6 +199,16 @@ export class MainMenu {
     this.teamGrid = document.createElement('div');
     this.teamGrid.className = 'menu-team-grid';
     characterSection.append(this.teamGrid);
+    if (this.callbacks.onCustomize) {
+      const customize = document.createElement('button');
+      customize.type = 'button';
+      customize.className = 'cz-open-btn';
+      customize.innerHTML = '<span class="cz-open-label">Customize character</span>'
+        + '<span class="cz-open-go">Open</span>'
+        + '<span class="cz-open-sub">Armor, paint, emblem and tag</span>';
+      customize.addEventListener('click', () => this.callbacks.onCustomize?.());
+      characterSection.appendChild(customize);
+    }
     panels.appendChild(characterSection);
 
     const settingsSection = this.makeSection('settings', 'Settings', null);
@@ -436,6 +450,11 @@ export class MainMenu {
     if (sub && SETTINGS_SECTIONS.some(([id]) => id === sub)) {
       this.settingsPanel.setSection(sub as SettingsSectionId);
     }
+  }
+
+  /** Dresses the menu character in the player's look. */
+  public setCharacterLook(look: CharacterLook): void {
+    void this.preview?.setLook(look, this.activeTeam);
   }
 
   /** Reflects the stored knife choice without firing the callback. */

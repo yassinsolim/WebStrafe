@@ -1,0 +1,59 @@
+{
+  "base": "http://192.168.1.166:8797",
+  "map": "aim_ochrecut",
+  "checks": {
+    "A renders B in B's own look": {
+      "ok": true,
+      "detail": {
+        "shown": "1.qu.qu.qu.qu.qu.9e2231.141518.c9a43c.g.wg.1.EMBR"
+      }
+    },
+    "B renders A in A's own look": {
+      "ok": true,
+      "detail": {
+        "shown": "1.an.an.an.an.an.4a4f57.c9a43c.2b2e33.x.cr.1.IRON"
+      }
+    },
+    "a look change reaches the other client without a rejoin": {
+      "ok": true,
+      "detail": {
+        "shown": "1.ve.ve.ve.ve.ve.e4ddcf.8a949f.9e2231.s.sr.0.SNOW"
+      }
+    },
+    "a client that sends no look shows the team default": {
+      "ok": true,
+      "detail": {
+        "shown": "1.st.st.st.st.st.26334a.8a949f.2f5fa8.s.cv.1."
+      }
+    },
+    "no page errors": {
+      "ok": true,
+      "detail": {
+        "A": [],
+        "B": []
+      }
+    }
+  },
+  "positions": {
+    "A": [
+      -19,
+      0.0005000000000000004,
+      55
+    ],
+    "B": [
+      -19,
+      0.0005000000000000004,
+      52
+    ],
+    "AseesB": [
+      -19,
+      0.001,
+      52
+    ],
+    "BseesA": [
+      -19,
+      0.001,
+      55
+    ]
+  }
+}

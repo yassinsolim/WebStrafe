@@ -6,6 +6,9 @@ import { disposeKnifeModel, isKnifeModel, loadKnifeModel } from '../cosmetics/kn
 import { applyKnifeFinish, type KnifeFinishSelection } from '../cosmetics/finishes/applyFinish';
 import { ArmsRig, type DigitSpread } from './ArmsRig';
 import { checkGrip, type GripCheck } from './gripCheck';
+import { FirstPersonArmor } from '../characters/fpArmor';
+import type { CharacterLook } from '../characters/look';
+import type { PlayerModel } from '../network/types';
 import { sampleClip, retime, type Clip } from './clips';
 import { blendHandPose, createHandPose, HAND_POSES, type HandPose, type HandPoseName, type MutableHandPose } from './handPoses';
 import { frameFromXZ, frameFromYZ } from './ik';
@@ -228,6 +231,8 @@ export class ViewmodelSystem {
   public onEvent: ((name: string, item: ViewItem) => void) | null = null;
 
   private arms: ArmsRig | null = null;
+  /** the player's gauntlets or sleeves over the arms, see characters/fpArmor.ts */
+  private readonly armsArmor = new FirstPersonArmor();
   private readonly guns: Partial<Record<'deagle' | 'awp', GunParts>> = {};
   private knife: KnifeRig | null = null;
   private knifeLeft: KnifeRig | null = null;
@@ -320,6 +325,11 @@ export class ViewmodelSystem {
 
   public getKnife(): KnifeId {
     return this.knifeId;
+  }
+
+  /** dresses the arms in the player's armor set and paint */
+  public setArmsLook(look: CharacterLook, team?: PlayerModel): void {
+    this.armsArmor.setLook(look, team);
   }
 
   /** finish for the knife in hand; kept and reapplied whenever the knife rig is rebuilt */
@@ -982,6 +992,8 @@ export class ViewmodelSystem {
     ]);
     this.arms = arms;
     this.content.add(arms.root);
+    // binds against the rest pose, so before the first update poses the rig
+    void this.armsArmor.attach(arms.root);
     this.guns.deagle = this.setupGun(deagle.scene);
     this.guns.awp = this.setupGun(awp.scene);
     this.rebuildKnife();

@@ -963,15 +963,16 @@ function addSecurityHeaders(res: ServerResponse): void {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   // Restrict sources: game uses Three.js (inline scripts/styles via Vite), WebGL, and audio.
+  // meshopt-compressed glbs decode in wasm and gltf textures arrive as blob: urls
   res.setHeader(
     'Content-Security-Policy',
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "media-src 'self' blob:",
-      "connect-src 'self' ws: wss:",
+      "connect-src 'self' ws: wss: blob:",
       "worker-src blob:",
       "object-src 'none'",
       "base-uri 'self'",

@@ -1,0 +1,149 @@
+{
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "vsync": false,
+  "viewport": [
+    2560,
+    1440
+  ],
+  "results": [
+    {
+      "label": "cpu 4x baseline",
+      "query": "shot=aim_ochrecut&weapon=knife&hud=0&perf=8",
+      "frames": 4295,
+      "fpsMedian": 588.24,
+      "fps1Low": 170.7,
+      "frameMsMedian": 1.7,
+      "frameMsP99": 5.2,
+      "cpuMsMedian": 1.3,
+      "cpuMsP99": 4.5,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          7.2,
+          3503
+        ],
+        [
+          6.9,
+          3203
+        ],
+        [
+          6.9,
+          4100
+        ],
+        [
+          6.8,
+          3226
+        ],
+        [
+          6.7,
+          3959
+        ],
+        [
+          6.6,
+          4045
+        ]
+      ],
+      "calls": 68,
+      "triangles": 65559,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "cpu 4x 6 max characters",
+      "query": "shot=aim_ochrecut&weapon=knife&hud=0&perf=8&chars=6&charlook=max&chardist=3.2&charspace=0.9",
+      "frames": 1730,
+      "fpsMedian": 212.77,
+      "fps1Low": 86.91,
+      "frameMsMedian": 4.7,
+      "frameMsP99": 9.9,
+      "cpuMsMedian": 4.1,
+      "cpuMsP99": 9,
+      "over16": 1,
+      "over33": 0,
+      "worst": [
+        [
+          24.1,
+          4440
+        ],
+        [
+          14.2,
+          6182
+        ],
+        [
+          12,
+          2314
+        ],
+        [
+          11.9,
+          6235
+        ],
+        [
+          11.9,
+          7119
+        ],
+        [
+          10.8,
+          2531
+        ]
+      ],
+      "calls": 110,
+      "triangles": 492579,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "cpu 4x 6 max characters detail low",
+      "query": "shot=aim_ochrecut&weapon=knife&hud=0&perf=8&chars=6&charlook=max&chardist=3.2&charspace=0.9&chardetail=low",
+      "frames": 1777,
+      "fpsMedian": 217.39,
+      "fps1Low": 100.33,
+      "frameMsMedian": 4.6,
+      "frameMsP99": 8.9,
+      "cpuMsMedian": 4.1,
+      "cpuMsP99": 8.3,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          11.9,
+          8114
+        ],
+        [
+          11.3,
+          2415
+        ],
+        [
+          11,
+          7405
+        ],
+        [
+          10.8,
+          2101
+        ],
+        [
+          10.8,
+          2696
+        ],
+        [
+          10.7,
+          2464
+        ]
+      ],
+      "calls": 110,
+      "triangles": 234867,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    }
+  ],
+  "errors": []
+}

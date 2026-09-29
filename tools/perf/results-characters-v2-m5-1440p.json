@@ -1,0 +1,151 @@
+{
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "vsync": false,
+  "viewport": [
+    2560,
+    1440
+  ],
+  "results": [
+    {
+      "label": "baseline no characters",
+      "query": "shot=aim_ochrecut&weapon=knife&hud=0&perf=8",
+      "frames": 4111,
+      "fpsMedian": 400,
+      "fps1Low": 252.1,
+      "frameMsMedian": 2.5,
+      "frameMsP99": 3.7,
+      "cpuMsMedian": 2.4,
+      "cpuMsP99": 3.6,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          4.3,
+          4009
+        ],
+        [
+          4.3,
+          5857
+        ],
+        [
+          4.2,
+          2684
+        ],
+        [
+          4.2,
+          4617
+        ],
+        [
+          4.2,
+          4734
+        ],
+        [
+          4.2,
+          4992
+        ]
+      ],
+      "calls": 66,
+      "triangles": 65161,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "6 max characters lod0",
+      "query": "shot=aim_ochrecut&weapon=knife&hud=0&perf=8&chars=6&charlook=max&chardist=3.2&charspace=0.9",
+      "frames": 2882,
+      "fpsMedian": 344.83,
+      "fps1Low": 207.74,
+      "frameMsMedian": 2.9,
+      "frameMsP99": 4.5,
+      "cpuMsMedian": 2.8,
+      "cpuMsP99": 4.4,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          5.8,
+          3732
+        ],
+        [
+          5.4,
+          6823
+        ],
+        [
+          5.2,
+          5027
+        ],
+        [
+          5.1,
+          2339
+        ],
+        [
+          5.1,
+          2913
+        ],
+        [
+          5.1,
+          9260
+        ]
+      ],
+      "calls": 108,
+      "triangles": 389725,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "6 max characters close",
+      "query": "shot=aim_ochrecut&weapon=knife&hud=0&perf=8&chars=6&charlook=max&chardist=2.1&charspace=0.8",
+      "frames": 2563,
+      "fpsMedian": 333.33,
+      "fps1Low": 198.62,
+      "frameMsMedian": 3,
+      "frameMsP99": 4.7,
+      "cpuMsMedian": 2.9,
+      "cpuMsP99": 4.5,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          5.8,
+          9195
+        ],
+        [
+          5.7,
+          9451
+        ],
+        [
+          5.4,
+          2288
+        ],
+        [
+          5.3,
+          2226
+        ],
+        [
+          5.3,
+          4523
+        ],
+        [
+          5.2,
+          2698
+        ]
+      ],
+      "calls": 108,
+      "triangles": 389725,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    }
+  ],
+  "errors": [
+    "Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+  ]
+}

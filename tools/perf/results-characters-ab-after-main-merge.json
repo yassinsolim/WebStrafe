@@ -1,0 +1,2588 @@
+{
+ "what": "interleaved a/b pairs: origin/main vs revamp/v2-characters after merging main, six characters on screen",
+ "main": "origin/main 65dd71e plus a local, uncommitted ?chars= spawner so its procedural soldiers stand in the same spot",
+ "branch": "revamp/v2-characters ec7740f (merge of 65dd71e), six characters of the heaviest kit (charlook=max)",
+ "builds": "production builds with dev tools on (VITE_DEV_TOOLS=true vite build), served by vite preview",
+ "scene": "shot=aim_ochrecut&weapon=deagle&adaptive=0&hud=0, characters 3.2 m away in a row 0.9 m apart, facing the camera",
+ "paths": {
+  "gpu": "headed chromium, metal on the apple m5, 2560x1440, vsync and frame cap off, 3 s warm up, 6 s window (tools/shots/fps.mjs)",
+  "swiftshader": "headless swiftshader, chrome cpu throttle 4x, 1280x720, 3 s warm up, 8 s window (tools/shots/fps.mjs), the worst case proxy from results-polish-proxy-swiftshader.json"
+ },
+ "method": "each pair runs main and branch back to back, the order alternates every round. paired change is the median of branch/main - 1 over the pairs",
+ "load": "the run waited 225 s for the 1 min load average to fall under 6 (5.41), then other agents on the machine pushed it between 5.4 and 50.7; load_before is recorded per job",
+ "presets": "quality=low|medium|high; medium is Balanced. auto picks low on software gl and medium on desktop gpus",
+ "gates": [
+  {
+   "gate_wait_s": 225,
+   "gate_load1": 5.41,
+   "started": "2026-09-28 16:17:04"
+  },
+  {
+   "gate_wait_s": 0,
+   "gate_load1": 7.91,
+   "started": "2026-09-28 16:47:17"
+  },
+  {
+   "gate_wait_s": 0,
+   "gate_load1": 6.3,
+   "started": "2026-09-28 16:59:32"
+  }
+ ],
+ "summary": [
+  {
+   "path": "gpu",
+   "preset": "low",
+   "characters": 6,
+   "rounds": 7,
+   "main_fps_median": 344.8,
+   "main_fps_range": [
+    333.3,
+    476.2
+   ],
+   "branch_fps_median": 303,
+   "branch_fps_range": [
+    243.9,
+    416.7
+   ],
+   "paired_change_median": -0.1212,
+   "paired_change_range": [
+    -0.3637,
+    -0.0334
+   ],
+   "load1_range": [
+    5.41,
+    22.69
+   ]
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "characters": 0,
+   "rounds": 7,
+   "main_fps_median": 344.8,
+   "main_fps_range": [
+    294.1,
+    416.7
+   ],
+   "branch_fps_median": 357.1,
+   "branch_fps_range": [
+    312.5,
+    416.7
+   ],
+   "paired_change_median": -0.0313,
+   "paired_change_range": [
+    -0.1111,
+    0.1724
+   ],
+   "load1_range": [
+    7.02,
+    26.29
+   ]
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "characters": 6,
+   "rounds": 7,
+   "main_fps_median": 217.4,
+   "main_fps_range": [
+    181.8,
+    322.6
+   ],
+   "branch_fps_median": 196.1,
+   "branch_fps_range": [
+    131.6,
+    322.6
+   ],
+   "paired_change_median": -0.098,
+   "paired_change_range": [
+    -0.3289,
+    0.4103
+   ],
+   "load1_range": [
+    6.46,
+    29.76
+   ]
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "characters": 0,
+   "rounds": 7,
+   "main_fps_median": 232.6,
+   "main_fps_range": [
+    200,
+    322.6
+   ],
+   "branch_fps_median": 200,
+   "branch_fps_range": [
+    133.3,
+    344.8
+   ],
+   "paired_change_median": -0.0436,
+   "paired_change_range": [
+    -0.4801,
+    0.1316
+   ],
+   "load1_range": [
+    6.27,
+    50.68
+   ]
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "characters": 6,
+   "rounds": 7,
+   "main_fps_median": 85.5,
+   "main_fps_range": [
+    66.7,
+    166.7
+   ],
+   "branch_fps_median": 88.5,
+   "branch_fps_range": [
+    51,
+    147.1
+   ],
+   "paired_change_median": -0.0755,
+   "paired_change_range": [
+    -0.25,
+    0.2207
+   ],
+   "load1_range": [
+    6.45,
+    44.35
+   ]
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "characters": 0,
+   "rounds": 7,
+   "main_fps_median": 94.3,
+   "main_fps_range": [
+    66.7,
+    161.3
+   ],
+   "branch_fps_median": 100,
+   "branch_fps_range": [
+    64.5,
+    158.7
+   ],
+   "paired_change_median": -0.0161,
+   "paired_change_range": [
+    -0.2497,
+    0.6575
+   ],
+   "load1_range": [
+    6.41,
+    37.98
+   ]
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "characters": 6,
+   "rounds": 5,
+   "main_fps_median": 7.1,
+   "main_fps_range": [
+    3.7,
+    7.9
+   ],
+   "branch_fps_median": 6,
+   "branch_fps_range": [
+    4,
+    6.7
+   ],
+   "paired_change_median": -0.1429,
+   "paired_change_range": [
+    -0.1831,
+    0.0811
+   ],
+   "load1_range": [
+    6.3,
+    25.44
+   ]
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "characters": 0,
+   "rounds": 5,
+   "main_fps_median": 10.8,
+   "main_fps_range": [
+    5,
+    10.9
+   ],
+   "branch_fps_median": 8.6,
+   "branch_fps_range": [
+    6.6,
+    10.7
+   ],
+   "paired_change_median": -0.0183,
+   "paired_change_range": [
+    -0.211,
+    0.32
+   ],
+   "load1_range": [
+    10.01,
+    22.37
+   ]
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "characters": 6,
+   "rounds": 5,
+   "main_fps_median": 3.8,
+   "main_fps_range": [
+    1.3,
+    4.4
+   ],
+   "branch_fps_median": 3.1,
+   "branch_fps_range": [
+    1.1,
+    4
+   ],
+   "paired_change_median": -0.1538,
+   "paired_change_range": [
+    -0.2955,
+    -0.0526
+   ],
+   "load1_range": [
+    11.67,
+    21.73
+   ]
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "characters": 0,
+   "rounds": 5,
+   "main_fps_median": 3.9,
+   "main_fps_range": [
+    3.1,
+    4.8
+   ],
+   "branch_fps_median": 4.1,
+   "branch_fps_range": [
+    3.3,
+    4.6
+   ],
+   "paired_change_median": 0.0312,
+   "paired_change_range": [
+    -0.0833,
+    0.0968
+   ],
+   "load1_range": [
+    9.49,
+    20.49
+   ]
+  },
+  {
+   "path": "swiftshader",
+   "preset": "high",
+   "characters": 6,
+   "rounds": 5,
+   "main_fps_median": 2.4,
+   "main_fps_range": [
+    1.8,
+    3.3
+   ],
+   "branch_fps_median": 1.5,
+   "branch_fps_range": [
+    0.7,
+    2.1
+   ],
+   "paired_change_median": -0.375,
+   "paired_change_range": [
+    -0.6111,
+    -0.3636
+   ],
+   "load1_range": [
+    11.12,
+    19.07
+   ]
+  }
+ ],
+ "runs": [
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 6,
+   "build": "main",
+   "round": 1,
+   "order": "first",
+   "load_before": [
+    5.41,
+    7.31,
+    7.65
+   ],
+   "fpsMedian": 344.8,
+   "fps1Low": 163.6,
+   "frameMsP95": 4.6,
+   "frames": 2189
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 6,
+   "build": "branch",
+   "round": 1,
+   "order": "second",
+   "load_before": [
+    6.66,
+    7.49,
+    7.71
+   ],
+   "fpsMedian": 285.7,
+   "fps1Low": 147.4,
+   "frameMsP95": 5.3,
+   "frames": 1720
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 0,
+   "build": "branch",
+   "round": 1,
+   "order": "first",
+   "load_before": [
+    9.72,
+    8.12,
+    7.93
+   ],
+   "fpsMedian": 344.8,
+   "fps1Low": 165.5,
+   "frameMsP95": 4.6,
+   "frames": 2207
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 0,
+   "build": "main",
+   "round": 1,
+   "order": "second",
+   "load_before": [
+    11.62,
+    8.62,
+    8.11
+   ],
+   "fpsMedian": 294.1,
+   "fps1Low": 112.1,
+   "frameMsP95": 6.1,
+   "frames": 1675
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "main",
+   "round": 1,
+   "order": "first",
+   "load_before": [
+    13.58,
+    9.19,
+    8.32
+   ],
+   "fpsMedian": 217.4,
+   "fps1Low": 33.7,
+   "frameMsP95": 11.9,
+   "frames": 1055
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "branch",
+   "round": 1,
+   "order": "second",
+   "load_before": [
+    24.8,
+    12.41,
+    9.52
+   ],
+   "fpsMedian": 196.1,
+   "fps1Low": 32.7,
+   "frameMsP95": 13.2,
+   "frames": 1005
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "branch",
+   "round": 1,
+   "order": "first",
+   "load_before": [
+    48.12,
+    19.36,
+    12.16
+   ],
+   "fpsMedian": 133.3,
+   "fps1Low": 60.1,
+   "frameMsP95": 11.5,
+   "frames": 796
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "main",
+   "round": 1,
+   "order": "second",
+   "load_before": [
+    50.68,
+    23.24,
+    13.86
+   ],
+   "fpsMedian": 256.4,
+   "fps1Low": 99.1,
+   "frameMsP95": 6.6,
+   "frames": 1476
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 6,
+   "build": "main",
+   "round": 1,
+   "order": "first",
+   "load_before": [
+    43.01,
+    22.89,
+    13.9
+   ],
+   "fpsMedian": 85.5,
+   "fps1Low": 31.4,
+   "frameMsP95": 28.3,
+   "frames": 501
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 6,
+   "build": "branch",
+   "round": 1,
+   "order": "second",
+   "load_before": [
+    39.08,
+    23.37,
+    14.29
+   ],
+   "fpsMedian": 82.6,
+   "fps1Low": 29.8,
+   "frameMsP95": 30.2,
+   "frames": 479
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 0,
+   "build": "branch",
+   "round": 1,
+   "order": "first",
+   "load_before": [
+    31.35,
+    22.44,
+    14.11
+   ],
+   "fpsMedian": 158.7,
+   "fps1Low": 77.6,
+   "frameMsP95": 7.2,
+   "frames": 981
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 0,
+   "build": "main",
+   "round": 1,
+   "order": "second",
+   "load_before": [
+    26.66,
+    21.84,
+    14.05
+   ],
+   "fpsMedian": 161.3,
+   "fps1Low": 74.1,
+   "frameMsP95": 7.6,
+   "frames": 944
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 6,
+   "build": "branch",
+   "round": 2,
+   "order": "first",
+   "load_before": [
+    22.69,
+    21.21,
+    13.96
+   ],
+   "fpsMedian": 416.7,
+   "fps1Low": 271.7,
+   "frameMsP95": 3.2,
+   "frames": 2991
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 6,
+   "build": "main",
+   "round": 2,
+   "order": "second",
+   "load_before": [
+    20.73,
+    20.83,
+    13.95
+   ],
+   "fpsMedian": 454.5,
+   "fps1Low": 203,
+   "frameMsP95": 3.8,
+   "frames": 2690
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 0,
+   "build": "main",
+   "round": 2,
+   "order": "first",
+   "load_before": [
+    19.3,
+    20.52,
+    13.92
+   ],
+   "fpsMedian": 416.7,
+   "fps1Low": 283.3,
+   "frameMsP95": 3,
+   "frames": 3399
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 0,
+   "build": "branch",
+   "round": 2,
+   "order": "second",
+   "load_before": [
+    16.79,
+    19.92,
+    13.82
+   ],
+   "fpsMedian": 370.4,
+   "fps1Low": 203.1,
+   "frameMsP95": 4,
+   "frames": 2501
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "branch",
+   "round": 2,
+   "order": "first",
+   "load_before": [
+    16.16,
+    19.63,
+    13.82
+   ],
+   "fpsMedian": 163.9,
+   "fps1Low": 32,
+   "frameMsP95": 14,
+   "frames": 833
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "main",
+   "round": 2,
+   "order": "second",
+   "load_before": [
+    15.98,
+    19.42,
+    13.85
+   ],
+   "fpsMedian": 243.9,
+   "fps1Low": 55.7,
+   "frameMsP95": 9.7,
+   "frames": 1233
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "main",
+   "round": 2,
+   "order": "first",
+   "load_before": [
+    19.98,
+    20.14,
+    14.2
+   ],
+   "fpsMedian": 285.7,
+   "fps1Low": 93.1,
+   "frameMsP95": 7.3,
+   "frames": 1510
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "branch",
+   "round": 2,
+   "order": "second",
+   "load_before": [
+    19.11,
+    19.93,
+    14.23
+   ],
+   "fpsMedian": 185.2,
+   "fps1Low": 64.9,
+   "frameMsP95": 10.3,
+   "frames": 1016
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 6,
+   "build": "branch",
+   "round": 2,
+   "order": "first",
+   "load_before": [
+    21.89,
+    20.53,
+    14.54
+   ],
+   "fpsMedian": 51,
+   "fps1Low": 23.5,
+   "frameMsP95": 34.4,
+   "frames": 315
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 6,
+   "build": "main",
+   "round": 2,
+   "order": "second",
+   "load_before": [
+    27.25,
+    21.85,
+    15.19
+   ],
+   "fpsMedian": 68,
+   "fps1Low": 19.9,
+   "frameMsP95": 34.1,
+   "frames": 376
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 0,
+   "build": "main",
+   "round": 2,
+   "order": "first",
+   "load_before": [
+    28.39,
+    22.53,
+    15.59
+   ],
+   "fpsMedian": 88.5,
+   "fps1Low": 29.9,
+   "frameMsP95": 27.6,
+   "frames": 507
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 0,
+   "build": "branch",
+   "round": 2,
+   "order": "second",
+   "load_before": [
+    22.91,
+    21.61,
+    15.38
+   ],
+   "fpsMedian": 94.3,
+   "fps1Low": 33.2,
+   "frameMsP95": 13.9,
+   "frames": 557
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 6,
+   "build": "main",
+   "round": 3,
+   "order": "first",
+   "load_before": [
+    19.43,
+    20.91,
+    15.24
+   ],
+   "fpsMedian": 344.8,
+   "fps1Low": 162.8,
+   "frameMsP95": 4.3,
+   "frames": 2025
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 6,
+   "build": "branch",
+   "round": 3,
+   "order": "second",
+   "load_before": [
+    21.11,
+    21.18,
+    15.44
+   ],
+   "fpsMedian": 303,
+   "fps1Low": 110.4,
+   "frameMsP95": 5.6,
+   "frames": 1733
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 0,
+   "build": "branch",
+   "round": 3,
+   "order": "first",
+   "load_before": [
+    26.29,
+    22.27,
+    15.92
+   ],
+   "fpsMedian": 312.5,
+   "fps1Low": 115.5,
+   "frameMsP95": 5.3,
+   "frames": 1899
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 0,
+   "build": "main",
+   "round": 3,
+   "order": "second",
+   "load_before": [
+    25.82,
+    22.39,
+    16.11
+   ],
+   "fpsMedian": 322.6,
+   "fps1Low": 142.6,
+   "frameMsP95": 5,
+   "frames": 2031
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "main",
+   "round": 3,
+   "order": "first",
+   "load_before": [
+    24.47,
+    22.29,
+    16.18
+   ],
+   "fpsMedian": 181.8,
+   "fps1Low": 52.4,
+   "frameMsP95": 11.8,
+   "frames": 969
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "branch",
+   "round": 3,
+   "order": "second",
+   "load_before": [
+    29.76,
+    23.52,
+    16.73
+   ],
+   "fpsMedian": 256.4,
+   "fps1Low": 100.3,
+   "frameMsP95": 6.4,
+   "frames": 1461
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "branch",
+   "round": 3,
+   "order": "first",
+   "load_before": [
+    28.17,
+    23.65,
+    16.97
+   ],
+   "fpsMedian": 263.2,
+   "fps1Low": 122.9,
+   "frameMsP95": 5.9,
+   "frames": 1507
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "main",
+   "round": 3,
+   "order": "second",
+   "load_before": [
+    31.32,
+    24.6,
+    17.43
+   ],
+   "fpsMedian": 232.6,
+   "fps1Low": 63.6,
+   "frameMsP95": 9,
+   "frames": 1268
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 6,
+   "build": "main",
+   "round": 3,
+   "order": "first",
+   "load_before": [
+    43.84,
+    28.3,
+    18.98
+   ],
+   "fpsMedian": 107.5,
+   "fps1Low": 30,
+   "frameMsP95": 19.9,
+   "frames": 611
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 6,
+   "build": "branch",
+   "round": 3,
+   "order": "second",
+   "load_before": [
+    44.35,
+    29.21,
+    19.47
+   ],
+   "fpsMedian": 101,
+   "fps1Low": 33.3,
+   "frameMsP95": 26.8,
+   "frames": 591
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 0,
+   "build": "branch",
+   "round": 3,
+   "order": "first",
+   "load_before": [
+    37.98,
+    28.75,
+    19.53
+   ],
+   "fpsMedian": 106.4,
+   "fps1Low": 26.4,
+   "frameMsP95": 27.9,
+   "frames": 516
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 0,
+   "build": "main",
+   "round": 3,
+   "order": "second",
+   "load_before": [
+    30.53,
+    27.55,
+    19.26
+   ],
+   "fpsMedian": 94.3,
+   "fps1Low": 30.5,
+   "frameMsP95": 27.2,
+   "frames": 525
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 6,
+   "build": "main",
+   "round": 1,
+   "order": "first",
+   "load_before": [
+    25.44,
+    26.58,
+    19.06
+   ],
+   "fpsMedian": 7.4,
+   "fps1Low": 3.7,
+   "frameMsP95": 223.8,
+   "frames": 54
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 6,
+   "build": "branch",
+   "round": 1,
+   "order": "second",
+   "load_before": [
+    21.55,
+    25.52,
+    18.94
+   ],
+   "fpsMedian": 6.7,
+   "fps1Low": 3.6,
+   "frameMsP95": 233.5,
+   "frames": 51
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "branch",
+   "round": 1,
+   "order": "first",
+   "load_before": [
+    19.41,
+    24.4,
+    18.82
+   ],
+   "fpsMedian": 2.4,
+   "fps1Low": 1.6,
+   "frameMsP95": 640.7,
+   "frames": 19
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "main",
+   "round": 1,
+   "order": "second",
+   "load_before": [
+    21.73,
+    24.17,
+    19.25
+   ],
+   "fpsMedian": 3,
+   "fps1Low": 1.5,
+   "frameMsP95": 540.3,
+   "frames": 23
+  },
+  {
+   "path": "swiftshader",
+   "preset": "high",
+   "chars": 6,
+   "build": "main",
+   "round": 1,
+   "order": "first",
+   "load_before": [
+    19.07,
+    23.1,
+    19.04
+   ],
+   "fpsMedian": 1.8,
+   "fps1Low": 0.9,
+   "frameMsP95": 1057.7,
+   "frames": 13
+  },
+  {
+   "path": "swiftshader",
+   "preset": "high",
+   "chars": 6,
+   "build": "branch",
+   "round": 1,
+   "order": "second",
+   "load_before": [
+    16.49,
+    21.83,
+    18.76
+   ],
+   "fpsMedian": 0.7,
+   "fps1Low": 0.4,
+   "frameMsP95": 2573.2,
+   "frames": 6
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 0,
+   "build": "branch",
+   "round": 1,
+   "order": "first",
+   "load_before": [
+    14.23,
+    20.1,
+    18.37
+   ],
+   "fpsMedian": 7.5,
+   "fps1Low": 4.3,
+   "frameMsP95": 198.5,
+   "frames": 57
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 0,
+   "build": "main",
+   "round": 1,
+   "order": "second",
+   "load_before": [
+    22.37,
+    21.3,
+    18.95
+   ],
+   "fpsMedian": 5.7,
+   "fps1Low": 2.5,
+   "frameMsP95": 332,
+   "frames": 44
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "main",
+   "round": 1,
+   "order": "first",
+   "load_before": [
+    20.49,
+    20.95,
+    18.9
+   ],
+   "fpsMedian": 3.1,
+   "fps1Low": 2.2,
+   "frameMsP95": 442.7,
+   "frames": 25
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "branch",
+   "round": 1,
+   "order": "second",
+   "load_before": [
+    17.26,
+    20.0,
+    18.64
+   ],
+   "fpsMedian": 3.4,
+   "fps1Low": 2.6,
+   "frameMsP95": 391.1,
+   "frames": 27
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 6,
+   "build": "branch",
+   "round": 2,
+   "order": "first",
+   "load_before": [
+    15.93,
+    19.2,
+    18.4
+   ],
+   "fpsMedian": 6,
+   "fps1Low": 4.4,
+   "frameMsP95": 206.9,
+   "frames": 48
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 6,
+   "build": "main",
+   "round": 2,
+   "order": "second",
+   "load_before": [
+    16.31,
+    18.92,
+    18.33
+   ],
+   "fpsMedian": 7,
+   "fps1Low": 1.4,
+   "frameMsP95": 208.3,
+   "frames": 50
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "main",
+   "round": 2,
+   "order": "first",
+   "load_before": [
+    16.17,
+    18.6,
+    18.24
+   ],
+   "fpsMedian": 4.4,
+   "fps1Low": 3.2,
+   "frameMsP95": 259.6,
+   "frames": 35
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "branch",
+   "round": 2,
+   "order": "second",
+   "load_before": [
+    13.86,
+    17.84,
+    17.97
+   ],
+   "fpsMedian": 3.1,
+   "fps1Low": 2.1,
+   "frameMsP95": 475.2,
+   "frames": 24
+  },
+  {
+   "path": "swiftshader",
+   "preset": "high",
+   "chars": 6,
+   "build": "branch",
+   "round": 2,
+   "order": "first",
+   "load_before": [
+    12.75,
+    17.05,
+    17.67
+   ],
+   "fpsMedian": 1.5,
+   "fps1Low": 1.3,
+   "frameMsP95": 792.1,
+   "frames": 12
+  },
+  {
+   "path": "swiftshader",
+   "preset": "high",
+   "chars": 6,
+   "build": "main",
+   "round": 2,
+   "order": "second",
+   "load_before": [
+    16.0,
+    17.29,
+    17.73
+   ],
+   "fpsMedian": 2.4,
+   "fps1Low": 1.2,
+   "frameMsP95": 843.2,
+   "frames": 19
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 0,
+   "build": "main",
+   "round": 2,
+   "order": "first",
+   "load_before": [
+    12.41,
+    16.24,
+    17.33
+   ],
+   "fpsMedian": 5,
+   "fps1Low": 3,
+   "frameMsP95": 284.9,
+   "frames": 41
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 0,
+   "build": "branch",
+   "round": 2,
+   "order": "second",
+   "load_before": [
+    13.6,
+    16.09,
+    17.23
+   ],
+   "fpsMedian": 6.6,
+   "fps1Low": 4.5,
+   "frameMsP95": 217.1,
+   "frames": 50
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "branch",
+   "round": 2,
+   "order": "first",
+   "load_before": [
+    14.34,
+    15.86,
+    17.09
+   ],
+   "fpsMedian": 3.3,
+   "fps1Low": 2.5,
+   "frameMsP95": 383.7,
+   "frames": 26
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "main",
+   "round": 2,
+   "order": "second",
+   "load_before": [
+    15.77,
+    15.95,
+    17.05
+   ],
+   "fpsMedian": 3.2,
+   "fps1Low": 2.2,
+   "frameMsP95": 441.1,
+   "frames": 25
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 6,
+   "build": "main",
+   "round": 3,
+   "order": "first",
+   "load_before": [
+    14.39,
+    15.54,
+    16.86
+   ],
+   "fpsMedian": 7.1,
+   "fps1Low": 4.6,
+   "frameMsP95": 192.6,
+   "frames": 55
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 6,
+   "build": "branch",
+   "round": 3,
+   "order": "second",
+   "load_before": [
+    13.59,
+    15.25,
+    16.72
+   ],
+   "fpsMedian": 5.8,
+   "fps1Low": 3.4,
+   "frameMsP95": 274.3,
+   "frames": 45
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "branch",
+   "round": 3,
+   "order": "first",
+   "load_before": [
+    12.24,
+    14.68,
+    16.45
+   ],
+   "fpsMedian": 4,
+   "fps1Low": 3.1,
+   "frameMsP95": 308.5,
+   "frames": 32
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "main",
+   "round": 3,
+   "order": "second",
+   "load_before": [
+    12.13,
+    14.31,
+    16.22
+   ],
+   "fpsMedian": 4.4,
+   "fps1Low": 3.3,
+   "frameMsP95": 275.7,
+   "frames": 36
+  },
+  {
+   "path": "swiftshader",
+   "preset": "high",
+   "chars": 6,
+   "build": "main",
+   "round": 3,
+   "order": "first",
+   "load_before": [
+    11.64,
+    13.97,
+    16.04
+   ],
+   "fpsMedian": 3.3,
+   "fps1Low": 1.9,
+   "frameMsP95": 359.7,
+   "frames": 26
+  },
+  {
+   "path": "swiftshader",
+   "preset": "high",
+   "chars": 6,
+   "build": "branch",
+   "round": 3,
+   "order": "second",
+   "load_before": [
+    11.28,
+    13.64,
+    15.85
+   ],
+   "fpsMedian": 2.1,
+   "fps1Low": 1.7,
+   "frameMsP95": 593.5,
+   "frames": 18
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 0,
+   "build": "branch",
+   "round": 3,
+   "order": "first",
+   "load_before": [
+    10.39,
+    13.08,
+    15.54
+   ],
+   "fpsMedian": 10.7,
+   "fps1Low": 6.4,
+   "frameMsP95": 118.4,
+   "frames": 81
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 0,
+   "build": "main",
+   "round": 3,
+   "order": "second",
+   "load_before": [
+    10.01,
+    12.78,
+    15.36
+   ],
+   "fpsMedian": 10.9,
+   "fps1Low": 4.3,
+   "frameMsP95": 116.2,
+   "frames": 85
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "main",
+   "round": 3,
+   "order": "first",
+   "load_before": [
+    9.49,
+    12.41,
+    15.15
+   ],
+   "fpsMedian": 4.6,
+   "fps1Low": 3.4,
+   "frameMsP95": 265.8,
+   "frames": 38
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "branch",
+   "round": 3,
+   "order": "second",
+   "load_before": [
+    9.96,
+    12.27,
+    15.02
+   ],
+   "fpsMedian": 4.6,
+   "fps1Low": 2.9,
+   "frameMsP95": 249.2,
+   "frames": 37
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 6,
+   "build": "branch",
+   "round": 4,
+   "order": "first",
+   "load_before": [
+    7.91,
+    11.36,
+    14.48
+   ],
+   "fpsMedian": 416.7,
+   "fps1Low": 284.7,
+   "frameMsP95": 3.1,
+   "frames": 3056
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 6,
+   "build": "main",
+   "round": 4,
+   "order": "second",
+   "load_before": [
+    7.71,
+    11.15,
+    14.35
+   ],
+   "fpsMedian": 434.8,
+   "fps1Low": 278.7,
+   "frameMsP95": 3.1,
+   "frames": 3311
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 0,
+   "build": "main",
+   "round": 4,
+   "order": "first",
+   "load_before": [
+    7.02,
+    10.83,
+    14.18
+   ],
+   "fpsMedian": 416.7,
+   "fps1Low": 241.4,
+   "frameMsP95": 3.3,
+   "frames": 3098
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 0,
+   "build": "branch",
+   "round": 4,
+   "order": "second",
+   "load_before": [
+    7.09,
+    10.72,
+    14.1
+   ],
+   "fpsMedian": 416.7,
+   "fps1Low": 302.8,
+   "frameMsP95": 3,
+   "frames": 3344
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "branch",
+   "round": 4,
+   "order": "first",
+   "load_before": [
+    6.73,
+    10.45,
+    13.95
+   ],
+   "fpsMedian": 322.6,
+   "fps1Low": 152.4,
+   "frameMsP95": 4.4,
+   "frames": 1864
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "main",
+   "round": 4,
+   "order": "second",
+   "load_before": [
+    6.46,
+    10.27,
+    13.84
+   ],
+   "fpsMedian": 322.6,
+   "fps1Low": 154.8,
+   "frameMsP95": 4.2,
+   "frames": 2052
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "main",
+   "round": 4,
+   "order": "first",
+   "load_before": [
+    6.27,
+    10.05,
+    13.7
+   ],
+   "fpsMedian": 322.6,
+   "fps1Low": 107.6,
+   "frameMsP95": 6.1,
+   "frames": 1757
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "branch",
+   "round": 4,
+   "order": "second",
+   "load_before": [
+    7.75,
+    10.19,
+    13.68
+   ],
+   "fpsMedian": 344.8,
+   "fps1Low": 122.6,
+   "frameMsP95": 5.3,
+   "frames": 1921
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 6,
+   "build": "branch",
+   "round": 4,
+   "order": "first",
+   "load_before": [
+    7.57,
+    10.05,
+    13.57
+   ],
+   "fpsMedian": 147.1,
+   "fps1Low": 69.4,
+   "frameMsP95": 8.6,
+   "frames": 872
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 6,
+   "build": "main",
+   "round": 4,
+   "order": "second",
+   "load_before": [
+    7.25,
+    9.9,
+    13.48
+   ],
+   "fpsMedian": 166.7,
+   "fps1Low": 75.9,
+   "frameMsP95": 8.6,
+   "frames": 985
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 0,
+   "build": "main",
+   "round": 4,
+   "order": "first",
+   "load_before": [
+    7.15,
+    9.75,
+    13.36
+   ],
+   "fpsMedian": 94.3,
+   "fps1Low": 32.4,
+   "frameMsP95": 14.6,
+   "frames": 567
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 0,
+   "build": "branch",
+   "round": 4,
+   "order": "second",
+   "load_before": [
+    7.26,
+    9.69,
+    13.3
+   ],
+   "fpsMedian": 156.3,
+   "fps1Low": 77.5,
+   "frameMsP95": 7.7,
+   "frames": 970
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 6,
+   "build": "main",
+   "round": 5,
+   "order": "first",
+   "load_before": [
+    6.69,
+    9.44,
+    13.15
+   ],
+   "fpsMedian": 476.2,
+   "fps1Low": 249.4,
+   "frameMsP95": 3.3,
+   "frames": 3111
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 6,
+   "build": "branch",
+   "round": 5,
+   "order": "second",
+   "load_before": [
+    7.07,
+    9.39,
+    13.06
+   ],
+   "fpsMedian": 303,
+   "fps1Low": 124,
+   "frameMsP95": 5.5,
+   "frames": 1758
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 0,
+   "build": "branch",
+   "round": 5,
+   "order": "first",
+   "load_before": [
+    7.74,
+    9.45,
+    13.02
+   ],
+   "fpsMedian": 370.4,
+   "fps1Low": 124.1,
+   "frameMsP95": 5.2,
+   "frames": 2440
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 0,
+   "build": "main",
+   "round": 5,
+   "order": "second",
+   "load_before": [
+    9.08,
+    9.66,
+    13.01
+   ],
+   "fpsMedian": 344.8,
+   "fps1Low": 143.8,
+   "frameMsP95": 4.8,
+   "frames": 2122
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "main",
+   "round": 5,
+   "order": "first",
+   "load_before": [
+    9.89,
+    9.81,
+    13.03
+   ],
+   "fpsMedian": 196.1,
+   "fps1Low": 86.3,
+   "frameMsP95": 8.1,
+   "frames": 1163
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "branch",
+   "round": 5,
+   "order": "second",
+   "load_before": [
+    9.06,
+    9.64,
+    12.91
+   ],
+   "fpsMedian": 172.4,
+   "fps1Low": 75.7,
+   "frameMsP95": 9,
+   "frames": 1029
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "branch",
+   "round": 5,
+   "order": "first",
+   "load_before": [
+    8.19,
+    9.41,
+    12.77
+   ],
+   "fpsMedian": 200,
+   "fps1Low": 91.3,
+   "frameMsP95": 7.5,
+   "frames": 1166
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "main",
+   "round": 5,
+   "order": "second",
+   "load_before": [
+    9.87,
+    9.75,
+    12.83
+   ],
+   "fpsMedian": 200,
+   "fps1Low": 91.1,
+   "frameMsP95": 7.5,
+   "frames": 1176
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 6,
+   "build": "main",
+   "round": 5,
+   "order": "first",
+   "load_before": [
+    11.88,
+    10.2,
+    12.94
+   ],
+   "fpsMedian": 72.5,
+   "fps1Low": 27.3,
+   "frameMsP95": 32.4,
+   "frames": 420
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 6,
+   "build": "branch",
+   "round": 5,
+   "order": "second",
+   "load_before": [
+    10.76,
+    10.04,
+    12.83
+   ],
+   "fpsMedian": 88.5,
+   "fps1Low": 30.6,
+   "frameMsP95": 29,
+   "frames": 513
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 0,
+   "build": "branch",
+   "round": 5,
+   "order": "first",
+   "load_before": [
+    12.51,
+    10.51,
+    12.96
+   ],
+   "fpsMedian": 65.8,
+   "fps1Low": 23.7,
+   "frameMsP95": 33.2,
+   "frames": 384
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 0,
+   "build": "main",
+   "round": 5,
+   "order": "second",
+   "load_before": [
+    13.4,
+    10.84,
+    13.03
+   ],
+   "fpsMedian": 87.7,
+   "fps1Low": 29,
+   "frameMsP95": 32.5,
+   "frames": 466
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 6,
+   "build": "branch",
+   "round": 6,
+   "order": "first",
+   "load_before": [
+    13.88,
+    11.11,
+    13.09
+   ],
+   "fpsMedian": 243.9,
+   "fps1Low": 118.2,
+   "frameMsP95": 7,
+   "frames": 1381
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 6,
+   "build": "main",
+   "round": 6,
+   "order": "second",
+   "load_before": [
+    14.6,
+    11.41,
+    13.17
+   ],
+   "fpsMedian": 333.3,
+   "fps1Low": 134,
+   "frameMsP95": 4.8,
+   "frames": 2049
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 0,
+   "build": "main",
+   "round": 6,
+   "order": "first",
+   "load_before": [
+    12.92,
+    11.2,
+    13.06
+   ],
+   "fpsMedian": 344.8,
+   "fps1Low": 162.6,
+   "frameMsP95": 4.6,
+   "frames": 2112
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 0,
+   "build": "branch",
+   "round": 6,
+   "order": "second",
+   "load_before": [
+    12.25,
+    11.12,
+    13.0
+   ],
+   "fpsMedian": 333.3,
+   "fps1Low": 149.9,
+   "frameMsP95": 4.5,
+   "frames": 2164
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "branch",
+   "round": 6,
+   "order": "first",
+   "load_before": [
+    11.74,
+    11.05,
+    12.94
+   ],
+   "fpsMedian": 131.6,
+   "fps1Low": 35,
+   "frameMsP95": 13.6,
+   "frames": 758
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "main",
+   "round": 6,
+   "order": "second",
+   "load_before": [
+    10.81,
+    10.87,
+    12.84
+   ],
+   "fpsMedian": 196.1,
+   "fps1Low": 84.3,
+   "frameMsP95": 8.7,
+   "frames": 1132
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "main",
+   "round": 6,
+   "order": "first",
+   "load_before": [
+    11.22,
+    10.97,
+    12.84
+   ],
+   "fpsMedian": 212.8,
+   "fps1Low": 89.5,
+   "frameMsP95": 7,
+   "frames": 1249
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "branch",
+   "round": 6,
+   "order": "second",
+   "load_before": [
+    10.33,
+    10.79,
+    12.75
+   ],
+   "fpsMedian": 151.5,
+   "fps1Low": 55,
+   "frameMsP95": 11.3,
+   "frames": 892
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 6,
+   "build": "branch",
+   "round": 6,
+   "order": "first",
+   "load_before": [
+    10.31,
+    10.78,
+    12.71
+   ],
+   "fpsMedian": 61.3,
+   "fps1Low": 26.4,
+   "frameMsP95": 34.3,
+   "frames": 355
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 6,
+   "build": "main",
+   "round": 6,
+   "order": "second",
+   "load_before": [
+    11.79,
+    11.1,
+    12.79
+   ],
+   "fpsMedian": 66.7,
+   "fps1Low": 23.4,
+   "frameMsP95": 33.5,
+   "frames": 383
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 0,
+   "build": "main",
+   "round": 6,
+   "order": "first",
+   "load_before": [
+    11.8,
+    11.14,
+    12.77
+   ],
+   "fpsMedian": 66.7,
+   "fps1Low": 28.5,
+   "frameMsP95": 33.5,
+   "frames": 387
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 0,
+   "build": "branch",
+   "round": 6,
+   "order": "second",
+   "load_before": [
+    11.58,
+    11.12,
+    12.74
+   ],
+   "fpsMedian": 64.5,
+   "fps1Low": 21.7,
+   "frameMsP95": 34.4,
+   "frames": 374
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 6,
+   "build": "main",
+   "round": 7,
+   "order": "first",
+   "load_before": [
+    11.86,
+    11.23,
+    12.74
+   ],
+   "fpsMedian": 344.8,
+   "fps1Low": 201.2,
+   "frameMsP95": 4.1,
+   "frames": 2291
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 6,
+   "build": "branch",
+   "round": 7,
+   "order": "second",
+   "load_before": [
+    10.34,
+    10.93,
+    12.6
+   ],
+   "fpsMedian": 333.3,
+   "fps1Low": 191.3,
+   "frameMsP95": 4,
+   "frames": 2173
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 0,
+   "build": "branch",
+   "round": 7,
+   "order": "first",
+   "load_before": [
+    9.38,
+    10.7,
+    12.5
+   ],
+   "fpsMedian": 357.1,
+   "fps1Low": 199.7,
+   "frameMsP95": 4,
+   "frames": 2390
+  },
+  {
+   "path": "gpu",
+   "preset": "low",
+   "chars": 0,
+   "build": "main",
+   "round": 7,
+   "order": "second",
+   "load_before": [
+    8.38,
+    10.42,
+    12.37
+   ],
+   "fpsMedian": 370.4,
+   "fps1Low": 201.8,
+   "frameMsP95": 4,
+   "frames": 2450
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "main",
+   "round": 7,
+   "order": "first",
+   "load_before": [
+    7.55,
+    10.14,
+    12.24
+   ],
+   "fpsMedian": 222.2,
+   "fps1Low": 95.5,
+   "frameMsP95": 6.7,
+   "frames": 1309
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "branch",
+   "round": 7,
+   "order": "second",
+   "load_before": [
+    7.0,
+    9.93,
+    12.14
+   ],
+   "fpsMedian": 208.3,
+   "fps1Low": 88,
+   "frameMsP95": 7.6,
+   "frames": 1201
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "branch",
+   "round": 7,
+   "order": "first",
+   "load_before": [
+    6.56,
+    9.69,
+    12.01
+   ],
+   "fpsMedian": 217.4,
+   "fps1Low": 100.8,
+   "frameMsP95": 6.8,
+   "frames": 1287
+  },
+  {
+   "path": "gpu",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "main",
+   "round": 7,
+   "order": "second",
+   "load_before": [
+    6.71,
+    9.56,
+    11.93
+   ],
+   "fpsMedian": 227.3,
+   "fps1Low": 101.7,
+   "frameMsP95": 6.7,
+   "frames": 1309
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 6,
+   "build": "main",
+   "round": 7,
+   "order": "first",
+   "load_before": [
+    6.62,
+    9.4,
+    11.83
+   ],
+   "fpsMedian": 102,
+   "fps1Low": 33,
+   "frameMsP95": 19.7,
+   "frames": 600
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 6,
+   "build": "branch",
+   "round": 7,
+   "order": "second",
+   "load_before": [
+    6.45,
+    9.27,
+    11.75
+   ],
+   "fpsMedian": 94.3,
+   "fps1Low": 31.5,
+   "frameMsP95": 28.3,
+   "frames": 555
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 0,
+   "build": "branch",
+   "round": 7,
+   "order": "first",
+   "load_before": [
+    6.45,
+    9.14,
+    11.66
+   ],
+   "fpsMedian": 100,
+   "fps1Low": 66.2,
+   "frameMsP95": 12.1,
+   "frames": 601
+  },
+  {
+   "path": "gpu",
+   "preset": "high",
+   "chars": 0,
+   "build": "main",
+   "round": 7,
+   "order": "second",
+   "load_before": [
+    6.41,
+    9.0,
+    11.57
+   ],
+   "fpsMedian": 102,
+   "fps1Low": 70.9,
+   "frameMsP95": 12.3,
+   "frames": 605
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 6,
+   "build": "branch",
+   "round": 4,
+   "order": "first",
+   "load_before": [
+    6.3,
+    8.5,
+    11.2
+   ],
+   "fpsMedian": 4,
+   "fps1Low": 2.4,
+   "frameMsP95": 365,
+   "frames": 31
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 6,
+   "build": "main",
+   "round": 4,
+   "order": "second",
+   "load_before": [
+    12.31,
+    9.71,
+    11.48
+   ],
+   "fpsMedian": 3.7,
+   "fps1Low": 1.7,
+   "frameMsP95": 458.3,
+   "frames": 27
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "main",
+   "round": 4,
+   "order": "first",
+   "load_before": [
+    14.69,
+    10.43,
+    11.66
+   ],
+   "fpsMedian": 1.3,
+   "fps1Low": 0.7,
+   "frameMsP95": 1484.4,
+   "frames": 10
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "branch",
+   "round": 4,
+   "order": "second",
+   "load_before": [
+    16.88,
+    11.53,
+    11.97
+   ],
+   "fpsMedian": 1.1,
+   "fps1Low": 0.9,
+   "frameMsP95": 1116.6,
+   "frames": 10
+  },
+  {
+   "path": "swiftshader",
+   "preset": "high",
+   "chars": 6,
+   "build": "branch",
+   "round": 4,
+   "order": "first",
+   "load_before": [
+    14.58,
+    12.04,
+    12.13
+   ],
+   "fpsMedian": 1.5,
+   "fps1Low": 1.2,
+   "frameMsP95": 826.3,
+   "frames": 13
+  },
+  {
+   "path": "swiftshader",
+   "preset": "high",
+   "chars": 6,
+   "build": "main",
+   "round": 4,
+   "order": "second",
+   "load_before": [
+    15.77,
+    12.86,
+    12.43
+   ],
+   "fpsMedian": 2.4,
+   "fps1Low": 0.9,
+   "frameMsP95": 1107.5,
+   "frames": 17
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 0,
+   "build": "main",
+   "round": 4,
+   "order": "first",
+   "load_before": [
+    14.02,
+    12.69,
+    12.38
+   ],
+   "fpsMedian": 10.8,
+   "fps1Low": 6.7,
+   "frameMsP95": 123.9,
+   "frames": 82
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 0,
+   "build": "branch",
+   "round": 4,
+   "order": "second",
+   "load_before": [
+    15.08,
+    13.06,
+    12.52
+   ],
+   "fpsMedian": 10.1,
+   "fps1Low": 6.7,
+   "frameMsP95": 123.1,
+   "frames": 81
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "branch",
+   "round": 4,
+   "order": "first",
+   "load_before": [
+    14.37,
+    13.01,
+    12.51
+   ],
+   "fpsMedian": 4.1,
+   "fps1Low": 3.2,
+   "frameMsP95": 300,
+   "frames": 33
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "main",
+   "round": 4,
+   "order": "second",
+   "load_before": [
+    15.15,
+    13.36,
+    12.66
+   ],
+   "fpsMedian": 3.9,
+   "fps1Low": 1.9,
+   "frameMsP95": 450.5,
+   "frames": 30
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 6,
+   "build": "main",
+   "round": 5,
+   "order": "first",
+   "load_before": [
+    15.73,
+    13.65,
+    12.79
+   ],
+   "fpsMedian": 7.9,
+   "fps1Low": 5.7,
+   "frameMsP95": 166.5,
+   "frames": 62
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 6,
+   "build": "branch",
+   "round": 5,
+   "order": "second",
+   "load_before": [
+    13.74,
+    13.32,
+    12.69
+   ],
+   "fpsMedian": 6.6,
+   "fps1Low": 2.3,
+   "frameMsP95": 299.4,
+   "frames": 47
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "branch",
+   "round": 5,
+   "order": "first",
+   "load_before": [
+    12.69,
+    13.07,
+    12.62
+   ],
+   "fpsMedian": 3.6,
+   "fps1Low": 1.9,
+   "frameMsP95": 360.2,
+   "frames": 29
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 6,
+   "build": "main",
+   "round": 5,
+   "order": "second",
+   "load_before": [
+    11.67,
+    12.74,
+    12.52
+   ],
+   "fpsMedian": 3.8,
+   "fps1Low": 2.9,
+   "frameMsP95": 341.2,
+   "frames": 31
+  },
+  {
+   "path": "swiftshader",
+   "preset": "high",
+   "chars": 6,
+   "build": "main",
+   "round": 5,
+   "order": "first",
+   "load_before": [
+    11.12,
+    12.54,
+    12.45
+   ],
+   "fpsMedian": 2.7,
+   "fps1Low": 1.5,
+   "frameMsP95": 443.2,
+   "frames": 21
+  },
+  {
+   "path": "swiftshader",
+   "preset": "high",
+   "chars": 6,
+   "build": "branch",
+   "round": 5,
+   "order": "second",
+   "load_before": [
+    13.6,
+    12.9,
+    12.58
+   ],
+   "fpsMedian": 1.7,
+   "fps1Low": 1.3,
+   "frameMsP95": 791.6,
+   "frames": 15
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 0,
+   "build": "branch",
+   "round": 5,
+   "order": "first",
+   "load_before": [
+    12.48,
+    12.64,
+    12.5
+   ],
+   "fpsMedian": 8.6,
+   "fps1Low": 4.6,
+   "frameMsP95": 191.4,
+   "frames": 66
+  },
+  {
+   "path": "swiftshader",
+   "preset": "low",
+   "chars": 0,
+   "build": "main",
+   "round": 5,
+   "order": "second",
+   "load_before": [
+    12.5,
+    12.59,
+    12.48
+   ],
+   "fpsMedian": 10.9,
+   "fps1Low": 8.4,
+   "frameMsP95": 109.6,
+   "frames": 86
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "main",
+   "round": 5,
+   "order": "first",
+   "load_before": [
+    12.03,
+    12.45,
+    12.43
+   ],
+   "fpsMedian": 4.8,
+   "fps1Low": 3.5,
+   "frameMsP95": 274.3,
+   "frames": 37
+  },
+  {
+   "path": "swiftshader",
+   "preset": "balanced",
+   "chars": 0,
+   "build": "branch",
+   "round": 5,
+   "order": "second",
+   "load_before": [
+    13.64,
+    12.7,
+    12.52
+   ],
+   "fpsMedian": 4.4,
+   "fps1Low": 3.1,
+   "frameMsP95": 291.7,
+   "frames": 36
+  }
+ ]
+}

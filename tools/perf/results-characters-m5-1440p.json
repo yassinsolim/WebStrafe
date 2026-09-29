@@ -1,0 +1,333 @@
+{
+  "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)",
+  "vsync": false,
+  "viewport": [
+    2560,
+    1440
+  ],
+  "results": [
+    {
+      "label": "6 max characters lod0 (cold)",
+      "query": "shot=aim_ochrecut&weapon=knife&hud=0&perf=8&chars=6&charlook=max&chardist=3.2&charspace=0.9",
+      "frames": 3025,
+      "fpsMedian": 357.14,
+      "fps1Low": 153.77,
+      "frameMsMedian": 2.8,
+      "frameMsP99": 5.7,
+      "cpuMsMedian": 2.6,
+      "cpuMsP99": 5.4,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          9.1,
+          6861
+        ],
+        [
+          8.5,
+          7946
+        ],
+        [
+          7.7,
+          5627
+        ],
+        [
+          7.6,
+          4740
+        ],
+        [
+          7.6,
+          9170
+        ],
+        [
+          7.5,
+          3111
+        ]
+      ],
+      "calls": 110,
+      "triangles": 492579,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "baseline no characters",
+      "query": "shot=aim_ochrecut&weapon=knife&hud=0&perf=8",
+      "frames": 4057,
+      "fpsMedian": 434.78,
+      "fps1Low": 190.52,
+      "frameMsMedian": 2.3,
+      "frameMsP99": 4.3,
+      "cpuMsMedian": 2.2,
+      "cpuMsP99": 3.9,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          9.7,
+          8449
+        ],
+        [
+          7.5,
+          4385
+        ],
+        [
+          7.5,
+          7349
+        ],
+        [
+          7.4,
+          6228
+        ],
+        [
+          7.2,
+          2428
+        ],
+        [
+          7.1,
+          2854
+        ]
+      ],
+      "calls": 68,
+      "triangles": 65559,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "6 max characters lod0",
+      "query": "shot=aim_ochrecut&weapon=knife&hud=0&perf=8&chars=6&charlook=max&chardist=3.2&charspace=0.9",
+      "frames": 3011,
+      "fpsMedian": 357.14,
+      "fps1Low": 150.56,
+      "frameMsMedian": 2.8,
+      "frameMsP99": 5.4,
+      "cpuMsMedian": 2.7,
+      "cpuMsP99": 5.1,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          13.4,
+          2504
+        ],
+        [
+          9.8,
+          7272
+        ],
+        [
+          9,
+          1575
+        ],
+        [
+          8.2,
+          6159
+        ],
+        [
+          7.7,
+          3453
+        ],
+        [
+          7.7,
+          4895
+        ]
+      ],
+      "calls": 110,
+      "triangles": 492579,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "6 max characters far",
+      "query": "shot=aim_ochrecut&weapon=knife&hud=0&perf=8&chars=6&charlook=max&chardist=14&charspace=1.4",
+      "frames": 3559,
+      "fpsMedian": 416.67,
+      "fps1Low": 178.75,
+      "frameMsMedian": 2.4,
+      "frameMsP99": 5.1,
+      "cpuMsMedian": 2.2,
+      "cpuMsP99": 4.8,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          7,
+          2072
+        ],
+        [
+          7,
+          6548
+        ],
+        [
+          6.7,
+          4192
+        ],
+        [
+          6.7,
+          6331
+        ],
+        [
+          6.4,
+          3134
+        ],
+        [
+          6.2,
+          4198
+        ]
+      ],
+      "calls": 110,
+      "triangles": 234867,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "12 characters detail low",
+      "query": "shot=aim_ochrecut&weapon=knife&hud=0&perf=8&chars=12&charlook=presets&chardist=6&charspace=0.8&chardetail=low",
+      "frames": 3135,
+      "fpsMedian": 384.62,
+      "fps1Low": 163.1,
+      "frameMsMedian": 2.6,
+      "frameMsP99": 5.1,
+      "cpuMsMedian": 2.5,
+      "cpuMsP99": 4.8,
+      "over16": 0,
+      "over33": 0,
+      "worst": [
+        [
+          9.7,
+          8724
+        ],
+        [
+          8.1,
+          4919
+        ],
+        [
+          8,
+          3575
+        ],
+        [
+          7.9,
+          7511
+        ],
+        [
+          7.7,
+          2458
+        ],
+        [
+          7.6,
+          8714
+        ]
+      ],
+      "calls": 140,
+      "triangles": 303246,
+      "pixelRatio": 1,
+      "canvas": [
+        2560,
+        1440
+      ]
+    },
+    {
+      "label": "6 max chars dpr3 no adaptive",
+      "query": "shot=aim_ochrecut&weapon=knife&hud=0&perf=8&chars=6&charlook=max&chardist=3.2&charspace=0.9&dpr=3&adaptive=0",
+      "frames": 562,
+      "fpsMedian": 71.94,
+      "fps1Low": 29.75,
+      "frameMsMedian": 13.9,
+      "frameMsP99": 32.6,
+      "cpuMsMedian": 13.9,
+      "cpuMsP99": 22.2,
+      "over16": 34,
+      "over33": 5,
+      "worst": [
+        [
+          33.9,
+          2819
+        ],
+        [
+          33.9,
+          3710
+        ],
+        [
+          33.9,
+          8853
+        ],
+        [
+          33.7,
+          7081
+        ],
+        [
+          33.7,
+          7744
+        ],
+        [
+          32.6,
+          2231
+        ]
+      ],
+      "calls": 110,
+      "triangles": 492579,
+      "pixelRatio": 3,
+      "canvas": [
+        7680,
+        4320
+      ]
+    },
+    {
+      "label": "6 max chars dpr3 adaptive 150",
+      "query": "shot=aim_ochrecut&weapon=knife&hud=0&perf=8&chars=6&charlook=max&chardist=3.2&charspace=0.9&dpr=3&adaptive=1&adaptiveLow=150",
+      "frames": 1262,
+      "fpsMedian": 196.08,
+      "fps1Low": 6.75,
+      "frameMsMedian": 5.1,
+      "frameMsP99": 14.7,
+      "cpuMsMedian": 5,
+      "cpuMsP99": 14.2,
+      "over16": 8,
+      "over33": 3,
+      "worst": [
+        [
+          740.2,
+          1742
+        ],
+        [
+          568.9,
+          3313
+        ],
+        [
+          407.3,
+          5725
+        ],
+        [
+          33.2,
+          1840
+        ],
+        [
+          29.1,
+          1883
+        ],
+        [
+          28.8,
+          2503
+        ]
+      ],
+      "calls": 110,
+      "triangles": 492579,
+      "pixelRatio": 1.65,
+      "canvas": [
+        4224,
+        2376
+      ]
+    }
+  ],
+  "errors": []
+}
