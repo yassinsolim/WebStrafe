@@ -56,6 +56,11 @@ export interface ArmorCharacterOptions {
 
 const BOUNDS = new Sphere(new Vector3(0, 0.95, 0), 1.25);
 const BOUNDS_BOX = new Box3(new Vector3(-0.8, -0.05, -0.8), new Vector3(0.8, 2.0, 0.8));
+// proportions on top of the bind pose: longer legs under a slightly smaller
+// upper body and helmet, so the armor reads less stubby and toy-like
+const LEG_SCALE = 1.06;
+const UPPER_SCALE = 0.96;
+const HEAD_SCALE = 0.93;
 const CAPE = ['cape_0', 'cape_1', 'cape_2', 'cape_3'];
 const TAIL = ['tail_0', 'tail_1', 'tail_2'];
 const tmpQ = new Quaternion();
@@ -118,6 +123,13 @@ export class ArmorCharacter {
     this.root.updateMatrixWorld(true);
     for (const [name, bone] of this.bones) this.bindWorld.set(name, bone.matrixWorld.clone());
     this.skeleton = new Skeleton(ALL_JOINTS.map((j) => this.bones.get(j.name)!));
+    // the skeleton's inverses are taken above, so these scales reshape the skinned mesh
+    for (const side of ['l', 'r']) this.bones.get(`leg_upper_${side}`)!.scale.setScalar(LEG_SCALE);
+    this.bones.get('spine_0')!.scale.setScalar(UPPER_SCALE);
+    this.bones.get('head_0')!.scale.setScalar(HEAD_SCALE);
+    // lift the hips by what the longer legs add, so the feet stay on the floor
+    const hip = this.bindWorld.get('leg_upper_l')!.elements[13];
+    pelvis.position.y += hip * (LEG_SCALE - 1);
     this.lod.name = 'ArmorLod';
     this.root.add(this.lod);
     for (let level = 0; level < LOD_LEVELS; level += 1) {

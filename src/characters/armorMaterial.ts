@@ -203,6 +203,10 @@ if (armorPaint) {
   armorMetal = mix(armorMetal, 0.85, bare);
   armorRough = mix(armorRough, 0.34, bare);
   armorColor *= mix(1.0, 0.72 + 0.28 * armorAo, uWear);
+#ifndef ARMOR_SIMPLE
+  // hand painted plates are never one flat colour: a faint blotchy variation
+  armorColor *= 0.94 + 0.12 * armorNoise(vBindPos * 9.0 + 3.7);
+#endif
   // every finish: a faint lighter rim on the bevels catches light like real edge wear
   armorColor *= 1.0 + 0.12 * smoothstep(0.4, 0.9, armorEdge);
 }

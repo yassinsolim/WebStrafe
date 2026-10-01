@@ -124,8 +124,8 @@ export interface FinishInfo {
 
 export const FINISH_INFO: Record<FinishId, FinishInfo> = {
   matte: { id: 'matte', code: 'm', name: 'Matte', roughness: 0.82, metalness: 0.02, wear: 0 },
-  satin: { id: 'satin', code: 's', name: 'Satin', roughness: 0.52, metalness: 0.12, wear: 0 },
-  gloss: { id: 'gloss', code: 'g', name: 'Gloss', roughness: 0.2, metalness: 0.05, wear: 0 },
+  satin: { id: 'satin', code: 's', name: 'Satin', roughness: 0.64, metalness: 0.02, wear: 0.12 },
+  gloss: { id: 'gloss', code: 'g', name: 'Gloss', roughness: 0.3, metalness: 0.02, wear: 0.06 },
   metallic: { id: 'metallic', code: 'x', name: 'Metallic', roughness: 0.34, metalness: 0.88, wear: 0 },
   worn: { id: 'worn', code: 'w', name: 'Worn', roughness: 0.66, metalness: 0.08, wear: 1 },
   camo: { id: 'camo', code: 'c', name: 'Camo', roughness: 0.74, metalness: 0.03, wear: 0.35, camo: true },

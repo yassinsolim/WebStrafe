@@ -50,6 +50,10 @@ changes.
 pieces, and `ArmorMaterial` colours by per-vertex material slot, samples the
 atlas for normals, AO, roughness detail, edge wear and grime, and applies the
 finish (Camo breaks the paint into a pattern of the three paint colours).
+`ArmorCharacter` also scales a few bones after binding (legs 1.06, upper body
+0.96, helmet 0.93, hips lifted to keep the feet down) so the sets read less
+stubby, and `applyKnifeIdlePose` aims the armored stance in model space: knife
+hand low in front, left hand in a loose guard, left foot a short step ahead.
 The look travels in the `armor` part of the shared cosmetics field
 (`src/network/cosmetics.ts`, `lookToArmor` / `armorToLook`).
 

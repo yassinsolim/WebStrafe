@@ -13,6 +13,7 @@ import {
 import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { getKnife } from '../combat/knives';
 import { buildProceduralKnife, KNIFE_NODES } from '../cosmetics/ProceduralKnife';
+import { signedAngleAbout } from '../viewmodel/ik';
 
 /**
  * Shared player-model rigging: locating the arm bones, attaching a knife to the
@@ -45,6 +46,8 @@ export interface ArmRig {
   leftThumb: Bone[];
   /** mpfb finger bones (armored characters): per-finger grip tables instead of the legacy uniform curl */
   mpfbHands: boolean;
+  /** thigh, shin and foot per side with their bind rotations, for the stance's footwork */
+  legs: Record<'left' | 'right', LegBones | null> | null;
 
   rightUpperBase: Quaternion;
   rightLowerBase: Quaternion;
@@ -63,6 +66,15 @@ export interface ArmRig {
   rightThumbBases: Quaternion[];
   leftFingerBases: Quaternion[];
   leftThumbBases: Quaternion[];
+}
+
+export interface LegBones {
+  upper: Bone;
+  lower: Bone;
+  foot: Bone;
+  upperBase: Quaternion;
+  lowerBase: Quaternion;
+  footBase: Quaternion;
 }
 
 // mpfb hands, radians about each joint's curl axis (local +z), knuckle to tip.
@@ -275,6 +287,14 @@ export function buildArmRig(root: Object3D): ArmRig | null {
     }
   }
   const mpfbHands = !hasMeta && rightFingers.length === 12 && leftFingers.length === 12;
+  const leg = (side: 'l' | 'r'): LegBones | null => {
+    const upper = pickBone(`leg_upper_${side}`);
+    const lower = pickBone(`leg_lower_${side}`);
+    const foot = pickBone(`ankle_${side}`);
+    if (!upper || !lower || !foot) return null;
+    return { upper, lower, foot, upperBase: upper.quaternion.clone(), lowerBase: lower.quaternion.clone(), footBase: foot.quaternion.clone() };
+  };
+  const legs = { left: leg('l'), right: leg('r') };
 
   return {
     rightUpper,
@@ -295,6 +315,7 @@ export function buildArmRig(root: Object3D): ArmRig | null {
     leftFingers,
     leftThumb,
     mpfbHands,
+    legs,
 
     rightUpperBase: rightUpper.quaternion.clone(),
     rightLowerBase: rightLower.quaternion.clone(),
@@ -356,6 +377,13 @@ export function applyKnifeIdlePose(rig: ArmRig, breath = 0): void {
   offsetEuler.set(-0.12, 0.08, 0.22, 'XYZ');
   handGripQuat.setFromEuler(offsetEuler);
   rig.rightHand.quaternion.copy(rig.rightHandBase).multiply(handGripQuat).normalize();
+  if (rig.mpfbHands) {
+    // armored characters: a relaxed fighting stance aimed in model space, elbow
+    // by the ribs and the knife out low in front, instead of both forearms held
+    // straight out
+    aimBone(rig.rightUpper, STANCE.rightUpper.x, STANCE.rightUpper.y + inhale * 0.01, STANCE.rightUpper.z);
+    aimBone(rig.rightLower, STANCE.rightLower.x, STANCE.rightLower.y + inhale * 0.01, STANCE.rightLower.z);
+  }
 
   // Keep the weapon helper stable while the anatomical wrist closes around it.
   // The menu-only knife rotation below then follows the fist/palm channel rather
@@ -407,6 +435,92 @@ export function applyKnifeIdlePose(rig: ArmRig, breath = 0): void {
   applyOptional(rig.leftUpper, rig.leftUpperBase, 0.021 + inhale * 0.005, -0.099, 0.411);
   applyOptional(rig.leftLower, rig.leftLowerBase, -0.067 + inhale * 0.004, -0.062, 1.031);
   applyOptional(rig.leftHand, rig.leftHandBase, 0, 0, 0);
+
+  if (rig.mpfbHands) {
+    // left hand up in a loose guard in front of the chest, elbow down
+    if (rig.leftUpper) aimBone(rig.leftUpper, STANCE.leftUpper.x, STANCE.leftUpper.y + inhale * 0.01, STANCE.leftUpper.z);
+    if (rig.leftLower) aimBone(rig.leftLower, STANCE.leftLower.x, STANCE.leftLower.y + inhale * 0.01, STANCE.leftLower.z);
+    if (rig.leftHand) aimBone(rig.leftHand, STANCE.leftHand.x, STANCE.leftHand.y, STANCE.leftHand.z);
+    // turn the fist so the blade points forward and a little up, across the body
+    if (menuKnife) aimKnife(rig.rightHand, menuKnife, STANCE.rightHand, STANCE.blade);
+    // weight on the back foot, the left a short step ahead, knees soft
+    for (const [leg, swing, knee] of [[rig.legs?.left, -0.16, 0.14], [rig.legs?.right, 0.1, 0.12]] as const) {
+      if (!leg) continue;
+      leg.upper.quaternion.copy(leg.upperBase);
+      leg.lower.quaternion.copy(leg.lowerBase);
+      leg.foot.quaternion.copy(leg.footBase);
+      swingBone(leg.upper, swing - knee * 0.5);
+      swingBone(leg.lower, knee);
+      // keep the sole flat
+      swingBone(leg.foot, -(swing + knee * 0.5));
+    }
+  }
+}
+
+// armored stance, directions in the model's frame (faces +z, left side +x)
+const STANCE = {
+  rightUpper: new Vector3(-0.3, -0.93, 0.14),
+  rightLower: new Vector3(0.1, 0.22, 0.97),
+  // wrist cocked down and in from the forearm so the blade leans forward
+  rightHand: new Vector3(0.18, -0.35, 0.92),
+  leftUpper: new Vector3(0.26, -0.93, 0.2),
+  leftLower: new Vector3(-0.15, 0.2, 0.97),
+  leftHand: new Vector3(-0.2, 0.1, 0.97),
+  blade: new Vector3(0.2, 0.62, 0.76),
+};
+const AXIS_X = new Vector3(1, 0, 0);
+const rollAxis = new Vector3();
+const aimFrom = new Vector3();
+const aimTo = new Vector3();
+const aimQ = new Quaternion();
+const aimParent = new Quaternion();
+const aimWorld = new Quaternion();
+const aimModel = new Quaternion();
+
+/** the model root's world rotation: the first non-bone ancestor of the skeleton */
+function modelRotation(bone: Object3D, out: Quaternion): Quaternion {
+  let node: Object3D = bone;
+  while (node.parent && (node.parent as Bone).isBone) node = node.parent;
+  return node.parent ? node.parent.getWorldQuaternion(out) : out.identity();
+}
+
+/** applies a world rotation `delta` to a bone on top of its current pose */
+function rotateWorld(bone: Object3D, delta: Quaternion): void {
+  bone.parent!.updateWorldMatrix(true, false);
+  bone.parent!.getWorldQuaternion(aimParent);
+  aimWorld.copy(aimParent).multiply(bone.quaternion);
+  aimWorld.premultiply(delta);
+  bone.quaternion.copy(aimParent.invert().multiply(aimWorld)).normalize();
+}
+
+/** turns a bone the shortest way so it points along (x, y, z) in the model's frame */
+function aimBone(bone: Bone, x: number, y: number, z: number): void {
+  bone.updateWorldMatrix(true, false);
+  bone.getWorldQuaternion(aimWorld);
+  aimFrom.set(bone.name.includes('_r_') ? -1 : 1, 0, 0).applyQuaternion(aimWorld);
+  aimTo.set(x, y, z).normalize().applyQuaternion(modelRotation(bone, aimModel));
+  rotateWorld(bone, aimQ.setFromUnitVectors(aimFrom, aimTo));
+}
+
+/** lines the hand up with `handDir`, then rolls the fist about it so the blade comes closest to `bladeDir` (model frame) */
+function aimKnife(hand: Bone, knife: Object3D, handDir: Vector3, bladeDir: Vector3): void {
+  aimBone(hand, handDir.x, handDir.y, handDir.z);
+  const grip = knife.getObjectByName(KNIFE_NODES.grip);
+  const tip = knife.getObjectByName('socket_tip');
+  if (!grip || !tip) return;
+  knife.updateWorldMatrix(true, true);
+  tip.getWorldPosition(aimFrom);
+  aimFrom.sub(grip.getWorldPosition(aimTo)).normalize();
+  modelRotation(hand, aimModel);
+  aimTo.copy(bladeDir).normalize().applyQuaternion(aimModel);
+  const axis = rollAxis.copy(handDir).normalize().applyQuaternion(aimModel);
+  rotateWorld(hand, aimQ.setFromAxisAngle(axis, signedAngleAbout(aimFrom, aimTo, axis)));
+}
+
+/** swings a leg bone forward (negative) or back about the model's left-right axis */
+function swingBone(bone: Bone, angle: number): void {
+  aimTo.copy(AXIS_X).applyQuaternion(modelRotation(bone, aimModel));
+  rotateWorld(bone, aimQ.setFromAxisAngle(aimTo, angle));
 }
 
 function curlHand(fingers: Bone[], bases: Quaternion[], thumb: Bone[], thumbBases: Quaternion[], table: number[][], thumbTable: number[]): void {

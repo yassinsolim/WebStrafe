@@ -58,6 +58,13 @@ rotation < 0.15 rad) and composited every frame.
   guard outside the index knuckle instead of intersecting the closed fist.
 - The integrated first-person knife rig is enlarged and recentered so both hands
   and the complete idle blade stay readable through idle and attack motion.
+- Ring knives (karambit, talon) follow CS2's first-person karambit: the index
+  goes through the ring and the claw curves toward the knuckles, the idle holds
+  the fist palm down low on the right with the claw curving up and the left hand
+  open in a guard, the draw spins the knife on the index with the hand raised,
+  the inspect turns the fist upright to show the claw, the primary hooks across
+  to the left and the secondary cocks high and rips down. These clips blend
+  whole hand poses (`RING_KEYS` in `ViewmodelSystem.ts`) instead of offsets.
 - The Deagle retains its authored two-hand rig. Disconnected source clothing is
   removed during export, so no synthetic forearm or duplicate hand is added at
   runtime.
