@@ -248,16 +248,20 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
     events: [[0.55, 'sound:knife_open'], [1.15, 'sound:knife_open']],
   },
   spin_in: {
-    // pulled out spinning on the index finger through the ring, the other fingers
-    // open to let it turn, then close around the handle as it lands
+    // cs2 karambit: the hand comes up on the right with the fingers open and the
+    // knife whirling round the index, then drops palm down into the idle while
+    // the left hand comes up
     duration: 1.0,
     tracks: {
-      py: [[0, -0.16], [0.3, 0, 'out']],
-      rx: [[0, -30], [0.3, 0, 'out']],
-      spinZ: [[0, 720], [0.85, 0, 'out']],
-      gripOpen: [[0, 0.95], [0.72, 0.95], [0.9, 0, 'out']],
+      ringRaise: [[0, 1], [0.5, 1], [0.84, 0, 'inOut']],
+      py: [[0, -0.22], [0.26, 0, 'out']],
+      px: [[0, 0.05], [0.26, 0, 'out']],
+      rz: [[0, 0], [0.84, 0], [0.92, -5, 'out'], [1.0, 0, 'inOut']],
+      spinZ: [[0, 540], [0.16, 540], [0.6, 0, 'out']],
+      gripOpen: [[0, 0.95], [0.52, 0.95], [0.66, 0, 'out']],
+      leftGuard: [[0, 0], [0.45, 0], [0.9, 1, 'out']],
     },
-    events: [[0.3, 'sound:knife_draw']],
+    events: [[0.12, 'sound:knife_draw'], [0.34, 'sound:knife_spin']],
   },
   dagger_pair: {
     duration: 0.8,
@@ -344,17 +348,20 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
     events: [[0.62, 'sound:knife_open'], [0.97, 'sound:knife_open'], [1.6, 'sound:knife_open'], [1.9, 'sound:knife_open'], [2.5, 'sound:knife_open'], [2.93, 'sound:knife_open']],
   },
   ring_spin: {
-    duration: 4.4,
+    // cs2 karambit: a spin on the index while the fist turns up to show the
+    // claw, a slow look at both curves, another spin on the way back down
+    duration: 4.0,
     tracks: {
-      ry: [[0, 0], [0.4, 25], [2.8, 25], [3.1, 0]],
-      rz: [[0, 0], [0.4, 25], [1.6, 25], [2.0, -20], [2.8, -20], [3.1, 0]],
-      py: [[0, 0], [0.4, 0.04], [2.8, 0.04], [3.1, 0]],
-      spinZ: [[0, 0], [0.5, 0], [1.0, 360, 'inOut'], [1.3, 360], [1.8, 720, 'inOut'], [2.1, 720], [2.8, 0, 'inOut']],
+      ringShow: [[0, 0], [0.7, 1, 'inOut'], [3.0, 1], [3.65, 0, 'inOut']],
+      leftGuard: [[0, 1], [0.35, 0, 'inOut'], [3.35, 0], [3.9, 1, 'inOut']],
+      rz: [[0, 0], [0.7, 0], [1.5, 9, 'inOut'], [2.3, -7, 'inOut'], [3.0, 0, 'inOut']],
+      ry: [[0, 0], [0.7, 0], [1.6, -12, 'inOut'], [2.4, 8, 'inOut'], [3.0, 0, 'inOut']],
+      py: [[0, 0], [0.7, 0], [1.9, 0.008, 'inOut'], [3.0, 0, 'inOut']],
+      spinZ: [[0, 0], [0.12, 0], [0.62, 360, 'inOut'], [3.0, 360], [3.55, 720, 'inOut']],
       // the fingers let go while it spins, the index stays hooked in the ring
-      gripOpen: [[0, 0], [0.45, 0], [0.55, 0.95], [1.02, 0.95], [1.12, 0], [1.28, 0], [1.38, 0.95], [1.82, 0.95], [1.92, 0], [2.05, 0], [2.15, 0.95], [2.78, 0.95], [2.9, 0]],
-      ...WATCH_TAIL(3.0),
+      gripOpen: [[0, 0], [0.1, 0], [0.18, 0.95], [0.56, 0.95], [0.68, 0], [2.96, 0], [3.04, 0.95], [3.5, 0.95], [3.62, 0]],
     },
-    events: [[0.7, 'sound:knife_spin'], [1.5, 'sound:knife_spin'], [2.4, 'sound:knife_spin']],
+    events: [[0.3, 'sound:knife_spin'], [3.2, 'sound:knife_spin']],
   },
   skeleton_ring: {
     // turn it over, then hook the index through the ring and spin it on the finger
@@ -472,6 +479,53 @@ const ATTACKS: Readonly<Record<'slashA' | 'slashB' | 'stab' | 'backstab', Clip>>
   },
 };
 
+// ring knives hook rather than slash (cs2 karambit): the primary throws the
+// palm down fist across to the left claw first and lets it carry out of view,
+// the secondary cocks the fist high on the right and rips it down across
+const RING_ATTACKS: Readonly<Record<'slashA' | 'slashB' | 'stab' | 'backstab', Clip>> = {
+  slashA: {
+    duration: 0.45,
+    tracks: {
+      ringHook: [[0, 0], [0.06, -0.15, 'out'], [0.16, 1, 'in'], [0.45, 0, 'inOut']],
+      px: [[0, 0], [0.16, 0], [0.25, -0.07, 'out'], [0.45, 0, 'inOut']],
+      py: [[0, 0], [0.16, 0], [0.25, -0.1, 'out'], [0.45, 0, 'inOut']],
+      ry: [[0, 0], [0.06, -12, 'out'], [0.16, 14, 'in'], [0.45, 0, 'inOut']],
+      leftGuard: [[0, 1], [0.12, 0, 'out'], [0.3, 0], [0.45, 1, 'inOut']],
+    },
+  },
+  slashB: {
+    // the same hook from lower down, rising as it crosses
+    duration: 0.45,
+    tracks: {
+      ringHook: [[0, 0], [0.06, -0.2, 'out'], [0.16, 1, 'in'], [0.45, 0, 'inOut']],
+      px: [[0, 0], [0.16, 0], [0.25, -0.06, 'out'], [0.45, 0, 'inOut']],
+      py: [[0, 0], [0.06, -0.04, 'out'], [0.16, 0.04, 'in'], [0.25, -0.08, 'out'], [0.45, 0, 'inOut']],
+      rz: [[0, 0], [0.06, -10, 'out'], [0.16, 16, 'in'], [0.45, 0, 'inOut']],
+      leftGuard: [[0, 1], [0.12, 0, 'out'], [0.3, 0], [0.45, 1, 'inOut']],
+    },
+  },
+  stab: {
+    duration: 0.85,
+    tracks: {
+      ringCock: [[0, 0], [0.24, 1, 'out'], [0.36, 0, 'in']],
+      ringStrike: [[0, 0], [0.24, 0], [0.36, 1, 'in'], [0.48, 1], [0.85, 0, 'inOut']],
+      py: [[0, 0], [0.36, 0], [0.5, -0.06, 'out'], [0.85, 0, 'inOut']],
+      leftGuard: [[0, 1], [0.15, 0, 'out'], [0.6, 0], [0.85, 1, 'inOut']],
+    },
+  },
+  backstab: {
+    // higher, a beat longer, driven deeper
+    duration: 0.95,
+    tracks: {
+      ringCock: [[0, 0], [0.28, 1.15, 'out'], [0.42, 0, 'in']],
+      ringStrike: [[0, 0], [0.28, 0], [0.42, 1.1, 'in'], [0.56, 1.1], [0.95, 0, 'inOut']],
+      pz: [[0, 0], [0.42, -0.04, 'in'], [0.95, 0, 'inOut']],
+      py: [[0, 0], [0.42, 0], [0.56, -0.07, 'out'], [0.95, 0, 'inOut']],
+      leftGuard: [[0, 1], [0.15, 0, 'out'], [0.7, 0], [0.95, 1, 'inOut']],
+    },
+  },
+};
+
 export function knifeClip(def: KnifeDef, name: KnifeClipName): Clip {
   if (name === 'draw') {
     const clip = DRAWS[knifeDrawStyle(def)];
@@ -480,5 +534,5 @@ export function knifeClip(def: KnifeDef, name: KnifeClipName): Clip {
   if (name === 'inspect') {
     return INSPECTS[knifeInspectStyle(def)];
   }
-  return ATTACKS[name];
+  return knifeUsesReverseGrip(def) ? RING_ATTACKS[name] : ATTACKS[name];
 }

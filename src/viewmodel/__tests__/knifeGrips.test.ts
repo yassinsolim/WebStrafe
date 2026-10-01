@@ -33,6 +33,13 @@ describe('knife grips', () => {
     expect(gripInHand.z).toBeLessThan(0);
   });
 
+  it('curls a ring knife claw toward the knuckles, not back at the wrist', () => {
+    const spec = alignRingGrip(knifeGripSpec('reverse_ring', 0.024), new Vector3(-0.1, -0.022, 0), new Vector3(-0.043, 0.006, 0));
+    // the hawkbill hooks toward the knife's -y (its edge side)
+    const hook = new Vector3(0, -1, 0).applyQuaternion(spec.knifeInHand);
+    expect(hook.y).toBeGreaterThan(0.5);
+  });
+
   it('keeps every knife frame a proper rotation', () => {
     for (const kind of ['hammer', 'reverse_ring', 'tee', 'balisong'] as const) {
       const q = knifeGripSpec(kind, 0.026).knifeInHand;

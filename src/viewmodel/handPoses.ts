@@ -25,7 +25,8 @@ export type HandPoseName =
   | 'awpMag'
   | 'knife'
   | 'knifeReverse'
-  | 'watchGun';
+  | 'watchGun'
+  | 'guard';
 
 export const HAND_POSES: Readonly<Record<HandPoseName, HandPose>> = {
   relaxed: {
@@ -83,6 +84,10 @@ export const HAND_POSES: Readonly<Record<HandPoseName, HandPose>> = {
   // loosely curled for the watch check on the guns, so the fingers stay off the gun
   watchGun: {
     index: [40, 50, 30], middle: [46, 56, 32], ring: [50, 58, 32], pinky: [54, 58, 30], thumb: [10, 16, 8],
+  },
+  // the free hand held open in front, fingers loosely together, more curl toward the little finger
+  guard: {
+    index: [10, 18, 10], middle: [14, 22, 12], ring: [20, 26, 14], pinky: [26, 30, 16], thumb: [14, 18, 8],
   },
 };
 

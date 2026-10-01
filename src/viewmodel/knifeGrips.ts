@@ -83,8 +83,9 @@ function ringSeat(curlDeg: number): { axis: Vector3; centre: Vector3 } {
 
 function ringKnifeInHand(curlDeg: number): Quaternion {
   const { axis } = ringSeat(curlDeg);
-  // edge (and the hook's curve) forward past the little finger
-  return axes([1, 0, 0], [0, -axis.z, axis.y], [0, -axis.y, -axis.z]);
+  // the claw curves the way the knuckles face (edge forward, like cs2): the
+  // knife's concave side (-y) looks up the hand, the spine back at the wrist
+  return axes([1, 0, 0], [0, axis.z, -axis.y], [0, axis.y, axis.z]);
 }
 
 const KNIFE_IN_HAND: Record<KnifeGripKind, Quaternion> = {
