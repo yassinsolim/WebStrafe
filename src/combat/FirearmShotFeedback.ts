@@ -170,7 +170,7 @@ export function createRemoteShotHandler(
       return;
     }
     const localId = context.getLocalPlayerId();
-    if (event.playerId === localId || event.weaponId === 'knife') {
+    if (event.playerId === localId || event.weaponId === 'knife' || event.weaponId === 'katana') {
       presentConfirmedHit(context, event);
       return;
     }

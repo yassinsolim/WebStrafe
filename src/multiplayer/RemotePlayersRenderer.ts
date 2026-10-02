@@ -31,7 +31,7 @@ import {
   loadKnifeMesh,
   type ArmRig,
 } from './playerRig';
-import { remoteKnifeKey, setRemoteKnife } from './remoteKnife';
+import { remoteKnifeKey, setRemoteKatana, setRemoteKnife } from './remoteKnife';
 
 interface RemotePlayerActor {
   id: string;
@@ -204,10 +204,15 @@ export class RemotePlayersRenderer {
         this.redress(actor, player.model, cosmetics);
       }
 
-      const knifeKey = remoteKnifeKey(player.cosmetics?.knife);
+      const holdsKatana = player.weapon === 'katana';
+      const knifeKey = holdsKatana ? 'katana' : remoteKnifeKey(player.cosmetics?.knife);
       if (actor.rig && actor.knifeKey !== knifeKey) {
-        setRemoteKnife(actor.rig.rightWeaponHand, player.cosmetics?.knife);
-        actor.knifeKey = knifeKey;
+        if (!holdsKatana) {
+          setRemoteKnife(actor.rig.rightWeaponHand, player.cosmetics?.knife);
+          actor.knifeKey = knifeKey;
+        } else if (setRemoteKatana(actor.rig.rightWeaponHand)) {
+          actor.knifeKey = knifeKey;
+        }
       }
 
       actor.targetPosition.set(player.position[0], player.position[1], player.position[2]);
@@ -289,6 +294,11 @@ export class RemotePlayersRenderer {
 
   public getPlayerModel(playerId: string): PlayerModel | null {
     return this.actors.get(playerId)?.model ?? null;
+  }
+
+  /** true while a remote is drawn holding the katana */
+  public isHoldingKatana(playerId: string): boolean {
+    return this.actors.get(playerId)?.knifeKey === 'katana';
   }
 
   /** the look a remote is shown in (null when unknown) */

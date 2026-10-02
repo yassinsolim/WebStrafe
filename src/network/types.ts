@@ -30,6 +30,8 @@ export interface MultiplayerSnapshotPlayer {
   pvp?: boolean;
   /** optional knife / armour choices, see network/cosmetics.ts */
   cosmetics?: PlayerCosmetics;
+  /** held weapon id; untrusted, only used to pick what the third person model holds */
+  weapon?: string;
 }
 
 export interface MultiplayerSnapshot {

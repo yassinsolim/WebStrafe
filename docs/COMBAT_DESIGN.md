@@ -98,7 +98,11 @@ silent damage cliff on large maps — effectively one-shot to body/head), `DEAGL
 1.45 m reach measured to the visible target-capsule surface).
 
 Weapon slots follow the conventional loadout order: `1` AWP primary, `2` Deagle
-secondary, and `3` knife. Fresh and migrated profiles enable auto-bhop by default;
+secondary, `3` knife and `4` katana. The katana (`src/combat/katana.ts`) uses the
+knife's attack rules with its own table: more reach (2.1 m slash, 1.8 m heavy cut,
+0.5 m sweep), heavier hits (60 slash, 45 follow-up, 90 heavy, 120 / 180 from
+behind), slower swings (0.56 s slash, 1.15 s heavy) and 240 u/s run speed. Two
+slashes kill from full health. Fresh and migrated profiles enable auto-bhop by default;
 an explicit current-profile opt-out remains respected.
 
 ### Health / combat state (`src/combat/CombatState.ts`, server-side authoritative)

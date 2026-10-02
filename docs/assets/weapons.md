@@ -46,6 +46,26 @@ minutes per gun on the M5 when the machine is otherwise idle. The preview
 renders (Cycles on Metal) add a few more. `--size 1024` bakes faster for
 iteration. `--quick` skips the high poly and the bake and takes about 30 s.
 
+## Katana
+
+`tools/blender/weapons/build_katana.py` builds `public/viewmodels/v2/katana.glb`
+with the same high to low bake as the guns: a 70 cm blued blade with about
+18 mm of curve, a polished edge bevel, an emissive channel down each flat, an
+angular guard, chrome collars and a diamond wrap over a red underlay (the wrap
+only lives in the high poly and the bake). It is an original design; no models
+were downloaded. It is authored in the knife frame (+x to the tip, +y the
+spine) so `knifeGripSpec('hammer')` fits both hands: `socket_grip_r` is the
+middle of the right fist behind the guard, `socket_grip_l` the left fist near
+the pommel. The glow keeps its own emissive material outside the atlas.
+Remote players hold the same GLB in third person when their snapshot row says
+`weapon: 'katana'`.
+
+```bash
+blender -b --factory-startup --python-exit-code 1 -P tools/blender/weapons/build_katana.py -- --renders .blender-tmp/weapons/katana
+npx tsx tools/assets/optimize-glb.ts .blender-tmp/weapons/katana_raw.glb public/viewmodels/v2/katana.glb --texture-size 1024 --no-webp
+KTX2_UASTC_NORMALS=1 npx tsx tools/assets/ktx2-textures.ts public/viewmodels/v2/katana.glb public/viewmodels/v2/katana.glb
+```
+
 ## How the firearms are built
 
 `tools/blender/weapons/wlib.py` holds the helpers, and each build script only

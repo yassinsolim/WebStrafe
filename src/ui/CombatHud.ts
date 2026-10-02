@@ -19,7 +19,7 @@ export interface DeathInfo {
   bySelf?: boolean;
 }
 
-const SLOT_ORDER: readonly WeaponId[] = ['awp', 'deagle', 'knife'];
+const SLOT_ORDER: readonly WeaponId[] = ['awp', 'deagle', 'knife', 'katana'];
 const SLOT_VISIBLE_MS = 1800;
 const DAMAGE_ARC_MS = 1100;
 const DAMAGE_ARC_COUNT = 4;

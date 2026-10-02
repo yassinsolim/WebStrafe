@@ -5,6 +5,7 @@ import {
   SPAWN_PROTECTION_MS,
 } from '../CombatArena';
 import { MAX_HEALTH } from '../CombatState';
+import { KATANA_MELEE } from '../katana';
 import { KNIFE_DAMAGE, KNIFE_TIMING_MS } from '../knives';
 
 const eye: [number, number, number] = [0, 1.6, 0];
@@ -209,5 +210,39 @@ describe('CombatArena.handleMelee', () => {
     arena.equip('attacker', 'deagle');
     expect(arena.handleMelee('attacker', 'primary', eye, ahead, 1000).fired).toBe(false);
     expect(arena.handleMelee('nobody', 'primary', eye, ahead, 1000).fired).toBe(false);
+  });
+});
+
+describe('CombatArena.handleMelee with the katana', () => {
+  function katanaDuel(victimZ: number): CombatArena {
+    const arena = duel(victimZ);
+    arena.equip('attacker', 'katana', 1000);
+    return arena;
+  }
+
+  it('reaches past the knife and cuts harder', () => {
+    // just past knife reach, inside the katana's
+    const knife = duel(-2.0).handleMelee('attacker', 'primary', eye, ahead, 1000);
+    expect(knife.hit).toBeUndefined();
+    const katana = katanaDuel(-2.0).handleMelee('attacker', 'primary', eye, ahead, 1000);
+    expect(katana.hit).toMatchObject({ weaponId: 'katana', damage: KATANA_MELEE.damage.primary, melee: 'primary' });
+  });
+
+  it('kills in two slashes, keeps its own cooldown and reports the katana', () => {
+    const arena = katanaDuel(-1.2);
+    arena.handleMelee('attacker', 'primary', eye, ahead, 1000);
+    // the knife's cooldown has run out, the katana's has not
+    expect(arena.handleMelee('attacker', 'primary', eye, ahead, 1000 + KNIFE_TIMING_MS.primaryIntervalHit).fired).toBe(false);
+    const second = arena.handleMelee('attacker', 'primary', eye, ahead, 1000 + KATANA_MELEE.timing.primaryIntervalHit);
+    // the follow-up (45) is more than the 40 left
+    expect(second.hit).toMatchObject({ damage: MAX_HEALTH - KATANA_MELEE.damage.primary, killed: true });
+    expect(second.death?.weaponId).toBe('katana');
+  });
+
+  it('heavy cut leaves 10 hp from the front', () => {
+    const arena = katanaDuel(-1.2);
+    const heavy = arena.handleMelee('attacker', 'secondary', eye, ahead, 1000);
+    expect(heavy.hit).toMatchObject({ damage: KATANA_MELEE.damage.secondary, killed: false });
+    expect(arena.getHealth('victim')).toBe(MAX_HEALTH - KATANA_MELEE.damage.secondary);
   });
 });

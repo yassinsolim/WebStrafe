@@ -67,11 +67,11 @@ below is original WebStrafe work.
   Files: `src/ui/hud/icons.ts`, `src/ui/brand.ts`, `public/favicon.svg`.
 - Prismline, Emberdrift, Ochre Cut and the movement test scene (built by our Blender scripts in tools/blender/maps) by WebStrafe. License: Original work.
   Files: `public/maps/surf_prismline/scene.glb`, `public/maps/bhop_emberdrift/scene.glb`, `public/maps/aim_ochrecut/scene.glb`, `public/maps/movement_test_scene/scene.glb`.
-- First-person arms, wristwatch, Deagle and AWP (built by our Blender scripts in tools/blender) by WebStrafe. License: Original work.
-  Files: `public/viewmodels/v2/arms.glb`, `public/viewmodels/v2/deagle.glb`, `public/viewmodels/v2/awp.glb`.
+- First-person arms, wristwatch, Deagle, AWP and katana (built by our Blender scripts in tools/blender) by WebStrafe. License: Original work.
+  Files: `public/viewmodels/v2/arms.glb`, `public/viewmodels/v2/deagle.glb`, `public/viewmodels/v2/awp.glb`, `public/viewmodels/v2/katana.glb`.
 - Procedural player models by WebStrafe. License: Original work.
   Files: `src/multiplayer/ProceduralPlayer.ts`.
-- Strafe, Anvil, Vector and Quill armor sets (built by our Blender scripts in tools/blender/characters) by WebStrafe. License: Original work.
-  Files: `public/characters/armor.glb`, `tools/blender/characters/armor_sets.py`.
+- Strafe, Anvil, Vector, Quill and Edge armor sets (built by our Blender scripts in tools/blender/characters) by WebStrafe. License: Original work.
+  Files: `public/characters/armor.glb`, `tools/blender/characters/armor_sets.py`, `tools/blender/characters/edge_set.py`.
 - Placeholder gloves, knife and textures by WebStrafe. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
   Files: `public/cosmetics/models/gloves_placeholder.glb`, `public/cosmetics/models/knife_placeholder.glb`.

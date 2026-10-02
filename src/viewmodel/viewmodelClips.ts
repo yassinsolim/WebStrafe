@@ -124,6 +124,75 @@ export const AWP_CLIPS: Readonly<Record<GunClipName, Clip>> = {
   },
 };
 
+export type KatanaClipName = 'draw' | 'inspect' | 'slashA' | 'slashB' | 'stab' | 'backstab';
+
+/**
+ * the katana rests two handed, blade up and forward on the right. slashes let
+ * go with the left hand and cut flat across the screen, the heavy cut goes up
+ * over the head and comes down with both hands. timings sit inside the swing
+ * cooldowns in combat/katana.ts (slash 0.56 s, heavy 1.15 s).
+ */
+export const KATANA_CLIPS: Readonly<Record<KatanaClipName, Clip>> = {
+  draw: {
+    // pulled from the scabbard over the right shoulder, swung down into guard
+    duration: 0.9,
+    tracks: {
+      raise: [[0, 1], [0.12, 1], [0.52, 0, 'inOut']],
+      py: [[0, 0.05], [0.52, 0, 'out']],
+      leftAttach: [[0, 0], [0.5, 0], [0.82, 1, 'out']],
+    },
+    events: [[0.04, 'sound:katana_draw']],
+  },
+  slashA: {
+    // a short wind to the right, then cut through to the left
+    duration: 0.55,
+    tracks: {
+      hookB: [[0, 0], [0.08, 0.3, 'out'], [0.16, 0, 'in']],
+      hook: [[0, 0], [0.08, 0], [0.19, 1, 'in'], [0.27, 1.06, 'out'], [0.55, 0, 'inOut']],
+      leftAttach: [[0, 1], [0.05, 0, 'out'], [0.4, 0], [0.55, 1, 'inOut']],
+    },
+  },
+  slashB: {
+    // backhand: wound to the left, cut through to the right
+    duration: 0.55,
+    tracks: {
+      hook: [[0, 0], [0.08, 0.3, 'out'], [0.16, 0, 'in']],
+      hookB: [[0, 0], [0.08, 0], [0.19, 1, 'in'], [0.27, 1.06, 'out'], [0.55, 0, 'inOut']],
+      leftAttach: [[0, 1], [0.05, 0, 'out'], [0.4, 0], [0.55, 1, 'inOut']],
+    },
+  },
+  stab: {
+    // heavy cut: both hands up over the head, then straight down through the target
+    duration: 1.0,
+    tracks: {
+      cock: [[0, 0], [0.3, 1, 'out'], [0.42, 0, 'in']],
+      strike: [[0, 0], [0.3, 0], [0.43, 1, 'in'], [0.56, 1], [1.0, 0, 'inOut']],
+    },
+  },
+  backstab: {
+    // the same cut, wound up a beat longer and driven deeper
+    duration: 1.05,
+    tracks: {
+      cock: [[0, 0], [0.33, 1.08, 'out'], [0.46, 0, 'in']],
+      strike: [[0, 0], [0.33, 0], [0.46, 1.08, 'in'], [0.6, 1.08], [1.05, 0, 'inOut']],
+      pz: [[0, 0], [0.33, 0], [0.46, -0.05, 'in'], [1.05, 0, 'inOut']],
+    },
+  },
+  inspect: {
+    // one handed: laid flat across the view, rolled to run the light down the
+    // edge, a quick flick, back to guard
+    duration: 3.9,
+    tracks: {
+      leftAttach: [[0, 1], [0.25, 0, 'out'], [3.35, 0], [3.8, 1, 'inOut']],
+      show: [[0, 0], [0.7, 1, 'inOut'], [3.0, 1], [3.7, 0, 'inOut']],
+      showB: [[0, 0], [1.4, 0], [2.2, 1, 'inOut'], [2.6, 1], [2.95, 0, 'inOut']],
+      rz: [[0, 0], [2.95, 0], [3.1, 22, 'out'], [3.28, -12, 'inOut'], [3.5, 0, 'inOut']],
+      py: [[0, 0], [0.7, 0.015, 'inOut'], [3.0, 0.01], [3.7, 0, 'inOut']],
+    },
+    events: [[3.0, 'sound:katana_flourish']],
+  },
+};
+
 export type KnifeDrawStyle = 'unsheathe' | 'flip_open' | 'switch_open' | 'flick_open' | 'spin_draw' | 'balisong_open' | 'spin_in' | 'skeleton_spin' | 'dagger_pair';
 export type KnifeInspectStyle = 'flip_show' | 'switch_show' | 'flick_show' | 'balisong' | 'ring_spin' | 'skeleton_ring' | 'toss_catch' | 'twirl' | 'heavy_show' | 'dagger_pair';
 

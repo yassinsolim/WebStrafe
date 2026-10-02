@@ -1,4 +1,4 @@
-import { getWeapon, isMelee, type WeaponDef, type WeaponId } from './weapons';
+import { getWeapon, isMelee, WEAPON_IDS, type WeaponDef, type WeaponId } from './weapons';
 
 export interface FireResult {
   fired: boolean;
@@ -21,7 +21,7 @@ export class WeaponController {
 
   constructor(initial: WeaponId = 'knife') {
     this.active = initial;
-    for (const id of ['awp', 'deagle', 'knife'] as WeaponId[]) {
+    for (const id of WEAPON_IDS) {
       const def = getWeapon(id);
       this.ammo.set(id, isMelee(def) ? Infinity : def.magazine);
     }
@@ -52,7 +52,7 @@ export class WeaponController {
 
   /** Restores every magazine and cancels cooldown/reload state on a true respawn. */
   reset(): void {
-    for (const id of ['awp', 'deagle', 'knife'] as WeaponId[]) {
+    for (const id of WEAPON_IDS) {
       const def = getWeapon(id);
       this.ammo.set(id, isMelee(def) ? Infinity : def.magazine);
     }

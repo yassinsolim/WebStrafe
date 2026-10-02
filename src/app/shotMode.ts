@@ -78,7 +78,7 @@ export function parseShotRequest(search: string, enabled = devToolsEnabled()): S
   }
   return {
     mapId,
-    weapon: weapon === 'knife' || weapon === 'deagle' || weapon === 'awp' ? weapon : null,
+    weapon: weapon === 'knife' || weapon === 'deagle' || weapon === 'awp' || weapon === 'katana' ? weapon : null,
     knife: params.get('knife'),
     clip: params.get('clip') ?? 'idle',
     t: num('t') ?? 0,

@@ -135,6 +135,73 @@ function knifeStab(v: VoiceContext): void {
   tone(v, { freq: 92 * p, to: 58 * p, glide: dur, attack: dur * 0.3, decay: dur * 0.8, peak: 0.12 });
 }
 
+/** a long blade through the air: a deeper sweep than the knife plus the blade's high frequency hum */
+function katanaSwing(v: VoiceContext): void {
+  const heavy = v.variant === 1;
+  const p = v.pitch * (heavy ? 0.82 : 1);
+  const dur = (heavy ? 0.42 : 0.3) * (0.94 + v.rand() * 0.12);
+  const dir = v.rand() < 0.5 ? -1 : 1;
+  noise(v, {
+    attack: dur * 0.3,
+    decay: dur * 0.85,
+    peak: heavy ? 0.5 : 0.44,
+    filters: [{ type: 'bandpass', freq: 260 * p, points: [[0, 260 * p], [dur * 0.34, 1900 * p], [dur, 520 * p]], q: 2.6 }],
+    pan: [-0.4 * dir, 0.4 * dir],
+  });
+  noise(v, { attack: dur * 0.3, decay: dur * 0.8, peak: 0.16, filters: [{ type: 'lowpass', freq: 380 * p, q: 0.9 }] });
+  // the blade's hum rises and falls with the arc
+  tone(v, { type: 'sawtooth', freq: 610 * p, to: 820 * p, glide: dur * 0.4, attack: dur * 0.28, decay: dur * 0.7, peak: 0.035,
+    pan: 0.2 * dir });
+  tone(v, { freq: 1220 * p, to: 1640 * p, glide: dur * 0.4, attack: dur * 0.28, decay: dur * 0.6, peak: 0.03 });
+  noise(v, { at: dur * 0.15, attack: dur * 0.2, decay: dur * 0.5, peak: 0.08, filters: [{ type: 'highpass', freq: 5200 * p }] });
+}
+
+/** drawing the blade: a bright metal scrape that rings out */
+function katanaDraw(v: VoiceContext): void {
+  const p = v.pitch;
+  noise(v, {
+    attack: 0.06,
+    decay: 0.22,
+    peak: 0.22,
+    filters: [{ type: 'bandpass', freq: 2400 * p, points: [[0, 2400 * p], [0.22, 6200 * p]], q: 3.5 }],
+    send: 0.1,
+  });
+  partials(v, {
+    at: 0.2,
+    base: 2350 * p,
+    ratios: [1, 1.52, 2.27, 2.93],
+    gains: [0.09, 0.07, 0.05, 0.03],
+    decays: [0.9, 0.6, 0.42, 0.3],
+    attack: 0.002,
+    jitter: 0.008,
+    send: 0.3,
+  });
+  tone(v, { at: 0.19, freq: 180 * p, to: 120 * p, glide: 0.05, attack: 0.001, decay: 0.06, peak: 0.12 });
+}
+
+/** the blade cutting through armour: a sharp slice with a short metallic ring */
+function katanaHit(v: VoiceContext): void {
+  const p = v.pitch;
+  noise(v, { attack: 0.0005, decay: 0.03, peak: 0.36, filters: [{ type: 'highpass', freq: 2600 * p }] });
+  noise(v, {
+    attack: 0.002,
+    decay: 0.16,
+    peak: 0.3,
+    filters: [{ type: 'bandpass', freq: 3200 * p, to: 900 * p, sweep: 0.14, q: 2.2 }],
+    send: 0.1,
+  });
+  tone(v, { freq: 140 * p, to: 55 * p, glide: 0.1, attack: 0.002, decay: 0.13, peak: 0.34 });
+  partials(v, {
+    base: 1650 * p,
+    ratios: [1, 1.61, 2.33],
+    gains: [0.06, 0.04, 0.03],
+    decays: [0.32, 0.2, 0.14],
+    attack: 0.001,
+    jitter: 0.01,
+    send: 0.18,
+  });
+}
+
 function knifeHitFlesh(v: VoiceContext): void {
   const p = v.pitch;
   tone(v, { freq: 125 * p, to: 52 * p, glide: 0.09, attack: 0.002, decay: 0.12, peak: 0.42 });
@@ -369,6 +436,9 @@ export const SFX = {
   knifeHitFlesh: { bus: 'effects', gain: 0.8, pitchSpread: 0.08, maxVoices: 3, refDistance: 4, rolloff: 1, build: knifeHitFlesh },
   knifeHitWall: { bus: 'effects', gain: 0.7, pitchSpread: 0.08, maxVoices: 3, refDistance: 4, rolloff: 1, build: knifeHitWall },
   backstab: { bus: 'effects', gain: 0.9, pitchSpread: 0.05, maxVoices: 2, refDistance: 5, rolloff: 1, build: backstab },
+  katanaSwing: { bus: 'effects', gain: 0.85, pitchSpread: 0.06, maxVoices: 3, refDistance: 3.5, rolloff: 1, build: katanaSwing },
+  katanaDraw: { bus: 'effects', gain: 0.6, pitchSpread: 0.03, maxVoices: 1, minIntervalMs: 200, build: katanaDraw },
+  katanaHit: { bus: 'effects', gain: 0.85, pitchSpread: 0.06, maxVoices: 3, refDistance: 4, rolloff: 1, build: katanaHit },
   awpBoltUp: { bus: 'effects', gain: 0.7, pitchSpread: 0.03, maxVoices: 2, build: awpBoltUp },
   awpBoltBack: { bus: 'effects', gain: 0.7, pitchSpread: 0.03, maxVoices: 2, build: awpBoltBack },
   awpBoltForward: { bus: 'effects', gain: 0.7, pitchSpread: 0.03, maxVoices: 2, build: awpBoltForward },

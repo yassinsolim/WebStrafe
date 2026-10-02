@@ -77,7 +77,7 @@ import type { MeleeTarget } from '../combat/MeleeResolver';
 import { DEFAULT_ZOOM_SENSITIVITY_RATIO } from '../combat/Scope';
 import { ScopeOverlay } from '../ui/ScopeOverlay';
 import { isCombatEnabled } from '../combat/combatConfig';
-import { getWeapon, weaponMaxSpeed, type WeaponId } from '../combat/weapons';
+import { getWeapon, isMeleeWeapon, meleeStats, weaponMaxSpeed, type MeleeWeaponId, type WeaponId } from '../combat/weapons';
 import { RoomFullNotice } from '../ui/RoomFullNotice';
 import { DEFAULT_KNIFE_ID, getKnife, type KnifeId } from '../combat/knives';
 import {
@@ -101,7 +101,6 @@ import type { CustomMapRecord, LoadedMap, MapManifestEntry } from '../world/type
 // v2 ui + audio
 import { getAudioEngine } from '../audio/AudioEngine';
 import { MovementAudioTracker } from '../audio/MovementAudio';
-import { KNIFE_DAMAGE, KNIFE_RANGE_M } from '../combat/knives';
 import type { DeathEvent, HitEvent, ShotEvent } from '../network/MultiplayerTransport';
 import { GameHud } from '../ui/hud/GameHud';
 import { runHudDemo } from '../ui/hud/hudDemo';
@@ -552,7 +551,12 @@ export class GameApp {
         const remoteProfile = remoteModel
           ? this.getKnifeSoundProfileFromModel(remoteModel)
           : this.activeKnifeSoundProfile;
-        this.remoteKnifeAudio.play(kind, 0.48, remoteProfile, this.remoteChestPosition(playerId) ?? undefined);
+        const at = this.remoteChestPosition(playerId) ?? undefined;
+        if (this.remotePlayers.isHoldingKatana(playerId) && at) {
+          this.audio.playAt('katanaSwing', at, { volume: 0.55, variant: kind === 'secondary' ? 1 : 0 });
+        } else {
+          this.remoteKnifeAudio.play(kind, 0.48, remoteProfile, at);
+        }
       }
     };
     this.multiplayer.connect();
@@ -714,7 +718,7 @@ export class GameApp {
           if (!dead) {
             this.viewmodel.cancelInspect();
             const activeWeapon = this.weapon.getActive();
-            if (this.combatEnabled && activeWeapon !== 'knife') {
+            if (this.combatEnabled && !isMeleeWeapon(activeWeapon)) {
               this.fireCombatWeapon(time);
             } else if (this.combatEnabled) {
               this.attackCombatKnife('primary', time);
@@ -732,7 +736,7 @@ export class GameApp {
               this.viewmodel.cancelInspect();
               this.viewmodel.knifeAttack('secondary');
               this.multiplayer.sendAttack('secondary');
-            } else if (activeWeapon === 'knife') {
+            } else if (isMeleeWeapon(activeWeapon)) {
               this.viewmodel.cancelInspect();
               this.attackCombatKnife('secondary', time);
             } else if (activeWeapon === 'awp') {
@@ -791,7 +795,7 @@ export class GameApp {
       this.playing
       && this.combatEnabled
       && this.localAlive
-      && this.weapon.getActive() === 'knife'
+      && isMeleeWeapon(this.weapon.getActive())
       && findBackstabOpportunity({
         attackerFeet: this.movement.getFeetPosition(),
         attackerForward: this.movement.getForwardVector(),
@@ -808,7 +812,11 @@ export class GameApp {
     );
     const startedKnifeAttack = this.viewmodel.consumeStartedAttack();
     if (startedKnifeAttack) {
-      this.knifeAudio.play(startedKnifeAttack);
+      if (this.viewmodel.getActiveItem() === 'katana') {
+        this.audio.play('katanaSwing', { variant: startedKnifeAttack === 'secondary' ? 1 : 0, delay: startedKnifeAttack === 'secondary' ? 0.26 : 0.06 });
+      } else {
+        this.knifeAudio.play(startedKnifeAttack);
+      }
       this.playKnifeWallHit(startedKnifeAttack);
     }
     // sway, bob, landing dip and recoil kick from ViewmodelRenderer on top of the clips
@@ -1293,7 +1301,7 @@ export class GameApp {
     };
     this.multiplayer.onHit = ({ shooterId, hitbox, killed, weaponId, melee }) => {
       if (shooterId === this.multiplayer.getLocalId()) {
-        if (weaponId === 'knife' && melee) {
+        if (isMeleeWeapon(weaponId as WeaponId) && melee) {
           this.localKnife.onServerHit(melee);
         }
         const confirmation = planHitConfirmation(hitbox, killed);
@@ -1491,12 +1499,13 @@ export class GameApp {
     }
     const origin = this.movement.getCameraPosition();
     const direction = this.movement.getForwardVector();
+    const held = this.weapon.getActive();
     const swing = this.localKnife.tryAttack(kind, nowMs, {
       origin,
       direction,
       targets: this.getDrawnPlayerCapsules(),
       isBlocked: (from, to) => this.collisionWorld.segmentIntersectsGeometry(from, to),
-    });
+    }, meleeStats(isMeleeWeapon(held) ? held : 'knife'));
     if (!swing.accepted) {
       return;
     }
@@ -1624,7 +1633,7 @@ export class GameApp {
 
   private canInspectActiveWeapon(nowMs: number): boolean {
     const active = this.weapon.getActive();
-    if (active === 'knife') {
+    if (isMeleeWeapon(active)) {
       return this.viewmodel.canInspect();
     }
     return !this.weapon.isReloading(nowMs)
@@ -2405,8 +2414,8 @@ export class GameApp {
     this.playing = this.loadedMap !== null && !this.runComplete;
     this.multiplayer.setCombatReady(this.playing);
     void this.prepareCombatAudio(true);
-    if (this.combatEnabled && this.localAlive && this.weapon.getActive() === 'knife') {
-      this.viewmodel.equip('knife');
+    if (this.combatEnabled && this.localAlive && isMeleeWeapon(this.weapon.getActive())) {
+      this.viewmodel.equip(this.weapon.getActive());
     }
     this.menu?.setVisible(false);
     this.setCrosshairVisible(this.playing && this.debugCameraMode === 'firstPerson');
@@ -2719,7 +2728,7 @@ export class GameApp {
       },
       fire: () => {
         const now = performance.now();
-        if (this.weapon.getActive() === 'knife') this.attackCombatKnife('primary', now);
+        if (isMeleeWeapon(this.weapon.getActive())) this.attackCombatKnife('primary', now);
         else this.fireCombatWeapon(now);
       },
       stab: () => this.attackCombatKnife('secondary', performance.now()),
@@ -2947,6 +2956,12 @@ export class GameApp {
       case 'sound:knife_catch':
         this.audio.play('weaponDraw', { volume: 0.5 });
         break;
+      case 'sound:katana_draw':
+        this.audio.play('katanaDraw');
+        break;
+      case 'sound:katana_flourish':
+        this.audio.play('katanaSwing', { volume: 0.4 });
+        break;
       default:
         break;
     }
@@ -2976,16 +2991,18 @@ export class GameApp {
 
   private handleHitFeedback(event: HitEvent): void {
     const localId = this.multiplayer.getLocalId();
-    if (event.weaponId === 'knife') {
-      const heavy = event.damage >= KNIFE_DAMAGE.primaryBackstab;
+    if (isMeleeWeapon(event.weaponId as WeaponId)) {
+      const katana = event.weaponId === 'katana';
+      const heavy = event.damage >= meleeStats(event.weaponId as MeleeWeaponId).damage.primaryBackstab;
+      const sound = heavy ? 'backstab' : katana ? 'katanaHit' : 'knifeHitFlesh';
       if (event.shooterId === localId) {
-        this.audio.play(heavy ? 'backstab' : 'knifeHitFlesh');
+        this.audio.play(sound);
       } else if (event.targetId === localId) {
-        this.audio.play(heavy ? 'backstab' : 'knifeHitFlesh', { volume: 0.8 });
+        this.audio.play(sound, { volume: 0.8 });
       } else {
         const at = this.remoteChestPosition(event.targetId);
         if (at) {
-          this.audio.playAt(heavy ? 'backstab' : 'knifeHitFlesh', at);
+          this.audio.playAt(sound, at);
         }
       }
     }
@@ -2993,7 +3010,7 @@ export class GameApp {
       return;
     }
     // firearm hits already got a precise arc from the shot event just before
-    if (event.weaponId !== 'knife' && performance.now() - this.lastShotDirectionAtMs < 150) {
+    if (!isMeleeWeapon(event.weaponId as WeaponId) && performance.now() - this.lastShotDirectionAtMs < 150) {
       return;
     }
     const attacker = this.remoteChestPosition(event.shooterId);
@@ -3033,7 +3050,8 @@ export class GameApp {
     }
     const origin = this.movement.getCameraPosition();
     const forward = this.movement.getForwardVector();
-    const reach = KNIFE_RANGE_M[kind] + 0.35;
+    const held = this.weapon.getActive();
+    const reach = meleeStats(isMeleeWeapon(held) ? held : 'knife').range[kind] + 0.35;
     const hit = this.collisionWorld.raycastGeometry(origin, forward, reach);
     if (!hit) {
       return;
@@ -3053,7 +3071,7 @@ export class GameApp {
   }
 
   private maybeDryFire(weaponId: WeaponId, ammoRemaining: number, nowMs: number): void {
-    if (weaponId === 'knife' || ammoRemaining > 0 || nowMs - this.lastDryFireAtMs < 250) {
+    if (isMeleeWeapon(weaponId) || ammoRemaining > 0 || nowMs - this.lastDryFireAtMs < 250) {
       return;
     }
     this.lastDryFireAtMs = nowMs;

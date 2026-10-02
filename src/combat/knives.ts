@@ -256,15 +256,35 @@ export const KNIFE_RANGE_M = {
 /** radius of the swept sphere; cs head_hull is 16 units (0.41 m) wide each side */
 export const KNIFE_SWEEP_RADIUS_M = 0.41;
 
+/** everything a melee weapon's swings need: the knife and the katana each have one */
+export interface MeleeStats {
+  damage: { [K in keyof typeof KNIFE_DAMAGE]: number };
+  timing: { [K in keyof typeof KNIFE_TIMING_MS]: number };
+  range: { [K in keyof typeof KNIFE_RANGE_M]: number };
+  sweepRadius: number;
+}
+
+export const KNIFE_MELEE: MeleeStats = {
+  damage: KNIFE_DAMAGE,
+  timing: KNIFE_TIMING_MS,
+  range: KNIFE_RANGE_M,
+  sweepRadius: KNIFE_SWEEP_RADIUS_M,
+};
+
 /** cs:go backstab: attacker-to-victim direction dot victim forward above 0.475 (cs:s used 0.8) */
 export const BACKSTAB_DOT = 0.475;
 
-export function knifeDamage(attack: KnifeAttack, backstab: boolean, followUp: boolean): number {
+export function knifeDamage(
+  attack: KnifeAttack,
+  backstab: boolean,
+  followUp: boolean,
+  table: MeleeStats['damage'] = KNIFE_DAMAGE,
+): number {
   if (attack === 'secondary') {
-    return backstab ? KNIFE_DAMAGE.secondaryBackstab : KNIFE_DAMAGE.secondary;
+    return backstab ? table.secondaryBackstab : table.secondary;
   }
-  if (backstab) return KNIFE_DAMAGE.primaryBackstab;
-  return followUp ? KNIFE_DAMAGE.primaryFollowUp : KNIFE_DAMAGE.primary;
+  if (backstab) return table.primaryBackstab;
+  return followUp ? table.primaryFollowUp : table.primary;
 }
 
 /**

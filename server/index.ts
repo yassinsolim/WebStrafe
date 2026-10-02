@@ -13,7 +13,7 @@ import type { FireOutcome } from '../src/combat/CombatArena';
 import { shouldResetCombatEntry } from '../src/combat/CombatEntryPolicy';
 import type { KnifeAttack } from '../src/combat/knives';
 import type { SegmentBlocked } from '../src/combat/MeleeResolver';
-import type { WeaponId } from '../src/combat/weapons';
+import { isMeleeWeapon, WEAPON_IDS, type WeaponId } from '../src/combat/weapons';
 import type { CollisionWorld } from '../src/world/CollisionWorld';
 import { BotManager, type BotTarget } from './BotManager';
 import { loadHeadlessMap } from './mapCollision';
@@ -135,7 +135,7 @@ function clampInt(raw: string | undefined, fallback: number, min: number, max: n
   return Math.max(min, Math.min(max, parsed));
 }
 
-const VALID_WEAPON_IDS: readonly WeaponId[] = ['awp', 'deagle', 'knife'];
+const VALID_WEAPON_IDS: readonly WeaponId[] = WEAPON_IDS;
 
 function parseWeaponId(value: unknown): WeaponId | null {
   return typeof value === 'string' && (VALID_WEAPON_IDS as readonly string[]).includes(value)
@@ -455,7 +455,7 @@ wss.on('connection', (ws, req) => {
           ? Math.min(now, client.clock.toLocal(payload.t))
           : undefined;
         const shooterTimeMs = mappedSendTime ?? client.sampleT;
-        if (melee !== undefined || arena.getActiveWeapon(client.id) === 'knife') {
+        if (melee !== undefined || isMeleeWeapon(arena.getActiveWeapon(client.id))) {
           const kind: KnifeAttack = melee ?? 'primary';
           const meleeOutcome = arena.handleMelee(client.id, kind, origin, dir, now, {
             observedAtMs,
@@ -568,6 +568,7 @@ function snapshotTick(): void {
     t: number;
     /** bots leave it out, they're always pvp */
     pvp?: boolean;
+    weapon?: string;
   }>>();
 
   for (const client of clients.values()) {
@@ -595,6 +596,7 @@ function snapshotTick(): void {
       alive: arena.isAlive(client.id),
       t: client.sampleT,
       pvp: client.pvp,
+      weapon: arena.getActiveWeapon(client.id) ?? undefined,
     });
     groupedByMap.set(client.mapId, list);
   }
@@ -1278,7 +1280,7 @@ function broadcastShot(
   },
 ): void {
   const weaponId = arena.getActiveWeapon(playerId);
-  if (!weaponId || weaponId === 'knife') {
+  if (!weaponId || isMeleeWeapon(weaponId)) {
     return;
   }
   const direction = new Vector3(dir[0], dir[1], dir[2]);
@@ -1340,7 +1342,7 @@ function broadcastMeleeHit(
     targetId: outcome.hit.targetId,
     origin,
     dir,
-    weaponId: 'knife',
+    weaponId: outcome.hit.weaponId,
     endpoint: outcome.impactPoint,
     impactNormal: [-direction.x, -direction.y, -direction.z],
   });

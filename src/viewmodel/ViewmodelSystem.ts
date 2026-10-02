@@ -16,19 +16,25 @@ import { alignRingGrip, fittedGripSpec, gripKindFor, knifeGripSpec, measureHandl
 import {
   AWP_CLIPS,
   DEAGLE_CLIPS,
+  KATANA_CLIPS,
   knifeClip,
   knifeInspectCount,
   type GunClipName,
+  type KatanaClipName,
   type KnifeClipName,
 } from './viewmodelClips';
 
-export type ViewItem = 'knife' | 'deagle' | 'awp';
+export type ViewItem = 'knife' | 'deagle' | 'awp' | 'katana';
 export type ViewAction = 'idle' | 'draw' | 'fire' | 'reload' | 'inspect' | 'slashA' | 'slashB' | 'stab' | 'backstab';
+/** items held on sockets with the arms solved onto them (the katana included) */
+type GunItem = 'deagle' | 'awp' | 'katana';
+const GUN_ITEMS: readonly GunItem[] = ['deagle', 'awp', 'katana'];
 
 const DEG = Math.PI / 180;
-const GUN_URLS: Record<'deagle' | 'awp', string> = {
+const GUN_URLS: Record<GunItem, string> = {
   deagle: '/viewmodels/v2/deagle.glb',
   awp: '/viewmodels/v2/awp.glb',
+  katana: '/viewmodels/v2/katana.glb',
 };
 
 /** a hand placed on a socket: wrist position and hand bone frame in socket space */
@@ -61,9 +67,22 @@ const AWP_BOLT = gripYZ(v(-0.2506, -0.3509, -0.9023), v(0.8347, 0.3938, -0.385),
 // palm cupping the magazine floorplate, on socket_mag_bottom
 const DEAGLE_MAG = gripYZ(v(0.5, 0.2, -0.8), v(0, -1, 0), v(-0.035, -0.03, 0.06), 'deagleMag');
 const AWP_MAG = gripYZ(v(0.5, 0.2, -0.8), v(0, -1, 0), v(-0.0341, -0.0378, 0.0586), 'awpMag');
-const GUN_GRIPS: Readonly<Record<'deagle' | 'awp', { right: HandGrip; support: HandGrip; mag: HandGrip }>> = {
+
+// katana: both hands in a hammer grip on the handle, fitted like the knives
+// (socket_grip_r and socket_grip_l sit in the knife frame: +x to the tip, +y
+// the spine). the left hand is the right one mirrored through the blade's plane
+const KATANA_HANDLE_M = 0.03;
+const KATANA_SPEC = knifeGripSpec('hammer', KATANA_HANDLE_M);
+const KATANA_RIGHT: HandGrip = { matrix: KATANA_SPEC.handInAnchor.clone(), pose: 'knife' };
+const KATANA_LEFT: HandGrip = {
+  matrix: new Matrix4().makeScale(1, 1, -1).multiply(KATANA_SPEC.handInAnchor).multiply(new Matrix4().makeScale(-1, 1, 1)),
+  pose: 'knife',
+};
+
+const GUN_GRIPS: Readonly<Record<GunItem, { right: HandGrip; support: HandGrip; mag: HandGrip }>> = {
   deagle: { right: DEAGLE_RIGHT, support: DEAGLE_SUPPORT, mag: DEAGLE_MAG },
   awp: { right: AWP_RIGHT, support: AWP_FOREND, mag: AWP_MAG },
+  katana: { right: KATANA_RIGHT, support: KATANA_LEFT, mag: DEAGLE_MAG },
 };
 // between the grip and the bolt knob the hand opens and swings out along this
 // gun space direction (metres at the midpoint), so it never cuts through the stock
@@ -73,9 +92,10 @@ const BOLT_THUMB = [0, 0, 0] as const;
 const REACH_EXP = 1.5;
 const THUMB_RATE = 5;
 // extra index curl (degrees per joint) at full trigger pull, so the pad follows the blade back
-const TRIGGER_PULL: Readonly<Record<'deagle' | 'awp', readonly [number, number, number]>> = {
+const TRIGGER_PULL: Readonly<Record<GunItem, readonly [number, number, number]>> = {
   deagle: [0, 14, 0],
   awp: [0, 14, 0],
+  katana: [0, 0, 0],
 };
 
 interface ItemBase {
@@ -83,9 +103,44 @@ interface ItemBase {
   rotation: Quaternion;
 }
 
+/** an item frame from its +x and a hint for +y */
+function frameXY(x: Vector3, yHint: Vector3): Quaternion {
+  const ax = x.clone().normalize();
+  const az = ax.clone().cross(yHint).normalize();
+  const ay = az.clone().cross(ax);
+  return new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(ax, ay, az));
+}
+
 // where each item's grip socket sits in camera space at idle
 const DEAGLE_BASE: ItemBase = { position: v(0.14, -0.155, -0.32), rotation: new Quaternion().setFromEuler(new Euler(0.05, 0.12, 0.03, 'YXZ')) };
 const AWP_BASE: ItemBase = { position: v(0.13, -0.165, -0.17), rotation: new Quaternion().setFromEuler(new Euler(0.03, 0.085, 0.03, 'YXZ')) };
+// katana guard: hands low on the right, the blade rising forward and a little
+// across to the left, edge forward and down
+const KATANA_BASE: ItemBase = { position: v(0.14, -0.17, -0.3), rotation: frameXY(v(-0.42, 0.42, -0.8), v(0.12, 0.8, 0.55)) };
+
+/** a katana key pose: grip point, where the blade points and where the spine faces (the edge faces away) */
+function katanaKey(grip: Vector3, blade: Vector3, spine: Vector3): ItemBase {
+  return { position: grip, rotation: frameXY(blade, spine) };
+}
+
+// whole poses the katana clips slerp toward, on the same channels as the knife keys.
+// slashes lead with the edge, so the spine faces back along the swing
+const KATANA_KEYS: Readonly<Record<'raise' | 'show' | 'showB' | 'hook' | 'hookB' | 'cock' | 'strike', ItemBase>> = {
+  // draw: hands up on the right, the blade still back over the shoulder
+  raise: katanaKey(v(0.2, -0.04, -0.14), v(0.25, 0.62, 0.75), v(0.6, -0.5, 0.3)),
+  // inspect: laid flat across the view, edge up, one flat to the eye
+  show: katanaKey(v(0.1, -0.12, -0.33), v(-0.95, 0.12, -0.28), v(0.1, -0.99, 0.05)),
+  // inspect: rolled, looking down the edge
+  showB: katanaKey(v(0.1, -0.11, -0.33), v(-0.95, 0.1, -0.28), v(0.3, -0.1, 0.95)),
+  // primary: cut diagonally down through to the left
+  hook: katanaKey(v(-0.04, -0.13, -0.38), v(-0.88, -0.2, -0.43), v(0.45, 0.75, -0.3)),
+  // primary: backhand rising through to the right
+  hookB: katanaKey(v(0.2, -0.15, -0.34), v(0.88, 0.12, -0.46), v(-0.4, -0.7, -0.3)),
+  // secondary: up over the head
+  cock: katanaKey(v(0.05, 0.08, -0.2), v(-0.08, 0.62, 0.78), v(0.0, -0.78, 0.62)),
+  // secondary: down through the target, ending low and a little left
+  strike: katanaKey(v(0.12, -0.11, -0.4), v(-0.72, -0.42, -0.55), v(0.2, 0.75, -0.6)),
+};
 
 /** a camera space hand: wrist position and hand bone frame */
 interface HandKey {
@@ -194,6 +249,7 @@ const ARMS_OFFSET: Readonly<Record<ViewItem, Vector3>> = {
   deagle: v(0, 0, 0.08),
   awp: v(0, 0.01, -0.1),
   knife: v(0, 0, 0),
+  katana: v(0, 0, 0.04),
 };
 // the awp support hand holds the forend this far behind socket_grip_l
 const AWP_SUPPORT_BACK_M = 0.12;
@@ -296,7 +352,7 @@ export class ViewmodelSystem {
   private arms: ArmsRig | null = null;
   /** paints the cyborg arms and picks the plate kit from the look, see characters/fpArmor.ts */
   private readonly armsArmor = new FirstPersonArmor();
-  private readonly guns: Partial<Record<'deagle' | 'awp', GunParts>> = {};
+  private readonly guns: Partial<Record<GunItem, GunParts>> = {};
   private knife: KnifeRig | null = null;
   private knifeLeft: KnifeRig | null = null;
   private knifeId: KnifeId = DEFAULT_KNIFE_ID;
@@ -408,7 +464,7 @@ export class ViewmodelSystem {
 
   public equip(item: ViewItem): void {
     this.active = item;
-    for (const id of ['deagle', 'awp'] as const) {
+    for (const id of GUN_ITEMS) {
       const gun = this.guns[id];
       if (gun) gun.root.visible = id === item;
     }
@@ -423,12 +479,12 @@ export class ViewmodelSystem {
   }
 
   public fire(): void {
-    if (this.active === 'knife') return;
+    if (this.active === 'knife' || this.active === 'katana') return;
     this.play('fire');
   }
 
   public reload(durationMs?: number): void {
-    if (this.active === 'knife') return;
+    if (this.active === 'knife' || this.active === 'katana') return;
     this.play('reload', false, durationMs ? durationMs / 1000 : undefined);
   }
 
@@ -456,7 +512,7 @@ export class ViewmodelSystem {
   }
 
   public knifeAttack(kind: 'primary' | 'secondary'): void {
-    if (this.active !== 'knife') return;
+    if (this.active !== 'knife' && this.active !== 'katana') return;
     if (kind === 'primary') {
       this.play(this.nextSlash);
       this.nextSlash = this.nextSlash === 'slashA' ? 'slashB' : 'slashA';
@@ -505,7 +561,7 @@ export class ViewmodelSystem {
 
   /** muzzle socket of the active gun in world space, null for the knife */
   public getMuzzleWorldPosition(out = new Vector3()): Vector3 | null {
-    if (this.active === 'knife') return null;
+    if (this.active === 'knife' || this.active === 'katana') return null;
     const muzzle = this.guns[this.active]?.muzzle;
     if (!muzzle) return null;
     this.root.updateWorldMatrix(true, true);
@@ -574,6 +630,8 @@ export class ViewmodelSystem {
     let clip: Clip | null = null;
     if (this.active === 'knife') {
       clip = knifeClip(getKnife(this.knifeId), action as KnifeClipName, action === 'inspect' ? this.inspectVariant : 0);
+    } else if (this.active === 'katana') {
+      clip = KATANA_CLIPS[action as KatanaClipName] ?? null;
     } else {
       const set = this.active === 'deagle' ? DEAGLE_CLIPS : AWP_CLIPS;
       clip = set[action as GunClipName] ?? null;
@@ -629,7 +687,7 @@ export class ViewmodelSystem {
     const base = this.itemBase();
     keyPos.copy(base.position);
     keyRot.copy(base.rotation);
-    const keys = this.active === 'knife' ? this.knife?.keys : null;
+    const keys = this.active === 'knife' ? this.knife?.keys : this.active === 'katana' ? KATANA_KEYS : null;
     if (keys) {
       // knife clips move the hand between whole poses rather than offsets
       for (const name of KEY_NAMES) {
@@ -654,10 +712,11 @@ export class ViewmodelSystem {
   private itemBase(): ItemBase {
     if (this.active === 'deagle') return DEAGLE_BASE;
     if (this.active === 'awp') return AWP_BASE;
+    if (this.active === 'katana') return KATANA_BASE;
     return this.knife?.base ?? DEAGLE_BASE;
   }
 
-  private poseGun(arms: ArmsRig, id: 'deagle' | 'awp'): void {
+  private poseGun(arms: ArmsRig, id: GunItem): void {
     const gun = this.guns[id];
     if (!gun) return;
     gun.root.position.set(0, 0, 0);
@@ -700,16 +759,18 @@ export class ViewmodelSystem {
     arms.solveArm('r', pA, qA, this.pole(GUN_POLE_R));
     arms.applyHandPose('r', this.poseR);
 
-    // left hand: low -> support grip -> magazine -> watch
+    // left hand: low -> support grip -> magazine -> watch (the katana's free hand waits in a guard)
     const leftGrip = grips.support;
-    this.cameraTarget(LEFT_LOW, pA, qA);
-    blendHandPose(HAND_POSES.relaxed, HAND_POSES.relaxed, 0, this.poseL);
+    const freeHand = id === 'katana' ? LEFT_GUARD : LEFT_LOW;
+    const freePose = id === 'katana' ? HAND_POSES.guard : HAND_POSES.relaxed;
+    this.cameraTarget(freeHand, pA, qA);
+    blendHandPose(freePose, freePose, 0, this.poseL);
     const attach = this.channel('leftAttach');
     if (attach > 0) {
       this.socketTarget(gun.gripL, leftGrip, pB, qB);
       pA.lerp(pB, attach);
       qA.slerp(qB, attach);
-      blendHandPose(HAND_POSES.relaxed, HAND_POSES[leftGrip.pose], attach, this.poseL);
+      blendHandPose(freePose, HAND_POSES[leftGrip.pose], attach, this.poseL);
       // open on the way in so the fingers close onto the grip only as the hand arrives
       if (attach < 1) blendHandPose(this.poseL, HAND_POSES.open, Math.sin(Math.PI * attach) * 0.8, this.poseL);
     }
@@ -1084,16 +1145,19 @@ export class ViewmodelSystem {
   }
 
   private async loadAll(): Promise<void> {
-    const [arms, deagle, awp] = await Promise.all([
+    const [arms, deagle, awp, katana] = await Promise.all([
       ArmsRig.load(),
       sharedGltfLoader().loadAsync(GUN_URLS.deagle),
       sharedGltfLoader().loadAsync(GUN_URLS.awp),
+      // the katana is optional: a failed load only leaves it without a model
+      sharedGltfLoader().loadAsync(GUN_URLS.katana).catch(() => null),
     ]);
     this.arms = arms;
     this.content.add(arms.root);
     this.armsArmor.attach(arms.root);
     this.guns.deagle = this.setupGun(deagle.scene);
     this.guns.awp = this.setupGun(awp.scene);
+    if (katana) this.guns.katana = this.setupGun(katana.scene);
     this.rebuildKnife();
     this.equip(this.active);
   }

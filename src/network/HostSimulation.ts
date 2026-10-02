@@ -10,7 +10,7 @@ import { CombatArena, type FireOutcome } from '../combat/CombatArena';
 import { shouldResetCombatEntry } from '../combat/CombatEntryPolicy';
 import type { KnifeAttack } from '../combat/knives';
 import { REMOTE_SHOT_VISUAL_DISTANCE } from '../combat/ShotPresentation';
-import { getWeapon, type WeaponId } from '../combat/weapons';
+import { getWeapon, isMeleeWeapon, isWeaponId, type WeaponId } from '../combat/weapons';
 import { RESPAWN_DELAY_MS } from '../combat/CombatState';
 import { SourceClock } from '../netcode/SourceClock';
 import type { CollisionWorld } from '../world/CollisionWorld';
@@ -279,7 +279,7 @@ export class HostSimulation {
   }
 
   applyEquip(id: string, weaponId: string): void {
-    if (weaponId === 'awp' || weaponId === 'deagle' || weaponId === 'knife') {
+    if (isWeaponId(weaponId)) {
       this.arena.equip(id, weaponId, Date.now());
     }
   }
@@ -312,10 +312,10 @@ export class HostSimulation {
     // handoff can beat the shooter's state to this host, so trust the weapon on
     // the shot (or the last one they reported) over the arena's stale view
     const held = isWeaponId(lag?.weapon) ? lag.weapon : this.humanWeapons.get(shooterId);
-    if (held && held !== 'knife' && this.arena.getActiveWeapon(shooterId) !== held) {
+    if (held && !isMeleeWeapon(held) && this.arena.getActiveWeapon(shooterId) !== held) {
       this.arena.equip(shooterId, held);
     }
-    if (this.arena.getActiveWeapon(shooterId) === 'knife') {
+    if (isMeleeWeapon(this.arena.getActiveWeapon(shooterId))) {
       // bots, and peers that predate the melee field, still slash
       this.applyMelee(shooterId, 'primary', origin, dir, observedAtMs, lag);
       return;
@@ -324,7 +324,7 @@ export class HostSimulation {
     const weaponId = this.arena.getActiveWeapon(shooterId);
     const direction = new Vector3(dir[0], dir[1], dir[2]);
     const worldImpact =
-      weaponId && weaponId !== 'knife' && direction.lengthSq() > 1e-8
+      weaponId && !isMeleeWeapon(weaponId) && direction.lengthSq() > 1e-8
         ? this.world.raycastGeometry(
             new Vector3(origin[0], origin[1], origin[2]),
             direction.clone().normalize(),
@@ -346,7 +346,7 @@ export class HostSimulation {
     if (outcome.hit && this.humanPositions.has(outcome.hit.targetId)) {
       this.humanLastCombatAtMs.set(outcome.hit.targetId, now);
     }
-    if (outcome.fired && weaponId && weaponId !== 'knife') {
+    if (outcome.fired && weaponId && !isMeleeWeapon(weaponId)) {
       const bot = this.bots.find((candidate) => candidate.id === shooterId);
       bot?.controller.onShotFired();
       const shot: ShotEvent = {
@@ -428,7 +428,7 @@ export class HostSimulation {
       targetId: outcome.hit.targetId,
       origin,
       dir,
-      weaponId: 'knife',
+      weaponId: outcome.hit.weaponId,
       endpoint: outcome.impactPoint,
       impactNormal: [-direction.x, -direction.y, -direction.z],
     });
@@ -620,6 +620,3 @@ function clampScore(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(9999, Math.floor(value))) : 0;
 }
 
-function isWeaponId(value: unknown): value is WeaponId {
-  return value === 'awp' || value === 'deagle' || value === 'knife';
-}

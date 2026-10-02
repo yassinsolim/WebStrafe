@@ -1,4 +1,5 @@
 import { Group, Mesh, Vector3, type Object3D } from 'three';
+import { sharedGltfLoader } from '../assets/gltfLoader';
 import { getKnife, type KnifeId } from '../combat/knives';
 import { buildProceduralKnife, KNIFE_NODES } from '../cosmetics/ProceduralKnife';
 import { applyKnifeFinish } from '../cosmetics/finishes/applyFinish';
@@ -58,4 +59,44 @@ export function setRemoteKnife(handBone: Object3D, cosmetic: KnifeCosmetic | und
   const old = handBone.getObjectByName('RemoteKnifeModel');
   old?.removeFromParent();
   attachKnifeModel(handBone as Parameters<typeof attachKnifeModel>[0], remoteKnifeTemplate(cosmetic));
+}
+
+const KATANA_URL = '/viewmodels/v2/katana.glb';
+let katanaTemplate: Group | null = null;
+let katanaLoading = false;
+
+/** the viewmodel katana (grip socket at its origin, knife frame), loaded once; null until it arrives */
+export function remoteKatanaTemplate(): Group | null {
+  if (!katanaTemplate && !katanaLoading) {
+    katanaLoading = true;
+    sharedGltfLoader().loadAsync(KATANA_URL).then((gltf) => {
+      const wrapper = new Group();
+      wrapper.name = 'RemoteKatanaTemplate';
+      // same hold as the knives: knife +x along the hand bone's pointing axis
+      wrapper.rotation.set(0, 0, Math.PI / 2);
+      wrapper.add(gltf.scene);
+      wrapper.traverse((child) => {
+        child.frustumCulled = false;
+        if (child instanceof Mesh) {
+          child.castShadow = false;
+          child.receiveShadow = false;
+        }
+      });
+      const holder = new Group();
+      holder.add(wrapper);
+      katanaTemplate = holder;
+    }).catch(() => {
+      katanaLoading = false;
+    });
+  }
+  return katanaTemplate;
+}
+
+/** puts the katana in a remote player's weapon hand; false while it is still loading */
+export function setRemoteKatana(handBone: Object3D): boolean {
+  const template = remoteKatanaTemplate();
+  if (!template) return false;
+  handBone.getObjectByName('RemoteKnifeModel')?.removeFromParent();
+  attachKnifeModel(handBone as Parameters<typeof attachKnifeModel>[0], template);
+  return true;
 }

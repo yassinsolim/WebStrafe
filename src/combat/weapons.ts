@@ -1,8 +1,13 @@
 import { FIREARM_TIMINGS } from './FirearmTiming';
-import { KNIFE_DAMAGE, KNIFE_RANGE_M, KNIFE_TIMING_MS } from './knives';
+import { KATANA_MELEE } from './katana';
+import { KNIFE_DAMAGE, KNIFE_MELEE, KNIFE_RANGE_M, KNIFE_TIMING_MS, type MeleeStats } from './knives';
 import { METRES_PER_UNIT } from '../movement/cvars';
 
-export type WeaponId = 'awp' | 'deagle' | 'knife';
+export type WeaponId = 'awp' | 'deagle' | 'knife' | 'katana';
+
+export const WEAPON_IDS: readonly WeaponId[] = ['awp', 'deagle', 'knife', 'katana'];
+
+export type MeleeWeaponId = 'knife' | 'katana';
 
 export type WeaponSlot = 'primary' | 'secondary' | 'melee';
 
@@ -84,7 +89,33 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     // m_flMaxSpeed = [ 250.0, 250.0 ], the fastest thing a cs2 player can hold
     maxSpeed: 250 * METRES_PER_UNIT,
   },
+  // same melee rules as the knife with its own table (katana.ts); a long blade
+  // slows you down a little
+  katana: {
+    id: 'katana',
+    name: 'Katana',
+    slot: 'melee',
+    damage: KATANA_MELEE.damage.primary,
+    headshotMultiplier: 1,
+    range: KATANA_MELEE.range.primary,
+    fireIntervalMs: KATANA_MELEE.timing.primaryInterval,
+    magazine: 0,
+    reloadMs: 0,
+    maxSpeed: 240 * METRES_PER_UNIT,
+  },
 };
+
+export function isWeaponId(value: unknown): value is WeaponId {
+  return typeof value === 'string' && (WEAPON_IDS as readonly string[]).includes(value);
+}
+
+export function isMeleeWeapon(id: WeaponId | null | undefined): id is MeleeWeaponId {
+  return id === 'knife' || id === 'katana';
+}
+
+export function meleeStats(id: MeleeWeaponId): MeleeStats {
+  return id === 'katana' ? KATANA_MELEE : KNIFE_MELEE;
+}
 
 export function getWeapon(id: WeaponId): WeaponDef {
   return WEAPONS[id];

@@ -284,10 +284,10 @@ export const CREDITS: readonly CreditEntry[] = [
   {
     id: 'original-viewmodels',
     category: 'original',
-    title: 'First-person arms, wristwatch, Deagle and AWP (built by our Blender scripts in tools/blender)',
+    title: 'First-person arms, wristwatch, Deagle, AWP and katana (built by our Blender scripts in tools/blender)',
     author: 'WebStrafe',
     license: 'Original work',
-    files: ['public/viewmodels/v2/arms.glb', 'public/viewmodels/v2/deagle.glb', 'public/viewmodels/v2/awp.glb'],
+    files: ['public/viewmodels/v2/arms.glb', 'public/viewmodels/v2/deagle.glb', 'public/viewmodels/v2/awp.glb', 'public/viewmodels/v2/katana.glb'],
   },
   {
     id: 'original-players',
@@ -300,10 +300,10 @@ export const CREDITS: readonly CreditEntry[] = [
   {
     id: 'original-armor',
     category: 'original',
-    title: 'Strafe, Anvil, Vector and Quill armor sets (built by our Blender scripts in tools/blender/characters)',
+    title: 'Strafe, Anvil, Vector, Quill and Edge armor sets (built by our Blender scripts in tools/blender/characters)',
     author: 'WebStrafe',
     license: 'Original work',
-    files: ['public/characters/armor.glb', 'tools/blender/characters/armor_sets.py'],
+    files: ['public/characters/armor.glb', 'tools/blender/characters/armor_sets.py', 'tools/blender/characters/edge_set.py'],
   },
   {
     id: 'original-cosmetics',
