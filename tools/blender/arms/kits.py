@@ -196,6 +196,57 @@ def hand_top(x, y):
     return SUIT.palm_top(x, y)
 
 
+def knuckle_line_y(x, margin):
+    """y of the knuckle row (minus a margin) at x, flat past the index and pinky"""
+    c = np.array([SUIT.knuckle_centre(n) for n in P.FINGER_ORDER])
+    return np.interp(x, c[:, 0], c[:, 1]) - margin
+
+
+SHELL_TH = 0.12
+SHELL_GAP = 0.03
+
+
+def hand_shell(name, kit, inset=0.25, margin=0.05, start=0.7, th=SHELL_TH, chamfer=0.035, tris=1800,
+               glow_paths=(), groove_r=0.07):
+    """the back of the hand as one shell: it follows the muscle over the
+    metacarpals and onto the knuckle heads and wraps down the sides, so the
+    hand reads armoured rather than a glove with a badge on it"""
+    outline = SUIT.palm_outline
+
+    def foot(p):
+        x, y, z = p[:, 0], p[:, 1], p[:, 2]
+        f = sdf.sd_polygon2(x, y, outline) + inset
+        f = np.maximum(f, y - knuckle_line_y(x, margin))
+        f = np.maximum(f, start - y)
+        return np.maximum(f, 0.35 - z)
+
+    grooves = [densify(path, 0.1) for path in glow_paths]
+    grooves3 = []
+    for g in grooves:
+        q = np.stack([g[:, 0], g[:, 1], hand_top(g[:, 0], g[:, 1]) + 1.0], axis=1)
+        # drop each path point onto the shell's top surface
+        for _ in range(4):
+            q[:, 2] -= SUIT.sd_palm(q) - (SHELL_GAP + th)
+        grooves3.append(q)
+
+    def fn(p):
+        d = shell(SUIT.sd_palm(p), SHELL_GAP, th, foot(p), chamfer=chamfer)
+        for g in grooves3:
+            d = sdf.smax(d, groove_r - dist_polyline(p, g), 0.02)
+        return d
+
+    lo = np.array([outline[:, 0].min() - 0.3, start - 0.4, -0.4])
+    hi = np.array([outline[:, 0].max() + 0.3, knuckle_line_y(0.0, margin) + 1.6, 3.0])
+    pieces = [Piece(name, kit, "primary", fn, (lo, hi), 0.028, tris, "hand", foot)]
+    for k, g3 in enumerate(grooves3):
+        pieces.append(glow_strip(f"{name}_glow{k}", kit, g3 - np.array([0.0, 0.0, 0.05]), "hand"))
+    return pieces
+
+
+# top plates sit on the shell
+ON_SHELL = SHELL_GAP + SHELL_TH - 0.04
+
+
 def hand_plate(name, kit, poly, gap=0.06, th=0.15, chamfer=0.05, rc=0.12, glow_paths=(), groove_r=0.08,
                tris=700, slot="primary", layer=0.0):
     poly = np.asarray(poly, dtype=np.float64)
@@ -224,7 +275,7 @@ def hand_plate(name, kit, poly, gap=0.06, th=0.15, chamfer=0.05, rc=0.12, glow_p
     return pieces
 
 
-def knuckle_caps(name, kit, style, slot="dark", tris=420):
+def knuckle_caps(name, kit, style, slot="dark", tris=420, layer=0.0):
     """caps over the four knuckle heads, rigid on the hand"""
     centres = [SUIT.knuckle_centre(n) for n in P.FINGER_ORDER]
     radii = [SUIT.fingers[n]["radii"][0] for n in P.FINGER_ORDER]
@@ -246,7 +297,7 @@ def knuckle_caps(name, kit, style, slot="dark", tris=420):
             return np.maximum(f, 0.25 - (p[:, 2] - np.interp(p[:, 0], line[:, 0], [c[2] for c in [centres[0]] + centres + [centres[-1]]])))
 
         def fn(p):
-            return shell(surf(p), 0.04, 0.17, foot(p), chamfer=0.06)
+            return shell(surf(p), 0.04 + layer, 0.17, foot(p), chamfer=0.06)
 
         lo = np.min(centres, axis=0) - 1.6
         hi = np.max(centres, axis=0) + 1.6
@@ -266,7 +317,7 @@ def knuckle_caps(name, kit, style, slot="dark", tris=420):
     def fn(p):
         d = np.full(len(p), FAR)
         for c, r in zip(centres, radii):
-            d = np.minimum(d, shell(sdf.sd_sphere(p, c, r), 0.025, 0.12, one_foot(p, c, r), chamfer=0.04))
+            d = np.minimum(d, shell(sdf.sd_sphere(p, c, r), 0.025 + layer, 0.1, one_foot(p, c, r), chamfer=0.035))
         return d
 
     def foot(p):
@@ -308,19 +359,24 @@ def digit_segments(digit):
     return out
 
 
-def finger_plates(name, kit, digit, which, width=0.78, th=0.1, tip="round", gap=0.02, joint_gap=0.27,
-                  knuckle_gap=0.55, chamfer=0.03, slot="primary"):
-    """dorsal plates on the chosen segments of one digit (0 = the bone nearest the hand)"""
+def finger_plates(name, kit, digit, which, width=0.88, th=0.1, tip="round", gap=0.02, joint_gap=0.14,
+                  knuckle_gap=0.5, chamfer=0.03, slot="primary", ventral=False):
+    """dorsal plates on the chosen segments of one digit (0 = the bone nearest the hand),
+    nearly end to end so the finger reads as segmented armour. ventral puts
+    grip pads on the palm side instead, with wider joint gaps since that side
+    folds shut when the finger curls"""
     segs = digit_segments(digit)
     shapes = []
     for i in which:
         a, b, ra, rb, dors, side, bone = segs[i]
+        if ventral:
+            dors, side = -dors, -side
         L = float(np.linalg.norm(b - a))
         t0 = knuckle_gap if (i == 0 and digit != "thumb") else joint_gap
         if digit == "thumb" and i == 0:
             t0 = 1.2
         distal = i == 2
-        t1 = L + rb * 0.55 if distal else L - joint_gap
+        t1 = L + rb * (0.5 if ventral else 0.85) if distal else L - joint_gap
         w0 = width * (ra + (rb - ra) * t0 / L)
         w1 = width * (ra + (rb - ra) * min(t1, L) / L) * (0.82 if distal else 1.0)
         if tip == "point":
@@ -395,6 +451,31 @@ def core_pieces():
 
     lo, hi = bbox(np.concatenate(rods), 0.45)
     out.append(Piece("cables", "core", "metal", cables, (lo, hi), 0.025, 700, "arm", None, style="mech"))
+
+    # palm side: a segmented dark plate across the palm and pads on every digit
+    outline = SUIT.palm_outline
+
+    def palm_foot(p):
+        x, y, z = p[:, 0], p[:, 1], p[:, 2]
+        f = sdf.sd_polygon2(x, y, outline) + 0.45
+        f = np.maximum(f, y - knuckle_line_y(x, 1.35))
+        f = np.maximum(f, 1.0 - y)
+        f = np.maximum(f, -1.6 - x)
+        # a groove splits it into a heel and an upper plate
+        f = np.maximum(f, 0.06 - np.abs(y - 5.2))
+        return np.maximum(f, z + 0.45)
+
+    def palm(p):
+        return shell(SUIT.sd_palm(p), 0.02, 0.08, palm_foot(p), chamfer=0.03)
+
+    lo = np.array([outline[:, 0].min(), 0.6, -2.6])
+    hi = np.array([outline[:, 0].max(), knuckle_line_y(0.0, 0.0), 0.4])
+    out.append(Piece("palm_plate", "core", "dark", palm, (lo, hi), 0.026, 600, "hand", palm_foot))
+    for d in P.FINGER_ORDER:
+        out.append(finger_plates(f"pads_{d}", "core", d, (0, 1, 2), width=0.6, th=0.07, joint_gap=0.3,
+                                 knuckle_gap=1.0, slot="dark", ventral=True))
+    out.append(finger_plates("pads_thumb", "core", "thumb", (1, 2), width=0.6, th=0.07, joint_gap=0.3,
+                             slot="dark", ventral=True))
     return out
 
 
@@ -408,15 +489,13 @@ def kit_strafe():
     over = [(0.55, 4.1), (1.6, 5.0), (2.0, 9.8), (-2.5, 10.2), (-2.9, 6.5), (-1.0, 4.4)]
     out += forearm_plate("strafe_fore_top", k, over, layer=0.19, th=0.13, chamfer=0.04,
                          glow_paths=[[(-2.2, 9.6), (-1.4, 5.8), (-0.5, 4.9)]], tris=800)
-    hand = [(-0.8, 0.9), (1.8, 0.9), (3.7, 3.2), (3.8, 7.0), (2.9, 8.3), (-1.2, 8.6), (-2.15, 7.4), (-2.1, 3.0)]
-    out += hand_plate("strafe_hand", k, hand)
+    out += hand_shell("strafe_hand", k)
     spine = [(-0.15, 1.5), (1.25, 1.5), (1.95, 3.9), (1.65, 7.3), (-0.45, 7.5), (-0.95, 3.9)]
-    out += hand_plate("strafe_hand_top", k, spine, layer=0.17, th=0.12, chamfer=0.04, rc=0.1,
+    out += hand_plate("strafe_hand_top", k, spine, layer=ON_SHELL, th=0.11, chamfer=0.04, rc=0.1,
                       glow_paths=[[(0.55, 2.3), (0.6, 6.7)]], groove_r=0.07, tris=500)
-    out.append(knuckle_caps("strafe_knuckles", k, "oval", slot="primary"))
     for d in P.FINGER_ORDER:
         out.append(finger_plates(f"strafe_{d}", k, d, (0, 1, 2)))
-    out.append(finger_plates("strafe_thumb", k, "thumb", (1, 2)))
+    out.append(finger_plates("strafe_thumb", k, "thumb", (0, 1, 2)))
     return out
 
 
@@ -429,13 +508,14 @@ def kit_anvil():
         sm = (s0 + s1) * 0.5
         vents = [[(ang(a, sm), sm - 1.1), (ang(a, sm), sm + 1.1)] for a in (58.0, 72.0)]
         out += forearm_plate(f"anvil_fore{i}", k, poly, th=0.2, chamfer=0.08, rc=0.1, glow_paths=vents, tris=900)
-    hand = [(-1.0, 0.9), (2.0, 0.9), (3.85, 3.0), (3.85, 7.3), (-1.95, 7.9), (-2.0, 2.6)]
-    out += hand_plate("anvil_hand", k, hand, th=0.17, chamfer=0.07, rc=0.08,
-                      glow_paths=[[(-0.6, 6.6), (2.6, 6.3)]])
-    out.append(knuckle_caps("anvil_knuckles", k, "bar", slot="primary", tris=600))
+    out += hand_shell("anvil_hand", k, inset=0.15)
+    hand = [(-0.6, 1.4), (1.8, 1.4), (3.2, 3.2), (3.2, 6.6), (-1.4, 7.0), (-1.5, 2.9)]
+    out += hand_plate("anvil_hand_top", k, hand, layer=ON_SHELL, th=0.15, chamfer=0.07, rc=0.08,
+                      glow_paths=[[(-0.5, 6.2), (2.4, 5.9)]])
+    out.append(knuckle_caps("anvil_knuckles", k, "bar", slot="primary", tris=600, layer=SHELL_GAP + SHELL_TH))
     for d in P.FINGER_ORDER:
-        out.append(finger_plates(f"anvil_{d}", k, d, (0, 1, 2), width=0.9, th=0.13, tip="square", chamfer=0.045))
-    out.append(finger_plates("anvil_thumb", k, "thumb", (0, 1, 2), width=0.9, th=0.13, tip="square", chamfer=0.045))
+        out.append(finger_plates(f"anvil_{d}", k, d, (0, 1, 2), width=0.94, th=0.12, tip="square", chamfer=0.045))
+    out.append(finger_plates("anvil_thumb", k, "thumb", (0, 1, 2), width=0.94, th=0.12, tip="square", chamfer=0.045))
     return out
 
 
@@ -448,13 +528,11 @@ def kit_vector():
     side = [(ang(10, 6.0) - 0.5, 6.0), (ang(10, 6.0) + 0.5, 6.0), (ang(10, 21.5) + 0.55, 21.5),
             (ang(10, 21.5) - 0.55, 21.5)]
     out += forearm_plate("vector_side", k, side, th=0.12, rc=0.35, chamfer=0.035, tris=500)
-    hand = [(0.6, 1.3), (2.1, 4.7), (0.7, 7.9), (-0.9, 4.7)]
-    out += hand_plate("vector_hand", k, hand, th=0.12, rc=0.15, glow_paths=[[(0.62, 2.7), (0.66, 6.5)]],
-                      groove_r=0.065)
-    out.append(knuckle_caps("vector_knuckles", k, "disc"))
+    out += hand_shell("vector_hand", k, inset=0.6, glow_paths=[[(0.62, 1.8), (0.66, 6.9)]])
+    out.append(knuckle_caps("vector_knuckles", k, "disc", layer=SHELL_GAP + SHELL_TH))
     for d in P.FINGER_ORDER:
-        out.append(finger_plates(f"vector_{d}", k, d, (0, 1), width=0.62, th=0.085))
-    out.append(finger_plates("vector_thumb", k, "thumb", (1,), width=0.62, th=0.085))
+        out.append(finger_plates(f"vector_{d}", k, d, (0, 1, 2), width=0.74, th=0.085))
+    out.append(finger_plates("vector_thumb", k, "thumb", (1, 2), width=0.74, th=0.085))
     return out
 
 
@@ -476,16 +554,17 @@ def kit_quill():
         glow = [(ulo + 0.45, front(ulo + 0.45) + 0.42), (c, s0 + 0.42), (uhi - 0.45, front(uhi - 0.45) + 0.42)]
         out += forearm_plate(f"quill_fore{i}", k, poly, th=0.15, chamfer=0.05, rc=0.08, clip_s=23.4,
                              glow_paths=[glow], groove_r=0.075, tris=800)
-    blade_a = [(0.1, 1.0), (1.1, 1.3), (-0.5, 7.9), (-1.7, 7.6)]
-    blade_b = [(0.9, 1.0), (1.9, 1.1), (3.7, 7.2), (2.6, 7.6)]
-    out += hand_plate("quill_hand_a", k, blade_a, th=0.14, rc=0.1, glow_paths=[[(0.45, 1.9), (-0.85, 7.2)]],
-                      groove_r=0.065)
-    out += hand_plate("quill_hand_b", k, blade_b, th=0.14, rc=0.1, layer=0.0,
-                      glow_paths=[[(1.55, 1.9), (3.0, 7.0)]], groove_r=0.065)
-    out.append(knuckle_caps("quill_knuckles", k, "diamond"))
+    out += hand_shell("quill_hand", k)
+    blade_a = [(0.1, 1.2), (1.1, 1.5), (-0.4, 7.6), (-1.5, 7.3)]
+    blade_b = [(0.9, 1.2), (1.9, 1.3), (3.4, 6.9), (2.4, 7.3)]
+    out += hand_plate("quill_hand_a", k, blade_a, layer=ON_SHELL, th=0.12, rc=0.1,
+                      glow_paths=[[(0.45, 2.1), (-0.75, 6.9)]], groove_r=0.065)
+    out += hand_plate("quill_hand_b", k, blade_b, layer=ON_SHELL, th=0.12, rc=0.1,
+                      glow_paths=[[(1.55, 2.1), (2.8, 6.7)]], groove_r=0.065)
+    out.append(knuckle_caps("quill_knuckles", k, "diamond", layer=SHELL_GAP + SHELL_TH))
     for d in P.FINGER_ORDER:
-        out.append(finger_plates(f"quill_{d}", k, d, (0, 1, 2), width=0.74, tip="point"))
-    out.append(finger_plates("quill_thumb", k, "thumb", (1, 2), width=0.74, tip="point"))
+        out.append(finger_plates(f"quill_{d}", k, d, (0, 1, 2), width=0.86, tip="point"))
+    out.append(finger_plates("quill_thumb", k, "thumb", (0, 1, 2), width=0.86, tip="point"))
     return out
 
 

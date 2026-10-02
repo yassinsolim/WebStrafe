@@ -50,7 +50,7 @@ picks shots (`rest`, `top`, `fp`, `fist`, `palm`, `watch_closeup`, `elbow_bend`)
 - `suit.py`: ha8,5nd forearm muscle as one signed distance field: a thin palm slab, pads,
   knuckle heads, round-cone fingers and thumb, and a superellipse forearm with muscle bundles
   (`arm.muscle_offset`) on the thumb and palm side. Meshed with OpenVDB at 0.75 mm voxels,
-  decimated to 11,000 triangles per arm and projected back onto the exact surface.
+  decimated to 7,800 triangles per arm and projected back onto the exact surface.
 - `arm.py`: the lofted upper arm, starting under a small raised lip that hides where the field
   ends.
 - `kits.py`: every plate, mechanical part and glow line as its own small field. Plates are shells
