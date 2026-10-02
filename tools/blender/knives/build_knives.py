@@ -1253,8 +1253,13 @@ def build_one(kid):
     return total, lod1
 
 
+# the knives the game ships (src/combat/knives.ts); the retired ones still build by id
+SHIPPED = ["karambit", "butterfly", "m9_bayonet", "talon", "skeleton", "bayonet",
+           "flip", "stiletto", "huntsman", "bowie", "gut", "shadow_daggers"]
+
+
 def main():
-    ids = ONLY or list(BUILDERS)
+    ids = ONLY or SHIPPED
     totals = {}
     for kid in ids:
         totals[kid] = build_one(kid)

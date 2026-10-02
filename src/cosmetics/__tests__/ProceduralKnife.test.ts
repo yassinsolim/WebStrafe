@@ -3,7 +3,7 @@ import { Box3, BufferGeometry, Group, type Material, Mesh, MeshStandardMaterial,
 import { getKnife, KNIVES, type KnifeDef } from '../../combat/knives';
 import { buildProceduralKnife, disposeProceduralKnife, isSharedKnifeTexture, KNIFE_NODES } from '../ProceduralKnife';
 
-const FOLDERS = ['flip', 'talon', 'navaja', 'falchion', 'nomad', 'ursus', 'stiletto'];
+const FOLDERS = ['flip', 'talon', 'stiletto'];
 const RING_KNIVES = ['karambit', 'talon'];
 
 function meshes(root: Object3D): Mesh[] {

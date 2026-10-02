@@ -27,7 +27,7 @@ const results = await page.evaluate(async (only) => {
   for (let a = -60; a <= 60; a += 10) for (let b = -40; b <= 80; b += 20) for (let c = -20; c <= 40; c += 20) targets.push([a, b, c]);
   const vias = [];
   for (let a = -60; a <= 30; a += 15) for (let b = -60; b <= 30; b += 15) for (const c of [-30, 0, 30]) vias.push([a, b, c]);
-  const knives = only ? only.split(',') : ['flip', 'falchion', 'navaja', 'stiletto', 'talon', 'ursus', 'nomad'];
+  const knives = only ? only.split(',') : ['flip', 'stiletto', 'talon'];
   const thumbAt = (action, t) => {
     vm.seek(action, t);
     return vm.checkKnifeGrip().digits.find((d) => d.digit === 'thumb');

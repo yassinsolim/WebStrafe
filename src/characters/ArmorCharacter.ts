@@ -12,7 +12,7 @@ import {
   Vector3,
 } from 'three';
 import type { PlayerModel } from '../network/types';
-import { applyKnifeIdlePose, buildArmRig, type ArmRig } from '../multiplayer/playerRig';
+import { applyKnifeIdlePose, applyMenuIdlePose, buildArmRig, type ArmRig } from '../multiplayer/playerRig';
 import { ArmorMaterial } from './armorMaterial';
 import { ARMOR_SLOTS, type CharacterToneMap } from './catalog';
 import { attachDecals } from './decals';
@@ -49,7 +49,8 @@ export function getCharacterDetail(): CharacterDetail {
 }
 
 export interface ArmorCharacterOptions {
-  pose?: 'stance' | 'none';
+  /** 'stance' holds the combat knife idle, 'menu' the relaxed menu idle, 'none' leaves the bones to the caller */
+  pose?: 'stance' | 'menu' | 'none';
   /** pin one level of detail (screenshots, the menu); default switches by distance */
   lod?: 0 | 1 | 2 | 'auto';
   /** the menu stages tone map with aces, the world with the map's grade (default) */
@@ -258,7 +259,9 @@ export class ArmorCharacter {
   }
 
   update(dt: number, nowSec: number): void {
-    if (this.rig && this.options.pose !== 'none') {
+    if (this.rig && this.options.pose === 'menu') {
+      applyMenuIdlePose(this.rig, nowSec);
+    } else if (this.rig && this.options.pose !== 'none') {
       applyKnifeIdlePose(this.rig, Math.sin(nowSec * 1.43));
     }
     this.updateCloth(Math.min(dt, 0.05), nowSec);

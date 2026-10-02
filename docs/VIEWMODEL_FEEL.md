@@ -47,33 +47,46 @@ rotation < 0.15 rad) and composited every frame.
 - The menu stage must remain inside the viewport. `CharacterPreview` computes a
   perspective fit from the complete posed bounding box and recomputes it after
   every resize, so narrow and fullscreen layouts retain the full body.
-- Menu idle keeps a fixed facing direction. Slow spine, clavicle, arm, neck, and
-  head offsets provide breathing without broad side-to-side sway.
+- Menu idle (`applyMenuIdlePose` in `playerRig.ts`, the `'menu'` character
+  pose): relaxed and sure of itself. Weight on the right leg with the hips
+  tipped over it and the shoulders tipped back the other way, the left knee easy
+  on the ball of the foot, the knife arm hanging with the blade down along the
+  leg and the free hand loose. It breathes, drifts its weight, looks around
+  slowly, and every 11 s brings the knife up beside the shoulder and twirls it
+  once round the grip before letting it hang again. The menu character holds
+  the player's own knife and finish. Rigs without mpfb hands keep the stance.
 - Exposed player eyes receive small iris, pupil, and catchlight discs attached to
   the eye bones over a warm sclera cover, so the source texture cannot fall back
   to a flat white stare. Counter-terrorist gas-mask lenses remain untouched.
 - The menu knife follows the weapon-hand helper while the anatomical wrist and
-  fingers rotate into the grip. Its menu-only diagonal rotation follows the
-  fist/palm channel, with the wooden handle inside the curled fingers and the
-  guard outside the index knuckle instead of intersecting the closed fist.
+  fingers rotate into the grip. In the menu idle the knife is turned about its
+  grip so the blade carries on 50 degrees off the fist instead of leaning back
+  past the wrist, which would point it up into the hip while the arm hangs.
 - The integrated first-person knife rig is enlarged and recentered so both hands
   and the complete idle blade stay readable through idle and attack motion.
-- Ring knives (karambit, talon) follow CS2's first-person karambit: the index
-  goes through the ring and the claw curves toward the knuckles, the idle holds
-  the fist palm down low on the right with the claw curving up and the left hand
-  open in a guard, the draw spins the knife on the index with the hand raised,
-  the inspect turns the fist upright to show the claw, the primary hooks across
-  to the left and the secondary cocks high and rips down.
-- Every other knife sits diagonally in the palm like CS2's (`HAMMER_LEAN_DEG`),
-  so the blade carries on past the thumb along the hand and crosses the lower
-  right of the screen with its flat to the eye. Navaja, stiletto, nomad and
-  butterfly idle with the left hand up too. Inspects raise the blade upright,
-  turn it over, then twirl, toss, fold and flick or fan it depending on the
-  knife; about one press in five plays the knife's rarer inspect instead, and
+- First-person knife clips walk the knife through whole key poses
+  (`src/viewmodel/knifePoses.ts`): each pose says where the grip sits, where the
+  blade points, where the spine faces and where the elbow points, per way of
+  holding a knife. Positions run along a centripetal Catmull-Rom curve through
+  the keys (`clip.seq`), so swings arc and pass through keys without stopping,
+  and a new clip starts from wherever the last one left the knife. The poses
+  were solved for a natural wrist with the pose scan tools, so the edge leads
+  every slash where the wrist allows it.
+- Like CS2, only the knife hand shows (both for the shadow daggers). Slashes
+  wind up for a few frames, cut through the crosshair edge first by about
+  0.12 s (the hit lands on the click) and carry through before a slower
+  settle; the forehand sweeps down to the left, the backhand comes back up to
+  the right. The stab draws back high on the right and drives in at the
+  crosshair; the backstab goes higher and drives in and down. Draws come up
+  from low on the right with the knife's flourish (twirl, toss, flip open,
+  switch, balisong, ring spin) and settle by about 0.6 to 0.9 s. The shadow
+  daggers jab one fist at a time (`clip.seqL` moves the left on its own).
+- Ring knives (karambit, talon) idle with the claw out to the left of the fist
+  curving up, its flat to the eye; slashes rake the claw across behind the fist,
+  the heavy cocks it high and rips it down. Inspects show one flat, then the
+  other, then a flourish (twirl, toss, fold and flick or fan, depending on the
+  knife); about one press in five plays the knife's rarer inspect instead, and
   pressing inspect again restarts it.
-- Knife clips blend whole hand poses (`GRIP_POSES` in `ViewmodelSystem.ts`)
-  rather than camera offsets, so a pose like "blade upright, palm to the eye"
-  is written once per grip.
 - The Deagle retains its authored two-hand rig. Disconnected source clothing is
   removed during export, so no synthetic forearm or duplicate hand is added at
   runtime.

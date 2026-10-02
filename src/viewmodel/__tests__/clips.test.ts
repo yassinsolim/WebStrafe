@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { KNIVES } from '../../combat/knives';
-import { applyEase, retime, sampleKeys } from '../clips';
-import { AWP_CLIPS, DEAGLE_CLIPS, knifeClip, knifeDrawStyle, knifeInspectCount, knifeInspectStyle } from '../viewmodelClips';
+import { applyEase, retime, sampleKeys, sampleSeq, type SeqSample } from '../clips';
+import { AWP_CLIPS, DEAGLE_CLIPS } from '../viewmodelClips';
+import { knifeClip, knifeDrawStyle, knifeInspectCount, knifeInspectStyle } from '../knifeClips';
+import { KNIFE_POSES } from '../knifePoses';
+import { gripKindFor } from '../knifeGrips';
 import { FIREARM_TIMINGS } from '../../combat/FirearmTiming';
 
 describe('clip sampling', () => {
@@ -19,6 +22,15 @@ describe('clip sampling', () => {
     const clip = retime(DEAGLE_CLIPS.reload, 1.665);
     expect(clip.duration).toBeCloseTo(1.665);
     expect(clip.events?.[0][0]).toBeCloseTo(DEAGLE_CLIPS.reload.events![0][0] / 2);
+  });
+
+  it('samples a pose sequence as a segment with its neighbours', () => {
+    const seq = [[0, 'idle'], [0.1, 'wind', 'linear'], [0.2, 'cut', 'linear'], [0.5, 'idle', 'linear']] as const;
+    const at: SeqSample = { before: '', a: '', b: '', after: '', u: 0 };
+    expect(sampleSeq(seq, 0.15, at)).toEqual({ before: 'idle', a: 'wind', b: 'cut', after: 'idle', u: expect.closeTo(0.5, 5) });
+    expect(sampleSeq(seq, -1, at)).toMatchObject({ a: 'idle', b: 'idle', u: 0 });
+    expect(sampleSeq(seq, 9, at)).toMatchObject({ a: 'idle', b: 'idle', u: 1 });
+    expect(retime({ duration: 0.5, tracks: {}, seq }, 1).seq?.[2][0]).toBeCloseTo(0.4);
   });
 });
 
@@ -54,6 +66,39 @@ describe('viewmodel clips', () => {
     }
   });
 
+  it('walks every knife clip through poses its grip has, ending at rest', () => {
+    for (const def of KNIVES) {
+      const poses = KNIFE_POSES[gripKindFor(def)].poses;
+      for (const name of ['draw', 'inspect', 'slashA', 'slashB', 'stab', 'backstab'] as const) {
+        for (const variant of [0, 1]) {
+          const clip = knifeClip(def, name, variant);
+          for (const seq of [clip.seq, clip.seqL]) {
+            if (!seq) continue;
+            for (const [t, pose] of seq) {
+              expect(pose === 'idle' || pose in poses, `${def.id} ${name} ${pose}`).toBe(true);
+              expect(t).toBeLessThanOrEqual(clip.duration);
+            }
+            expect(seq[seq.length - 1][1], `${def.id} ${name} ends`).toBe('idle');
+            for (let i = 1; i < seq.length; i += 1) expect(seq[i][0]).toBeGreaterThanOrEqual(seq[i - 1][0]);
+          }
+          if (name === 'draw') expect(clip.seq?.[0][1], `${def.id} draws from low`).toBe('low');
+        }
+      }
+    }
+  });
+
+  it('cuts through the crosshair fast enough to read as the hit', () => {
+    for (const def of KNIVES) {
+      for (const name of ['slashA', 'slashB'] as const) {
+        const clip = knifeClip(def, name);
+        const keys = [...(clip.seq ?? []), ...(clip.seqL ?? [])];
+        const cut = keys.find(([, pose]) => pose.startsWith('cut') || pose === 'jab');
+        expect(cut, `${def.id} ${name}`).toBeDefined();
+        expect(cut![0], `${def.id} ${name}`).toBeLessThanOrEqual(0.16);
+      }
+    }
+  });
+
   it('gives every knife but the push daggers a rare inspect of its own', () => {
     for (const def of KNIVES) {
       const rare = knifeClip(def, 'inspect', 1);
@@ -76,7 +121,8 @@ describe('viewmodel clips', () => {
     expect(knifeInspectStyle(byId.get('shadow_daggers')!)).toBe('dagger_pair');
     expect(knifeInspectStyle(byId.get('bowie')!)).toBe('heavy_show');
     expect(knifeDrawStyle(byId.get('stiletto')!)).toBe('switch_open');
-    expect(knifeDrawStyle(byId.get('navaja')!)).toBe('flick_open');
+    expect(knifeDrawStyle(byId.get('bowie')!)).toBe('toss_flip');
+    expect(knifeDrawStyle(byId.get('gut')!)).toBe('unsheathe');
     expect(knifeDrawStyle(byId.get('m9_bayonet')!)).toBe('spin_draw');
     expect(knifeInspectStyle(byId.get('m9_bayonet')!)).toBe('twirl');
     expect(knifeDrawStyle(byId.get('karambit')!)).toBe('spin_in');

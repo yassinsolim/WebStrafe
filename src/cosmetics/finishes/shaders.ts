@@ -233,7 +233,7 @@ vec3 finSurface(FinishIn fi, inout float rough, inout float metal) {
   vec3 qw = q + vec3(2.2 * w1, 0.0);
   float warp = finFbm(qw);
   // wide colour lanes across the blade, flowing back from the tip and bent by the marble
-  float band = fi.uv.x * 1.25 + (clamp(fi.uv.y, 0.0, 1.0) - 0.5) * 0.45 + (warp - 0.5) * 1.4 + finParams.z * 3.0;
+  float band = fi.uv.x * 1.05 + (clamp(fi.uv.y, 0.0, 1.0) - 0.5) * 0.4 + (warp - 0.5) * 0.95 + finParams.z * 3.0;
   float k = fract(band);
   vec3 red = finLin(vec3(0.95, 0.08, 0.1));
   vec3 yellow = finLin(vec3(1.0, 0.8, 0.14));
@@ -385,27 +385,29 @@ vec3 finSurface(FinishIn fi, inout float rough, inout float metal) {
   damascus_steel: /* glsl */ `
 vec3 finSurface(FinishIn fi, inout float rough, inout float metal) {
   vec2 p = finPlanar(fi);
-  vec3 q = vec3(p.x * 8.0, p.y * 15.0, fi.pos.z * 15.0) + finSeed.xyz;
-  vec2 w = vec2(finFbm(q), finFbm(q + vec3(5.2, 1.3, 2.8)));
-  float f = finFbm(q + vec3(w * 2.0, 0.0));
-  // folded layers: contour lines of a warped field, running along the blade
-  float k = f * 16.0 + p.y * 60.0;
-  float light = finLineAA(fract(k) - 0.5, 0.17, fwidth(k));
-  vec3 c = mix(finLin(vec3(0.36, 0.37, 0.4)), finLin(vec3(0.84, 0.85, 0.88)), light);
+  vec3 q = vec3(p.x * 7.0, p.y * 12.0, fi.pos.z * 12.0) + finSeed.xyz;
+  vec2 w = vec2(finGrad(q), finGrad(q + vec3(5.2, 1.3, 2.8)));
+  float f = finGrad(q * 1.6 + vec3(w * 0.8, 0.0));
+  // folded layers: dense lines running along the blade, bent into slow waves
+  float k = p.y * 520.0 + f * 9.0 + w.x * 5.0 + sin(p.x * 85.0 + w.y * 3.0) * 1.1;
+  float aa = fwidth(k);
+  float light = finLineAA(fract(k) - 0.5, 0.24, aa);
+  float fine = finLineAA(fract(k * 2.0 + 0.25) - 0.5, 0.08, aa * 2.0) * 0.3;
+  vec3 c = mix(finLin(vec3(0.15, 0.16, 0.18)), finLin(vec3(0.72, 0.74, 0.77)), clamp(light + fine, 0.0, 1.0));
   c *= 1.0 - 0.35 * smoothstep(0.05, 0.5, finWear.x);
-  rough = mix(0.3, 0.16, light);
+  rough = mix(0.32, 0.14, light);
   metal = 1.0;
   return c;
 }
 `,
   ultraviolet: /* glsl */ `
 vec3 finSurface(FinishIn fi, inout float rough, inout float metal) {
-  // matte black paint with a faint violet cloud
+  // deep violet paint with a faint lighter cloud
   float m = finFbm(fi.pos * 36.0 + finSeed.xyz);
   float speck = finNoise(fi.pos * 1500.0);
-  vec3 c = mix(finLin(vec3(0.06, 0.05, 0.08)), finLin(vec3(0.11, 0.07, 0.16)), smoothstep(0.45, 0.65, m));
+  vec3 c = mix(finLin(vec3(0.15, 0.08, 0.25)), finLin(vec3(0.27, 0.14, 0.42)), smoothstep(0.45, 0.65, m));
   c *= 0.92 + 0.12 * speck;
-  rough = 0.66;
+  rough = 0.55;
   metal = 0.1;
   return c;
 }
@@ -415,7 +417,7 @@ vec3 finSurface(FinishIn fi, inout float rough, inout float metal) {
   // night sky blue grey, stonewashed
   float m = finFbm(fi.pos * 80.0 + finSeed.xyz);
   float speck = finNoise(fi.pos * 1500.0);
-  vec3 c = mix(finLin(vec3(0.11, 0.13, 0.16)), finLin(vec3(0.13, 0.155, 0.19)), smoothstep(0.42, 0.6, m));
+  vec3 c = mix(finLin(vec3(0.14, 0.17, 0.22)), finLin(vec3(0.18, 0.22, 0.28)), smoothstep(0.42, 0.6, m));
   c *= 0.9 + 0.14 * speck;
   rough = 0.68;
   metal = 0.15;
@@ -571,5 +573,7 @@ export function finishFragmentShader(src: string, finishId: string, wearStyle: K
   out = inject(out, '#include <map_fragment>', FRAGMENT_MAIN, 'after');
   out = inject(out, '#include <roughnessmap_fragment>', 'roughnessFactor = finRough;', 'after');
   out = inject(out, '#include <metalnessmap_fragment>', 'metalnessFactor = finMetal;', 'after');
+  // the clear coat wears through with the finish
+  out = inject(out, '#include <lights_physical_fragment>', '#ifdef USE_CLEARCOAT\nmaterial.clearcoat *= 1.0 - finWorn;\n#endif', 'after');
   return out;
 }

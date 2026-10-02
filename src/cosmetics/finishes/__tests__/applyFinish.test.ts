@@ -289,7 +289,7 @@ describe('applyKnifeFinish', () => {
   });
 
   it('finishes every knife with every finish without throwing', () => {
-    for (const knifeId of ['karambit', 'm9_bayonet', 'butterfly', 'shadow_daggers', 'skeleton', 'paracord', 'kukri'] as const) {
+    for (const knifeId of ['karambit', 'm9_bayonet', 'butterfly', 'shadow_daggers', 'skeleton', 'gut', 'bowie'] as const) {
       const knife = buildProceduralKnife(getKnife(knifeId));
       for (const finishId of selectableKnifeFinishIds()) {
         applyKnifeFinish(knife, { finishId, wear: 0.5, seed: 42 });

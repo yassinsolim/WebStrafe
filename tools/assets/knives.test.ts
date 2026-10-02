@@ -11,13 +11,13 @@ import { KNIVES, type KnifeId } from '../../src/combat/knives';
 // clean pivots, materials, budgets, the knife frame and the userData hints
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const FOLDERS: KnifeId[] = ['flip', 'falchion', 'navaja', 'stiletto', 'talon', 'ursus', 'nomad'];
+const FOLDERS: KnifeId[] = ['flip', 'stiletto', 'talon'];
 const RING_SOCKET: KnifeId[] = ['karambit', 'talon', 'skeleton'];
 const HAWKBILL: KnifeId[] = ['karambit', 'talon'];
 const MATERIALS = ['knife_blade', 'knife_edge', 'knife_handle', 'knife_metal', 'knife_accent'];
 const REQUIRED = ['knife_blade', 'knife_edge', 'knife_handle'];
-// the paracord knife has no fittings: its exposed tang end is blade steel
-const NO_METAL: KnifeId[] = ['paracord'];
+// knives without fittings (none left since the paracord knife was retired)
+const NO_METAL: KnifeId[] = [];
 const MAX_TRIANGLES = 15000;
 const MAX_BYTES = 1.5 * 1024 * 1024;
 const MAX_TEXTURE_PX = 2048;
@@ -35,19 +35,11 @@ const FITTED: Record<KnifeId, { sockets: Record<string, V3>; hints: Record<strin
   m9_bayonet: { sockets: { socket_grip: [-0.063, 0.019, 0], socket_tip: [0.19, 0.017, 0] }, hints: { handleLength: 0.133, handleThickness: 0.03, handleHeight: 0.035, bladeLength: 0.19, bladeHeight: 0.038 } },
   huntsman: { sockets: { socket_grip: [-0.062, 0.019, 0], socket_tip: [0.155, 0.018, 0] }, hints: { handleLength: 0.127, handleThickness: 0.027, handleHeight: 0.0335, bladeLength: 0.155, bladeHeight: 0.0383 } },
   butterfly: { sockets: { socket_grip: [-0.064, 0.0115, 0], socket_pivot_bite: [-0.0065, 0.0047, 0], socket_pivot_safe: [-0.0065, 0.0182, 0], socket_tip: [0.102, 0.0105, 0] }, hints: { handleLength: 0.128, handleThickness: 0.0129, handleHeight: 0.027, bladeLength: 0.102, bladeHeight: 0.0232 } },
-  falchion: { sockets: { socket_grip: [-0.066, 0.0138, 0], socket_pivot: [-0.008, 0.0147, 0], socket_tip: [0.128, 0.03, 0] }, hints: { handleLength: 0.15, handleThickness: 0.0138, handleHeight: 0.036, bladeLength: 0.128, bladeHeight: 0.0325 } },
   shadow_daggers: { sockets: { socket_grip: [-0.024, 0.013, 0], socket_tee: [-0.024, 0.013, 0], socket_tip: [0.066, 0.013, 0] }, hints: { handleLength: 0.092, handleThickness: 0.018, handleHeight: 0.014, bladeLength: 0.066, bladeHeight: 0.0253 } },
   bowie: { sockets: { socket_grip: [-0.06, 0.02, 0], socket_tip: [0.185, 0.019, 0] }, hints: { handleLength: 0.125, handleThickness: 0.027, handleHeight: 0.033, bladeLength: 0.185, bladeHeight: 0.0422 } },
-  navaja: { sockets: { socket_grip: [-0.062, 0.0094, 0], socket_pivot: [-0.008, 0.0095, 0], socket_tip: [0.105, 0.013, 0] }, hints: { handleLength: 0.142, handleThickness: 0.0114, handleHeight: 0.025, bladeLength: 0.105, bladeHeight: 0.022 } },
   stiletto: { sockets: { socket_grip: [-0.07, 0.008, 0], socket_pivot: [-0.011, 0.0086, 0], socket_tip: [0.125, 0.008, 0] }, hints: { handleLength: 0.15, handleThickness: 0.0122, handleHeight: 0.0208, bladeLength: 0.125, bladeHeight: 0.016 } },
   talon: { sockets: { socket_grip: [-0.042, 0.0079, 0], socket_pivot: [-0.008, 0.0115, 0], socket_ring: [-0.0955, -0.0153, 0], socket_tip: [0.0643, -0.0244, 0] }, hints: { handleLength: 0.084, handleThickness: 0.0126, handleHeight: 0.026, bladeLength: 0.0648, bladeHeight: 0.0265, ringInnerRadius: 0.0115 } },
-  ursus: { sockets: { socket_grip: [-0.062, 0.016, 0], socket_pivot: [-0.009, 0.0171, 0], socket_tip: [0.108, 0.0165, 0] }, hints: { handleLength: 0.139, handleThickness: 0.0144, handleHeight: 0.039, bladeLength: 0.108, bladeHeight: 0.0333 } },
-  classic: { sockets: { socket_grip: [-0.063, 0.019, 0], socket_tip: [0.2, 0.017, 0] }, hints: { handleLength: 0.125, handleThickness: 0.026, handleHeight: 0.0325, bladeLength: 0.2, bladeHeight: 0.038 } },
-  paracord: { sockets: { socket_grip: [-0.052, 0.016, 0], socket_tip: [0.13, 0.0195, 0] }, hints: { handleLength: 0.116, handleThickness: 0.0154, handleHeight: 0.0344, bladeLength: 0.13, bladeHeight: 0.0323 } },
-  survival: { sockets: { socket_grip: [-0.066, 0.017, 0], socket_tip: [0.13, 0.013, 0] }, hints: { handleLength: 0.14, handleThickness: 0.026, handleHeight: 0.032, bladeLength: 0.13, bladeHeight: 0.034 } },
-  nomad: { sockets: { socket_grip: [-0.062, 0.0155, 0], socket_pivot: [-0.008, 0.0158, 0], socket_tip: [0.104, 0.02, 0] }, hints: { handleLength: 0.13, handleThickness: 0.0132, handleHeight: 0.04, bladeLength: 0.104, bladeHeight: 0.0335 } },
   skeleton: { sockets: { socket_grip: [-0.044, 0.014, 0], socket_ring: [-0.097, 0.014, 0], socket_tip: [0.1, 0.012, 0] }, hints: { handleLength: 0.088, handleThickness: 0.0057, handleHeight: 0.028, bladeLength: 0.1, bladeHeight: 0.028, ringInnerRadius: 0.011 } },
-  kukri: { sockets: { socket_grip: [-0.062, 0.017, 0], socket_tip: [0.25, -0.014, 0] }, hints: { handleLength: 0.12, handleThickness: 0.026, handleHeight: 0.033, bladeLength: 0.25, bladeHeight: 0.0541 } },
 };
 
 type V3 = [number, number, number];
@@ -301,7 +293,7 @@ describe.each(KNIVES.map((k) => [k.id, k] as const))('%s', (id) => {
     expect(yHi - yLo).toBeGreaterThan((zHi - zLo) * 2.5);
     const bladeHeight = e.bladeHeight as number;
     expect(bladeHeight).toBeLessThanOrEqual((yHi - yLo) * 1.05);
-    expect(bladeHeight).toBeGreaterThan((yHi - yLo) * (HAWKBILL.includes(id) || id === 'kukri' ? 0.35 : 0.6));
+    expect(bladeHeight).toBeGreaterThan((yHi - yLo) * (HAWKBILL.includes(id) ? 0.35 : 0.6));
   });
 
   it('keeps the sockets and hints the grips were fitted to, within 1 mm', () => {

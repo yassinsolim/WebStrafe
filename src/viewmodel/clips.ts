@@ -7,12 +7,28 @@ export type Ease = 'linear' | 'in' | 'out' | 'inOut' | 'step' | 'back';
 
 export type Key = readonly [t: number, value: number, ease?: Ease];
 
+/** a whole hand and item pose by name at a time ('idle' is the rest pose), with the ease into it */
+export type SeqKey = readonly [t: number, pose: string, ease?: Ease];
+
 export interface Clip {
   duration: number;
   tracks: Readonly<Record<string, readonly Key[]>>;
   /** [time, name] fired once when playback crosses the time */
   events?: ReadonlyArray<readonly [number, string]>;
   loop?: boolean;
+  /** the item travels through these poses on a smooth path (knives) */
+  seq?: readonly SeqKey[];
+  /** a pair's left knife runs this one (mirrored) instead of mirroring the right */
+  seqL?: readonly SeqKey[];
+}
+
+/** where a pose sequence is: between poses a and b, u of the way, with the poses either side for the curve */
+export interface SeqSample {
+  before: string;
+  a: string;
+  b: string;
+  after: string;
+  u: number;
 }
 
 export function applyEase(ease: Ease | undefined, t: number): number {
@@ -61,6 +77,32 @@ export function sampleClip(clip: Clip, channel: string, t: number, fallback = 0)
   return sampleKeys(clip.tracks[channel], t, fallback);
 }
 
+export function sampleSeq(seq: readonly SeqKey[], t: number, out: SeqSample): SeqSample {
+  const at = (i: number) => seq[Math.max(0, Math.min(seq.length - 1, i))][1];
+  if (t <= seq[0][0]) {
+    out.before = out.a = out.b = at(0);
+    out.after = at(1);
+    out.u = 0;
+    return out;
+  }
+  for (let i = 1; i < seq.length; i += 1) {
+    const [t1, , ease] = seq[i];
+    if (t <= t1) {
+      const t0 = seq[i - 1][0];
+      const span = t1 - t0;
+      out.before = at(i - 2);
+      out.a = at(i - 1);
+      out.b = at(i);
+      out.after = at(i + 1);
+      out.u = applyEase(ease, span > 1e-9 ? (t - t0) / span : 1);
+      return out;
+    }
+  }
+  out.before = out.a = out.b = out.after = at(seq.length - 1);
+  out.u = 1;
+  return out;
+}
+
 /** scales every key time so the clip lasts `duration` seconds */
 export function retime(clip: Clip, duration: number): Clip {
   const k = duration / clip.duration;
@@ -73,5 +115,7 @@ export function retime(clip: Clip, duration: number): Clip {
     duration,
     tracks,
     events: clip.events?.map(([t, name]) => [t * k, name] as const),
+    seq: clip.seq?.map(([t, pose, e]) => [t * k, pose, e] as SeqKey),
+    seqL: clip.seqL?.map(([t, pose, e]) => [t * k, pose, e] as SeqKey),
   };
 }

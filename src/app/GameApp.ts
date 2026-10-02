@@ -2874,6 +2874,11 @@ export class GameApp {
     await this.spawnDevCharacters();
     await this.viewmodel.armsReady();
     this.viewmodel.seek(shot.clip as ViewAction, shot.t);
+    // tools: scrub clips in one page load (filmstrips)
+    (window as unknown as { __vmSeek?: (clip: string, t: number) => void }).__vmSeek = (clip, t) => this.viewmodel.seek(clip as ViewAction, t);
+    (window as unknown as { __vmProbe?: () => unknown }).__vmProbe = () => this.viewmodel.probe(this.viewmodelRenderer.camera);
+    (window as unknown as { __vmSetPose?: (name: string, g: number[], b: number[], s: number[], pole?: number[]) => void }).__vmSetPose =
+      (name, g, b, s, pole) => this.viewmodel.debugSetKnifePose(name, g, b, s, pole);
     if (shot.gripCheck) {
       (window as unknown as { __gripReport?: unknown }).__gripReport = await runGripCheck(this.viewmodel, shot.gripStep);
       (window as unknown as { __shotReady?: boolean }).__shotReady = true;

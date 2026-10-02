@@ -1,4 +1,4 @@
-import { Color, type Material, MeshStandardMaterial, type Texture, Vector4 } from 'three';
+import { Color, type Material, MeshPhysicalMaterial, MeshStandardMaterial, type Texture, Vector4 } from 'three';
 import {
   caseHardenedPattern,
   crimsonWebCenters,
@@ -22,7 +22,7 @@ import { finishFragmentShader, finishVertexShader } from './shaders';
 /** wear is quantized to this step for material sharing, finer than any visible change */
 export const FINISH_WEAR_STEP = 0.005;
 const IDLE_LIMIT = 48;
-const PROGRAM_VERSION = 1;
+const PROGRAM_VERSION = 2;
 
 interface Entry {
   key: string;
@@ -98,6 +98,17 @@ const EDGE_POLISH: Readonly<Record<KnifeFinishWearStyle, number>> = {
   anodized: 0.3,
   patina: 0.45,
   etched: 0.35,
+};
+
+// the clear coat over a blade finish: candy anodizing is a glossy lacquer over
+// coloured metal (that white gloss over the colour is most of the cs look),
+// paint gets a satin sheen, bare steel finishes none. [amount, roughness]
+const CLEARCOAT: Readonly<Record<KnifeFinishWearStyle, readonly [number, number]>> = {
+  none: [0, 0],
+  paint: [0.35, 0.3],
+  anodized: [1, 0.035],
+  patina: [0.25, 0.12],
+  etched: [0.4, 0.08],
 };
 
 /** inverse normal cdf (abramowitz and stegun 26.2.23), good to 4.5e-4 */
@@ -193,7 +204,12 @@ export function acquireSurfaceMaterial(
   const detail = src ? `${src.normalMap?.uuid ?? '-'}|${src.aoMap?.uuid ?? '-'}` : '-';
   const key = `${resolved.id}|${part}|w${step}|s${seed}|${detail}`;
   return acquire(key, () => {
-    const material = new MeshStandardMaterial({ name: `knife_finish_${part}`, color: 0xffffff, metalness: 1, roughness: 0.3 });
+    const material = new MeshPhysicalMaterial({ name: `knife_finish_${part}`, color: 0xffffff, metalness: 1, roughness: 0.3 });
+    if (part === 'blade') {
+      const [coat, coatRough] = CLEARCOAT[resolved.finish.wearStyle];
+      material.clearcoat = coat;
+      material.clearcoatRoughness = coatRough;
+    }
     if (src?.normalMap) {
       material.normalMap = src.normalMap;
       material.normalScale.copy(src.normalScale);

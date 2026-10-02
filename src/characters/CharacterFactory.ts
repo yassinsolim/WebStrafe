@@ -1,7 +1,7 @@
 import { Color, Group, Mesh, MeshStandardMaterial } from 'three';
 import type { PlayerModel } from '../network/types';
 import { createPlayerModel } from '../multiplayer/ProceduralPlayer';
-import { applyKnifeIdlePose, buildArmRig, type ArmRig } from '../multiplayer/playerRig';
+import { applyKnifeIdlePose, applyMenuIdlePose, buildArmRig, type ArmRig } from '../multiplayer/playerRig';
 import { ArmorCharacter } from './ArmorCharacter';
 import { CharacterLibrary } from './library';
 import type { CharacterLook } from './look';
@@ -9,8 +9,11 @@ import type { CharacterToneMap } from './catalog';
 import { loadSkins } from './skins';
 
 export interface CharacterOptions {
-  /** 'stance' holds the knife idle and breathes on update, 'none' leaves the bones to the caller */
-  pose?: 'stance' | 'none';
+  /**
+   * 'stance' holds the combat knife idle and breathes on update, 'menu' plays the
+   * relaxed menu idle (knife low, the odd twirl), 'none' leaves the bones to the caller
+   */
+  pose?: 'stance' | 'menu' | 'none';
   /** pin a level of detail, default switches by camera distance */
   lod?: 0 | 1 | 2 | 'auto';
   /** the menu stages tone map with aces, the world with the map's grade (default) */
@@ -78,7 +81,9 @@ class PlaceholderCharacter implements CharacterHandle {
   }
 
   update(_dt: number, nowSec: number): void {
-    if (this.rig && this.options.pose !== 'none') applyKnifeIdlePose(this.rig, Math.sin(nowSec * 1.4));
+    if (!this.rig || this.options.pose === 'none') return;
+    if (this.options.pose === 'menu') applyMenuIdlePose(this.rig, nowSec);
+    else applyKnifeIdlePose(this.rig, Math.sin(nowSec * 1.4));
   }
 
   dispose(): void {
@@ -111,7 +116,7 @@ export function createCharacterSync(
   team: PlayerModel,
   options: CharacterOptions = {},
 ): CharacterHandle {
-  const opts = { pose: 'stance' as const, ...options };
+  const opts: CharacterOptions = { pose: 'stance', ...options };
   return library ? new ArmorCharacter(library, look, team, opts) : new PlaceholderCharacter(look, team, opts);
 }
 

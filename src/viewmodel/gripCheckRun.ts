@@ -1,6 +1,6 @@
 import { KNIVES, type KnifeId } from '../combat/knives';
 import type { GripCheck } from './gripCheck';
-import { knifeInspectCount } from './viewmodelClips';
+import { knifeInspectCount } from './knifeClips';
 import type { ViewAction, ViewmodelSystem } from './ViewmodelSystem';
 
 /** frames checked for every knife: idle plus key moments of each clip */

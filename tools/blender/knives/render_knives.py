@@ -35,9 +35,9 @@ while _rest:
         MODES.append(a)
 IDS = OPTS["--ids"].split(",") if "--ids" in OPTS else None
 SAMPLES = int(OPTS.get("--samples", 48))
-ORDER = ["bayonet", "m9_bayonet", "karambit", "butterfly", "flip", "gut", "huntsman", "falchion", "shadow_daggers",
-         "bowie", "navaja", "stiletto", "talon", "ursus", "classic", "paracord", "survival", "nomad", "skeleton", "kukri"]
-FOLDERS = ["flip", "falchion", "navaja", "stiletto", "talon", "ursus", "nomad"]
+ORDER = ["karambit", "butterfly", "m9_bayonet", "talon", "skeleton", "bayonet",
+         "flip", "stiletto", "huntsman", "bowie", "gut", "shadow_daggers"]
+FOLDERS = ["flip", "stiletto", "talon"]
 TILE_DIR = os.path.join(K.TMP, "tiles")
 
 

@@ -47,8 +47,8 @@ describe('weapon stats', () => {
 });
 
 describe('knife silhouettes', () => {
-  it('builds finite svg paths for all 20 knives', () => {
-    expect(KNIVES).toHaveLength(20);
+  it('builds finite svg paths for every knife', () => {
+    expect(KNIVES).toHaveLength(12);
     for (const knife of KNIVES) {
       const art = knifeSilhouette(knife);
       const numbers = [art.viewBox, art.blade, art.handle, art.guard ?? ''].join(' ').match(/-?\d+(\.\d+)?(e-?\d+)?/g) ?? [];

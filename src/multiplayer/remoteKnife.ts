@@ -7,7 +7,7 @@ import type { KnifeCosmetic } from '../network/cosmetics';
 import { attachKnifeModel } from './playerRig';
 
 /** knife remote players hold when they haven't picked one */
-export const DEFAULT_REMOTE_KNIFE: KnifeId = 'classic';
+export const DEFAULT_REMOTE_KNIFE: KnifeId = 'bayonet';
 const CACHE_LIMIT = 12;
 const templates = new Map<string, Group>();
 
