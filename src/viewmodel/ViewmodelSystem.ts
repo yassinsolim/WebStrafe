@@ -12,7 +12,7 @@ import type { PlayerModel } from '../network/types';
 import { sampleClip, sampleSeq, retime, type Clip, type SeqSample } from './clips';
 import { blendHandPose, createHandPose, HAND_POSES, type HandPose, type HandPoseName, type MutableHandPose } from './handPoses';
 import { frameFromYZ } from './ik';
-import { frameXY, KNIFE_POSES, knifeKey, type ItemBase } from './knifePoses';
+import { frameXY, handKey, KNIFE_POSES, knifeKey, resolveKnifeKey, type ItemBase } from './knifePoses';
 import { alignRingGrip, fittedGripSpec, gripKindFor, knifeGripSpec, measureHandleDiameter, type KnifeGripSpec } from './knifeGrips';
 import { knifeClip, knifeInspectCount, type KnifeClipName } from './knifeClips';
 import {
@@ -183,6 +183,8 @@ interface KnifeRig {
   base: ItemBase;
   /** the key poses its clips walk through (KNIFE_POSES), by name */
   poses: Record<string, ItemBase>;
+  /** the elbow for keys that don't set their own (the grip's usual one, not the idle's) */
+  pole: Vector3;
   /** the socket the hand anchors to, knife frame */
   anchorLocal: Vector3;
   /** the part that carries that socket (a balisong's bite handle, otherwise the knife) and the socket in its frame */
@@ -676,7 +678,7 @@ export class ViewmodelSystem {
     const b = at(seqAt.b);
     outRot.slerpQuaternions(a.rotation, b.rotation, seqAt.u);
     catmullRom(at(seqAt.before).position, a.position, b.position, at(seqAt.after).position, seqAt.u, outPos);
-    const fallback = rig.base.pole ?? POLE_R;
+    const fallback = rig.pole;
     outPole.lerpVectors(a.pole ?? fallback, b.pole ?? fallback, seqAt.u);
   }
 
@@ -1245,6 +1247,17 @@ export class ViewmodelSystem {
     else rig.poses[name] = pose;
   }
 
+  /** tools: the same, placed by the fist (where it is, where the knuckles point, where the back of the hand faces) */
+  public debugSetHandPose(name: string, fist: number[], knuckles: number[], back: number[], pole?: number[]): void {
+    const rig = this.knife;
+    if (!rig) return;
+    const elbow = pole ? v(pole[0], pole[1], pole[2]) : KNIFE_POSES[rig.grip.kind].pole.clone();
+    const key = handKey(v(fist[0], fist[1], fist[2]), v(knuckles[0], knuckles[1], knuckles[2]), v(back[0], back[1], back[2]), elbow);
+    const pose = resolveKnifeKey(key, rig.grip);
+    if (name === 'idle') rig.base = pose;
+    else rig.poses[name] = pose;
+  }
+
   /**
    * tools: where the knife and the hands land on screen (ndc, x right, y up,
    * plus depth in metres) and how far the right wrist bends off the forearm
@@ -1401,6 +1414,10 @@ export class ViewmodelSystem {
     const bitePin = handleBite ? handleBite.getWorldPosition(new Vector3()) : null;
     // the knife group sits at its origin inside the holder, so world = local here
     this.content.add(holder);
+    const poseSet = KNIFE_POSES[grip.kind];
+    const idle = resolveKnifeKey(poseSet.idle, grip);
+    const poses: Record<string, ItemBase> = {};
+    for (const [name, key] of Object.entries(poseSet.poses)) poses[name] = resolveKnifeKey(key, grip);
     return {
       anchorNode,
       anchorInNode,
@@ -1411,8 +1428,9 @@ export class ViewmodelSystem {
       knife,
       grip,
       ringHold,
-      base: { ...KNIFE_POSES[grip.kind].idle, pole: KNIFE_POSES[grip.kind].idle.pole ?? KNIFE_POSES[grip.kind].pole },
-      poses: { ...KNIFE_POSES[grip.kind].poses },
+      base: { ...idle, pole: idle.pole ?? poseSet.pole },
+      poses,
+      pole: poseSet.pole,
       anchorLocal,
       pivotLocal,
       bladePivot: knife.getObjectByName(KNIFE_NODES.bladePivot) ?? null,

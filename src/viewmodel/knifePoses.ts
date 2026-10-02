@@ -1,5 +1,6 @@
 import { Matrix4, Quaternion, Vector3 } from 'three';
-import type { KnifeGripKind } from './knifeGrips';
+import { frameFromYZ } from './ik';
+import type { KnifeGripKind, KnifeGripSpec } from './knifeGrips';
 
 /**
  * the key poses first person knife clips walk through (clip.seq), per way of
@@ -18,11 +19,20 @@ export interface ItemBase {
   pole?: Vector3;
 }
 
+/** a key placed by the hand instead (the knife follows from its grip): wrist and hand bone frame */
+export interface HandKey {
+  wrist: Vector3;
+  hand: Quaternion;
+  pole?: Vector3;
+}
+
+export type KnifeKey = ItemBase | HandKey;
+
 export interface KnifePoses {
-  idle: ItemBase;
+  idle: KnifeKey;
   /** the elbow for poses that don't set their own */
   pole: Vector3;
-  poses: Readonly<Record<string, ItemBase>>;
+  poses: Readonly<Record<string, KnifeKey>>;
 }
 
 const v = (x: number, y: number, z: number): Vector3 => new Vector3(x, y, z);
@@ -40,6 +50,25 @@ export function knifeKey(grip: Vector3, blade: Vector3, spine: Vector3, pole?: V
   return { position: grip, rotation: frameXY(blade, spine), pole };
 }
 
+// middle of the closed fist in the hand bone's frame
+const FIST_CENTRE = new Vector3(0, 0.093, -0.02);
+
+/** a key placed by the fist: where it is, where the knuckles point and where the back of the hand faces */
+export function handKey(fist: Vector3, knuckles: Vector3, back: Vector3, pole?: Vector3): HandKey {
+  const hand = frameFromYZ(knuckles, back, new Quaternion());
+  return { wrist: fist.clone().sub(FIST_CENTRE.clone().applyQuaternion(hand)), hand, pole };
+}
+
+/** the knife pose a key puts the knife in, for a knife held with `grip` */
+export function resolveKnifeKey(key: KnifeKey, grip: KnifeGripSpec): ItemBase {
+  if ('position' in key) return key;
+  return {
+    position: key.wrist.clone().add(grip.anchorInHand.clone().applyQuaternion(key.hand)),
+    rotation: key.hand.clone().multiply(grip.knifeInHand),
+    pole: key.pole,
+  };
+}
+
 // elbows: out to the right (the usual hammer grip), down and in front (backhands
 // and the ring grip), and low on the right
 const ELBOW_OUT = v(1, -0.15, -0.1);
@@ -47,10 +76,10 @@ const ELBOW_IN = v(0.3, -0.6, -0.5);
 const ELBOW_LOW = v(0.6, -0.6, -0.2);
 const ELBOW_DOWN = v(0.55, -0.7, 0.05);
 
-// hammer grip (and the balisong): the arm comes in from the right, the blade
-// points up and in toward the middle with the spine up and its flat to the eye
+// hammer grip (and the balisong): like cs2, the fist sits low on the right with
+// the elbow down and the blade stands up out of it, edge toward the middle
 const HAMMER: KnifePoses = {
-  idle: knifeKey(v(0.17, -0.125, -0.3), v(-0.5, 0.33, -0.8), v(0.58, 0.82, -0.02)),
+  idle: knifeKey(v(0.155, -0.105, -0.3), v(-0.1, 0.95, -0.3), v(0.95, 0.05, 0.3), ELBOW_DOWN),
   pole: ELBOW_OUT,
   poses: {
     // draws start out of view low on the right
@@ -84,11 +113,14 @@ const HAMMER: KnifePoses = {
   },
 };
 
-// reverse grip on the ring (karambit, talon): the fist low on the right and the
-// claw out to the left of it curving up, flat to the eye. slashes rake the claw
-// across behind the fist, the heavy cocks it high and rips it down
+// reverse grip on the ring (karambit, talon): like cs2, an upright fist on the
+// right with the handle standing straight up through it, the ring on top under
+// the index and the claw hanging out under the little finger, curving down to
+// the left. the idle is placed by the fist so the wrist stays straight.
+// slashes rake the claw across behind the fist, the heavy cocks it high and
+// rips it down
 const RING: KnifePoses = {
-  idle: knifeKey(v(0.19, -0.07, -0.28), v(-0.8, -0.1, -0.6), v(-0.23, -0.86, 0.45)),
+  idle: handKey(v(0.13, 0, -0.25), v(-0.81, 0.5, -0.3), v(-0.04, -0.56, -0.83), v(0.9, -0.5, 0.1)),
   pole: ELBOW_IN,
   poses: {
     low: knifeKey(v(0.3, -0.4, -0.22), v(0.6, -0.1, -0.8), v(0.8, 0, 0.6), ELBOW_OUT),

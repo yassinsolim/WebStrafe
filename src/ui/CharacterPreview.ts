@@ -28,6 +28,7 @@ import { buildProceduralKnife, disposeProceduralKnife, KNIFE_NODES } from '../co
 import { disposeKnifeModel, isKnifeModel, loadKnifeModel } from '../cosmetics/knifeAssets';
 import { applyKnifeFinish } from '../cosmetics/finishes/applyFinish';
 import { defaultKnifeSelection, type KnifeLoadoutSelection } from '../cosmetics/finishes/selection';
+import { gripKindFor } from '../viewmodel/knifeGrips';
 
 const TAU = Math.PI * 2;
 const FRAME_PADDING = 1.18;
@@ -208,7 +209,7 @@ export class CharacterPreview {
       this.knife.removeFromParent();
       disposeHeldKnife(this.knife);
     }
-    this.knife = holdKnife(model);
+    this.knife = holdKnife(model, gripKindFor(getKnife(pick.knifeId)) === 'reverse_ring');
     hand.add(this.knife);
   }
 
@@ -288,18 +289,38 @@ export const PREVIEW_BG = new Color(0x0a0c12);
 /**
  * wraps a knife for the hand the way the remote players' knives are: grip
  * socket at the origin, blade along the hand bone's pointing axis, under a
- * holder named like theirs so the menu idle seats and twirls it
+ * holder named like theirs so the menu idle seats and twirls it. ring knives
+ * (`reverse`) are turned end for end so the claw comes out under the little
+ * finger and the ring sits at the index, and they twirl round the ring
  */
-function holdKnife(model: Object3D): Object3D {
+function holdKnife(model: Object3D, reverse = false): Object3D {
   model.updateMatrixWorld(true);
   const grip = model.getObjectByName(KNIFE_NODES.grip);
   if (grip) model.position.sub(grip.getWorldPosition(new Vector3()));
   const wrapper = new Group();
   wrapper.name = 'RemoteKnifeTemplate';
   wrapper.rotation.set(0, 0, Math.PI / 2);
-  wrapper.add(model);
+  if (reverse) {
+    // turned about the spine axis, so the edge still faces the same way
+    model.updateMatrixWorld(true);
+    const ring = model.getObjectByName(KNIFE_NODES.ring)?.getWorldPosition(new Vector3());
+    const flip = new Group();
+    flip.name = 'RemoteKnifeFlip';
+    flip.rotation.y = Math.PI;
+    flip.add(model);
+    if (ring) {
+      // the ring at the wrapper's origin (the twirl's pivot), the grip still in the fist
+      const pivot = ring.applyQuaternion(flip.quaternion);
+      flip.position.copy(pivot).negate();
+      wrapper.position.copy(pivot).applyQuaternion(wrapper.quaternion);
+    }
+    wrapper.add(flip);
+  } else {
+    wrapper.add(model);
+  }
   const holder = new Group();
   holder.name = 'RemoteKnifeModel';
+  holder.userData.reverseGrip = reverse;
   holder.position.set(0.039, -0.0034, 0.0602);
   holder.rotation.set(1.18, -0.58, -0.5);
   holder.add(wrapper);
@@ -310,8 +331,9 @@ function holdKnife(model: Object3D): Object3D {
 }
 
 function disposeHeldKnife(root: Object3D): void {
-  // a held knife is the model wrapped twice; a bare model comes straight from the loader
-  const model = root.name === 'RemoteKnifeModel' ? root.children[0]?.children[0] : root;
+  // a held knife is the model wrapped twice (three times for ring knives); a bare model comes straight from the loader
+  let model = root.name === 'RemoteKnifeModel' ? root.children[0]?.children[0] : root;
+  if (model?.name === 'RemoteKnifeFlip') model = model.children[0];
   if (!model) return;
   if (isKnifeModel(model)) disposeKnifeModel(model);
   else disposeProceduralKnife(model as Group);

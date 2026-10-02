@@ -2879,6 +2879,8 @@ export class GameApp {
     (window as unknown as { __vmProbe?: () => unknown }).__vmProbe = () => this.viewmodel.probe(this.viewmodelRenderer.camera);
     (window as unknown as { __vmSetPose?: (name: string, g: number[], b: number[], s: number[], pole?: number[]) => void }).__vmSetPose =
       (name, g, b, s, pole) => this.viewmodel.debugSetKnifePose(name, g, b, s, pole);
+    (window as unknown as { __vmSetHand?: (name: string, f: number[], k: number[], b: number[], pole?: number[]) => void }).__vmSetHand =
+      (name, f, k, b, pole) => this.viewmodel.debugSetHandPose(name, f, k, b, pole);
     if (shot.gripCheck) {
       (window as unknown as { __gripReport?: unknown }).__gripReport = await runGripCheck(this.viewmodel, shot.gripStep);
       (window as unknown as { __shotReady?: boolean }).__shotReady = true;
@@ -3072,7 +3074,9 @@ export class GameApp {
       return distance < hit.distance + 0.5 && (dx * forward.x + dz * forward.z) / Math.max(distance, 1e-3) > 0.7;
     });
     if (!playerInWay) {
-      this.audio.playAt('knifeHitWall', hit.point, { delay: kind === 'primary' ? 0.09 : 0.16 });
+      // the knife's stab only reaches the wall with the thrust, ~0.3 s in
+      const delay = kind === 'primary' ? 0.09 : held === 'katana' ? 0.16 : 0.3;
+      this.audio.playAt('knifeHitWall', hit.point, { delay });
     }
   }
 

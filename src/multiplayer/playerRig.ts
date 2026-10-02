@@ -517,18 +517,17 @@ export function applyMenuIdlePose(rig: ArmRig, t: number, phase = 0): void {
 
   // knife arm: hanging with the elbow soft, or up in front of the hip for the twirl
   const up = f.up;
+  // ring knives (reverse grip, claw under the little finger) bring the forearm forward so the claw hangs in view
+  const pose = knife?.userData.reverseGrip === true ? MENU_RING : MENU;
   aimBlend(rig.rightUpper, MENU.rightUpper, MENU.rightUpperUp, up, breath * 0.01);
-  aimBlend(rig.rightLower, MENU.rightLower, MENU.rightLowerUp, up, breath * 0.01);
+  aimBlend(rig.rightLower, pose.rightLower, MENU.rightLowerUp, up, breath * 0.01);
   if (knife) {
     // the menu seat for the knife, with the twirl undone while the fist is aimed
     knife.position.copy(MENU_KNIFE_GRIP_POSITION);
     knife.rotation.copy(MENU_KNIFE_GRIP_ROTATION);
     const turn = knife.children[0];
     if (turn) turn.rotation.z = Math.PI / 2;
-    // the stance seat leans the blade back past the wrist; hanging, it would
-    // point up into the hip, so the blade comes round to carry on from the fist
-    reseatKnife(rig.rightHand, knife, MENU_BLADE_TO_HAND);
-    aimKnife(rig.rightHand, knife, blendDir(MENU.rightHand, MENU.rightHandUp, up, blendTmp), blendDir(MENU.blade, MENU.bladeUp, up, blendTmp3));
+    aimKnife(rig.rightHand, knife, blendDir(pose.rightHand, pose.rightHandUp, up, blendTmp), blendDir(pose.blade, pose.bladeUp, up, blendTmp3));
     // the knife turns once round the grip in the loosened fingers
     if (turn) turn.rotation.z = Math.PI / 2 + f.spin * Math.PI * 2;
   } else {
@@ -562,47 +561,15 @@ export function applyMenuIdlePose(rig: ArmRig, t: number, phase = 0): void {
   }
 }
 
-// angle between where the menu fist points and the blade (the stance seat has about 133)
-const MENU_BLADE_TO_HAND = 50 * DEG;
-const seatAxis = new Vector3();
-const seatHand = new Vector3();
-const seatBlade = new Vector3();
-const seatQ = new Quaternion();
-const seatParent = new Quaternion();
-
-/**
- * turns a held knife about its grip, in the plane of the hand's pointing axis
- * and the blade, so the blade sits `angle` off the way the hand points
- */
-function reseatKnife(hand: Bone, knife: Object3D, angle: number): void {
-  const grip = knife.getObjectByName(KNIFE_NODES.grip);
-  const tip = knife.getObjectByName('socket_tip');
-  if (!grip || !tip) return;
-  hand.updateWorldMatrix(true, false);
-  knife.updateWorldMatrix(true, true);
-  hand.getWorldQuaternion(aimWorld);
-  seatHand.set(hand.name.includes('_r_') ? -1 : 1, 0, 0).applyQuaternion(aimWorld);
-  tip.getWorldPosition(seatBlade);
-  seatBlade.sub(grip.getWorldPosition(seatAxis)).normalize();
-  seatAxis.crossVectors(seatBlade, seatHand);
-  if (seatAxis.lengthSq() < 1e-8) return;
-  seatAxis.normalize();
-  const turn = seatBlade.angleTo(seatHand) - angle;
-  // a world turn about the grip (the holder's origin), applied in the holder's parent frame
-  knife.parent!.getWorldQuaternion(seatParent);
-  seatQ.setFromAxisAngle(seatAxis, turn).multiply(seatParent);
-  knife.quaternion.premultiply(seatParent.invert().multiply(seatQ));
-}
-
 // menu idle directions, the model's frame (faces +z, left side +x)
 const MENU = {
   // knife arm hanging a little away from the body, the elbow soft
   rightUpper: new Vector3(-0.25, -0.96, 0.07),
   rightLower: new Vector3(-0.12, -0.86, 0.5),
-  // the fist tipped forward off the forearm
-  rightHand: new Vector3(-0.1, -0.5, 0.86),
-  // blade down along the leg, the tip a little forward
-  blade: new Vector3(-0.12, -0.97, 0.2),
+  // the fist hanging on from the forearm, the knife seated as in the stance
+  rightHand: new Vector3(-0.12, -0.95, 0.28),
+  // so the blade comes out of the thumb side forward and a little out, edge down
+  blade: new Vector3(-0.55, -0.25, 0.8),
   // the twirl: forearm up and out to the side, blade up
   rightUpperUp: new Vector3(-0.38, -0.88, 0.28),
   rightLowerUp: new Vector3(-0.3, 0.05, 0.95),
@@ -611,6 +578,16 @@ const MENU = {
   leftUpper: new Vector3(0.22, -0.97, 0.04),
   leftLower: new Vector3(0.13, -0.9, 0.42),
   leftHand: new Vector3(0.1, -0.88, 0.46),
+};
+// ring knives: forearm forward from the soft elbow, the knuckles turned in
+// across the body (thumb up) so the claw hangs under the fist with its flat to
+// the front, curving in; for the twirl it spins round the index in the ring
+const MENU_RING = {
+  rightLower: new Vector3(0.1, -0.35, 0.93),
+  rightHand: new Vector3(0.75, -0.25, 0.6),
+  blade: new Vector3(0.1, -0.98, 0.15),
+  rightHandUp: new Vector3(0.55, 0.05, 0.83),
+  bladeUp: new Vector3(0.15, -0.95, 0.25),
 };
 // one twirl every MENU_FLOURISH_EVERY seconds, MENU_FLOURISH_AT into the cycle
 export const MENU_FLOURISH_EVERY = 11;

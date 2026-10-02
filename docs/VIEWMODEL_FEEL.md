@@ -50,18 +50,22 @@ rotation < 0.15 rad) and composited every frame.
 - Menu idle (`applyMenuIdlePose` in `playerRig.ts`, the `'menu'` character
   pose): relaxed and sure of itself. Weight on the right leg with the hips
   tipped over it and the shoulders tipped back the other way, the left knee easy
-  on the ball of the foot, the knife arm hanging with the blade down along the
-  leg and the free hand loose. It breathes, drifts its weight, looks around
-  slowly, and every 11 s brings the knife up beside the shoulder and twirls it
-  once round the grip before letting it hang again. The menu character holds
-  the player's own knife and finish. Rigs without mpfb hands keep the stance.
+  on the ball of the foot, the knife arm hanging with the knife held forward
+  and a little out, edge down, and the free hand loose. It breathes, drifts its
+  weight, looks around slowly, and every 11 s brings the knife up beside the
+  shoulder and twirls it once before letting it hang again. The menu character
+  holds the player's own knife and finish. Rigs without mpfb hands keep the
+  stance.
 - Exposed player eyes receive small iris, pupil, and catchlight discs attached to
   the eye bones over a warm sclera cover, so the source texture cannot fall back
   to a flat white stare. Counter-terrorist gas-mask lenses remain untouched.
 - The menu knife follows the weapon-hand helper while the anatomical wrist and
-  fingers rotate into the grip. In the menu idle the knife is turned about its
-  grip so the blade carries on 50 degrees off the fist instead of leaning back
-  past the wrist, which would point it up into the hip while the arm hangs.
+  fingers rotate into the grip, seated as in the combat stance (blade out of
+  the thumb side, edge toward the knuckles). Ring knives (karambit, talon) are
+  turned end for end in the hand (`holdKnife` in `CharacterPreview.ts`): the
+  index goes through the ring, the claw hangs out under the little finger with
+  its flat to the front, the forearm comes forward so it stays in view, and the
+  twirl spins it round the index through the ring.
 - The integrated first-person knife rig is enlarged and recentered so both hands
   and the complete idle blade stay readable through idle and attack motion.
 - First-person knife clips walk the knife through whole key poses
@@ -71,7 +75,13 @@ rotation < 0.15 rad) and composited every frame.
   the keys (`clip.seq`), so swings arc and pass through keys without stopping,
   and a new clip starts from wherever the last one left the knife. The poses
   were solved for a natural wrist with the pose scan tools, so the edge leads
-  every slash where the wrist allows it.
+  every slash where the wrist allows it. A key can also be placed by the fist
+  (`handKey`: where the fist is, where the knuckles point, where the back of
+  the hand faces) and the knife follows from its grip. Keys without their own
+  elbow use the grip's usual one, never the idle's.
+- The idles were matched to CS2 footage. Hammer grips (and the balisong): the
+  fist low on the right with the elbow down and the blade standing up out of
+  it, edge toward the middle.
 - Like CS2, only the knife hand shows (both for the shadow daggers). Slashes
   wind up for a few frames, cut through the crosshair edge first by about
   0.12 s (the hit lands on the click) and carry through before a slower
@@ -81,9 +91,11 @@ rotation < 0.15 rad) and composited every frame.
   from low on the right with the knife's flourish (twirl, toss, flip open,
   switch, balisong, ring spin) and settle by about 0.6 to 0.9 s. The shadow
   daggers jab one fist at a time (`clip.seqL` moves the left on its own).
-- Ring knives (karambit, talon) idle with the claw out to the left of the fist
-  curving up, its flat to the eye; slashes rake the claw across behind the fist,
-  the heavy cocks it high and rips it down. Inspects show one flat, then the
+- Ring knives (karambit, talon) idle like CS2's: an upright fist on the right
+  with the handle standing straight up through it, the ring on top under the
+  index, the claw hanging out under the little finger and curving down to the
+  left, the palm side toward the eye; slashes rake the claw across behind the
+  fist, the heavy cocks it high and rips it down. Inspects show one flat, then the
   other, then a flourish (twirl, toss, fold and flick or fan, depending on the
   knife); about one press in five plays the knife's rarer inspect instead, and
   pressing inspect again restarts it.
