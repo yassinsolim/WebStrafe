@@ -1,8 +1,11 @@
 # Armored characters
 
-Third-person player models: a real human body under four swappable armor sets
-(Strafe, Anvil, Vector, Quill), five slots each (helmet, arms, chest, legs,
-class item). Any mix of pieces merges into one skinned mesh per LOD with one
+Third-person player models: a real human body under five swappable armor sets
+(Strafe, Anvil, Vector, Quill, Edge), five slots each (helmet, arms, chest, legs,
+class item). Edge is the default look: slim gloss black (T) or white (CT) plates
+over chrome under-layers on the synthetic muscle suit, segmented armour on every
+finger bone, a blade visor and an empty scabbard across the back. Its pieces are
+in `tools/blender/characters/edge_set.py`; the other sets share `armor_sets.py`. Any mix of pieces merges into one skinned mesh per LOD with one
 material, recoloured per player from the look (`src/characters/look.ts`).
 
 ## Build
@@ -59,9 +62,10 @@ The look travels in the `armor` part of the shared cosmetics field
 
 ## Budget
 
-LOD0 is about 36k to 45k triangles per character (body about 9k), LOD1 is 40%
-of that and LOD2 is 14%. `src/characters/__tests__/library.test.ts` caps LOD0
-at 50k. Download: GLB about 4.7 MB plus about 2.3 MB of atlas.
+LOD0 is about 36k to 62k triangles per character (body about 9k, Edge the
+heaviest for its finger segments), LOD1 is 40% of that and LOD2 is 14%.
+`src/characters/__tests__/library.test.ts` caps LOD0 at 65k. Download: GLB
+about 5.6 MB plus about 3.5 MB of atlas.
 
 ## Credits
 

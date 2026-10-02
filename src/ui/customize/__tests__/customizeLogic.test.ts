@@ -216,8 +216,8 @@ describe('LookHistory', () => {
     expect(history.record(look({}))).toBe(false);
     expect(history.record(look({ helmet: 'anvil' }))).toBe(true);
     expect(history.record(look({ helmet: 'anvil', legs: 'quill' }))).toBe(true);
-    expect(history.undo()?.legs).toBe('strafe');
-    expect(history.undo()?.helmet).toBe('strafe');
+    expect(history.undo()?.legs).toBe('edge');
+    expect(history.undo()?.helmet).toBe('edge');
     expect(history.undo()).toBeNull();
     expect(history.redo()?.helmet).toBe('anvil');
     expect(history.canRedo).toBe(true);
@@ -274,7 +274,7 @@ describe('look helpers', () => {
 
   it('sameStyle ignores the tag and the watch only', () => {
     expect(sameStyle(mine, { ...mine, tag: 'OTHER', watch: true })).toBe(true);
-    expect(sameStyle(mine, { ...mine, finish: 'gloss' })).toBe(false);
+    expect(sameStyle(mine, { ...mine, finish: mine.finish === 'gloss' ? 'matte' : 'gloss' })).toBe(false);
   });
 
   it('parses the hex formats people type', () => {

@@ -30,7 +30,7 @@ const WATCH_NODES = [
   'watch_hand_minute',
   'watch_hand_second',
 ];
-const KITS = ['strafe', 'anvil', 'vector', 'quill'];
+const KITS = ['strafe', 'anvil', 'vector', 'quill', 'edge'];
 // fp_<set>_<slot>: the runtime paints each slot from the look (src/characters/fpArmor.ts)
 const ARM_MATERIALS = [
   'fp_core_muscle',

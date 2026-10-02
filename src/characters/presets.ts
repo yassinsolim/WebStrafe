@@ -14,6 +14,18 @@ const preset = (id: string, name: string, look: Omit<CharacterLook, 'tag' | 'wat
 
 /** built-in starting points; several mix sets on purpose to show pieces swap freely */
 export const BUILTIN_PRESETS: readonly LookPreset[] = [
+  preset('blackout', 'Blackout', {
+    helmet: 'edge', arms: 'edge', chest: 'edge', legs: 'edge', classItem: 'edge',
+    primary: '#121316', secondary: '#3a3f47', accent: '#b3122e', finish: 'gloss', emblem: 'chevron',
+  }),
+  preset('whiteout', 'Whiteout', {
+    helmet: 'edge', arms: 'edge', chest: 'edge', legs: 'edge', classItem: 'edge',
+    primary: '#d9dde2', secondary: '#2b2e33', accent: '#2f6fd1', finish: 'gloss', emblem: 'reticle',
+  }),
+  preset('quicksilver', 'Quicksilver', {
+    helmet: 'edge', arms: 'edge', chest: 'edge', legs: 'edge', classItem: 'edge',
+    primary: '#8a949f', secondary: '#141518', accent: '#c9a43c', finish: 'metallic', emblem: 'bolt',
+  }),
   preset('dune', 'Dune Runner', {
     helmet: 'strafe', arms: 'strafe', chest: 'strafe', legs: 'strafe', classItem: 'strafe',
     primary: '#c2a67a', secondary: '#556043', accent: '#a4502a', finish: 'worn', emblem: 'chevron',

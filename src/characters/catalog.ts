@@ -10,7 +10,7 @@
 export const ARMOR_SLOTS = ['helmet', 'arms', 'chest', 'legs', 'classItem'] as const;
 export type ArmorSlot = (typeof ARMOR_SLOTS)[number];
 
-export const ARMOR_SETS = ['strafe', 'anvil', 'vector', 'quill'] as const;
+export const ARMOR_SETS = ['strafe', 'anvil', 'vector', 'quill', 'edge'] as const;
 export type ArmorSetId = (typeof ARMOR_SETS)[number];
 /** the class item slot can be left empty */
 export type ClassItemId = ArmorSetId | 'none';
@@ -85,6 +85,19 @@ export const ARMOR_SET_INFO: Record<ArmorSetId, ArmorSetInfo> = {
       chest: 'Quill Coat',
       legs: 'Quill Leggings',
       classItem: 'Quill Sash',
+    },
+  },
+  edge: {
+    id: 'edge',
+    code: 'ed',
+    name: 'Edge',
+    blurb: 'Slim cyborg plates over synthetic muscle, blade visor, a scabbard on the back.',
+    pieces: {
+      helmet: 'Edge Mask',
+      arms: 'Edge Talons',
+      chest: 'Edge Frame',
+      legs: 'Edge Striders',
+      classItem: 'Edge Scabbard',
     },
   },
 };

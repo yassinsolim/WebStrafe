@@ -27,7 +27,7 @@ import sdf
 from suit import FAR, SuitShape
 
 SUIT = SuitShape()
-KITS = ("strafe", "anvil", "vector", "quill")
+KITS = ("strafe", "anvil", "vector", "quill", "edge")
 SQ = math.sqrt(0.5)
 
 
@@ -129,25 +129,27 @@ def arm_surface(p):
 
 
 def forearm_plate(name, kit, poly, gap=0.03, th=0.16, chamfer=0.05, rc=0.12, glow_paths=(), groove_r=0.085,
-                  clip_s=None, tris=900, layer=0.0):
+                  clip_s=None, tris=900, layer=0.0, slot="primary"):
     """a forearm plate. plates that reach into the watch zone get a right arm
     version and a left arm twin cut back past the watch strap"""
     poly = np.asarray(poly, dtype=np.float64)
     start = P.PLATE_START_S
     if poly[:, 1].min() >= start:
         return _forearm_plate(name, kit, poly, gap, th, chamfer, rc, glow_paths, groove_r, clip_s, None, tris,
-                              layer, "both")
-    out = _forearm_plate(name, kit, poly, gap, th, chamfer, rc, glow_paths, groove_r, clip_s, None, tris, layer, "r")
+                              layer, "both", slot)
+    out = _forearm_plate(name, kit, poly, gap, th, chamfer, rc, glow_paths, groove_r, clip_s, None, tris, layer, "r",
+                         slot)
     if poly[:, 1].max() - start > 2.0:
         paths = [[q for q in path if q[1] > start + 0.35] for path in glow_paths]
         paths = [p for p in paths if len(p) >= 2]
         lo_poly = poly.copy()
         out += _forearm_plate(f"{name}_l", kit, lo_poly, gap, th, chamfer, rc, paths, groove_r, clip_s, start,
-                              tris, layer, "l")
+                              tris, layer, "l", slot)
     return out
 
 
-def _forearm_plate(name, kit, poly, gap, th, chamfer, rc, glow_paths, groove_r, clip_s, min_s, tris, layer, side):
+def _forearm_plate(name, kit, poly, gap, th, chamfer, rc, glow_paths, groove_r, clip_s, min_s, tris, layer, side,
+                   slot="primary"):
     base = gap + layer
 
     def foot(p):
@@ -171,7 +173,7 @@ def _forearm_plate(name, kit, poly, gap, th, chamfer, rc, glow_paths, groove_r, 
     bpoly = poly.copy()
     if min_s is not None:
         bpoly[:, 1] = np.maximum(bpoly[:, 1], min_s - 0.3)
-    pieces = [Piece(name, kit, "primary", fn, arm_bounds(bpoly, base + th + 0.1, 0.35 + rc), 0.035, tris, "arm", foot,
+    pieces = [Piece(name, kit, slot, fn, arm_bounds(bpoly, base + th + 0.1, 0.35 + rc), 0.035, tris, "arm", foot,
                     side=side)]
     for k, g in enumerate(grooves):
         glow = glow_strip(f"{name}_glow{k}", kit, arm_point(g[:, 0], g[:, 1], base + th - 0.05), "arm")
@@ -568,8 +570,30 @@ def kit_quill():
     return out
 
 
+def kit_edge():
+    """the cyborg set: a dark under-shell with a glow seam down the top, two black
+    blades either side of it, a chrome ridge and knuckles on the hand, pointed fingers"""
+    k = "edge"
+    out = []
+    under = [(ang(16, 3.7), 3.7), (ang(164, 3.7), 3.7), (ang(168, 22.9), 22.9), (ang(12, 22.9), 22.9)]
+    out += forearm_plate("edge_fore", k, under, th=0.11, chamfer=0.035, rc=0.1, slot="dark",
+                         glow_paths=[[(0.0, 4.4), (0.0, 22.2)]], groove_r=0.07, tris=1100)
+    for i, (d0, d1) in enumerate(((97.0, 152.0), (83.0, 28.0))):
+        blade = [(ang(d0, 4.4), 4.4), (ang(d1, 6.4), 6.4), (ang(d1, 20.4), 20.4), (ang(d0, 22.4), 22.4)]
+        out += forearm_plate(f"edge_blade{i}", k, blade, layer=0.12, th=0.13, chamfer=0.045, rc=0.08, tris=800)
+    out += hand_shell("edge_hand", k, inset=0.3)
+    ridge = [(0.05, 1.5), (0.95, 1.5), (1.3, 4.3), (1.0, 7.0), (0.0, 7.0), (-0.3, 4.3)]
+    out += hand_plate("edge_hand_ridge", k, ridge, layer=ON_SHELL, th=0.1, chamfer=0.035, rc=0.08, slot="metal",
+                      glow_paths=[[(0.5, 2.3), (0.5, 6.3)]], groove_r=0.06, tris=500)
+    out.append(knuckle_caps("edge_knuckles", k, "oval", slot="metal", layer=SHELL_GAP + SHELL_TH))
+    for d in P.FINGER_ORDER:
+        out.append(finger_plates(f"edge_{d}", k, d, (0, 1, 2), width=0.8, th=0.09, tip="point"))
+    out.append(finger_plates("edge_thumb", k, "thumb", (0, 1, 2), width=0.8, th=0.09, tip="point"))
+    return out
+
+
 def all_pieces():
     out = core_pieces()
-    for fn in (kit_strafe, kit_anvil, kit_vector, kit_quill):
+    for fn in (kit_strafe, kit_anvil, kit_vector, kit_quill, kit_edge):
         out += fn()
     return out
