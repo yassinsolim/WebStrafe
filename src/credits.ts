@@ -52,10 +52,47 @@ export const CREDIT_CATEGORY_ORDER: readonly CreditCategory[] = [
 ];
 
 const CC0 = 'https://creativecommons.org/publicdomain/zero/1.0/';
+const CC_BY = 'https://creativecommons.org/licenses/by/4.0/';
 const OFL = 'https://openfontlicense.org/open-font-license-official-text/';
 const MIT = 'https://opensource.org/license/mit';
 
 export const CREDITS: readonly CreditEntry[] = [
+  {
+    id: 'players-skin-ronin',
+    category: 'players',
+    title: '"Sci-FI Warrior Armor", the Ronin skin',
+    author: 'Vasian-Digital3D',
+    license: 'CC BY 4.0',
+    licenseUrl: CC_BY,
+    sourceUrl: 'https://sketchfab.com/3d-models/sci-fi-warrior-armor-9932cc103f2c4daf8aadfc340f04ac00',
+    files: [
+      'public/characters/skins/ronin.glb',
+      'public/characters/skins/ronin_arms.glb',
+      'public/characters/skins/ronin_color.webp',
+      'public/characters/skins/ronin_normal.webp',
+      'public/characters/skins/ronin_data.webp',
+      'public/characters/skins/ronin_mask.webp',
+    ],
+    notes: 'Changed: re-posed and re-weighted onto the WebStrafe skeleton, first-person arms cut from it, textures packed into one atlas with paint masks, lods.',
+  },
+  {
+    id: 'players-skin-sentinel',
+    category: 'players',
+    title: '"Security Cyborg", the Sentinel skin',
+    author: 'fletcherkinnear',
+    license: 'CC BY 4.0',
+    licenseUrl: CC_BY,
+    sourceUrl: 'https://sketchfab.com/3d-models/security-cyborg-94ea8c717c374e3fa8aaa7549235b323',
+    files: [
+      'public/characters/skins/sentinel.glb',
+      'public/characters/skins/sentinel_arms.glb',
+      'public/characters/skins/sentinel_color.webp',
+      'public/characters/skins/sentinel_normal.webp',
+      'public/characters/skins/sentinel_data.webp',
+      'public/characters/skins/sentinel_mask.webp',
+    ],
+    notes: 'Changed: re-posed and re-weighted onto the WebStrafe skeleton, first-person arms cut from it, textures packed into one atlas with paint masks and less metal, lods. The rifle from the original scene is left out.',
+  },
   {
     id: 'players-makehuman-body',
     category: 'players',

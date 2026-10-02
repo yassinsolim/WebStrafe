@@ -12,9 +12,9 @@ describe('look in the shared cosmetics field', () => {
     }
   });
 
-  it('stays within the field limits (12 slots, lowercase tokens)', () => {
+  it('stays within the field limits (16 slots, lowercase tokens)', () => {
     const armor = lookToArmor({ ...defaultLook(), tag: 'ABCDEFGH' });
-    expect(Object.keys(armor).length).toBeLessThanOrEqual(12);
+    expect(Object.keys(armor).length).toBeLessThanOrEqual(16);
     for (const [slot, item] of Object.entries(armor)) {
       expect(slot).toMatch(/^[a-z0-9_-]{1,32}$/);
       expect(item).toMatch(/^[a-z0-9_-]{1,32}$/);

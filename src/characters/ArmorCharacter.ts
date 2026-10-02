@@ -18,7 +18,9 @@ import { ARMOR_SLOTS, type CharacterToneMap } from './catalog';
 import { attachDecals } from './decals';
 import { LOD_LEVELS, mergeParts, type CharacterLibrary, type PartMesh } from './library';
 import type { CharacterLook } from './look';
-import { ALL_JOINTS, buildSkeleton, CAP_HELPERS } from './skeleton';
+import { ALL_JOINTS, bindPose, buildSkeleton, CAP_HELPERS } from './skeleton';
+import { SkinMaterial } from './skinMaterial';
+import type { SkinAsset } from './skins';
 
 export type CharacterDetail = 'high' | 'medium' | 'low';
 
@@ -65,6 +67,7 @@ const CAPE = ['cape_0', 'cape_1', 'cape_2', 'cape_3'];
 const TAIL = ['tail_0', 'tail_1', 'tail_2'];
 const tmpQ = new Quaternion();
 const tmpV = new Vector3();
+const ONE = new Vector3(1, 1, 1);
 const AXIS_Y = new Vector3(0, 1, 0);
 const AXIS_Z = new Vector3(0, 0, 1);
 
@@ -78,10 +81,11 @@ interface ClothBone {
 }
 
 /**
- * a dressed armored character: the shared skeleton, one skinned mesh per lod
- * merged from the chosen pieces (one draw call), the look's material, decals,
- * and cloth bones that swing with movement. the knife stance comes from the
- * same playerRig pose code as before.
+ * a dressed character: the shared skeleton, one skinned mesh per lod (one draw
+ * call), the look's material, and cloth bones that swing with movement. it
+ * wears either a whole-body skin (skins.ts: the skeleton takes the skin's
+ * joint positions) or the kit, merged from the chosen armor pieces with
+ * decals. the knife stance comes from the same playerRig pose code either way.
  */
 const capRel = new Quaternion();
 const capQ = new Quaternion();
@@ -102,6 +106,10 @@ export class ArmorCharacter {
   private readonly meshes: SkinnedMesh[] = [];
   private readonly material = new ArmorMaterial();
   private readonly farMaterial = new ArmorMaterial(true);
+  private readonly skinMaterial = new SkinMaterial();
+  /** the skin worn, null for the kit */
+  private skin: SkinAsset | null = null;
+  private bodyKey = '';
   private readonly cloth: ClothBone[] = [];
   private readonly caps: { name: string; helper: Bone; lower: Bone; child: Bone; bindInv: Quaternion; radius: number; give: number }[] = [];
   private disposeDecals: (() => void) | null = null;
@@ -121,15 +129,10 @@ export class ArmorCharacter {
     const pelvis = this.bones.get('pelvis')!;
     this.root.add(pelvis);
     this.root.updateMatrixWorld(true);
-    for (const [name, bone] of this.bones) this.bindWorld.set(name, bone.matrixWorld.clone());
     this.skeleton = new Skeleton(ALL_JOINTS.map((j) => this.bones.get(j.name)!));
-    // the skeleton's inverses are taken above, so these scales reshape the skinned mesh
-    for (const side of ['l', 'r']) this.bones.get(`leg_upper_${side}`)!.scale.setScalar(LEG_SCALE);
-    this.bones.get('spine_0')!.scale.setScalar(UPPER_SCALE);
-    this.bones.get('head_0')!.scale.setScalar(HEAD_SCALE);
-    // lift the hips by what the longer legs add, so the feet stay on the floor
-    const hip = this.bindWorld.get('leg_upper_l')!.elements[13];
-    pelvis.position.y += hip * (LEG_SCALE - 1);
+    this.skin = this.skinFor(look);
+    this.bodyKey = this.skin?.id ?? 'kit';
+    this.applyBind(this.skin);
     this.lod.name = 'ArmorLod';
     this.root.add(this.lod);
     for (let level = 0; level < LOD_LEVELS; level += 1) {
@@ -167,6 +170,30 @@ export class ArmorCharacter {
   setLook(look: CharacterLook, team: PlayerModel = this.team): void {
     this.look = look;
     this.team = team;
+    const skin = this.skinFor(look);
+    const bodyKey = skin?.id ?? 'kit';
+    if (bodyKey !== this.bodyKey) {
+      this.bodyKey = bodyKey;
+      this.skin = skin;
+      this.applyBind(skin);
+      this.piecesKey = '';
+      this.decalKey = '';
+      this.refreshLodDistances();
+    }
+    if (skin) {
+      this.skinMaterial.applyLook(look, team, this.options.toneMap);
+      if (this.piecesKey !== `skin:${skin.id}`) {
+        this.piecesKey = `skin:${skin.id}`;
+        this.rebuildMeshes();
+      }
+      const skinDecals = `${skin.id}|${look.emblem}|${look.tag}|${look.accent}`;
+      if (skinDecals !== this.decalKey) {
+        this.decalKey = skinDecals;
+        this.disposeDecals?.();
+        this.disposeDecals = attachDecals(skin.anchors, look, this.bones, this.bindWorld, skin.id);
+      }
+      return;
+    }
     this.material.applyLook(look, team, this.options.toneMap);
     this.farMaterial.applyLook(look, team, this.options.toneMap);
     const key = [look.helmet, look.arms, look.chest, look.legs, look.classItem].join('|');
@@ -180,6 +207,48 @@ export class ArmorCharacter {
       this.disposeDecals?.();
       this.disposeDecals = attachDecals(this.library.anchors, look, this.bones, this.bindWorld);
     }
+  }
+
+  /** the skin a look asks for, when the library has it (else the kit) */
+  private skinFor(look: CharacterLook): SkinAsset | null {
+    return look.skin === 'kit' ? null : this.library.skins.get(look.skin) ?? null;
+  }
+
+  /**
+   * puts the skeleton in a body's bind pose: the skin's joint positions (or the
+   * game's for the kit) with the shared bone orientations, so the rig's base
+   * rotations stay valid. the inverses are model space, wherever the root is.
+   */
+  private applyBind(skin: SkinAsset | null): void {
+    const bind = bindPose(skin?.joints ?? ALL_JOINTS);
+    const byName = new Map(bind.map((j) => [j.name, j]));
+    for (const joint of bind) {
+      const bone = this.bones.get(joint.name);
+      if (!bone) continue;
+      const parent = joint.parent ? byName.get(joint.parent) : undefined;
+      if (parent) {
+        const parentInv = parent.quaternion.clone().invert();
+        bone.position.copy(joint.position).sub(parent.position).applyQuaternion(parentInv);
+        bone.quaternion.copy(parentInv.multiply(joint.quaternion));
+      } else {
+        bone.position.copy(joint.position);
+        bone.quaternion.copy(joint.quaternion);
+      }
+      bone.scale.copy(ONE);
+      this.bindWorld.set(joint.name, new Matrix4().compose(joint.position, joint.quaternion, ONE));
+    }
+    this.skeleton.boneInverses = ALL_JOINTS.map((j) => this.bindWorld.get(j.name)!.clone().invert());
+    if (!skin) {
+      // the inverses are the plain bind pose, so these scales reshape the skinned kit
+      for (const side of ['l', 'r']) this.bones.get(`leg_upper_${side}`)!.scale.setScalar(LEG_SCALE);
+      this.bones.get('spine_0')!.scale.setScalar(UPPER_SCALE);
+      this.bones.get('head_0')!.scale.setScalar(HEAD_SCALE);
+      // lift the hips by what the longer legs add, so the feet stay on the floor
+      const hip = this.bindWorld.get('leg_upper_l')!.elements[13];
+      this.bones.get('pelvis')!.position.y += hip * (LEG_SCALE - 1);
+    }
+    this.root.updateMatrixWorld(true);
+    for (const cap of this.caps) cap.bindInv.copy(cap.lower.quaternion).invert();
   }
 
   /** world-space velocity for the cloth, m/s */
@@ -229,14 +298,21 @@ export class ArmorCharacter {
   }
 
   refreshLodDistances(): void {
-    // low draws plain shading without the baked atlas (like the low preset's world, no normal maps):
-    // on weak and software gl the per pixel atlas fetches cost more than the triangles
-    const atlas = detail === 'low' ? null : this.library.atlas;
-    for (const material of [this.material, this.farMaterial]) {
-      if ((material.normalMap ?? null) !== (atlas?.normal ?? null)) material.setAtlas(atlas);
+    if (this.skin) {
+      // low skips the normal map, like the low preset's world
+      this.skinMaterial.setSkin(this.skin, detail !== 'low');
+      for (const mesh of this.meshes) mesh.material = this.skinMaterial;
+    } else {
+      // low draws plain shading without the baked atlas (like the low preset's world, no normal maps):
+      // on weak and software gl the per pixel atlas fetches cost more than the triangles
+      const atlas = detail === 'low' ? null : this.library.atlas;
+      for (const material of [this.material, this.farMaterial]) {
+        if ((material.normalMap ?? null) !== (atlas?.normal ?? null)) material.setAtlas(atlas);
+      }
+      // far lods always skip the fine noise; low skips it up close too
+      this.meshes[0].material = detail === 'low' ? this.farMaterial : this.material;
+      for (let level = 1; level < this.meshes.length; level += 1) this.meshes[level].material = this.farMaterial;
     }
-    // far lods always skip the fine noise; low skips it up close too
-    this.meshes[0].material = detail === 'low' ? this.farMaterial : this.material;
     const pinned = this.options.lod;
     this.lod.levels.length = 0;
     for (const mesh of this.meshes) mesh.removeFromParent();
@@ -256,13 +332,15 @@ export class ArmorCharacter {
     this.disposeDecals = null;
     this.material.dispose();
     this.farMaterial.dispose();
+    this.skinMaterial.dispose();
     this.root.removeFromParent();
   }
 
   private rebuildMeshes(): void {
+    const skin = this.skin;
     for (let level = 0; level < LOD_LEVELS; level += 1) {
       const key = `${this.piecesKey}|${level}`;
-      const geometry = this.library.merged(key, () => mergeParts(this.collect(level)));
+      const geometry = skin ? skin.geometries[level] : this.library.merged(key, () => mergeParts(this.collect(level)));
       const mesh = this.meshes[level];
       geometry.boundingSphere = BOUNDS.clone();
       geometry.boundingBox = BOUNDS_BOX.clone();
@@ -274,7 +352,7 @@ export class ArmorCharacter {
       // identity bind matrix is right wherever the root is now
       mesh.bind(this.skeleton, new Matrix4());
     }
-    this.measureCaps(this.collect(0));
+    this.measureCaps(skin ? skin.parts[0] : this.collect(0));
   }
 
   /** each cap's centre distance from its pivot, from the plates riding it (sets size their caps differently) */

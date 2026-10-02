@@ -113,6 +113,88 @@ export function slotOptions(slot: ArmorSlot): PieceId[] {
   return slot === 'classItem' ? [...ARMOR_SETS, 'none'] : [...ARMOR_SETS];
 }
 
+/**
+ * whole-body skins: artist-made characters (cc-by, CREDITS.md) on the game
+ * skeleton, built by tools/characters/build-skins.sh. 'kit' is the older
+ * piece-by-piece armor (ARMOR_SETS above).
+ */
+export const SKINS = ['ronin', 'sentinel'] as const;
+export type SkinId = (typeof SKINS)[number];
+export type BodyId = SkinId | 'kit';
+export const BODIES: readonly BodyId[] = [...SKINS, 'kit'];
+
+export interface SkinInfo {
+  id: SkinId;
+  /** two letters on the wire */
+  code: string;
+  name: string;
+  blurb: string;
+  /** the model and its author, as CREDITS.md lists them */
+  credit: string;
+  /**
+   * the artist's colours of the three paint zones (primary plates, secondary,
+   * small details), as the atlas build measured them. a look that keeps one
+   * shows that zone exactly as painted; any other colour repaints it
+   */
+  native: { primary: string; secondary: string; accent: string };
+  /** the paint a fresh look on this skin starts with (mostly the artist's) */
+  paint: { primary: string; secondary: string; accent: string };
+  /** what each paint channel covers on this skin, for the colour picker */
+  zones: { primary: string; secondary: string; accent: string };
+  /** mean linear luminance of each zone, so repainting keeps the shading and grime */
+  luminance: [number, number, number];
+}
+
+// colours and luminances from .blender-tmp/characters/skins/<id>_paint.json
+export const SKIN_INFO: Record<SkinId, SkinInfo> = {
+  ronin: {
+    id: 'ronin',
+    code: 'rn',
+    name: 'Ronin',
+    blurb: 'Gunmetal plates over a black suit, gas mask and burning eyes.',
+    credit: '"Sci-FI Warrior Armor" by Vasian-Digital3D (CC BY 4.0)',
+    native: { primary: '#484745', secondary: '#2c2b2b', accent: '#6b4e32' },
+    paint: { primary: '#484745', secondary: '#2c2b2b', accent: '#6b4e32' },
+    zones: { primary: 'Gunmetal plates', secondary: 'Black undersuit and joints', accent: 'Straps, cloth and markings' },
+    luminance: [0.06293, 0.02469, 0.08879],
+  },
+  sentinel: {
+    id: 'sentinel',
+    code: 'sn',
+    name: 'Sentinel',
+    blurb: 'White hard shell over a dark suit, teal helmet and gloves, one big eye.',
+    credit: '"Security Cyborg" by fletcherkinnear (CC BY 4.0)',
+    native: { primary: '#8c8c8c', secondary: '#007684', accent: '#363331' },
+    // the artist's undersuit is a rusty brown, graphite sits better under the white shell
+    paint: { primary: '#8c8c8c', secondary: '#007684', accent: '#2b2e33' },
+    zones: { primary: 'White shell', secondary: 'Helmet and gloves', accent: 'Undersuit' },
+    luminance: [0.2634, 0.14483, 0.03356],
+  },
+};
+
+export const KIT_INFO = { code: 'kt', name: 'Kit', blurb: 'The older armor, built piece by piece.' } as const;
+
+export function isSkinId(value: unknown): value is SkinId {
+  return typeof value === 'string' && (SKINS as readonly string[]).includes(value);
+}
+
+export function isBodyId(value: unknown): value is BodyId {
+  return value === 'kit' || isSkinId(value);
+}
+
+export function bodyCode(id: BodyId): string {
+  return id === 'kit' ? KIT_INFO.code : SKIN_INFO[id].code;
+}
+
+export function bodyFromCode(code: string | undefined): BodyId | undefined {
+  if (code === KIT_INFO.code) return 'kit';
+  return SKINS.find((id) => SKIN_INFO[id].code === code);
+}
+
+export function bodyName(id: BodyId): string {
+  return id === 'kit' ? KIT_INFO.name : SKIN_INFO[id].name;
+}
+
 export const FINISHES = ['matte', 'satin', 'gloss', 'metallic', 'worn', 'camo'] as const;
 export type FinishId = (typeof FINISHES)[number];
 

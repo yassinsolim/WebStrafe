@@ -454,6 +454,11 @@ export class ViewmodelSystem {
     this.armsArmor.setLook(look, team);
   }
 
+  /** settles when a skin's own arms (loaded on first use) are showing */
+  public armsReady(): Promise<void> {
+    return this.armsArmor.ready;
+  }
+
   /** finish for the knife in hand; kept and reapplied whenever the knife rig is rebuilt */
   public setKnifeFinish(selection: KnifeFinishSelection | null): void {
     this.knifeFinish = selection ? { finishId: selection.finishId, wear: selection.wear, seed: selection.seed } : null;

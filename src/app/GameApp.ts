@@ -2872,6 +2872,7 @@ export class GameApp {
       }
     }
     await this.spawnDevCharacters();
+    await this.viewmodel.armsReady();
     this.viewmodel.seek(shot.clip as ViewAction, shot.t);
     if (shot.gripCheck) {
       (window as unknown as { __gripReport?: unknown }).__gripReport = await runGripCheck(this.viewmodel, shot.gripStep);

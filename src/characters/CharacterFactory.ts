@@ -6,6 +6,7 @@ import { ArmorCharacter } from './ArmorCharacter';
 import { CharacterLibrary } from './library';
 import type { CharacterLook } from './look';
 import type { CharacterToneMap } from './catalog';
+import { loadSkins } from './skins';
 
 export interface CharacterOptions {
   /** 'stance' holds the knife idle and breathes on update, 'none' leaves the bones to the caller */
@@ -36,11 +37,16 @@ let libraryPromise: Promise<CharacterLibrary | null> | null = null;
  * fetched, callers then fall back to the old procedural soldiers.
  */
 export function loadCharacterLibrary(): Promise<CharacterLibrary | null> {
-  libraryPromise ??= CharacterLibrary.load().catch((error: unknown) => {
-    // eslint-disable-next-line no-console
-    console.warn('[Characters] armor library failed to load, using fallback models:', error);
-    return null;
-  });
+  libraryPromise ??= Promise.all([CharacterLibrary.load(), loadSkins()])
+    .then(([library, skins]) => {
+      library.skins = skins;
+      return library;
+    })
+    .catch((error: unknown) => {
+      // eslint-disable-next-line no-console
+      console.warn('[Characters] armor library failed to load, using fallback models:', error);
+      return null;
+    });
   return libraryPromise;
 }
 

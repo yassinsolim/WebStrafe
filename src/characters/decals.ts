@@ -92,14 +92,16 @@ function quad(width: number, height: number, u0: number, u1: number): BufferGeom
 /**
  * builds the decal quads for a look and parents them to their bones. returns
  * a disposer. no-op when there is no canvas (node tests) or nothing to show.
+ * `set` picks the anchors: the kit's chest piece, or a skin's id
  */
 export function attachDecals(
   anchors: DecalAnchor[],
   look: CharacterLook,
   bones: Map<string, Bone>,
   bindWorld: Map<string, Matrix4>,
+  set: string = look.chest,
 ): (() => void) | null {
-  const wanted = anchors.filter((a) => a.set === look.chest && (a.kind === 'emblem' ? look.emblem !== 'none' : look.tag !== ''));
+  const wanted = anchors.filter((a) => a.set === set && (a.kind === 'emblem' ? look.emblem !== 'none' : look.tag !== ''));
   if (wanted.length === 0) return null;
   const texture = paint(look);
   if (!texture) return null;

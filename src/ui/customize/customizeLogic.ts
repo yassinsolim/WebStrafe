@@ -1,4 +1,4 @@
-import { SWATCHES, type ArmorSlot } from '../../characters/catalog';
+import { SKIN_INFO, SWATCHES, type ArmorSlot, type BodyId } from '../../characters/catalog';
 import { looksEqual, type CharacterLook } from '../../characters/look';
 
 /**
@@ -304,6 +304,18 @@ export function sameStyle(a: CharacterLook, b: CharacterLook): boolean {
  */
 export function applyPreset(current: CharacterLook, preset: CharacterLook, keepPersonal: boolean): CharacterLook {
   return keepPersonal ? { ...preset, tag: current.tag, watch: current.watch } : { ...preset };
+}
+
+/**
+ * switches the body. a skin starts in its own paint, to repaint from there
+ * (worn and camo are kit paint jobs, skins go satin); the kit keeps the
+ * current colours and pieces
+ */
+export function withBody(look: CharacterLook, body: BodyId): CharacterLook {
+  if (body === look.skin) return look;
+  if (body === 'kit') return { ...look, skin: 'kit' };
+  const finish = look.finish === 'worn' || look.finish === 'camo' ? 'satin' : look.finish;
+  return { ...look, skin: body, ...SKIN_INFO[body].paint, finish };
 }
 
 /** '#abc', 'abc', '#AABBCC' or 'aabbcc' to '#aabbcc'; anything else is null */

@@ -1,6 +1,6 @@
 import type { MultiplayerSnapshotPlayer, PlayerModel } from '../network/types';
 import { devToolsEnabled } from '../app/devTools';
-import { ARMOR_SETS, ARMOR_SLOTS, type ArmorSetId } from './catalog';
+import { ARMOR_SETS, ARMOR_SLOTS, type ArmorSetId, type BodyId } from './catalog';
 import type { CharacterLibrary } from './library';
 import type { CharacterDetail } from './ArmorCharacter';
 import { decodeLook, defaultLook, encodeLook, lookForBot, lookToArmor, randomLook, type CharacterLook } from './look';
@@ -61,7 +61,19 @@ export function maxLook(library: CharacterLibrary | null): CharacterLook {
     return best;
   };
   const pieces = Object.fromEntries(ARMOR_SLOTS.map((slot) => [slot, pick(slot)])) as Record<(typeof ARMOR_SLOTS)[number], ArmorSetId>;
+  const kitTris = ARMOR_SLOTS.reduce((sum, slot) => sum + (library?.get(slot, pieces[slot], 0) ?? []).reduce((s, p) => s + p.index.length / 3, 0), 0);
+  // the heaviest skin when it outweighs the heaviest kit
+  let skin: BodyId = 'kit';
+  let most = kitTris;
+  for (const asset of library?.skins.values() ?? []) {
+    const tris = asset.parts[0].reduce((s, p) => s + p.index.length / 3, 0);
+    if (tris > most) {
+      most = tris;
+      skin = asset.id;
+    }
+  }
   return {
+    skin,
     ...pieces,
     primary: '#9e2231',
     secondary: '#2b2e33',
@@ -78,7 +90,7 @@ function cosmeticsFor(mode: string, index: number, library: CharacterLibrary | n
   if (mode === 'max') return encodeLook(maxLook(library));
   if (mode === 'random') return encodeLook(randomLook(index * 7919 + 13));
   if (mode === 'bots') return encodeLook(lookForBot(`bot:${index}`));
-  if (mode.startsWith('1.')) {
+  if (/^[12]\./.test(mode)) {
     // a comma list of wire looks, repeated
     const wires = mode.split(',');
     return wires[index % wires.length];

@@ -205,7 +205,7 @@ export class MainMenu {
       customize.className = 'cz-open-btn';
       customize.innerHTML = '<span class="cz-open-label">Customize character</span>'
         + '<span class="cz-open-go">Open</span>'
-        + '<span class="cz-open-sub">Armor, paint, emblem and tag</span>';
+        + '<span class="cz-open-sub">Skin, paint, emblem and tag</span>';
       customize.addEventListener('click', () => this.callbacks.onCustomize?.());
       characterSection.appendChild(customize);
     }

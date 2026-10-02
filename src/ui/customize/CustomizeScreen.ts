@@ -2,16 +2,22 @@ import './customize.css';
 import {
   ARMOR_SET_INFO,
   ARMOR_SLOTS,
+  BODIES,
   EMBLEM_INFO,
   EMBLEMS,
   FINISH_INFO,
   FINISHES,
+  KIT_INFO,
+  SKIN_INFO,
   SLOT_LABEL,
   SWATCHES,
   TEAM_LIGHT,
+  bodyCode,
+  bodyName,
   pieceName,
   slotOptions,
   type ArmorSlot,
+  type BodyId,
   type EmblemId,
   type FinishId,
   type PieceId,
@@ -38,7 +44,7 @@ import { BUILTIN_PRESETS } from '../../characters/presets';
 import type { PlayerModel } from '../../network/types';
 import { attachMenuSounds } from '../menu/menuSounds';
 import { CustomizeStage, type StageStatus } from './CustomizeStage';
-import { LookHistory, applyPreset, nextSavedName, parseHexInput, sameStyle, swatchName } from './customizeLogic';
+import { LookHistory, applyPreset, nextSavedName, parseHexInput, sameStyle, swatchName, withBody } from './customizeLogic';
 
 export interface CustomizeScreenCallbacks {
   /** every edit, for live previews elsewhere (optional) */
@@ -60,6 +66,8 @@ const CHANNEL_HINT: Record<ColorChannel, string> = {
   secondary: 'Cloth panels and trims',
   accent: 'Small details and your emblem',
 };
+/** finishes that only make sense on the kit's painted plates */
+const KIT_ONLY_FINISHES: readonly FinishId[] = ['worn', 'camo'];
 const SLOT_PROMPT: Record<ArmorSlot, string> = {
   helmet: 'Choose a helmet',
   arms: 'Choose arm armor',
@@ -120,6 +128,10 @@ export class CustomizeScreen {
   private readonly optionsTitle = el('h3', 'cz-options-title');
   private readonly optionList = el('div', 'cz-options');
   private readonly optionCards = new Map<PieceId, HTMLButtonElement>();
+  private readonly bodyCards = new Map<BodyId, HTMLButtonElement>();
+  private readonly bodyValue = el('span');
+  private armorSection: HTMLElement | null = null;
+  private readonly originalPaint = button('cz-tool cz-original', 'Original paint');
 
   private readonly stageMount = el('div', 'cz-stage-mount');
   private readonly stageStatus = el('div', 'cz-stage-status');
@@ -258,8 +270,10 @@ export class CustomizeScreen {
 
   private buildArmorColumn(): HTMLElement {
     const column = el('aside', 'cz-col cz-left');
-    column.setAttribute('aria-label', 'Armor');
+    column.setAttribute('aria-label', 'Body and armor');
+    this.buildBodies(column);
     const section = this.section(column, 'Armor');
+    this.armorSection = section;
     const tabs = el('div', 'cz-slot-tabs');
     tabs.setAttribute('role', 'tablist');
     tabs.setAttribute('aria-orientation', 'vertical');
@@ -277,6 +291,28 @@ export class CustomizeScreen {
     this.optionList.setAttribute('role', 'tabpanel');
     section.append(tabs, this.optionsTitle, this.optionList);
     return column;
+  }
+
+  /** whole-body skins, plus the kit (which opens the piece pickers below) */
+  private buildBodies(column: HTMLElement): void {
+    const section = this.section(column, 'Body', this.bodyValue);
+    const list = el('div', 'cz-options cz-bodies');
+    for (const id of BODIES) {
+      const card = button('cz-option cz-body');
+      card.dataset.body = id;
+      const info = id === 'kit' ? null : SKIN_INFO[id];
+      const body = el('span', 'cz-option-body');
+      body.append(
+        el('span', 'cz-option-name', bodyName(id)),
+        el('span', 'cz-option-blurb', info ? info.blurb : KIT_INFO.blurb),
+      );
+      if (info) body.appendChild(el('span', 'cz-option-set cz-credit', info.credit));
+      card.append(el('span', 'cz-option-badge', bodyCode(id).toUpperCase()), body, el('span', 'cz-option-tag', 'Equipped'));
+      card.addEventListener('click', () => this.edit(withBody(this.look, id)));
+      list.appendChild(card);
+      this.bodyCards.set(id, card);
+    }
+    section.appendChild(list);
   }
 
   private buildStage(): HTMLElement {
@@ -390,7 +426,12 @@ export class CustomizeScreen {
       if (event.key === 'Enter') this.hexInput.blur();
     });
     custom.append(this.colorPicker, this.hexInput, this.customName);
-    section.append(channels, swatches, custom);
+    this.originalPaint.title = 'Back to the colours the skin was painted with';
+    this.originalPaint.addEventListener('click', () => {
+      if (this.look.skin === 'kit') return;
+      this.edit({ ...this.look, ...SKIN_INFO[this.look.skin].native });
+    });
+    section.append(channels, swatches, custom, this.originalPaint);
   }
 
   private buildFinish(column: HTMLElement): void {
@@ -747,6 +788,7 @@ export class CustomizeScreen {
     this.undoButton.disabled = !this.history.canUndo;
     this.redoButton.disabled = !this.history.canRedo;
     this.root.style.setProperty('--cz-paint', this.look.primary);
+    this.syncBodies();
     this.syncSlots();
     this.syncColours();
     this.syncFinish();
@@ -755,6 +797,12 @@ export class CustomizeScreen {
     this.watchInput.checked = this.look.watch;
     this.syncPresets();
     this.syncTeam();
+  }
+
+  private syncBodies(): void {
+    for (const [id, card] of this.bodyCards) setPressed(card, id === this.look.skin);
+    this.bodyValue.textContent = bodyName(this.look.skin);
+    if (this.armorSection) this.armorSection.hidden = this.look.skin !== 'kit';
   }
 
   private syncSlots(): void {
@@ -799,14 +847,17 @@ export class CustomizeScreen {
   }
 
   private syncColours(): void {
+    const skin = this.look.skin === 'kit' ? null : SKIN_INFO[this.look.skin];
     for (const [channel, parts] of this.channelButtons) {
       const hex = this.look[channel];
       parts.chip.style.background = hex;
-      parts.value.textContent = swatchName(hex) ?? hex;
+      parts.value.textContent = skin && skin.native[channel] === hex ? 'Original' : swatchName(hex) ?? hex;
       setPressed(parts.button, channel === this.channel, 'is-active');
     }
     const hex = this.look[this.channel];
-    this.channelHint.textContent = CHANNEL_HINT[this.channel];
+    this.channelHint.textContent = skin ? skin.zones[this.channel] : CHANNEL_HINT[this.channel];
+    this.originalPaint.hidden = !skin;
+    this.originalPaint.disabled = !skin || CHANNELS.every((channel) => skin.native[channel] === this.look[channel]);
     for (const swatch of this.swatchButtons) {
       setPressed(swatch, swatch.dataset.hex === hex);
     }
@@ -821,6 +872,7 @@ export class CustomizeScreen {
   private syncFinish(): void {
     for (const [id, choice] of this.finishButtons) {
       setPressed(choice, id === this.look.finish);
+      choice.hidden = this.look.skin !== 'kit' && KIT_ONLY_FINISHES.includes(id) && id !== this.look.finish;
     }
     this.finishValue.textContent = FINISH_INFO[this.look.finish].name;
   }
