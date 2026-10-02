@@ -30,10 +30,17 @@ const WATCH_NODES = [
   'watch_hand_minute',
   'watch_hand_second',
 ];
+const KITS = ['strafe', 'anvil', 'vector', 'quill'];
+// fp_<set>_<slot>: the runtime paints each slot from the look (src/characters/fpArmor.ts)
+const ARM_MATERIALS = [
+  'fp_core_muscle',
+  'fp_core_dark',
+  'fp_core_metal',
+  ...KITS.flatMap((k) => [`fp_${k}_primary`, `fp_${k}_glow`]),
+];
+const SLOTS = ['primary', 'muscle', 'dark', 'metal', 'glow'];
 const MATERIALS = [
-  'mat_glove',
-  'mat_sleeve',
-  'mat_skin',
+  ...ARM_MATERIALS,
   'mat_watch_steel',
   'mat_watch_bezel',
   'mat_watch_dial',
@@ -41,7 +48,8 @@ const MATERIALS = [
   'mat_watch_crystal',
   'mat_watch_strap',
 ];
-const MAX_TRIANGLES = 40_000;
+/** the core plus one kit, what the player actually sees */
+const MAX_VISIBLE_TRIANGLES = 48_000;
 const MAX_WATCH_TRIANGLES = 6_000;
 
 let doc: Document;
@@ -94,8 +102,16 @@ describe('public/viewmodels/v2/arms.glb', () => {
     const skinned = doc.getRoot().listNodes().filter((n) => n.getSkin());
     // one skinned mesh, a primitive per material, so the file keeps one skin
     expect(skinned.map((n) => n.getName())).toEqual(['arms']);
-    const primMaterials = skinned[0].getMesh()!.listPrimitives().map((p) => p.getMaterial()?.getName());
-    expect(primMaterials.sort()).toEqual(['mat_glove', 'mat_skin', 'mat_sleeve']);
+    const primMaterials = skinned[0].getMesh()!.listPrimitives().map((p) => p.getMaterial()?.getName() ?? '');
+    for (const name of primMaterials) {
+      const m = /^fp_([a-z]+)_([a-z]+)$/.exec(name);
+      expect(m, name).not.toBeNull();
+      expect(['core', ...KITS]).toContain(m![1]);
+      expect(SLOTS).toContain(m![2]);
+    }
+    for (const kit of KITS) {
+      expect(primMaterials, kit).toContain(`fp_${kit}_primary`);
+    }
     const w = [0, 0, 0, 0];
     const j = [0, 0, 0, 0];
     const jointCount = skin.listJoints().length;
@@ -158,12 +174,24 @@ describe('public/viewmodels/v2/arms.glb', () => {
     }
   });
 
-  it('stays inside the triangle budget', () => {
-    const root = doc.getRoot();
-    const total = root.listNodes().reduce((sum, n) => sum + meshTriangles(n), 0);
+  it('stays inside the triangle budget with any one kit showing', () => {
+    const arms = nodeByName('arms')!.getMesh()!.listPrimitives();
+    const setOf = (p: Primitive) => /^fp_([a-z]+)_/.exec(p.getMaterial()?.getName() ?? '')?.[1];
+    const core = arms.filter((p) => setOf(p) === 'core').reduce((sum, p) => sum + triangles(p), 0);
     const watch = subtreeTriangles(nodeByName('watch')!);
-    expect(total).toBeLessThanOrEqual(MAX_TRIANGLES);
+    for (const kit of KITS) {
+      const plates = arms.filter((p) => setOf(p) === kit).reduce((sum, p) => sum + triangles(p), 0);
+      expect(plates, kit).toBeGreaterThan(2000);
+      expect(core + plates + watch, kit).toBeLessThanOrEqual(MAX_VISIBLE_TRIANGLES);
+    }
     expect(watch).toBeLessThanOrEqual(MAX_WATCH_TRIANGLES);
+  });
+
+  it('carries the shared atlas on every arms material', () => {
+    for (const m of doc.getRoot().listMaterials().filter((x) => x.getName().startsWith('fp_'))) {
+      expect(m.getNormalTexture(), m.getName()).not.toBeNull();
+      expect(m.getOcclusionTexture(), m.getName()).not.toBeNull();
+    }
   });
 
   it('uses the agreed material names', () => {

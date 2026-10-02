@@ -1,9 +1,9 @@
-"""forearm skin and pushed-up jacket sleeve as lofted tubes (right arm, cm).
+"""forearm muscle shaping and the lofted upper arm (right arm, cm).
 
-both tubes are built ring by ring around the arm axis in the arm frame
-(origin on the right wrist joint, y = -s). the sleeve is a profile curve in
-(s, offset) space that starts inside the skin, rolls over the hem and runs
-up to a capped shoulder end, with bunched folds pushed up from the hem.
+the hand and forearm are one signed distance field (suit.py) that runs to
+ARM_SDF_END_S. the upper arm is a plain lofted tube from just before that,
+starting with a small raised lip so the end of the field is hidden inside it.
+arm frame: origin on the right wrist joint, y = -s.
 """
 
 import math
@@ -19,7 +19,7 @@ def smoothstep(e0, e1, x):
 
 
 def core_section(s):
-    """body cross section under the sleeve: forearm, blending into a round upper arm"""
+    """body cross section: forearm, blending into a round upper arm past the elbow"""
     s = np.asarray(s, dtype=np.float64)
     half_w, top, bot, n = P.forearm_section(np.minimum(s, 26.0))
     r = P.UPPERARM_RADIUS
@@ -48,6 +48,40 @@ def section_point(half_w, top, bot, n, theta, offset):
     return x + offset * nx / nl, z + offset * nz / nl + cz
 
 
+def _wrap(a):
+    return np.mod(a + math.pi, 2 * math.pi) - math.pi
+
+
+def _bundle(theta, s, th0, width, s0, s1, amp):
+    """one muscle belly: gaussian around the arm, smooth rise and fall along it"""
+    d = _wrap(theta - th0)
+    across = np.exp(-(d / width) ** 2)
+    mid = (s0 + s1) * 0.5
+    half = (s1 - s0) * 0.5
+    along = np.clip(1.0 - ((s - mid) / half) ** 2, 0.0, 1.0) ** 1.5
+    return amp * across * along
+
+
+def muscle_offset(theta, s):
+    """radial offset (cm) of the synthetic muscle over the core section.
+
+    lean bundles on the palm and thumb side where they show; the back of the
+    forearm stays smooth under the plates. zero through the wrist and the
+    watch zone so the band and the strap sit on the plain section.
+    """
+    theta = np.asarray(theta, dtype=np.float64)
+    s = np.asarray(s, dtype=np.float64)
+    out = _bundle(theta, s, math.radians(268), 0.55, 9.5, 27.0, 0.26)  # flexors
+    out += _bundle(theta, s, math.radians(300), 0.32, 11.0, 25.0, 0.1)  # flexor ridge
+    out += _bundle(theta, s, math.radians(168), 0.42, 12.0, 28.5, 0.3)  # brachioradialis
+    out += _bundle(theta, s, math.radians(40), 0.5, 13.0, 26.0, 0.12)  # extensors
+    # the groove between the thumb side bundle and the flexors
+    out -= 0.07 * np.exp(-(_wrap(theta - math.radians(218)) / 0.16) ** 2) * smoothstep(11.0, 15.0, s) * (
+        1 - smoothstep(22.0, 27.0, s))
+    return out * smoothstep(P.WATCH_ZONE_S[1] + 0.3, P.WATCH_ZONE_S[1] + 2.5, s) * (1 - smoothstep(27.5, 30.0, s))
+
+
+# ---------------------------------------------------------------- upper arm
 def _grid_faces(n_rings, n_around):
     """quads between consecutive rings, ring major, closed around"""
     faces = []
@@ -61,13 +95,12 @@ def _grid_faces(n_rings, n_around):
     return faces
 
 
-def _tube_uvs(faces, ring_v, n_around, circumference, u_seam=-0.5 * math.pi):
+def _tube_uvs(faces, ring_v, n_around, circumference):
     """per face corner uvs in cm: u around (seam on the palm side), v along"""
     uvs = []
     for f in faces:
         corner = []
         js = [idx % n_around for idx in f]
-        # the face that crosses the seam gets u = n_around on its far side
         wrap = max(js) - min(js) > 1
         for idx in f:
             i, j = divmod(idx, n_around)
@@ -83,208 +116,54 @@ def ring_angles(n_around):
     return -0.5 * math.pi + np.arange(n_around) * (2.0 * math.pi / n_around)
 
 
-# ---------------------------------------------------------------- skin
-SKIN_RINGS = np.concatenate([
-    [1.6, 2.6, 3.3],
-    np.arange(3.8, 13.61, 0.45),
-    [14.4, 15.4, 16.8, 18.4, 20.0],
-])
-
-
-def skin_tube(n_around=32):
-    thetas = ring_angles(n_around)
-    verts = []
-    for s in SKIN_RINGS:
-        half_w, top, bot, n = P.forearm_section(s)
-        x, z = section_point(half_w, top, bot, n, thetas, 0.0)
-        for xi, zi in zip(x, z):
-            verts.append((xi, -s, zi))
-    verts = np.array(verts)
-    faces = _grid_faces(len(SKIN_RINGS), n_around)
-    circ = 21.0
-    ring_v = SKIN_RINGS - SKIN_RINGS[0]
-    uvs = _tube_uvs(faces, ring_v, n_around, circ)
-    faces, uvs = _orient(verts, faces, uvs)
-    return verts, faces, uvs
-
-
-# ---------------------------------------------------------------- sleeve
-def _wrap(a):
-    return np.mod(a + math.pi, 2 * math.pi) - math.pi
-
-
-def _fold_field(theta, s):
-    """radial offset of the bunched folds (cm), deterministic.
-
-    pushed up fabric does not make clean rings: each crest wanders along the
-    arm, fades out over part of the circumference and is sharper on the hem
-    side, plus some short partial folds and a couple of spiral ones."""
-    rng = np.random.default_rng(1207)
-    theta = np.asarray(theta, dtype=np.float64)
-    s = np.asarray(s, dtype=np.float64)
-    out = np.zeros(np.broadcast(theta, s).shape)
-    crests = [14.75, 16.25, 17.95, 19.45, 21.1, 22.75, 24.5]
-    amps = [0.24, 0.34, 0.36, 0.32, 0.28, 0.22, 0.16]
-    for sk, ak in zip(crests, amps):
-        ph = rng.uniform(0, 2 * math.pi, 6)
-        centre = sk + 0.6 * np.sin(theta + ph[0]) + 0.28 * np.sin(2 * theta + ph[1]) + 0.12 * np.sin(3 * theta + ph[2])
-        fade = 0.5 + 0.5 * np.sin(theta + ph[3])
-        amp = ak * np.clip(0.18 + 0.95 * fade ** 0.8 + 0.18 * np.sin(2 * theta + ph[4]), 0.0, 1.25)
-        sigma = 0.44 + 0.1 * np.sin(theta + ph[5])
-        d = s - centre
-        sig = np.where(d < 0, sigma * 0.72, sigma)
-        out += amp * np.exp(-(d / sig) ** 2)
-        # crease just below each crest
-        out -= 0.3 * amp * np.exp(-((d + sigma * 1.05) / 0.2) ** 2)
-    # short partial folds that only run part way round
-    for _ in range(7):
-        cs = rng.uniform(15.0, 23.5)
-        th0 = rng.uniform(0, 2 * math.pi)
-        span = rng.uniform(0.5, 1.1)
-        tilt = rng.uniform(-0.5, 0.5)
-        a = rng.uniform(0.12, 0.22)
-        dth = _wrap(theta - th0)
-        out += a * np.exp(-(dth / span) ** 2) * np.exp(-((s - cs - tilt * dth) / 0.32) ** 2)
-    # two spiral folds, one each side of the arm
-    for c0, slope, width, a in ((0.9, 1.4, 0.55, 0.18), (3.9, -1.1, 0.6, 0.15)):
-        u = _wrap(theta - c0 - (s - 17.0) * slope / 10.0)
-        out += a * np.exp(-(u / (width / 3.0)) ** 2) * smoothstep(14.5, 16.0, s) * (1 - smoothstep(22.0, 25.0, s))
-    return out
-
-
-def _upper_folds(theta, s):
-    """gentle folds on the upper arm part"""
-    out = 0.16 * np.sin(2.3 * theta + s * 0.35) * np.sin(s * 0.42 + 0.7)
-    out += 0.1 * np.sin(theta * 3.0 - s * 0.21 + 1.3)
-    return out
-
-
-SLEEVE_OUTER_START = P.SLEEVE_HEM_S + 1.1  # past this the sleeve is a plain height field
-
-
-def sleeve_base_offset(s):
-    """clearance of the fabric over the arm (cm) on the outer part"""
-    s = np.asarray(s, dtype=np.float64)
-    hem = P.SLEEVE_HEM_S
-    t = smoothstep(hem + 1.2, 23.0, s)
-    off = 0.5 + 0.45 * t
-    off = off + (1.05 - off) * smoothstep(24.0, 31.0, s)
-    return off
-
-
-def sleeve_fold_weight(s):
-    s = np.asarray(s, dtype=np.float64)
-    hem = P.SLEEVE_HEM_S
-    return smoothstep(hem + 1.1, hem + 2.0, s) * (1.0 - 0.75 * smoothstep(24.5, 30.0, s))
-
-
-def sleeve_outer_offset(theta, s):
-    """full radial offset (base clearance, sag, folds) of the outer surface"""
-    off = sleeve_base_offset(s)
-    # loose fabric hangs a little under the arm
-    sag = 1.0 - 0.28 * np.sin(theta)
-    fold = np.where(s < 27.0, _fold_field(theta, s), 0.0)
-    fold = fold + _upper_folds(theta, s) * smoothstep(26.0, 30.0, s)
-    return off * sag + sleeve_fold_weight(s) * fold
-
-
-def sleeve_outer_point(theta, s):
-    """(x, y, z) cm in the arm frame of the outer sleeve surface"""
-    half_w, top, bot, n = core_section(s)
-    x, z = section_point(half_w, top, bot, n, theta, sleeve_outer_offset(theta, s))
-    return x, -np.asarray(s, dtype=np.float64) + 0.0 * x, z
-
-
-def sleeve_profile():
-    """(s, base offset cm) of the hem rings, then the s values of the outer rings"""
-    hem = P.SLEEVE_HEM_S
-    lip = [
-        (hem + 0.62, -0.24),
-        (hem + 0.22, -0.20),
-        (hem - 0.10, -0.10),
-        (hem - 0.30, 0.05),
-        (hem - 0.36, 0.19),
-        (hem - 0.28, 0.32),
-        (hem - 0.08, 0.41),
-        (hem + 0.30, 0.46),
-        (hem + 0.72, 0.49),
-    ]
-    outer = list(np.arange(SLEEVE_OUTER_START, 25.0, 0.44)) + [25.6, 26.6, 27.8, 29.2, 31.0, 33.5]
-    s = 36.5
+def upperarm_profile():
+    """(s, offset over the core section) rings from the lip to the shoulder"""
+    s0 = P.ARM_SDF_END_S - 0.7
+    rings = [(s0 - 0.05, -0.2), (s0 + 0.05, 0.06), (s0 + 0.2, 0.16), (s0 + 0.45, 0.2), (s0 + 0.8, 0.2)]
+    s = s0 + 1.6
     while s < 56.5:
-        outer.append(s)
-        s += 3.3
-    return lip, outer
+        rings.append((s, 0.2 * (1 - smoothstep(s0 + 1.0, s0 + 6.0, s)) + 0.04))
+        s += 2.6 if s < 40 else 3.4
+    return rings
 
 
-def sleeve_tube(n_around=40):
+def upperarm_tube(n_around=36):
     thetas = ring_angles(n_around)
-    lip, outer = sleeve_profile()
+    prof = upperarm_profile()
     verts = []
-    ring_s = []
-    ring_off = []
-    for s, off in lip:
+    for s, off in prof:
         half_w, top, bot, n = core_section(s)
-        sag = 1.0 - 0.28 * np.sin(thetas)
-        extra = off * np.where(off > 0.3, sag, 1.0)
-        x, z = section_point(half_w, top, bot, n, thetas, extra)
+        x, z = section_point(half_w, top, bot, n, thetas, off)
         for xi, zi in zip(x, z):
             verts.append((xi, -s, zi))
-        ring_s.append(s)
-        ring_off.append(off)
-    for s in outer:
-        x, y, z = sleeve_outer_point(thetas, s)
-        for xi, zi in zip(x, z):
-            verts.append((xi, -s, zi))
-        ring_s.append(s)
-        ring_off.append(float(sleeve_base_offset(s)))
-    prof = list(zip(ring_s, ring_off))
     n_rings = len(prof)
-    # shoulder cap: one squashed dome ring and a centre vertex
     last_s = prof[-1][0]
     half_w, top, bot, n = core_section(last_s)
-    x, z = section_point(half_w, top, bot, n, thetas, 0.7)
+    x, z = section_point(half_w, top, bot, n, thetas, -0.6)
     for xi, zi in zip(x, z):
-        verts.append((xi, -(last_s + 0.9), zi))
-    cz = (top + bot) * 0.5
-    verts.append((0.0, -(last_s + 1.4), cz))
+        verts.append((xi, -(last_s + 1.0), zi))
+    verts.append((0.0, -(last_s + 1.5), (top + bot) * 0.5))
     verts = np.array(verts)
     faces = _grid_faces(n_rings + 1, n_around)
     centre = len(verts) - 1
     base = n_rings * n_around
     cap = [(base + j, base + (j + 1) % n_around, centre) for j in range(n_around)]
-
-    # uv: arc length along the profile, split into a forearm island and an
-    # upper arm island at the elbow so the upper part can get fewer texels
-    ring_s = np.array(ring_s + [last_s + 0.9])
-    ring_off = np.array([p[1] for p in prof] + [0.7])
-    seg = np.sqrt(np.diff(ring_s) ** 2 + np.diff(ring_off) ** 2)
-    arc = np.concatenate([[0.0], np.cumsum(seg)])
-    split = int(np.searchsorted(ring_s[:n_rings], 27.0))
-    circ = 33.0
-    uvs = _tube_uvs(faces, arc, n_around, circ)
-    island = [0 if (f[0] // n_around) < split else 1 for f in faces]
-    # offset the upper island in v so the two never share corners
-    for k, f in enumerate(faces):
-        if island[k] == 1:
-            uvs[k] = [(u, v + 40.0) for (u, v) in uvs[k]]
+    ring_s = np.array([p[0] for p in prof] + [last_s + 1.0])
+    ring_o = np.array([p[1] for p in prof] + [-0.6])
+    arc = np.concatenate([[0.0], np.cumsum(np.sqrt(np.diff(ring_s) ** 2 + np.diff(ring_o) ** 2))])
+    uvs = _tube_uvs(faces, arc, n_around, 28.0)
     cap_uvs = []
     for f in cap:
         corner = []
         for idx in f:
             if idx == centre:
-                corner.append((0.0, 0.0))
+                corner.append((100.0, 100.0))
             else:
-                j = idx % n_around
-                a = thetas[j]
-                corner.append((6.0 * math.cos(a), 6.0 * math.sin(a)))
-        cap_uvs.append([(u + 100.0, v + 100.0) for (u, v) in corner])
-    faces_all = faces + cap
-    uvs_all = uvs + cap_uvs
-    islands = island + [2] * len(cap)
-    # vote on the outer bunched part, the inner lip legitimately faces inwards
-    faces_all, uvs_all = _orient(verts, faces_all, uvs_all, sample=faces[len(faces) // 2:len(faces) // 2 + 400])
-    return verts, faces_all, uvs_all, islands
+                a = thetas[idx % n_around]
+                corner.append((100.0 + 5.0 * math.cos(a), 100.0 + 5.0 * math.sin(a)))
+        cap_uvs.append(corner)
+    faces_all, uvs_all = _orient(verts, faces + cap, uvs + cap_uvs, sample=faces[n_around * 4:n_around * 8])
+    return verts, faces_all, uvs_all
 
 
 def _orient(verts, faces, uvs, sample=None):
@@ -294,8 +173,7 @@ def _orient(verts, faces, uvs, sample=None):
         a, b, c = verts[f[0]], verts[f[1]], verts[f[2]]
         nrm = np.cross(b - a, c - a)
         centre = (a + b + c) / 3.0
-        radial = np.array([centre[0], 0.0, centre[2]])
-        votes += np.dot(nrm, radial)
+        votes += np.dot(nrm, np.array([centre[0], 0.0, centre[2]]))
     if votes < 0:
         faces = [tuple(reversed(f)) for f in faces]
         uvs = [list(reversed(u)) for u in uvs]

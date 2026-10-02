@@ -77,10 +77,9 @@ rotation < 0.15 rad) and composited every frame.
 - The Deagle retains its authored two-hand rig. Disconnected source clothing is
   removed during export, so no synthetic forearm or duplicate hand is added at
   runtime.
-- Knife, Deagle, and AWP hands keep their authored geometry and share black
-  tactical gloves. The knife atlas keeps its glove islands graphite while its
-  forearm islands use the Deagle skin palette; source luminance detail, rigs,
-  skinning, and animation channels remain unchanged.
+- Every item shares one slim cyborg arms rig: dark synthetic muscle under thin
+  plates, so the hands never hide the knife. The player's arms piece picks the
+  plate kit and the look paints it (`docs/assets/arms.md`).
 - Knife and AWP reuse the exact static `Watch` and `Watch_Emission` geometry
   extracted from the authored Deagle reload rig. The attachment follows the
   skinned wrist and faces the ancestor viewmodel camera, never world origin.

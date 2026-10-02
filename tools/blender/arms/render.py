@@ -1,8 +1,9 @@
-"""posed preview renders of the arms rig (cycles, gpu when available).
+"""posed preview renders of the cyborg arms (cycles, gpu when available).
 
 poses are applied as world space rotations about bone heads so they do not
 depend on bone roll: curl() bends a digit bone about its own curl axis
 (-local x for every finger and thumb bone on both sides, see rig.py).
+kits share the same space, so each shot shows the core plus one kit.
 """
 
 import math
@@ -80,8 +81,6 @@ def pose_grip(arm_obj, side):
     curl(arm_obj, f"index_02_{s}", 58)
     curl(arm_obj, f"index_03_{s}", 26)
     spread(arm_obj, f"index_01_{s}", -3 * flip)
-    # thumb wrapped over the curled middle finger: aim each bone at a target in
-    # hand space (cm) so the pose does not depend on bone roll
     aim(arm_obj, f"thumb_01_{s}", hand_point(arm_obj, s, (-4.27, 4.75, -3.74)))
     aim(arm_obj, f"thumb_02_{s}", hand_point(arm_obj, s, (-2.35, 7.05, -5.2)))
     aim(arm_obj, f"thumb_03_{s}", hand_point(arm_obj, s, (-0.25, 8.65, -5.95)))
@@ -94,7 +93,6 @@ def pose_twist(arm_obj, side="l", twist=60.0, flex=30.0):
 
 
 def pose_elbow(arm_obj, side="r", angle=90.0):
-    # hand comes up towards the face, about the world x axis
     R.pose_world_rotation(arm_obj, f"forearm_{side}", Vector((1.0, 0.0, 0.0)), angle)
 
 
@@ -106,12 +104,12 @@ def _look_at(obj, target):
 
 def _setup(scene, fast, resolution):
     scene.render.engine = "CYCLES"
-    scene.cycles.samples = 24 if fast else 160
+    scene.cycles.samples = 24 if fast else 128
     scene.cycles.use_denoising = True
     scene.cycles.max_bounces = 6
     scene.cycles.transparent_max_bounces = 8
     scene.render.resolution_x, scene.render.resolution_y = resolution
-    scene.render.resolution_percentage = 60 if fast else 100
+    scene.render.resolution_percentage = 50 if fast else 100
     scene.render.film_transparent = False
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGB"
@@ -127,7 +125,8 @@ def _setup(scene, fast, resolution):
     world.use_nodes = True
     nt = world.node_tree
     bg = nt.nodes.get("Background")
-    # soft vertical gradient: bright overhead, dark floor bounce
+    if nt.nodes.get("CameraBackground") is not None:
+        return
     tex = nt.nodes.new("ShaderNodeTexCoord")
     sep = nt.nodes.new("ShaderNodeSeparateXYZ")
     ramp = nt.nodes.new("ShaderNodeValToRGB")
@@ -143,8 +142,6 @@ def _setup(scene, fast, resolution):
     nt.links.new(maprange.outputs["Result"], ramp.inputs["Fac"])
     nt.links.new(ramp.outputs["Color"], bg.inputs["Color"])
     bg.inputs["Strength"].default_value = WORLD_STRENGTH
-    # the backdrop the camera sees gets its own strength so it keeps the same
-    # brightness whatever exposure a shot uses (lighting stays unchanged)
     bg_cam = nt.nodes.new("ShaderNodeBackground")
     bg_cam.name = "CameraBackground"
     path = nt.nodes.new("ShaderNodeLightPath")
@@ -159,8 +156,8 @@ def _setup(scene, fast, resolution):
 
 LIGHT_SCALE = 0.4
 WORLD_STRENGTH = 0.6
-# stops per shot: the area lights wash the charcoal glove out to mid grey at 0
-EXPOSURE = {"rest": -2.0, "fist_pose": -1.6, "watch_closeup": -1.2, "wrist_twist": -1.6, "elbow_bend": -1.2}
+# stops per shot, tuned for white plates over black muscle
+EXPOSURE = {"rest": -2.6, "fist": -2.3, "palm": -2.0, "watch_closeup": -1.8, "elbow_bend": -2.0}
 
 
 def _light(name, kind, loc, target, energy, size=0.3, color=(1, 1, 1)):
@@ -188,7 +185,7 @@ def _camera(loc, target, lens):
     return cam
 
 
-def _shot(path, cam_loc, target, lens, lights, fast, exposure=0.0):
+def _shot(path, cam_loc, target, lens, lights, exposure=0.0):
     scene = bpy.context.scene
     scene.view_settings.exposure = exposure
     bg_cam = scene.world.node_tree.nodes.get("CameraBackground")
@@ -203,78 +200,116 @@ def _shot(path, cam_loc, target, lens, lights, fast, exposure=0.0):
         bpy.data.objects.remove(obj, do_unlink=True)
 
 
-def render_all(outdir, arm_obj, fast=False, log=print, only=None):
+def show_kit(objects, kit, watch=True):
+    for obj in objects:
+        s = obj.get("set", "core")
+        obj.hide_render = not (s == "core" or s == kit)
+    w = bpy.data.objects.get("watch")
+    if w is not None:
+        for o in [w] + list(w.children_recursive):
+            o.hide_render = not watch
+
+
+def render_all(outdir, arm_obj, objects, kits, fast=False, log=print, only=None):
+    """rest, fist and palm shots per kit, then watch and elbow with the first kit"""
     os.makedirs(outdir, exist_ok=True)
     scene = bpy.context.scene
     _setup(scene, fast, (1600, 900))
-    wl = arm_obj.pose.bones["hand_l"].head
-    wr = arm_obj.pose.bones["hand_r"].head
 
     def want(name):
         return only is None or name in only
 
-    if want("rest"):
-        _clear_pose(arm_obj)
-        target = Vector((0.0, 0.5, -0.255))
-        lights = [
-            ("Key", "AREA", (0.35, 0.1, 0.35), (0.1, 0.5, -0.28), 90, {"size": 0.6}),
-            ("Fill", "AREA", (-0.5, 0.2, 0.0), (0.0, 0.5, -0.28), 30, {"size": 0.8}),
-            ("Rim", "AREA", (0.0, 1.1, 0.2), (0.0, 0.5, -0.28), 60, {"size": 0.5}),
-        ]
-        # 26 mm is about a 70 degree horizontal fov, close to a usual viewmodel fov
-        _shot(os.path.join(outdir, "rest.png"), (0.0, 0.0, 0.0), target, 26, lights, fast, EXPOSURE["rest"])
-        log("rendered rest.png")
+    for kit in kits:
+        show_kit(objects, kit)
+        if want("rest"):
+            _clear_pose(arm_obj)
+            target = Vector((0.0, 0.5, -0.255))
+            lights = [
+                ("Key", "AREA", (0.35, 0.1, 0.35), (0.1, 0.5, -0.28), 90, {"size": 0.6}),
+                ("Fill", "AREA", (-0.5, 0.2, 0.0), (0.0, 0.5, -0.28), 30, {"size": 0.8}),
+                ("Rim", "AREA", (0.0, 1.1, 0.2), (0.0, 0.5, -0.28), 60, {"size": 0.5}),
+            ]
+            # 26 mm is about a 70 degree horizontal fov, close to a usual viewmodel fov
+            _shot(os.path.join(outdir, f"rest_{kit}.png"), (0.0, 0.0, 0.0), target, 26, lights, EXPOSURE["rest"])
+            log(f"rendered rest_{kit}.png")
 
-    if want("fist_pose"):
-        _clear_pose(arm_obj)
-        # thumb up like holding a pistol: roll the whole straight arm about its
-        # own axis (rigid, no deformation), then close the hand
-        roll(arm_obj, "upperarm_r", 90.0)
-        pose_grip(arm_obj, "r")
-        bpy.context.view_layer.update()
-        hand = arm_obj.matrix_world @ arm_obj.pose.bones["hand_r"].tail
-        target = hand + Vector((-0.02, -0.02, -0.005))
-        cam = target + Vector((-0.25, 0.225, 0.175))
-        lights = [
-            ("Key", "AREA", tuple(target + Vector((-0.15, 0.1, 0.32))), tuple(target), 25, {"size": 0.4}),
-            ("Fill", "AREA", tuple(target + Vector((-0.3, -0.15, -0.05))), tuple(target), 10, {"size": 0.5}),
-            ("Rim", "AREA", tuple(target + Vector((0.2, 0.3, 0.15))), tuple(target), 20, {"size": 0.3}),
-        ]
-        _shot(os.path.join(outdir, "fist_pose.png"), tuple(cam), tuple(target), 50, lights, fast,
-              EXPOSURE["fist_pose"])
-        log("rendered fist_pose.png")
+        if want("top"):
+            _clear_pose(arm_obj)
+            hand = arm_obj.matrix_world @ arm_obj.pose.bones["hand_r"].head
+            target = hand + Vector((0.0, 0.0, 0.0))
+            cam = hand + Vector((-0.02, -0.12, 0.2))
+            lights = [
+                ("Key", "AREA", tuple(target + Vector((0.25, -0.1, 0.4))), tuple(target), 30, {"size": 0.5}),
+                ("Fill", "AREA", tuple(target + Vector((-0.35, -0.2, 0.1))), tuple(target), 10, {"size": 0.6}),
+            ]
+            _shot(os.path.join(outdir, f"top_{kit}.png"), tuple(cam), tuple(target), 30, lights, EXPOSURE["fist"])
+            log(f"rendered top_{kit}.png")
 
-    if want("watch_closeup"):
+        if want("fp"):
+            # roughly the knife idle: a fist, palm down, seen from the eye over the wrist
+            _clear_pose(arm_obj)
+            R.pose_world_rotation(arm_obj, "upperarm_r", Vector((0.0, 0.0, 1.0)), 28.0)
+            pose_grip(arm_obj, "r")
+            roll(arm_obj, "forearm_twist_r", -20.0)
+            bpy.context.view_layer.update()
+            hand = arm_obj.matrix_world @ arm_obj.pose.bones["hand_r"].head
+            target = hand + Vector((-0.03, 0.04, 0.0))
+            cam = hand + Vector((0.05, -0.2, 0.17))
+            lights = [
+                ("Key", "AREA", tuple(target + Vector((0.25, -0.1, 0.4))), tuple(target), 30, {"size": 0.5}),
+                ("Fill", "AREA", tuple(target + Vector((-0.35, -0.2, 0.1))), tuple(target), 10, {"size": 0.6}),
+                ("Rim", "AREA", tuple(target + Vector((-0.1, 0.35, 0.2))), tuple(target), 22, {"size": 0.3}),
+            ]
+            _shot(os.path.join(outdir, f"fp_{kit}.png"), tuple(cam), tuple(target), 38, lights, EXPOSURE["fist"])
+            log(f"rendered fp_{kit}.png")
+
+        if want("fist"):
+            _clear_pose(arm_obj)
+            roll(arm_obj, "upperarm_r", 90.0)
+            pose_grip(arm_obj, "r")
+            bpy.context.view_layer.update()
+            hand = arm_obj.matrix_world @ arm_obj.pose.bones["hand_r"].tail
+            target = hand + Vector((-0.02, -0.04, -0.005))
+            cam = target + Vector((-0.27, 0.2, 0.2))
+            lights = [
+                ("Key", "AREA", tuple(target + Vector((-0.15, 0.1, 0.32))), tuple(target), 25, {"size": 0.4}),
+                ("Fill", "AREA", tuple(target + Vector((-0.3, -0.15, -0.05))), tuple(target), 10, {"size": 0.5}),
+                ("Rim", "AREA", tuple(target + Vector((0.2, 0.3, 0.15))), tuple(target), 20, {"size": 0.3}),
+            ]
+            _shot(os.path.join(outdir, f"fist_{kit}.png"), tuple(cam), tuple(target), 42, lights, EXPOSURE["fist"])
+            log(f"rendered fist_{kit}.png")
+
+        if want("palm"):
+            _clear_pose(arm_obj)
+            pose_twist(arm_obj, "l", 95.0, 25.0)
+            bpy.context.view_layer.update()
+            w = arm_obj.matrix_world @ arm_obj.pose.bones["hand_l"].head
+            target = w + Vector((0.0, -0.02, 0.0))
+            cam = target + Vector((0.2, -0.16, 0.2))
+            lights = [
+                ("Key", "AREA", tuple(target + Vector((0.2, -0.15, 0.35))), tuple(target), 30, {"size": 0.4}),
+                ("Fill", "AREA", tuple(target + Vector((-0.3, -0.1, 0.05))), tuple(target), 10, {"size": 0.6}),
+                ("Rim", "AREA", tuple(target + Vector((-0.1, 0.35, 0.2))), tuple(target), 20, {"size": 0.3}),
+            ]
+            _shot(os.path.join(outdir, f"palm_{kit}.png"), tuple(cam), tuple(target), 42, lights, EXPOSURE["palm"])
+            log(f"rendered palm_{kit}.png")
+
+    show_kit(objects, kits[0])
+    if want("watch_closeup") and bpy.data.objects.get("watch") is not None:
         _clear_pose(arm_obj)
         watch = bpy.data.objects["watch"]
         c = watch.matrix_world.translation
         z = watch.matrix_world.col[2].xyz
         target = c + Vector((0.0, 0.004, -0.004))
-        cam = c + z * 0.11 + Vector((0.07, -0.08, 0.0))
+        cam = c + z * 0.13 + Vector((0.08, -0.1, 0.0))
         lights = [
             ("Key", "AREA", tuple(c + Vector((0.12, -0.05, 0.25))), tuple(c), 14, {"size": 0.25}),
             ("Fill", "AREA", tuple(c + Vector((-0.25, -0.1, 0.1))), tuple(c), 5, {"size": 0.5}),
             ("Rim", "AREA", tuple(c + Vector((-0.05, 0.3, 0.12))), tuple(c), 10, {"size": 0.2}),
         ]
-        _shot(os.path.join(outdir, "watch_closeup.png"), tuple(cam), tuple(target), 70, lights, fast,
+        _shot(os.path.join(outdir, "watch_closeup.png"), tuple(cam), tuple(target), 60, lights,
               EXPOSURE["watch_closeup"])
         log("rendered watch_closeup.png")
-
-    if want("wrist_twist"):
-        _clear_pose(arm_obj)
-        pose_twist(arm_obj, "l", 60.0, 30.0)
-        bpy.context.view_layer.update()
-        w = arm_obj.matrix_world @ arm_obj.pose.bones["hand_l"].head
-        target = w + Vector((0.0, -0.035, 0.0))
-        cam = target + Vector((0.24, -0.1, 0.16))
-        lights = [
-            ("Key", "AREA", tuple(target + Vector((0.2, -0.15, 0.35))), tuple(target), 30, {"size": 0.4}),
-            ("Fill", "AREA", tuple(target + Vector((-0.3, -0.1, 0.05))), tuple(target), 10, {"size": 0.6}),
-            ("Rim", "AREA", tuple(target + Vector((-0.1, 0.35, 0.2))), tuple(target), 20, {"size": 0.3}),
-        ]
-        _shot(os.path.join(outdir, "wrist_twist.png"), tuple(cam), tuple(target), 45, lights, fast,
-              EXPOSURE["wrist_twist"])
-        log("rendered wrist_twist.png")
 
     if want("elbow_bend"):
         _clear_pose(arm_obj)
@@ -288,8 +323,7 @@ def render_all(outdir, arm_obj, fast=False, log=print, only=None):
             ("Key", "AREA", tuple(target + Vector((0.4, -0.3, 0.4))), tuple(target), 60, {"size": 0.6}),
             ("Fill", "AREA", tuple(target + Vector((0.3, 0.4, -0.1))), tuple(target), 20, {"size": 0.8}),
         ]
-        _shot(os.path.join(outdir, "elbow_bend.png"), tuple(cam), tuple(target), 50, lights, fast,
-              EXPOSURE["elbow_bend"])
+        _shot(os.path.join(outdir, "elbow_bend.png"), tuple(cam), tuple(target), 50, lights, EXPOSURE["elbow_bend"])
         log("rendered elbow_bend.png")
 
     _clear_pose(arm_obj)

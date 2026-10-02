@@ -2,7 +2,8 @@
 
 everything here is plain python/numpy so the sdf, rig, weights and textures
 all read the same joint positions. dimensions are written in cm and converted
-with CM so they match the spec sheet (gloved adult male).
+with CM. the joints are an adult male's (the knife grips are fitted to them),
+the body around them is a slim cyborg's: synthetic muscle under thin plates.
 
 frames:
   world  = blender world, camera at the origin looking down +Y, z up.
@@ -33,8 +34,8 @@ TWIST_R = WRIST_R - np.array([0.0, TWIST_OFFSET, 0.0])
 # ---------------------------------------------------------------- hand
 HAND_LENGTH = 19.5  # wrist crease to middle fingertip
 PALM_LENGTH = 10.5  # wrist crease to the middle knuckle
-PALM_WIDTH = 9.2  # across the knuckles
-PALM_THICKNESS = 3.3
+PALM_WIDTH = 8.4  # across the knuckles
+PALM_THICKNESS = 2.8
 
 SEGMENT_RATIO = (0.46, 0.30, 0.24)
 
@@ -47,13 +48,13 @@ SEGMENT_RATIO = (0.46, 0.30, 0.24)
 KNUCKLE_TO_CREASE = 0.8
 
 FINGERS = {
-    "index": dict(mcp=(-2.36, 10.12, 0.00), length=7.4, r0=1.07, r1=0.85, spread=-4.0,
+    "index": dict(mcp=(-2.36, 10.12, 0.00), length=7.4, r0=0.92, r1=0.73, spread=-4.0,
                   flex=(5.0, 9.0, 5.0)),
-    "middle": dict(mcp=(0.00, 10.50, 0.00), length=8.2, r0=1.09, r1=0.87, spread=0.0,
+    "middle": dict(mcp=(0.00, 10.50, 0.00), length=8.2, r0=0.94, r1=0.75, spread=0.0,
                    flex=(6.0, 10.0, 6.0)),
-    "ring": dict(mcp=(2.14, 10.16, -0.05), length=7.7, r0=1.03, r1=0.83, spread=3.5,
+    "ring": dict(mcp=(2.14, 10.16, -0.05), length=7.7, r0=0.89, r1=0.71, spread=3.5,
                  flex=(7.0, 11.0, 7.0)),
-    "pinky": dict(mcp=(4.06, 9.25, -0.22), length=6.2, r0=0.93, r1=0.75, spread=8.0,
+    "pinky": dict(mcp=(4.06, 9.25, -0.22), length=6.2, r0=0.80, r1=0.64, spread=8.0,
                   flex=(8.0, 12.0, 8.0)),
 }
 FINGER_ORDER = ("index", "middle", "ring", "pinky")
@@ -64,38 +65,41 @@ FINGER_ORDER = ("index", "middle", "ring", "pinky")
 THUMB = dict(
     cmc=(-2.20, 1.90, -0.80),
     lengths=(4.6, 3.3, 2.8),
-    r=(1.30, 1.15, 1.06, 0.92),  # radius at cmc, mcp, ip, tip
+    r=(1.12, 0.99, 0.91, 0.79),  # radius at cmc, mcp, ip, tip
     meta_dir=(-0.58, 0.76, -0.30),
     pad_dir=(0.85, 0.0, 0.50),  # rough direction the thumb pad faces
     flex=(38.0, 22.0),  # bend at mcp and ip towards the pad side
 )
 
 # ---------------------------------------------------------------- forearm
-# skin cross sections along the forearm, s in cm from the wrist joint.
-# width is the full x size, top/bottom are the dorsal/palmar surface heights
-# relative to the bone axis (the dorsal line stays fairly straight, the
-# flexor mass grows on the palm side towards the elbow).
+# synthetic muscle cross sections along the forearm, s in cm from the wrist
+# joint. width is the full x size, top/bottom are the dorsal/palmar surface
+# heights relative to the bone axis. a lean, tapered forearm: narrow wrist,
+# the flexor mass on the palm side towards the elbow.
 FOREARM_S = np.array([-2.0, 0.0, 3.0, 6.0, 9.0, 13.0, 18.0, 23.0, 26.0, 29.0, 34.0])
-FOREARM_W = np.array([6.0, 6.0, 6.3, 6.9, 7.6, 8.4, 9.1, 9.6, 9.3, 9.0, 8.8])
-FOREARM_TOP = np.array([2.0, 2.0, 2.12, 2.3, 2.55, 2.95, 3.4, 3.85, 3.9, 3.8, 3.7])
-FOREARM_BOT = np.array([-2.0, -2.0, -2.13, -2.5, -3.0, -3.65, -4.2, -4.55, -4.2, -4.0, -3.9])
+FOREARM_W = np.array([5.0, 5.0, 5.15, 5.6, 6.2, 6.95, 7.6, 8.0, 7.8, 7.6, 7.5])
+FOREARM_TOP = np.array([1.62, 1.62, 1.7, 1.86, 2.08, 2.42, 2.82, 3.2, 3.25, 3.2, 3.15])
+FOREARM_BOT = np.array([-1.62, -1.62, -1.72, -2.02, -2.45, -3.0, -3.48, -3.78, -3.5, -3.35, -3.3])
 # superellipse exponent (2 = ellipse), squarer at the wrist
 FOREARM_N = np.array([2.5, 2.5, 2.4, 2.3, 2.2, 2.1, 2.05, 2.0, 2.0, 2.0, 2.0])
 
-# upper arm sleeve core (s from the elbow joint towards the shoulder)
-UPPERARM_RADIUS = 5.2
+# upper arm core (s from the elbow joint towards the shoulder)
+UPPERARM_RADIUS = 4.4
 
-# glove cuff and sleeve placement (s in cm)
-CUFF_END_S = 4.0  # glove cuff reaches this far up the forearm
-CUFF_CLEARANCE = 0.28  # cuff outer surface above the skin
-SLEEVE_HEM_S = 13.0  # pushed up sleeve hem, about mid forearm
+# the muscle field runs to here, the lofted upper arm takes over under a ring
+ARM_SDF_END_S = 31.0
+# mechanical wrist band around the twist bone, nothing else in the watch zone
+WRIST_BAND_S = (1.5, 3.1)
+WATCH_ZONE_S = (4.2, 8.9)
+# forearm plates start here (past the watch strap)
+PLATE_START_S = 9.3
 
 # twist blend: forearm -> forearm_twist between these s values, the watch
 # and cuff zone below TWIST_FULL_S is rigid on the twist bone so the strap
 # never cuts into the skin when the wrist rolls
 TWIST_RAMP_START_S = 15.5
 TWIST_FULL_S = 8.8
-WRIST_BLEND = (2.2, -2.0)  # forearm_twist -> hand across the wrist joint
+WRIST_BLEND = (1.3, -2.2)  # forearm_twist -> hand across the wrist joint
 ELBOW_BLEND = (FOREARM_LEN / CM + 4.5, FOREARM_LEN / CM - 5.0)
 
 # ---------------------------------------------------------------- watch

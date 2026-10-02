@@ -30,6 +30,9 @@ export const MATERIAL_SLOTS = [
   'metal',
   'cloth',
   'trim',
+  // first-person cyborg arms: synthetic muscle and glow lines
+  'muscle',
+  'glow',
 ] as const;
 export type MaterialSlot = (typeof MATERIAL_SLOTS)[number];
 

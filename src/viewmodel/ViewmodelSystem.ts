@@ -294,7 +294,7 @@ export class ViewmodelSystem {
   public onEvent: ((name: string, item: ViewItem) => void) | null = null;
 
   private arms: ArmsRig | null = null;
-  /** the player's gauntlets or sleeves over the arms, see characters/fpArmor.ts */
+  /** paints the cyborg arms and picks the plate kit from the look, see characters/fpArmor.ts */
   private readonly armsArmor = new FirstPersonArmor();
   private readonly guns: Partial<Record<'deagle' | 'awp', GunParts>> = {};
   private knife: KnifeRig | null = null;
@@ -393,7 +393,7 @@ export class ViewmodelSystem {
     return this.knifeId;
   }
 
-  /** dresses the arms in the player's armor set and paint */
+  /** the arms take the player's plate kit (arms piece), paint and finish */
   public setArmsLook(look: CharacterLook, team?: PlayerModel): void {
     this.armsArmor.setLook(look, team);
   }
@@ -1091,8 +1091,7 @@ export class ViewmodelSystem {
     ]);
     this.arms = arms;
     this.content.add(arms.root);
-    // binds against the rest pose, so before the first update poses the rig
-    void this.armsArmor.attach(arms.root);
+    this.armsArmor.attach(arms.root);
     this.guns.deagle = this.setupGun(deagle.scene);
     this.guns.awp = this.setupGun(awp.scene);
     this.rebuildKnife();

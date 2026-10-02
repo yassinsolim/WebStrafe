@@ -31,8 +31,6 @@ export interface ArmorSetInfo {
   name: string;
   /** one line for the ui */
   blurb: string;
-  /** what the first-person arms wear with this set's arms piece */
-  firstPerson: 'gauntlets' | 'sleeves';
   pieces: Record<ArmorSlot, string>;
 }
 
@@ -42,7 +40,6 @@ export const ARMOR_SET_INFO: Record<ArmorSetId, ArmorSetInfo> = {
     code: 'st',
     name: 'Strafe',
     blurb: 'Balanced plates, wraparound visor. The house style.',
-    firstPerson: 'gauntlets',
     pieces: {
       helmet: 'Strafe Visor',
       arms: 'Strafe Grips',
@@ -56,7 +53,6 @@ export const ARMOR_SET_INFO: Record<ArmorSetId, ArmorSetInfo> = {
     code: 'an',
     name: 'Anvil',
     blurb: 'Heavy slabs, slit visor, big shoulders.',
-    firstPerson: 'gauntlets',
     pieces: {
       helmet: 'Anvil Helm',
       arms: 'Anvil Gauntlets',
@@ -70,7 +66,6 @@ export const ARMOR_SET_INFO: Record<ArmorSetId, ArmorSetInfo> = {
     code: 've',
     name: 'Vector',
     blurb: 'Light and quiet. Faceplate, wraps and a long cloak.',
-    firstPerson: 'sleeves',
     pieces: {
       helmet: 'Vector Faceplate',
       arms: 'Vector Wraps',
@@ -84,7 +79,6 @@ export const ARMOR_SET_INFO: Record<ArmorSetId, ArmorSetInfo> = {
     code: 'qu',
     name: 'Quill',
     blurb: 'Long coat, tall crest, glowing seams.',
-    firstPerson: 'sleeves',
     pieces: {
       helmet: 'Quill Crest',
       arms: 'Quill Cuffs',
