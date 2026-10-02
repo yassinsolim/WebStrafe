@@ -40,6 +40,13 @@ describe('knife grips', () => {
     expect(hook.y).toBeGreaterThan(0.5);
   });
 
+  it('holds hammer grip blades diagonally, leaning out along the hand like cs2', () => {
+    const blade = new Vector3(1, 0, 0).applyQuaternion(knifeGripSpec('hammer', 0.026).knifeInHand);
+    // out past the thumb side (-x) and toward the knuckles (+y)
+    expect(blade.x).toBeLessThan(-0.5);
+    expect(blade.y).toBeGreaterThan(0.5);
+  });
+
   it('keeps every knife frame a proper rotation', () => {
     for (const kind of ['hammer', 'reverse_ring', 'tee', 'balisong'] as const) {
       const q = knifeGripSpec(kind, 0.026).knifeInHand;

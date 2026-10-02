@@ -63,8 +63,17 @@ rotation < 0.15 rad) and composited every frame.
   the fist palm down low on the right with the claw curving up and the left hand
   open in a guard, the draw spins the knife on the index with the hand raised,
   the inspect turns the fist upright to show the claw, the primary hooks across
-  to the left and the secondary cocks high and rips down. These clips blend
-  whole hand poses (`RING_KEYS` in `ViewmodelSystem.ts`) instead of offsets.
+  to the left and the secondary cocks high and rips down.
+- Every other knife sits diagonally in the palm like CS2's (`HAMMER_LEAN_DEG`),
+  so the blade carries on past the thumb along the hand and crosses the lower
+  right of the screen with its flat to the eye. Navaja, stiletto, nomad and
+  butterfly idle with the left hand up too. Inspects raise the blade upright,
+  turn it over, then twirl, toss, fold and flick or fan it depending on the
+  knife; about one press in five plays the knife's rarer inspect instead, and
+  pressing inspect again restarts it.
+- Knife clips blend whole hand poses (`GRIP_POSES` in `ViewmodelSystem.ts`)
+  rather than camera offsets, so a pose like "blade upright, palm to the eye"
+  is written once per grip.
 - The Deagle retains its authored two-hand rig. Disconnected source clothing is
   removed during export, so no synthetic forearm or duplicate hand is added at
   runtime.

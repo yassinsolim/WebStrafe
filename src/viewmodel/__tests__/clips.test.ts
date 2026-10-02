@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { KNIVES } from '../../combat/knives';
 import { applyEase, retime, sampleKeys } from '../clips';
-import { AWP_CLIPS, DEAGLE_CLIPS, knifeClip, knifeDrawStyle, knifeInspectStyle } from '../viewmodelClips';
+import { AWP_CLIPS, DEAGLE_CLIPS, knifeClip, knifeDrawStyle, knifeInspectCount, knifeInspectStyle } from '../viewmodelClips';
 import { FIREARM_TIMINGS } from '../../combat/FirearmTiming';
 
 describe('clip sampling', () => {
@@ -41,14 +41,29 @@ describe('viewmodel clips', () => {
 
   it('gives every knife a draw, an inspect and attacks that end at rest', () => {
     for (const def of KNIVES) {
-      for (const name of ['draw', 'inspect', 'slashA', 'slashB', 'stab', 'backstab'] as const) {
-        const clip = knifeClip(def, name);
+      const clips = (['draw', 'inspect', 'slashA', 'slashB', 'stab', 'backstab'] as const).map((name) => [name, knifeClip(def, name)] as const);
+      clips.push(['inspect', knifeClip(def, 'inspect', 1)]);
+      for (const [name, clip] of clips) {
         expect(clip.duration, `${def.id} ${name}`).toBeGreaterThan(0.3);
-        for (const channel of ['px', 'py', 'pz', 'rx', 'ry', 'rz', 'tossY', 'gripOpen', 'watch', 'ringHold', 'thumbOpener']) {
+        for (const channel of ['px', 'py', 'pz', 'rx', 'ry', 'rz', 'tossY', 'gripOpen', 'watch', 'ringHold', 'thumbOpener',
+          'raise', 'show', 'showB', 'hook', 'hookB', 'cock', 'strike']) {
           const keys = clip.tracks[channel];
           if (keys) expect(sampleKeys(keys, clip.duration), `${def.id} ${name} ${channel}`).toBeCloseTo(0, 5);
         }
       }
+    }
+  });
+
+  it('gives every knife but the push daggers a rare inspect of its own', () => {
+    for (const def of KNIVES) {
+      const rare = knifeClip(def, 'inspect', 1);
+      if (def.shape.pair) {
+        expect(knifeInspectCount(def), def.id).toBe(1);
+        continue;
+      }
+      if (def.id === 'skeleton') continue;
+      expect(knifeInspectCount(def), def.id).toBe(2);
+      expect(rare, def.id).not.toBe(knifeClip(def, 'inspect'));
     }
   });
 

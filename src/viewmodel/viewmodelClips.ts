@@ -154,6 +154,8 @@ export function knifeInspectStyle(def: KnifeDef): KnifeInspectStyle {
   if (def.id === 'stiletto') return 'switch_show';
   if (def.id === 'navaja') return 'flick_show';
   if (TWIRL.has(def.id)) return 'twirl';
+  // the ursus is a heavy tanto: looked over and tossed rather than folded
+  if (def.id === 'ursus') return 'heavy_show';
   if (mech === 'folder') return 'flip_show';
   if (HEAVY.has(def.id)) return 'heavy_show';
   return 'toss_catch';
@@ -166,86 +168,97 @@ export function knifeUsesReverseGrip(def: KnifeDef): boolean {
 
 const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
   unsheathe: {
-    duration: 0.8,
-    tracks: {
-      py: [[0, -0.2], [0.45, 0, 'out']],
-      px: [[0, 0.06], [0.45, 0, 'out']],
-      rx: [[0, -70], [0.45, 0, 'out']],
-      rz: [[0, 35], [0.45, -8, 'out'], [0.7, 0]],
-      // the wrist rolls the knife up into view, the fingers stay closed on it
-      holdRoll: [[0, -120], [0.55, 0, 'out']],
-    },
-    events: [[0.3, 'sound:knife_draw']],
-  },
-  flip_open: {
+    // comes up from low right, the wrist rolling it over into the grip
     duration: 0.9,
     tracks: {
-      py: [[0, -0.16], [0.35, 0, 'out']],
-      rx: [[0, -40], [0.35, 0, 'out']],
-      rz: [[0, 20], [0.35, 0], [0.47, -14, 'out'], [0.75, 0]],
-      knifeOpen: [[0, 0], [0.36, 0], [0.5, 1, 'back']],
-      thumbOpener: [[0, 0], [0.18, 0], [0.32, 1, 'inOut'], [0.5, 1], [0.64, 0, 'inOut']],
+      raise: [[0, 0.6], [0.3, 0.6], [0.62, 0, 'inOut']],
+      py: [[0, -0.2], [0.28, 0, 'out']],
+      px: [[0, 0.04], [0.28, 0, 'out']],
+      rz: [[0, -25], [0.3, 0, 'out'], [0.62, 6, 'inOut'], [0.85, 0, 'inOut']],
+      holdRoll: [[0, -150], [0.12, -150], [0.5, 0, 'out']],
     },
-    events: [[0.46, 'sound:knife_open']],
+    events: [[0.08, 'sound:knife_draw'], [0.48, 'sound:knife_catch']],
+  },
+  flip_open: {
+    // up closed, thumb on the opener, a wrist snap throws the blade open
+    duration: 1.0,
+    tracks: {
+      raise: [[0, 0.7], [0.45, 0.7], [0.8, 0, 'inOut']],
+      py: [[0, -0.18], [0.28, 0, 'out']],
+      knifeOpen: [[0, 0], [0.36, 0], [0.48, 1, 'back']],
+      thumbOpener: [[0, 0], [0.16, 0], [0.3, 1, 'inOut'], [0.46, 1], [0.6, 0, 'inOut']],
+      rz: [[0, 15], [0.3, 0, 'out'], [0.38, -6], [0.46, 18, 'out'], [0.62, -4, 'inOut'], [0.85, 0, 'inOut']],
+      rx: [[0, 0], [0.38, 0], [0.47, 10, 'out'], [0.65, 0, 'inOut']],
+    },
+    events: [[0.05, 'sound:knife_draw'], [0.46, 'sound:knife_open']],
   },
   skeleton_spin: {
     // index slips into the ring, the knife twirls around it, then the hand takes the handle
     duration: 1.1,
     tracks: {
-      py: [[0, -0.16], [0.3, 0, 'out']],
-      rx: [[0, -30], [0.3, 0, 'out']],
+      raise: [[0, 1], [0.6, 1], [0.95, 0, 'inOut']],
+      py: [[0, -0.18], [0.26, 0, 'out']],
       ringHold: [[0, 1], [0.75, 1], [0.95, 0, 'inOut']],
       spinZ: [[0, 720], [0.8, 0, 'out']],
       // the fingers close on the handle once the hand has arrived from the ring
       gripOpen: [[0, 0.95], [0.95, 0.95], [1.05, 0, 'out']],
     },
-    events: [[0.3, 'sound:knife_spin']],
+    events: [[0.08, 'sound:knife_draw'], [0.3, 'sound:knife_spin']],
   },
   switch_open: {
     // button press, the blade swings out in a few frames and the knife kicks
-    duration: 0.9,
+    duration: 0.95,
     tracks: {
-      py: [[0, -0.16], [0.32, 0, 'out']],
-      rx: [[0, -35], [0.32, 0, 'out'], [0.45, 0], [0.49, 8, 'out'], [0.65, 0]],
-      knifeOpen: [[0, 0], [0.42, 0], [0.47, 1, 'out']],
-      rz: [[0, 12], [0.32, 0], [0.49, -6], [0.65, 0]],
-      thumbOpener: [[0, 0], [0.2, 0], [0.34, 1, 'inOut'], [0.48, 1], [0.62, 0, 'inOut']],
+      raise: [[0, 0.6], [0.45, 0.6], [0.78, 0, 'inOut']],
+      py: [[0, -0.18], [0.28, 0, 'out']],
+      thumbOpener: [[0, 1], [0.44, 1], [0.58, 0, 'inOut']],
+      knifeOpen: [[0, 0], [0.38, 0], [0.43, 1, 'out']],
+      rx: [[0, 0], [0.38, 0], [0.44, 9, 'out'], [0.6, 0, 'inOut']],
+      rz: [[0, 0], [0.38, 0], [0.45, -6, 'out'], [0.62, 0, 'inOut']],
+      leftGuard: [[0, 0], [0.4, 0], [0.85, 1, 'out']],
     },
-    events: [[0.44, 'sound:knife_open']],
+    events: [[0.05, 'sound:knife_draw'], [0.41, 'sound:knife_open']],
   },
   flick_open: {
     // a wrist flick throws the blade open against the lock
     duration: 1.0,
     tracks: {
-      py: [[0, -0.16], [0.35, 0, 'out']],
-      rx: [[0, -30], [0.35, 0, 'out']],
-      rz: [[0, 15], [0.35, 0], [0.45, 30, 'out'], [0.55, -18, 'in'], [0.8, 0]],
-      knifeOpen: [[0, 0], [0.47, 0], [0.56, 1, 'back']],
-      thumbOpener: [[0, 0], [0.25, 0], [0.4, 1, 'inOut'], [0.55, 1], [0.7, 0, 'inOut']],
+      raise: [[0, 0.6], [0.45, 0.6], [0.8, 0, 'inOut']],
+      py: [[0, -0.18], [0.28, 0, 'out']],
+      thumbOpener: [[0, 0], [0.2, 0], [0.32, 1, 'inOut'], [0.42, 1], [0.55, 0, 'inOut']],
+      rz: [[0, 10], [0.3, 0, 'out'], [0.4, 22, 'out'], [0.48, -16, 'in'], [0.66, 4, 'inOut'], [0.85, 0, 'inOut']],
+      knifeOpen: [[0, 0], [0.42, 0], [0.5, 1, 'back']],
+      leftGuard: [[0, 0], [0.45, 0], [0.9, 1, 'out']],
     },
-    events: [[0.53, 'sound:knife_open']],
+    events: [[0.05, 'sound:knife_draw'], [0.48, 'sound:knife_open']],
   },
   spin_draw: {
-    // the knife comes up spinning once about the grip and lands in hand
-    duration: 0.95,
+    // cs2's bayonet pullout: up on the right with the hand open and the knife
+    // whirling a turn and a half, the fingers snap shut on it and it drops in
+    duration: 1.05,
     tracks: {
-      py: [[0, -0.18], [0.4, 0, 'out']],
-      rx: [[0, -45], [0.4, 0, 'out']],
-      rollX: [[0, 0], [0.15, 0], [0.7, 360, 'inOut']],
-      gripOpen: [[0, 0], [0.2, 0], [0.26, 0.7], [0.62, 0.7], [0.7, 0]],
+      raise: [[0, 1], [0.58, 1], [0.9, 0, 'inOut']],
+      py: [[0, -0.2], [0.26, 0, 'out']],
+      px: [[0, 0.05], [0.26, 0, 'out']],
+      spinZ: [[0, 540], [0.14, 540], [0.62, 0, 'out']],
+      tossY: [[0, 0], [0.12, 0], [0.18, 0.025, 'out'], [0.56, 0.025], [0.62, 0, 'in']],
+      gripOpen: [[0, 0.9], [0.56, 0.9], [0.66, 0, 'out']],
+      rz: [[0, 0], [0.62, 0], [0.7, -8, 'out'], [0.92, 0, 'inOut']],
     },
-    events: [[0.3, 'sound:knife_spin']],
+    events: [[0.1, 'sound:knife_draw'], [0.3, 'sound:knife_spin'], [0.64, 'sound:knife_catch']],
   },
   balisong_open: {
+    // every handle swing is thrown by a wrist flick
     duration: 1.3,
     tracks: {
-      py: [[0, -0.16], [0.3, 0, 'out']],
-      rx: [[0, -30], [0.3, 0, 'out']],
-      baliSafe: [[0, 1], [0.3, 1], [0.55, 0, 'out'], [0.75, 0], [0.95, 1, 'inOut'], [1.15, 0, 'out']],
-      baliBite: [[0, 1], [0.45, 1], [0.75, 0, 'out']],
-      rz: [[0, 0], [0.8, 0], [1.0, 12], [1.3, 0]],
+      raise: [[0, 0.8], [0.9, 0.8], [1.2, 0, 'inOut']],
+      py: [[0, -0.18], [0.28, 0, 'out']],
+      baliSafe: [[0, 1], [0.28, 1], [0.48, 0, 'out'], [0.66, 0], [0.84, 1, 'inOut'], [1.02, 0, 'out']],
+      baliBite: [[0, 1], [0.42, 1], [0.66, 0, 'out']],
+      rz: [[0, 0], [0.26, -10, 'out'], [0.44, 14, 'out'], [0.62, -12, 'inOut'], [0.82, 12, 'inOut'], [1.0, -8, 'out'], [1.25, 0, 'inOut']],
+      leftGuard: [[0, 0], [0.8, 0], [1.25, 1, 'out']],
     },
-    events: [[0.55, 'sound:knife_open'], [1.15, 'sound:knife_open']],
+    events: [[0.48, 'sound:knife_open'], [0.66, 'sound:knife_open'], [1.02, 'sound:knife_open']],
   },
   spin_in: {
     // cs2 karambit: the hand comes up on the right with the fingers open and the
@@ -253,7 +266,7 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
     // the left hand comes up
     duration: 1.0,
     tracks: {
-      ringRaise: [[0, 1], [0.5, 1], [0.84, 0, 'inOut']],
+      raise: [[0, 1], [0.5, 1], [0.84, 0, 'inOut']],
       py: [[0, -0.22], [0.26, 0, 'out']],
       px: [[0, 0.05], [0.26, 0, 'out']],
       rz: [[0, 0], [0.84, 0], [0.92, -5, 'out'], [1.0, 0, 'inOut']],
@@ -275,84 +288,86 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
   },
 };
 
-const WATCH_TAIL = (start: number): Readonly<Record<string, readonly (readonly [number, number, ('inOut' | 'out')?])[]>> => ({
-  watch: [[0, 0], [start, 0], [start + 0.4, 1, 'inOut'], [start + 1.0, 1], [start + 1.4, 0, 'inOut']],
-  leftAttach: [[0, 0], [start - 0.05, 0], [start, 1, 'out'], [start + 1.4, 1], [start + 1.45, 0]],
-});
-
 const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
   flip_show: {
-    duration: 3.8,
+    // snap it up to look at one side, turn it over, then fold it and flick it open again
+    duration: 4.0,
     tracks: {
-      ry: [[0, 0], [0.5, 35], [1.3, 35], [1.7, -20], [2.2, -20], [2.6, 0]],
-      rz: [[0, 0], [0.5, 55], [1.3, 60], [1.7, -35], [2.2, -30], [2.6, 0]],
-      px: [[0, 0], [0.5, -0.05], [1.3, -0.05], [1.7, 0], [2.6, 0]],
-      py: [[0, 0], [0.5, 0.05], [2.2, 0.04], [2.6, 0]],
-      rollX: [[0, 0], [1.3, 0], [1.7, 180, 'inOut'], [2.2, 180], [2.6, 360, 'inOut']],
-      knifeOpen: [[0, 1], [2.0, 1], [2.2, 0.15, 'inOut'], [2.4, 1, 'back']],
-      ...WATCH_TAIL(2.4),
+      show: [[0, 0], [0.45, 1, 'out'], [1.6, 1], [1.95, 0, 'inOut']],
+      showB: [[0, 0], [1.6, 0], [1.95, 1, 'inOut'], [3.2, 1], [3.6, 0, 'inOut']],
+      knifeOpen: [[0, 1], [2.1, 1], [2.4, 0.72, 'inOut'], [2.62, 0.72], [2.72, 1, 'back']],
+      thumbOpener: [[0, 0], [2.35, 0], [2.48, 1, 'inOut'], [2.66, 1], [2.8, 0, 'inOut']],
+      rz: [[0, 0], [0.45, -5, 'out'], [1.1, 6, 'inOut'], [1.6, 0, 'inOut'], [2.6, 0], [2.68, 16, 'out'], [2.85, -4, 'inOut'], [3.0, 0, 'inOut']],
+      ry: [[0, 0], [0.45, 8, 'out'], [1.2, -6, 'inOut'], [1.6, 0, 'inOut']],
     },
-    events: [[2.2, 'sound:knife_open'], [2.4, 'sound:knife_open']],
+    events: [[2.4, 'sound:knife_open'], [2.7, 'sound:knife_open']],
   },
   switch_show: {
-    // close and snap the blade out again, then turn it over
-    duration: 3.6,
+    // look at it, let the blade fold, snap it out on the button, then the other side
+    duration: 3.9,
     tracks: {
-      ry: [[0, 0], [0.4, 30], [2.6, 30], [3.0, 0]],
-      rz: [[0, 0], [0.4, 50], [1.6, 50], [2.0, -30], [2.6, -30], [3.0, 0]],
-      py: [[0, 0], [0.4, 0.05], [2.6, 0.05], [3.0, 0]],
-      knifeOpen: [[0, 1], [0.7, 1], [0.95, 0, 'inOut'], [1.3, 0], [1.35, 1, 'out']],
-      rx: [[0, 0], [1.3, 0], [1.36, 8, 'out'], [1.5, 0]],
-      rollX: [[0, 0], [1.6, 0], [2.0, 180, 'inOut'], [2.6, 360, 'inOut']],
-      ...WATCH_TAIL(2.15),
+      show: [[0, 0], [0.45, 1, 'out'], [1.9, 1], [2.25, 0, 'inOut']],
+      showB: [[0, 0], [1.9, 0], [2.25, 1, 'inOut'], [3.2, 1], [3.6, 0, 'inOut']],
+      knifeOpen: [[0, 1], [0.75, 1], [1.05, 0, 'inOut'], [1.38, 0], [1.43, 1, 'out']],
+      // the thumb waits off the blade's path while it shuts, then goes onto the button
+      thumbOpener: [[0, 0], [0.5, 0], [0.66, 0.5, 'inOut'], [1.06, 0.5], [1.18, 1, 'inOut'], [1.45, 1], [1.6, 0, 'inOut']],
+      rx: [[0, 0], [1.38, 0], [1.44, 8, 'out'], [1.6, 0, 'inOut']],
+      rz: [[0, 0], [0.45, -4, 'out'], [1.0, 5, 'inOut'], [1.38, 0, 'inOut']],
+      leftGuard: [[0, 1], [0.3, 0, 'inOut'], [3.4, 0], [3.85, 1, 'inOut']],
     },
-    events: [[0.95, 'sound:knife_open'], [1.33, 'sound:knife_open']],
+    events: [[1.0, 'sound:knife_open'], [1.41, 'sound:knife_open']],
   },
   flick_show: {
-    // fold it half shut, flick it open with the wrist, show both sides
-    duration: 3.8,
+    // fold it half shut, flick it open with the wrist, then the other side
+    duration: 3.9,
     tracks: {
-      ry: [[0, 0], [0.4, 28], [2.8, 28], [3.2, 0]],
-      rz: [[0, 0], [0.4, 45], [1.1, 45], [1.2, 70, 'out'], [1.3, 40, 'in'], [2.0, -28], [2.8, -28], [3.2, 0]],
-      py: [[0, 0], [0.4, 0.05], [2.8, 0.05], [3.2, 0]],
-      knifeOpen: [[0, 1], [0.6, 1], [0.9, 0.35, 'inOut'], [1.18, 0.35], [1.28, 1, 'back']],
-      rollX: [[0, 0], [1.6, 0], [2.0, 180, 'inOut'], [2.8, 360, 'inOut']],
-      ...WATCH_TAIL(2.4),
+      show: [[0, 0], [0.45, 1, 'out'], [1.8, 1], [2.15, 0, 'inOut']],
+      showB: [[0, 0], [1.8, 0], [2.15, 1, 'inOut'], [3.2, 1], [3.6, 0, 'inOut']],
+      knifeOpen: [[0, 1], [0.7, 1], [0.95, 0.7, 'inOut'], [1.2, 0.7], [1.3, 1, 'back']],
+      thumbOpener: [[0, 0], [0.65, 0], [0.78, 1, 'inOut'], [0.9, 1], [1.0, 0, 'inOut']],
+      rz: [[0, 0], [0.45, -4, 'out'], [0.95, 4, 'inOut'], [1.16, -14, 'out'], [1.26, 18, 'in'], [1.45, -3, 'inOut'], [1.7, 0, 'inOut']],
+      leftGuard: [[0, 1], [0.3, 0, 'inOut'], [3.4, 0], [3.85, 1, 'inOut']],
     },
-    events: [[1.26, 'sound:knife_open']],
+    events: [[1.27, 'sound:knife_open']],
   },
   balisong: {
     // opens and closes in a rhythm: the hand keeps the bite handle, the safe
     // handle swings over the spine and the blade swings out round the bite pin,
-    // with the whole knife rolling between them
-    duration: 4.6,
+    // every swing thrown by the wrist, with a rollover in the middle
+    duration: 4.7,
     tracks: {
-      ry: [[0, 0], [0.4, 34], [3.2, 34], [3.6, 0]],
-      rz: [[0, 0], [0.4, 48], [1.6, 55], [2.4, 38], [3.2, 48], [3.6, 0]],
-      rx: [[0, 0], [0.4, 12], [3.2, 12], [3.6, 0]],
-      px: [[0, 0], [0.4, -0.05], [3.2, -0.05], [3.6, 0]],
-      py: [[0, 0], [0.4, 0.07], [3.2, 0.07], [3.6, 0]],
+      show: [[0, 0], [0.4, 0.8, 'out'], [3.85, 0.8], [4.25, 0, 'inOut']],
       baliSafe: [
         [0, 0], [0.45, 0], [0.62, 1, 'out'], [0.8, 1], [0.97, 0, 'in'],
         [1.45, 0], [1.6, 1, 'out'], [1.75, 0, 'in'],
         [2.35, 0], [2.5, 1, 'out'], [2.62, 1], [2.78, 0, 'in'],
+        [3.2, 0], [3.33, 1, 'out'], [3.46, 0, 'in'],
       ],
       baliBite: [
         [0, 0], [0.62, 0], [0.8, 1, 'out'], [0.97, 1], [1.12, 0, 'in'],
         [1.6, 0], [1.75, 1, 'out'], [1.9, 0, 'in'],
         [2.5, 0], [2.62, 1, 'out'], [2.78, 1], [2.93, 0, 'in'],
+        [3.33, 0], [3.46, 1, 'out'], [3.6, 0, 'in'],
+      ],
+      rz: [
+        [0, 0], [0.4, -4, 'out'], [0.6, 12, 'out'], [0.8, -8, 'inOut'], [0.97, 10, 'out'], [1.2, 0, 'inOut'],
+        [1.58, 12, 'out'], [1.75, -10, 'inOut'], [1.9, 8, 'out'], [2.2, 0, 'inOut'],
+        [2.48, 12, 'out'], [2.78, -10, 'inOut'], [2.93, 8, 'out'], [3.3, -10, 'out'], [3.46, 10, 'inOut'], [3.6, -6, 'out'], [3.85, 0, 'inOut'],
       ],
       rollX: [[0, 0], [1.9, 0], [2.2, 180, 'inOut'], [2.93, 360, 'inOut']],
-      ...WATCH_TAIL(3.2),
+      leftGuard: [[0, 1], [0.3, 0, 'inOut'], [4.2, 0], [4.65, 1, 'inOut']],
     },
-    events: [[0.62, 'sound:knife_open'], [0.97, 'sound:knife_open'], [1.6, 'sound:knife_open'], [1.9, 'sound:knife_open'], [2.5, 'sound:knife_open'], [2.93, 'sound:knife_open']],
+    events: [
+      [0.62, 'sound:knife_open'], [0.97, 'sound:knife_open'], [1.6, 'sound:knife_open'], [1.9, 'sound:knife_open'],
+      [2.5, 'sound:knife_open'], [2.93, 'sound:knife_open'], [3.33, 'sound:knife_open'], [3.6, 'sound:knife_open'],
+    ],
   },
   ring_spin: {
     // cs2 karambit: a spin on the index while the fist turns up to show the
     // claw, a slow look at both curves, another spin on the way back down
     duration: 4.0,
     tracks: {
-      ringShow: [[0, 0], [0.7, 1, 'inOut'], [3.0, 1], [3.65, 0, 'inOut']],
+      show: [[0, 0], [0.7, 1, 'inOut'], [3.0, 1], [3.65, 0, 'inOut']],
       leftGuard: [[0, 1], [0.35, 0, 'inOut'], [3.35, 0], [3.9, 1, 'inOut']],
       rz: [[0, 0], [0.7, 0], [1.5, 9, 'inOut'], [2.3, -7, 'inOut'], [3.0, 0, 'inOut']],
       ry: [[0, 0], [0.7, 0], [1.6, -12, 'inOut'], [2.4, 8, 'inOut'], [3.0, 0, 'inOut']],
@@ -364,63 +379,65 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
     events: [[0.3, 'sound:knife_spin'], [3.2, 'sound:knife_spin']],
   },
   skeleton_ring: {
-    // turn it over, then hook the index through the ring and spin it on the finger
-    duration: 4.6,
+    // look at it, then hook the index through the ring and spin it on the finger
+    duration: 4.4,
     tracks: {
-      ry: [[0, 0], [0.4, 30], [3.2, 30], [3.6, 0]],
-      rz: [[0, 0], [0.4, 45], [1.0, 45], [1.3, 20], [3.2, 20], [3.6, 0]],
-      py: [[0, 0], [0.4, 0.05], [3.2, 0.05], [3.6, 0]],
-      // the flat skeleton frame can't turn in the fingers, the wrist shows the other side
-      holdRoll: [[0, 0], [0.5, 0], [0.85, 75, 'inOut'], [1.2, 0, 'inOut']],
+      show: [[0, 0], [0.45, 1, 'out'], [1.1, 1], [1.4, 0.4, 'inOut'], [3.3, 0.4], [3.7, 0, 'inOut']],
+      rz: [[0, 0], [0.45, -5, 'out'], [1.0, 5, 'inOut'], [1.3, 0, 'inOut']],
       ringHold: [[0, 0], [1.25, 0], [1.5, 1, 'inOut'], [2.95, 1], [3.2, 0, 'inOut']],
       // let go before the hand moves to the ring, close only once it is back on the handle
       gripOpen: [[0, 0], [1.15, 0], [1.25, 0.95], [3.2, 0.95], [3.3, 0]],
-      spinZ: [[0, 0], [1.5, 0], [2.2, 360, 'inOut'], [2.9, 720, 'inOut']],
-      ...WATCH_TAIL(3.2),
+      spinZ: [[0, 0], [1.5, 0], [2.15, 360, 'inOut'], [2.85, 720, 'inOut']],
     },
-    events: [[1.9, 'sound:knife_spin'], [2.6, 'sound:knife_spin']],
+    events: [[1.85, 'sound:knife_spin'], [2.55, 'sound:knife_spin']],
   },
   toss_catch: {
-    // the hand dips, flicks the knife up through a full flip and catches it
-    duration: 3.6,
+    // up to look at it, a dip and a flick that tumbles it end over end and
+    // over once in the air, caught with a bounce
+    duration: 3.8,
     tracks: {
-      ry: [[0, 0], [0.45, 28], [1.85, 28], [2.2, -18], [2.6, 0]],
-      rz: [[0, 0], [0.45, 42], [1.85, 40], [2.2, -28], [2.6, 0]],
-      px: [[0, 0], [0.45, -0.04], [1.85, -0.04], [2.2, 0], [2.6, 0]],
-      py: [[0, 0], [0.45, 0.03], [0.7, -0.015, 'inOut'], [0.85, 0.04, 'out'], [1.45, 0.05], [1.6, 0.02, 'out'], [2.2, 0.04], [2.6, 0]],
-      rx: [[0, 0], [0.7, -12], [0.85, 10, 'out'], [1.5, 0], [1.62, -8, 'out'], [1.9, 0]],
-      tossY: [[0, 0], [0.85, 0], [1.17, 0.13, 'out'], [1.5, 0.015, 'in'], [1.55, 0]],
-      // spins only once it has left the fingers and stops before they close on it
-      spinZ: [[0, 0], [1.0, 0], [1.42, 360, 'inOut']],
-      rollX: [[0, 0], [1.0, 0], [1.42, 180, 'inOut'], [2.2, 180], [2.55, 360, 'inOut']],
-      gripOpen: [[0, 0], [0.8, 0], [0.88, 1], [1.5, 1], [1.6, 0]],
-      ...WATCH_TAIL(2.15),
+      show: [[0, 0], [0.45, 1, 'out'], [1.4, 1], [1.7, 0.6, 'inOut'], [2.6, 0.6], [3.0, 0, 'inOut']],
+      py: [[0, 0], [1.4, 0], [1.6, -0.015, 'inOut'], [1.72, 0.02, 'out'], [2.2, 0.01], [2.32, -0.01, 'out'], [2.6, 0, 'inOut']],
+      rx: [[0, 0], [1.5, 0], [1.6, -10], [1.72, 10, 'out'], [2.0, 0, 'inOut'], [2.3, 0], [2.36, -8, 'out'], [2.6, 0, 'inOut']],
+      tossY: [[0, 0], [1.72, 0], [2.0, 0.13, 'out'], [2.3, 0.012, 'in'], [2.34, 0]],
+      // spins and rolls only once it has left the fingers and lands the right way round
+      spinZ: [[0, 0], [1.78, 0], [2.3, 360, 'inOut']],
+      rollX: [[0, 0], [1.78, 0], [2.3, 360, 'inOut']],
+      gripOpen: [[0, 0], [1.68, 0], [1.75, 1], [2.3, 1], [2.38, 0]],
+      rz: [[0, 0], [0.45, -5, 'out'], [1.0, 6, 'inOut'], [1.4, 0, 'inOut']],
     },
-    events: [[0.86, 'sound:knife_toss'], [1.55, 'sound:knife_catch']],
+    events: [[1.73, 'sound:knife_toss'], [2.33, 'sound:knife_catch']],
   },
   twirl: {
+    // look at both sides, then open the hand and whirl it twice round the grip
+    // and snap the fingers shut on it
     duration: 4.2,
     tracks: {
-      ry: [[0, 0], [0.5, 35], [2.4, 35], [2.8, 0]],
-      rz: [[0, 0], [0.5, 50], [1.4, 50], [1.8, -30], [2.4, -30], [2.8, 0]],
-      px: [[0, 0], [0.5, -0.04], [2.4, -0.02], [2.8, 0]],
-      py: [[0, 0], [0.5, 0.05], [2.4, 0.04], [2.8, 0]],
-      rollX: [[0, 0], [0.6, 0], [1.2, 360, 'inOut'], [1.8, 360], [2.3, 720, 'inOut']],
-      ...WATCH_TAIL(2.7),
+      show: [[0, 0], [0.45, 1, 'out'], [1.5, 1], [1.85, 0, 'inOut']],
+      showB: [[0, 0], [1.5, 0], [1.85, 1, 'inOut'], [2.5, 1], [2.8, 0, 'inOut']],
+      raise: [[0, 0], [2.5, 0], [2.8, 0.85, 'inOut'], [3.55, 0.85], [3.95, 0, 'inOut']],
+      rz: [[0, 0], [0.45, -4, 'out'], [1.0, 5, 'inOut'], [1.5, 0, 'inOut'], [3.5, 0], [3.58, -10, 'out'], [3.8, 0, 'inOut']],
+      ry: [[0, 0], [0.45, 6, 'out'], [1.1, -6, 'inOut'], [1.5, 0, 'inOut']],
+      spinZ: [[0, 0], [2.8, 0], [3.42, 720, 'inOut']],
+      tossY: [[0, 0], [2.72, 0], [2.82, 0.035, 'out'], [3.42, 0.035], [3.5, 0, 'in']],
+      gripOpen: [[0, 0], [2.66, 0], [2.76, 0.9], [3.46, 0.9], [3.56, 0, 'out']],
     },
-    events: [[0.9, 'sound:knife_spin'], [2.0, 'sound:knife_spin']],
+    events: [[2.95, 'sound:knife_spin'], [3.25, 'sound:knife_spin'], [3.52, 'sound:knife_catch']],
   },
   heavy_show: {
-    duration: 4.0,
+    // slower and weightier: look at both sides, then a short flip toss and catch
+    duration: 4.3,
     tracks: {
-      ry: [[0, 0], [0.7, 40], [1.6, 40], [2.1, -25], [2.7, -25], [3.1, 0]],
-      rz: [[0, 0], [0.7, 65], [1.6, 70], [2.1, -40], [2.7, -35], [3.1, 0]],
-      px: [[0, 0], [0.7, -0.05], [1.6, -0.05], [2.1, 0.01], [3.1, 0]],
-      py: [[0, 0], [0.7, 0.06], [2.7, 0.05], [3.1, 0]],
-      pz: [[0, 0], [0.7, 0.03], [2.7, 0.03], [3.1, 0]],
-      rollX: [[0, 0], [1.6, 0], [2.1, 180, 'inOut'], [2.7, 180], [3.1, 360, 'inOut']],
-      ...WATCH_TAIL(2.6),
+      show: [[0, 0], [0.55, 1, 'out'], [1.7, 1], [2.05, 0, 'inOut']],
+      showB: [[0, 0], [1.7, 0], [2.05, 1, 'inOut'], [2.75, 1], [3.05, 0, 'inOut']],
+      raise: [[0, 0], [2.75, 0], [3.05, 0.7, 'inOut'], [3.75, 0.7], [4.1, 0, 'inOut']],
+      tossY: [[0, 0], [3.05, 0], [3.3, 0.09, 'out'], [3.55, 0.01, 'in'], [3.6, 0]],
+      spinZ: [[0, 0], [3.1, 0], [3.55, 360, 'inOut']],
+      gripOpen: [[0, 0], [3.0, 0], [3.08, 1], [3.55, 1], [3.64, 0]],
+      py: [[0, 0], [3.55, 0], [3.62, -0.012, 'out'], [3.85, 0, 'inOut']],
+      rz: [[0, 0], [0.55, -4, 'out'], [1.2, 6, 'inOut'], [1.7, 0, 'inOut']],
     },
+    events: [[3.06, 'sound:knife_toss'], [3.58, 'sound:knife_catch']],
   },
   dagger_pair: {
     duration: 3.4,
@@ -434,7 +451,94 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
   },
 };
 
+// the rarer inspect a knife sometimes plays instead, like cs2's rare animations
+const RARE_INSPECTS: Partial<Record<KnifeInspectStyle, Clip>> = {
+  // the talon's endless loop: spin after spin on the index with the fist up
+  ring_spin: {
+    duration: 4.2,
+    tracks: {
+      show: [[0, 0], [0.6, 1, 'inOut'], [3.3, 1], [3.9, 0, 'inOut']],
+      leftGuard: [[0, 1], [0.35, 0, 'inOut'], [3.6, 0], [4.15, 1, 'inOut']],
+      spinZ: [[0, 0], [0.12, 0], [0.6, 360, 'inOut'], [1.1, 720, 'inOut'], [1.6, 1080, 'inOut'], [2.1, 1440, 'inOut'], [2.6, 1800, 'inOut'], [3.3, 2160, 'inOut']],
+      gripOpen: [[0, 0], [0.1, 0], [0.18, 0.95], [3.2, 0.95], [3.35, 0]],
+      rz: [[0, 0], [0.6, 0], [1.6, 8, 'inOut'], [2.6, -8, 'inOut'], [3.3, 0, 'inOut']],
+    },
+    events: [[0.3, 'sound:knife_spin'], [0.85, 'sound:knife_spin'], [1.35, 'sound:knife_spin'], [1.85, 'sound:knife_spin'], [2.35, 'sound:knife_spin'], [2.9, 'sound:knife_spin']],
+  },
+  // fast fanning: four quick open and shut swings with the wrist driving each
+  balisong: {
+    duration: 3.6,
+    tracks: {
+      show: [[0, 0], [0.35, 0.7, 'out'], [2.9, 0.7], [3.3, 0, 'inOut']],
+      baliSafe: [[0, 0], [0.4, 0], [0.52, 1, 'out'], [0.64, 0, 'in'], [0.9, 0], [1.02, 1, 'out'], [1.14, 0, 'in'], [1.4, 0], [1.52, 1, 'out'], [1.64, 0, 'in'], [1.9, 0], [2.02, 1, 'out'], [2.14, 0, 'in']],
+      baliBite: [[0, 0], [0.52, 0], [0.64, 1, 'out'], [0.76, 0, 'in'], [1.02, 0], [1.14, 1, 'out'], [1.26, 0, 'in'], [1.52, 0], [1.64, 1, 'out'], [1.76, 0, 'in'], [2.02, 0], [2.14, 1, 'out'], [2.26, 0, 'in']],
+      rz: [[0, 0], [0.5, 12, 'out'], [0.64, -10, 'inOut'], [0.76, 6], [1.0, 12, 'out'], [1.14, -10, 'inOut'], [1.26, 6], [1.5, 12, 'out'], [1.64, -10, 'inOut'], [1.76, 6], [2.0, 12, 'out'], [2.14, -10, 'inOut'], [2.26, 6], [2.6, 0, 'inOut']],
+      rollX: [[0, 0], [2.26, 0], [2.6, 360, 'inOut']],
+      leftGuard: [[0, 1], [0.3, 0, 'inOut'], [3.2, 0], [3.55, 1, 'inOut']],
+    },
+    events: [[0.52, 'sound:knife_open'], [0.76, 'sound:knife_open'], [1.02, 'sound:knife_open'], [1.26, 'sound:knife_open'], [1.52, 'sound:knife_open'], [1.76, 'sound:knife_open'], [2.02, 'sound:knife_open'], [2.26, 'sound:knife_open']],
+  },
+};
+
+/** which other inspect a knife sometimes plays instead of its usual one */
+function rareInspect(def: KnifeDef): Clip | null {
+  const style = knifeInspectStyle(def);
+  if (RARE_INSPECTS[style]) return RARE_INSPECTS[style];
+  if (style === 'dagger_pair' || style === 'skeleton_ring') return null;
+  // spinners toss it, tossers and heavy knives spin it
+  return style === 'twirl' || style === 'flip_show' ? INSPECTS.toss_catch : INSPECTS.twirl;
+}
+
+/** how many inspects a knife has (the usual one, then a rare one) */
+export function knifeInspectCount(def: KnifeDef): number {
+  return rareInspect(def) ? 2 : 1;
+}
+
+// hammer and balisong knives: whole hand poses, a quick wind up, the slash
+// carried through past the target, and a settle back
 const ATTACKS: Readonly<Record<'slashA' | 'slashB' | 'stab' | 'backstab', Clip>> = {
+  slashA: {
+    // right to left and a little down
+    duration: 0.45,
+    tracks: {
+      hook: [[0, 0], [0.06, -0.12, 'out'], [0.17, 1, 'in'], [0.24, 1.05], [0.45, 0, 'inOut']],
+      py: [[0, 0], [0.06, 0.02, 'out'], [0.17, -0.02, 'in'], [0.45, 0, 'inOut']],
+      rz: [[0, 0], [0.06, -8, 'out'], [0.17, 12, 'in'], [0.45, 0, 'inOut']],
+    },
+  },
+  slashB: {
+    // backhand from the left back across to the right
+    duration: 0.45,
+    tracks: {
+      hook: [[0, 0], [0.07, 0.35, 'out'], [0.14, 0, 'in']],
+      hookB: [[0, 0], [0.07, 0], [0.17, 1, 'in'], [0.24, 1.05], [0.45, 0, 'inOut']],
+      py: [[0, 0], [0.07, 0.015, 'out'], [0.17, -0.015, 'in'], [0.45, 0, 'inOut']],
+      rz: [[0, 0], [0.07, 10, 'out'], [0.17, -10, 'in'], [0.45, 0, 'inOut']],
+    },
+  },
+  stab: {
+    // drawn back high, then punched in
+    duration: 0.85,
+    tracks: {
+      cock: [[0, 0], [0.22, 1, 'out'], [0.34, 0, 'in']],
+      strike: [[0, 0], [0.22, 0], [0.34, 1, 'in'], [0.48, 1], [0.85, 0, 'inOut']],
+      rz: [[0, 0], [0.22, -6, 'out'], [0.34, 6, 'in'], [0.85, 0, 'inOut']],
+    },
+  },
+  backstab: {
+    // higher, a beat longer, driven deeper
+    duration: 0.95,
+    tracks: {
+      cock: [[0, 0], [0.26, 1.1, 'out'], [0.4, 0, 'in']],
+      strike: [[0, 0], [0.26, 0], [0.4, 1.1, 'in'], [0.56, 1.1], [0.95, 0, 'inOut']],
+      pz: [[0, 0], [0.26, 0], [0.4, -0.04, 'in'], [0.95, 0, 'inOut']],
+      rz: [[0, 0], [0.26, -8, 'out'], [0.4, 8, 'in'], [0.95, 0, 'inOut']],
+    },
+  },
+};
+
+// the push daggers have no whole hand poses, they still move by offsets
+const DAGGER_ATTACKS: Readonly<Record<'slashA' | 'slashB' | 'stab' | 'backstab', Clip>> = {
   slashA: {
     duration: 0.45,
     tracks: {
@@ -486,7 +590,7 @@ const RING_ATTACKS: Readonly<Record<'slashA' | 'slashB' | 'stab' | 'backstab', C
   slashA: {
     duration: 0.45,
     tracks: {
-      ringHook: [[0, 0], [0.06, -0.15, 'out'], [0.16, 1, 'in'], [0.45, 0, 'inOut']],
+      hook: [[0, 0], [0.06, -0.15, 'out'], [0.16, 1, 'in'], [0.45, 0, 'inOut']],
       px: [[0, 0], [0.16, 0], [0.25, -0.07, 'out'], [0.45, 0, 'inOut']],
       py: [[0, 0], [0.16, 0], [0.25, -0.1, 'out'], [0.45, 0, 'inOut']],
       ry: [[0, 0], [0.06, -12, 'out'], [0.16, 14, 'in'], [0.45, 0, 'inOut']],
@@ -497,7 +601,7 @@ const RING_ATTACKS: Readonly<Record<'slashA' | 'slashB' | 'stab' | 'backstab', C
     // the same hook from lower down, rising as it crosses
     duration: 0.45,
     tracks: {
-      ringHook: [[0, 0], [0.06, -0.2, 'out'], [0.16, 1, 'in'], [0.45, 0, 'inOut']],
+      hook: [[0, 0], [0.06, -0.2, 'out'], [0.16, 1, 'in'], [0.45, 0, 'inOut']],
       px: [[0, 0], [0.16, 0], [0.25, -0.06, 'out'], [0.45, 0, 'inOut']],
       py: [[0, 0], [0.06, -0.04, 'out'], [0.16, 0.04, 'in'], [0.25, -0.08, 'out'], [0.45, 0, 'inOut']],
       rz: [[0, 0], [0.06, -10, 'out'], [0.16, 16, 'in'], [0.45, 0, 'inOut']],
@@ -507,8 +611,8 @@ const RING_ATTACKS: Readonly<Record<'slashA' | 'slashB' | 'stab' | 'backstab', C
   stab: {
     duration: 0.85,
     tracks: {
-      ringCock: [[0, 0], [0.24, 1, 'out'], [0.36, 0, 'in']],
-      ringStrike: [[0, 0], [0.24, 0], [0.36, 1, 'in'], [0.48, 1], [0.85, 0, 'inOut']],
+      cock: [[0, 0], [0.24, 1, 'out'], [0.36, 0, 'in']],
+      strike: [[0, 0], [0.24, 0], [0.36, 1, 'in'], [0.48, 1], [0.85, 0, 'inOut']],
       py: [[0, 0], [0.36, 0], [0.5, -0.06, 'out'], [0.85, 0, 'inOut']],
       leftGuard: [[0, 1], [0.15, 0, 'out'], [0.6, 0], [0.85, 1, 'inOut']],
     },
@@ -517,8 +621,8 @@ const RING_ATTACKS: Readonly<Record<'slashA' | 'slashB' | 'stab' | 'backstab', C
     // higher, a beat longer, driven deeper
     duration: 0.95,
     tracks: {
-      ringCock: [[0, 0], [0.28, 1.15, 'out'], [0.42, 0, 'in']],
-      ringStrike: [[0, 0], [0.28, 0], [0.42, 1.1, 'in'], [0.56, 1.1], [0.95, 0, 'inOut']],
+      cock: [[0, 0], [0.28, 1.15, 'out'], [0.42, 0, 'in']],
+      strike: [[0, 0], [0.28, 0], [0.42, 1.1, 'in'], [0.56, 1.1], [0.95, 0, 'inOut']],
       pz: [[0, 0], [0.42, -0.04, 'in'], [0.95, 0, 'inOut']],
       py: [[0, 0], [0.42, 0], [0.56, -0.07, 'out'], [0.95, 0, 'inOut']],
       leftGuard: [[0, 1], [0.15, 0, 'out'], [0.7, 0], [0.95, 1, 'inOut']],
@@ -526,13 +630,15 @@ const RING_ATTACKS: Readonly<Record<'slashA' | 'slashB' | 'stab' | 'backstab', C
   },
 };
 
-export function knifeClip(def: KnifeDef, name: KnifeClipName): Clip {
+/** `variant` picks the rare inspect (1) over the usual one (0) when the knife has one */
+export function knifeClip(def: KnifeDef, name: KnifeClipName, variant = 0): Clip {
   if (name === 'draw') {
     const clip = DRAWS[knifeDrawStyle(def)];
     return clip;
   }
   if (name === 'inspect') {
-    return INSPECTS[knifeInspectStyle(def)];
+    return (variant > 0 ? rareInspect(def) : null) ?? INSPECTS[knifeInspectStyle(def)];
   }
-  return knifeUsesReverseGrip(def) ? RING_ATTACKS[name] : ATTACKS[name];
+  if (knifeUsesReverseGrip(def)) return RING_ATTACKS[name];
+  return def.shape.pair ? DAGGER_ATTACKS[name] : ATTACKS[name];
 }

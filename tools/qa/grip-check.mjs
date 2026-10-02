@@ -59,7 +59,7 @@ const ALLOWANCES = {
 const used = Object.fromEntries(Object.keys(ALLOWANCES).map((k) => [k, { frames: 0, maxMm: 0 }]));
 let attachMax = 0;
 const failures = [];
-const fail = (f, why) => failures.push(`${f.knife}${f.side === 'l' ? ' (left)' : ''} ${f.action}@${f.t}: ${why}`);
+const fail = (f, why) => failures.push(`${f.knife}${f.side === 'l' ? ' (left)' : ''} ${f.action}${f.variant ? ' (rare)' : ''}@${f.t}: ${why}`);
 for (const f of report) {
   if (f.source !== 'glb') fail(f, `knife model not loaded (${f.source})`);
   const closed = f.gripOpen < 0.3;
