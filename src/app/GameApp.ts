@@ -2,6 +2,7 @@ import {
   AxesHelper,
   Box3,
   BufferGeometry,
+  Color,
   GridHelper,
   Group,
   Line,
@@ -16,6 +17,7 @@ import {
   Scene,
   Vector2,
   Vector3,
+  WebGLRenderTarget,
   WebGLRenderer,
 } from 'three';
 import { InputManager } from '../core/InputManager';
@@ -2881,6 +2883,30 @@ export class GameApp {
       (name, g, b, s, pole) => this.viewmodel.debugSetKnifePose(name, g, b, s, pole);
     (window as unknown as { __vmSetHand?: (name: string, f: number[], k: number[], b: number[], pole?: number[]) => void }).__vmSetHand =
       (name, f, k, b, pole) => this.viewmodel.debugSetHandPose(name, f, k, b, pole);
+    // tools: the viewmodel's silhouette (1 = arm or knife), rows top to bottom
+    (window as unknown as { __vmMask?: (w: number, h: number) => string }).__vmMask = (w, h) => {
+      const target = new WebGLRenderTarget(w, h);
+      const vm = this.viewmodelRenderer;
+      const background = vm.scene.background;
+      const clearColor = this.renderer.getClearColor(new Color());
+      const clearAlpha = this.renderer.getClearAlpha();
+      vm.scene.background = null;
+      this.renderer.setRenderTarget(target);
+      this.renderer.setClearColor(0x000000, 0);
+      this.renderer.clear();
+      this.renderer.render(vm.scene, vm.camera);
+      const px = new Uint8Array(w * h * 4);
+      this.renderer.readRenderTargetPixels(target, 0, 0, w, h, px);
+      this.renderer.setRenderTarget(null);
+      this.renderer.setClearColor(clearColor, clearAlpha);
+      vm.scene.background = background;
+      target.dispose();
+      let out = '';
+      for (let y = h - 1; y >= 0; y -= 1) {
+        for (let x = 0; x < w; x += 1) out += px[(y * w + x) * 4 + 3] > 0 ? '1' : '0';
+      }
+      return out;
+    };
     if (shot.gripCheck) {
       (window as unknown as { __gripReport?: unknown }).__gripReport = await runGripCheck(this.viewmodel, shot.gripStep);
       (window as unknown as { __shotReady?: boolean }).__shotReady = true;

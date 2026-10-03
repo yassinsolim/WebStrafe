@@ -169,23 +169,20 @@ export const KNIFE_POSES: Readonly<Record<KnifeGripKind, KnifePoses>> = {
   tee: TEE,
 };
 
-// cs2 gives every knife its own idle, so these replace the grip's one. each
-// was fitted to the knife's idle in cs2 footage (tip, fist and the side the
-// spine shows) inside a natural wrist
+// cs2 gives every knife its own idle, so these replace the grip's one. most
+// were fitted to the outline of the knife and arm in the knife's cs2 idle
+// (plus its blade tip) with the back of the hand to the eye, inside a natural wrist
 export const KNIFE_IDLES: Readonly<Partial<Record<KnifeId, KnifeKey>>> = {
-  // upright, a little left of the fist, saw back to the right
-  m9_bayonet: knifeKey(v(0.104, -0.064, -0.28), v(-0.2, 0.918, -0.342), v(0.81, 0.351, 0.47), v(0.8, -0.5, 0.3)),
-  bayonet: knifeKey(v(0.05, -0.104, -0.28), v(-0.354, 0.935, 0), v(0.81, 0.307, 0.5), v(0.8, -0.5, 0.3)),
-  flip: knifeKey(v(0.055, -0.063, -0.24), v(-0.556, 0.831, 0), v(0.72, 0.482, 0.5), v(1, -0.15, -0.1)),
-  stiletto: knifeKey(v(0.049, -0.1, -0.24), v(-0.321, 0.947, 0), v(0.82, 0.278, 0.5), v(0.8, -0.5, 0.3)),
-  butterfly: knifeKey(v(0.053, -0.074, -0.22), v(-0.291, 0.957, 0), v(0.924, 0.282, 0.259), v(0.8, -0.5, 0.3)),
-  // upright with the hook or saw back to the left
-  gut: knifeKey(v(0.075, -0.084, -0.25), v(-0.378, 0.889, 0.259), v(-0.747, -0.458, 0.483), v(0.4, -0.9, 0.2)),
-  huntsman: knifeKey(v(0.064, -0.091, -0.28), v(-0.373, 0.891, 0.259), v(-0.749, -0.454, 0.483), v(0.4, -0.9, 0.2)),
-  // leaning well over to the left
-  skeleton: knifeKey(v(0.134, -0.091, -0.28), v(-0.69, 0.724, 0), v(-0.627, -0.597, 0.5), v(0.4, -0.9, 0.2)),
+  m9_bayonet: knifeKey(v(0.117, -0.105, -0.292), v(-0.317, 0.948, -0.029), v(-0.543, -0.156, 0.825), v(-0.113, -0.982, 0.15)),
+  bayonet: knifeKey(v(0.045, -0.121, -0.261), v(-0.308, 0.951, 0.021), v(-0.759, -0.259, 0.597), v(-0.069, -0.928, 0.367)),
+  flip: knifeKey(v(0.037, -0.086, -0.201), v(-0.359, 0.933, 0.031), v(-0.75, -0.308, 0.585), v(0.298, -0.812, 0.502)),
+  stiletto: knifeKey(v(0.039, -0.115, -0.233), v(-0.265, 0.955, -0.134), v(-0.727, -0.107, 0.678), v(-0.638, -0.767, -0.062)),
+  butterfly: knifeKey(v(0.053, -0.074, -0.22), v(-0.291, 0.957, 0), v(-0.828, -0.252, 0.5), v(0, -0.95, 0.3)),
+  gut: knifeKey(v(0.033, -0.103, -0.303), v(0.122, 0.974, 0.189), v(-0.6, -0.08, 0.796), v(-0.371, -0.923, -0.106)),
+  huntsman: knifeKey(v(0.044, -0.106, -0.253), v(-0.266, 0.921, 0.286), v(-0.807, -0.375, 0.456), v(0.376, -0.614, 0.694)),
+  skeleton: knifeKey(v(0.131, -0.055, -0.284), v(-0.632, 0.775, 0.025), v(-0.541, -0.464, 0.701), v(0.488, -0.868, -0.094)),
   // low on the right, the long blade laid out to the left almost level, spine up
-  bowie: knifeKey(v(0.15, -0.098, -0.25), v(-0.957, 0.289, 0), v(0.205, 0.677, 0.707), v(1, -0.15, -0.1)),
+  bowie: knifeKey(v(0.15, -0.098, -0.25), v(-0.957, 0.289, 0), v(-0.251, -0.829, 0.5), v(0.6, -0.75, 0.25)),
   // both fists low, the blades angled in at the middle
   shadow_daggers: knifeKey(v(0.101, -0.094, -0.28), v(-0.622, 0.739, -0.259), v(-0.696, -0.673, -0.25), v(0.55, -0.7, 0.05)),
 };
