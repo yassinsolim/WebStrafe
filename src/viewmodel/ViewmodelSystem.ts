@@ -12,7 +12,7 @@ import type { PlayerModel } from '../network/types';
 import { sampleClip, sampleSeq, retime, type Clip, type SeqSample } from './clips';
 import { blendHandPose, createHandPose, HAND_POSES, type HandPose, type HandPoseName, type MutableHandPose } from './handPoses';
 import { frameFromYZ } from './ik';
-import { frameXY, handKey, KNIFE_POSES, knifeKey, resolveKnifeKey, type ItemBase } from './knifePoses';
+import { frameXY, handKey, KNIFE_IDLES, KNIFE_POSES, knifeKey, resolveKnifeKey, type ItemBase } from './knifePoses';
 import { alignRingGrip, fittedGripSpec, gripKindFor, knifeGripSpec, measureHandleDiameter, type KnifeGripSpec } from './knifeGrips';
 import { knifeClip, knifeInspectCount, type KnifeClipName } from './knifeClips';
 import {
@@ -1295,6 +1295,11 @@ export class ViewmodelSystem {
     out.gripCam = r3(origin);
     out.bladeCam = r3(xAxis);
     out.spineCam = r3(yAxis);
+    // the hand bone's frame in camera space (+y toward the knuckles, +z the back of the hand)
+    const camInv = camera.getWorldQuaternion(new Quaternion()).invert();
+    const handQ = hand.getWorldQuaternion(new Quaternion()).premultiply(camInv);
+    out.handYCam = r3(new Vector3(0, 1, 0).applyQuaternion(handQ));
+    out.handZCam = r3(new Vector3(0, 0, 1).applyQuaternion(handQ));
     return out;
   }
 
@@ -1415,7 +1420,7 @@ export class ViewmodelSystem {
     // the knife group sits at its origin inside the holder, so world = local here
     this.content.add(holder);
     const poseSet = KNIFE_POSES[grip.kind];
-    const idle = resolveKnifeKey(poseSet.idle, grip);
+    const idle = resolveKnifeKey(KNIFE_IDLES[def.id] ?? poseSet.idle, grip);
     const poses: Record<string, ItemBase> = {};
     for (const [name, key] of Object.entries(poseSet.poses)) poses[name] = resolveKnifeKey(key, grip);
     return {

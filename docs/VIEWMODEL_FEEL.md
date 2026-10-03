@@ -79,9 +79,12 @@ rotation < 0.15 rad) and composited every frame.
   (`handKey`: where the fist is, where the knuckles point, where the back of
   the hand faces) and the knife follows from its grip. Keys without their own
   elbow use the grip's usual one, never the idle's.
-- The idles were matched to CS2 footage. Hammer grips (and the balisong): the
-  fist low on the right with the elbow down and the blade standing up out of
-  it, edge toward the middle.
+- The idles were matched to CS2 footage, and like CS2 every knife has its own
+  (`KNIFE_IDLES`, fitted to the tip, fist and spine side in each knife's CS2
+  idle inside a natural wrist): the M9, bayonet, flip, stiletto, butterfly,
+  gut and huntsman stand up out of a low fist leaning left, the skeleton leans
+  well over, the bowie lies out to the left almost level, the shadow daggers
+  angle in from two low fists. Knives without one use their grip's idle.
 - Like CS2, only the knife hand shows (both for the shadow daggers). Slashes
   wind up for a few frames, cut through the crosshair edge first by about
   0.12 s (the hit lands on the click) and carry through before a slower

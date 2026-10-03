@@ -1,4 +1,5 @@
 import { Matrix4, Quaternion, Vector3 } from 'three';
+import type { KnifeId } from '../combat/knives';
 import { frameFromYZ } from './ik';
 import type { KnifeGripKind, KnifeGripSpec } from './knifeGrips';
 
@@ -166,4 +167,25 @@ export const KNIFE_POSES: Readonly<Record<KnifeGripKind, KnifePoses>> = {
   balisong: HAMMER,
   reverse_ring: RING,
   tee: TEE,
+};
+
+// cs2 gives every knife its own idle, so these replace the grip's one. each
+// was fitted to the knife's idle in cs2 footage (tip, fist and the side the
+// spine shows) inside a natural wrist
+export const KNIFE_IDLES: Readonly<Partial<Record<KnifeId, KnifeKey>>> = {
+  // upright, a little left of the fist, saw back to the right
+  m9_bayonet: knifeKey(v(0.104, -0.064, -0.28), v(-0.2, 0.918, -0.342), v(0.81, 0.351, 0.47), v(0.8, -0.5, 0.3)),
+  bayonet: knifeKey(v(0.05, -0.104, -0.28), v(-0.354, 0.935, 0), v(0.81, 0.307, 0.5), v(0.8, -0.5, 0.3)),
+  flip: knifeKey(v(0.055, -0.063, -0.24), v(-0.556, 0.831, 0), v(0.72, 0.482, 0.5), v(1, -0.15, -0.1)),
+  stiletto: knifeKey(v(0.049, -0.1, -0.24), v(-0.321, 0.947, 0), v(0.82, 0.278, 0.5), v(0.8, -0.5, 0.3)),
+  butterfly: knifeKey(v(0.053, -0.074, -0.22), v(-0.291, 0.957, 0), v(0.924, 0.282, 0.259), v(0.8, -0.5, 0.3)),
+  // upright with the hook or saw back to the left
+  gut: knifeKey(v(0.075, -0.084, -0.25), v(-0.378, 0.889, 0.259), v(-0.747, -0.458, 0.483), v(0.4, -0.9, 0.2)),
+  huntsman: knifeKey(v(0.064, -0.091, -0.28), v(-0.373, 0.891, 0.259), v(-0.749, -0.454, 0.483), v(0.4, -0.9, 0.2)),
+  // leaning well over to the left
+  skeleton: knifeKey(v(0.134, -0.091, -0.28), v(-0.69, 0.724, 0), v(-0.627, -0.597, 0.5), v(0.4, -0.9, 0.2)),
+  // low on the right, the long blade laid out to the left almost level, spine up
+  bowie: knifeKey(v(0.15, -0.098, -0.25), v(-0.957, 0.289, 0), v(0.205, 0.677, 0.707), v(1, -0.15, -0.1)),
+  // both fists low, the blades angled in at the middle
+  shadow_daggers: knifeKey(v(0.101, -0.094, -0.28), v(-0.622, 0.739, -0.259), v(-0.696, -0.673, -0.25), v(0.55, -0.7, 0.05)),
 };
