@@ -1273,7 +1273,7 @@ export class ViewmodelSystem {
       const q = p.clone().project(camera);
       return [Math.round(q.x * 100) / 100, Math.round(q.y * 100) / 100, Math.round(depth * 1000) / 1000];
     };
-    for (const [key, name] of [['tip', KNIFE_NODES.tip], ['grip', KNIFE_NODES.grip]] as const) {
+    for (const [key, name] of [['tip', KNIFE_NODES.tip], ['grip', KNIFE_NODES.grip], ['ring', KNIFE_NODES.ring]] as const) {
       const node = rig.knife.getObjectByName(name);
       if (node) out[key] = ndc(node.getWorldPosition(new Vector3()));
     }

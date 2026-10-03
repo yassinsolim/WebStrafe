@@ -113,14 +113,13 @@ const HAMMER: KnifePoses = {
   },
 };
 
-// reverse grip on the ring (karambit, talon): like cs2, an upright fist on the
-// right with the handle standing straight up through it, the ring on top under
-// the index and the claw hanging out under the little finger, curving down to
-// the left. the idle is placed by the fist so the wrist stays straight.
-// slashes rake the claw across behind the fist, the heavy cocks it high and
-// rips it down
+// reverse grip on the ring (karambit, talon): like cs2's idle, the fist low on
+// the right with the back of the hand to the eye, leaning into the screen, the
+// ring at the left end under the index and the claw out of the right end
+// curving up. placed by the fist so the wrist only flexes a little. slashes
+// rake the claw across, the heavy cocks it high and rips it down
 const RING: KnifePoses = {
-  idle: handKey(v(0.13, 0, -0.25), v(-0.81, 0.5, -0.3), v(-0.04, -0.56, -0.83), v(0.9, -0.5, 0.1)),
+  idle: handKey(v(0.09, -0.115, -0.26), v(-0.12, 0.76, -0.64), v(0.1, 0.63, 0.77), v(0.24, -0.94, 0.24)),
   pole: ELBOW_IN,
   poses: {
     low: knifeKey(v(0.3, -0.4, -0.22), v(0.6, -0.1, -0.8), v(0.8, 0, 0.6), ELBOW_OUT),
@@ -130,15 +129,14 @@ const RING: KnifePoses = {
     show: knifeKey(v(0.12, 0, -0.27), v(-0.6, -0.7, -0.4), v(0.42, -0.69, 0.59), ELBOW_DOWN),
     // inspect: palm turned up, the claw laid out to the left
     showB: knifeKey(v(0.1, -0.05, -0.26), v(-0.85, 0.1, 0.5), v(0.3, -0.7, 0.65)),
-    // forehand rake: the claw hangs off the fist on the right, then rakes
-    // across the middle and carries through low on the left
-    windA: knifeKey(v(0.22, -0.03, -0.28), v(0.3, -0.8, -0.5), v(0.07, -0.51, 0.86), ELBOW_OUT),
-    cutA: knifeKey(v(0.04, -0.05, -0.36), v(0.6, -0.6, -0.5), v(-0.47, -0.79, 0.39)),
-    endA: knifeKey(v(-0.12, -0.1, -0.3), v(0.2, -0.1, -1), v(0.24, -0.96, 0.14)),
-    // backhand: the fist leads back to the right with the claw out behind it
-    windB: knifeKey(v(-0.02, -0.12, -0.28), v(0.7, -0.1, -0.7), v(0.11, -0.96, 0.25)),
-    cutB: knifeKey(v(0.13, -0.05, -0.35), v(1, 0, -0.2), v(0, -1, 0)),
-    endB: knifeKey(v(0.24, -0.06, -0.32), v(0.75, 0.1, -0.65), v(0.24, -0.96, 0.13), ELBOW_DOWN),
+    // forehand: the fist pulls the claw right to left through the crosshair
+    windA: handKey(v(0.14, -0.05, -0.27), v(-0.12, 0.98, -0.17), v(0.24, 0.2, 0.95), v(0.24, -0.94, 0.24)),
+    cutA: handKey(v(0.02, -0.04, -0.33), v(-0.12, 0.9, -0.42), v(0.2, 0.44, 0.88), v(0.24, -0.94, 0.24)),
+    endA: handKey(v(-0.11, -0.11, -0.3), v(-0.37, 0.81, -0.44), v(0.7, 0.56, 0.45), v(0.24, -0.94, 0.24)),
+    // backhand: from across on the left, the claw leads back out to the right
+    windB: handKey(v(-0.05, -0.1, -0.28), v(-0.12, 0.9, -0.42), v(0.45, 0.43, 0.79), v(0.24, -0.94, 0.24)),
+    cutB: handKey(v(0.08, -0.05, -0.34), v(-0.12, 0.9, -0.42), v(0.45, 0.43, 0.79), v(0.1, -0.9, -0.4)),
+    endB: handKey(v(0.2, -0.08, -0.3), v(0.15, 0.97, -0.18), v(0.28, 0.13, 0.95), v(0.1, -0.9, -0.4)),
     cock: knifeKey(v(0.18, 0.06, -0.26), v(0, -0.8, -0.6), v(0.26, -0.58, 0.77), ELBOW_OUT),
     thrust: knifeKey(v(0.02, -0.1, -0.38), v(0.5, -0.5, -0.7), v(-0.07, -0.84, 0.55)),
     over: knifeKey(v(0.17, 0.1, -0.24), v(0.1, -0.6, -0.8), v(0.19, -0.77, 0.6), ELBOW_OUT),

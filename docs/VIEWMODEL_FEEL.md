@@ -91,11 +91,14 @@ rotation < 0.15 rad) and composited every frame.
   from low on the right with the knife's flourish (twirl, toss, flip open,
   switch, balisong, ring spin) and settle by about 0.6 to 0.9 s. The shadow
   daggers jab one fist at a time (`clip.seqL` moves the left on its own).
-- Ring knives (karambit, talon) idle like CS2's: an upright fist on the right
-  with the handle standing straight up through it, the ring on top under the
-  index, the claw hanging out under the little finger and curving down to the
-  left, the palm side toward the eye; slashes rake the claw across behind the
-  fist, the heavy cocks it high and rips it down. Inspects show one flat, then the
+- Ring knives (karambit, talon) idle like CS2's (checked against gameplay
+  footage, not the inspect): the fist low on the right with the back of the
+  hand to the eye, leaning into the screen, the ring at the left end under the
+  index and the claw out of the right end curving up. Slashes keep that hold:
+  the forehand pulls the claw right to left through the crosshair, the
+  backhand leads it back out to the right; the heavy cocks it high and rips it
+  down. The raised fist with the claw hanging under it is the inspect, not the
+  idle. Inspects show one flat, then the
   other, then a flourish (twirl, toss, fold and flick or fan, depending on the
   knife); about one press in five plays the knife's rarer inspect instead, and
   pressing inspect again restarts it.
