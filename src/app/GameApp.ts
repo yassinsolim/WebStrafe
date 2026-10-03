@@ -3100,8 +3100,8 @@ export class GameApp {
       return distance < hit.distance + 0.5 && (dx * forward.x + dz * forward.z) / Math.max(distance, 1e-3) > 0.7;
     });
     if (!playerInWay) {
-      // the knife's stab only reaches the wall with the thrust, ~0.3 s in
-      const delay = kind === 'primary' ? 0.09 : held === 'katana' ? 0.16 : 0.3;
+      // the knife's stab only reaches the wall with the thrust, ~0.13 s in
+      const delay = kind === 'primary' ? 0.09 : held === 'katana' ? 0.16 : 0.13;
       this.audio.playAt('knifeHitWall', hit.point, { delay });
     }
   }

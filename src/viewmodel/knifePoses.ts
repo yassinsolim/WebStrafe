@@ -94,20 +94,23 @@ const HAMMER: KnifePoses = {
     show: knifeKey(v(0.12, -0.1, -0.27), v(-0.25, 0.95, -0.15), v(0.66, 0.28, 0.7)),
     // inspect: turned over and laid across to the left, the other flat to the eye
     showB: knifeKey(v(0.1, -0.08, -0.28), v(-0.9, 0.3, -0.3), v(-0.36, -0.92, 0.15), ELBOW_IN),
-    // forehand: a short wind up on the right, the blade up and the edge facing left
-    windA: knifeKey(v(0.2, -0.06, -0.28), v(-0.2, 0.95, 0.1), v(0.45, 0, 0.89), ELBOW_LOW),
-    // forehand: through the crosshair edge first, sweeping down to the left
-    cutA: knifeKey(v(0.07, -0.07, -0.37), v(-0.55, 0.5, -0.67), v(0.51, 0.84, 0.21)),
-    // forehand: carried through to the lower left, the wrist rolling over
-    endA: knifeKey(v(-0.06, -0.12, -0.33), v(-0.85, -0.2, -0.5), v(0.3, -0.95, -0.13), ELBOW_LOW),
-    // backhand: across the body on the left, edge facing back up to the right
-    windB: knifeKey(v(0, -0.1, -0.28), v(-0.75, 0.4, -0.5), v(-0.34, -0.91, -0.22), ELBOW_IN),
-    cutB: knifeKey(v(0.12, -0.06, -0.36), v(-0.4, 0.6, -0.7), v(-0.51, -0.77, -0.37), ELBOW_IN),
-    endB: knifeKey(v(0.25, -0.08, -0.3), v(-0.05, 0.8, -0.6), v(-0.56, -0.52, -0.65), ELBOW_IN),
-    // stab: drawn back high on the right, then driven in at the crosshair with
-    // the blade angled in past the fist so it stays in view
+    // slashes and the stab fitted to the m9's in a 60 fps cs2 capture.
+    // forehand: flicked up on the right, cut down through the crosshair and
+    // carried out of view low on the left
+    windA: knifeKey(v(0.289, -0.05, -0.293), v(0.034, 0.213, -0.977), v(0.171, -0.964, -0.204), v(0.376, -0.905, 0.199)),
+    cutA: knifeKey(v(0.153, -0.097, -0.327), v(0.456, 0.642, -0.617), v(0.711, 0.155, 0.686), v(0.394, -0.722, 0.568)),
+    endA: knifeKey(v(0.003, -0.103, -0.351), v(0.265, 0.452, -0.852), v(0.869, 0.27, 0.414), v(0.719, -0.668, 0.192)),
+    goneA: knifeKey(v(-0.05, -0.34, -0.3), v(0.265, 0.452, -0.852), v(0.869, 0.27, 0.414), v(0.719, -0.668, 0.192)),
+    // backhand: across on the left, back through the crosshair and out of view on the right
+    windB: knifeKey(v(-0.207, -0.102, -0.337), v(-0.51, 0.57, -0.644), v(0.433, 0.817, 0.38), v(0.742, -0.542, 0.394)),
+    cutB: knifeKey(v(-0.018, -0.049, -0.299), v(-0.707, 0.036, -0.706), v(0.556, -0.589, -0.587), v(0.739, -0.528, -0.418)),
+    endB: knifeKey(v(0.225, -0.119, -0.301), v(-0.132, -0.157, -0.979), v(0.929, -0.363, -0.067), v(0.714, -0.4, 0.575)),
+    goneB: knifeKey(v(0.36, -0.32, -0.26), v(-0.132, -0.157, -0.979), v(0.929, -0.363, -0.067), v(0.714, -0.4, 0.575)),
+    // under the screen below the idle, where every attack comes back up from
+    under: knifeKey(v(0.15, -0.31, -0.25), v(-0.86, 0.45, -0.24), v(-0.46, -0.86, 0.22), v(0.4, -0.9, 0.15)),
+    // stab: a short pull back, then driven in at the crosshair with the blade level
     cock: knifeKey(v(0.2, -0.04, -0.23), v(-0.3, 0.4, -0.87), v(0.95, 0.24, -0.22)),
-    thrust: knifeKey(v(0.08, -0.08, -0.43), v(-0.35, 0.2, -0.91), v(0.93, 0, -0.36)),
+    thrust: knifeKey(v(-0.12, -0.045, -0.32), v(0.601, 0.471, -0.646), v(0.794, -0.255, 0.552), v(-0.039, -0.782, 0.622)),
     // backstab: higher, then driven in and down
     over: knifeKey(v(0.18, 0.01, -0.22), v(-0.3, 0.25, -0.92), v(0.41, -0.84, -0.36), ELBOW_LOW),
     plunge: knifeKey(v(0.06, -0.1, -0.43), v(-0.35, -0.2, -0.91), v(0.31, -0.95, 0.09), ELBOW_IN),
@@ -169,20 +172,20 @@ export const KNIFE_POSES: Readonly<Record<KnifeGripKind, KnifePoses>> = {
   tee: TEE,
 };
 
-// cs2 gives every knife its own idle, so these replace the grip's one. most
-// were fitted to the outline of the knife and arm in the knife's cs2 idle
-// (plus its blade tip) with the back of the hand to the eye, inside a natural wrist
+// cs2 gives every knife its own idle, so these replace the grip's one. each was
+// fitted to the knife+arm outline cut out of a 60 fps cs2 capture (static
+// camera), plus the blade tip, back of the hand to the eye, inside a natural
+// wrist. like cs2 they all hold the blade low across the bottom right, pointing
+// left and a little up
 export const KNIFE_IDLES: Readonly<Partial<Record<KnifeId, KnifeKey>>> = {
-  m9_bayonet: knifeKey(v(0.117, -0.105, -0.292), v(-0.317, 0.948, -0.029), v(-0.543, -0.156, 0.825), v(-0.113, -0.982, 0.15)),
-  bayonet: knifeKey(v(0.045, -0.121, -0.261), v(-0.308, 0.951, 0.021), v(-0.759, -0.259, 0.597), v(-0.069, -0.928, 0.367)),
-  flip: knifeKey(v(0.037, -0.086, -0.201), v(-0.359, 0.933, 0.031), v(-0.75, -0.308, 0.585), v(0.298, -0.812, 0.502)),
-  stiletto: knifeKey(v(0.039, -0.115, -0.233), v(-0.265, 0.955, -0.134), v(-0.727, -0.107, 0.678), v(-0.638, -0.767, -0.062)),
-  butterfly: knifeKey(v(0.053, -0.074, -0.22), v(-0.291, 0.957, 0), v(-0.828, -0.252, 0.5), v(0, -0.95, 0.3)),
-  gut: knifeKey(v(0.033, -0.103, -0.303), v(0.122, 0.974, 0.189), v(-0.6, -0.08, 0.796), v(-0.371, -0.923, -0.106)),
-  huntsman: knifeKey(v(0.044, -0.106, -0.253), v(-0.266, 0.921, 0.286), v(-0.807, -0.375, 0.456), v(0.376, -0.614, 0.694)),
-  skeleton: knifeKey(v(0.131, -0.055, -0.284), v(-0.632, 0.775, 0.025), v(-0.541, -0.464, 0.701), v(0.488, -0.868, -0.094)),
-  // low on the right, the long blade laid out to the left almost level, spine up
-  bowie: knifeKey(v(0.15, -0.098, -0.25), v(-0.957, 0.289, 0), v(-0.251, -0.829, 0.5), v(0.6, -0.75, 0.25)),
-  // both fists low, the blades angled in at the middle
-  shadow_daggers: knifeKey(v(0.101, -0.094, -0.28), v(-0.622, 0.739, -0.259), v(-0.696, -0.673, -0.25), v(0.55, -0.7, 0.05)),
+  m9_bayonet: knifeKey(v(0.135, -0.138, -0.253), v(-0.867, 0.381, -0.321), v(-0.481, -0.808, 0.341), v(0.26, -0.792, -0.552)),
+  bayonet: knifeKey(v(0.139, -0.117, -0.255), v(-0.898, 0.257, -0.358), v(-0.034, -0.85, -0.525), v(0.498, -0.833, 0.242)),
+  flip: knifeKey(v(0.132, -0.14, -0.242), v(-0.84, 0.538, -0.073), v(-0.537, -0.805, 0.253), v(0.338, -0.832, 0.441)),
+  stiletto: knifeKey(v(0.14, -0.133, -0.246), v(-0.847, 0.387, -0.364), v(-0.412, -0.911, -0.01), v(0.36, -0.9, 0.245)),
+  butterfly: knifeKey(v(0.131, -0.134, -0.235), v(-0.8, 0.594, -0.081), v(-0.599, -0.8, 0.048), v(0.327, -0.918, 0.224)),
+  gut: knifeKey(v(0.11, -0.102, -0.214), v(-0.879, 0.447, -0.164), v(-0.251, -0.727, -0.639), v(0.504, -0.862, -0.059)),
+  huntsman: knifeKey(v(0.132, -0.137, -0.251), v(-0.857, 0.499, -0.125), v(-0.515, -0.833, 0.202), v(0.35, -0.93, 0.112)),
+  skeleton: knifeKey(v(0.13, -0.125, -0.243), v(-0.879, 0.463, -0.117), v(-0.452, -0.886, -0.103), v(0.44, -0.894, 0.089)),
+  bowie: knifeKey(v(0.156, -0.143, -0.227), v(-0.887, 0.456, -0.075), v(-0.332, -0.517, 0.789), v(0.674, -0.71, 0.202)),
+  shadow_daggers: knifeKey(v(0.119, -0.054, -0.171), v(-0.893, 0.239, -0.381), v(-0.437, -0.66, 0.611), v(0.885, -0.391, 0.254)),
 };

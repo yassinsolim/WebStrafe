@@ -353,37 +353,37 @@ export function knifeInspectCount(def: KnifeDef): number {
 
 type AttackName = 'slashA' | 'slashB' | 'stab' | 'backstab';
 
-// hammer grip and balisong. the hit lands on the click, so the cut crosses the
-// crosshair by about 0.12 s; the follow through decelerates ('out') and the
-// recovery is slow, which is what sells the weight
+// hammer grip and balisong, timed off a 60 fps cs2 capture: the cut crosses the
+// crosshair by 0.1 s and carries on out of view, the knife stays down for half
+// a second and then comes back up from under the screen into the idle
 const ATTACKS: Readonly<Record<AttackName, Clip>> = {
   slashA: {
-    // forehand: a few frames of wind up on the right, then edge first through
-    // the crosshair and down to the left, the wrist rolling over at the end
-    duration: 0.5,
-    seq: [[0, 'idle'], [0.06, 'windA', 'out'], [0.12, 'cutA', 'in'], [0.2, 'endA', 'out'], [0.46, 'idle', 'inOut']],
+    // forehand: a flick up to the right, then edge first down through the
+    // crosshair and out of view low on the left
+    duration: 1.1,
+    seq: [[0, 'idle'], [0.06, 'windA', 'out'], [0.1, 'cutA', 'in'], [0.135, 'endA'], [0.2, 'goneA', 'out'], [0.8, 'under'], [1.1, 'idle', 'out']],
     tracks: {},
   },
   slashB: {
-    // backhand: across the body to the left, then back up through the crosshair to the right
-    duration: 0.5,
-    seq: [[0, 'idle'], [0.08, 'windB', 'out'], [0.15, 'cutB', 'in'], [0.23, 'endB', 'out'], [0.5, 'idle', 'inOut']],
+    // backhand: across to the left, then back through the crosshair and out of view on the right
+    duration: 1.1,
+    seq: [[0, 'idle'], [0.05, 'windB', 'out'], [0.1, 'cutB', 'in'], [0.15, 'endB'], [0.22, 'goneB', 'out'], [0.8, 'under'], [1.1, 'idle', 'out']],
     tracks: {},
   },
   stab: {
-    // drawn back high on the right, then driven in at the crosshair and held a beat
-    duration: 0.9,
-    seq: [[0, 'idle'], [0.2, 'cock', 'out'], [0.3, 'thrust', 'in'], [0.42, 'thrust'], [0.9, 'idle', 'inOut']],
+    // a short pull back, driven in at the crosshair and held, then dropped out of view
+    duration: 1.1,
+    seq: [[0, 'idle'], [0.05, 'cock', 'out'], [0.13, 'thrust', 'in'], [0.38, 'thrust'], [0.46, 'under', 'in'], [0.83, 'under'], [1.1, 'idle', 'out']],
     tracks: {
-      pz: [[0, 0], [0.3, 0], [0.34, -0.012, 'out'], [0.5, 0, 'inOut']],
+      pz: [[0, 0], [0.13, 0], [0.17, -0.012, 'out'], [0.3, 0, 'inOut']],
     },
   },
   backstab: {
-    // higher and a beat longer, then driven in and down
-    duration: 0.95,
-    seq: [[0, 'idle'], [0.24, 'over', 'out'], [0.36, 'plunge', 'in'], [0.5, 'plunge'], [0.95, 'idle', 'inOut']],
+    // higher, then driven in and down, then dropped out of view
+    duration: 1.15,
+    seq: [[0, 'idle'], [0.08, 'over', 'out'], [0.18, 'plunge', 'in'], [0.4, 'plunge'], [0.48, 'under', 'in'], [0.85, 'under'], [1.15, 'idle', 'out']],
     tracks: {
-      pz: [[0, 0], [0.36, 0], [0.4, -0.015, 'out'], [0.56, 0, 'inOut']],
+      pz: [[0, 0], [0.18, 0], [0.22, -0.015, 'out'], [0.36, 0, 'inOut']],
     },
   },
 };

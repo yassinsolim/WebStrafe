@@ -149,10 +149,8 @@ function knifeSwing(v: VoiceContext): void {
 function knifeStab(v: VoiceContext): void {
   const p = v.pitch * (v.variant === 1 ? 0.94 : 1);
   const s = 0.94 + v.rand() * 0.12;
-  // a soft rustle as the arm draws back, then a heavier swish that lands with
-  // the thrust ~0.3 s in
-  noise(v, { color: 'pink', at: 0.03, attack: 0.07, decay: 0.16, peak: 0.07, filters: [{ type: 'lowpass', freq: 1300 * p }] });
-  swish(v, { at: 0.2, rise: 0.09 * s, fall: 0.36 * s, peak: 0.58, p: p * 0.85, dir: -1 });
+  // a heavier swish that lands with the thrust ~0.13 s in
+  swish(v, { at: 0.04, rise: 0.09 * s, fall: 0.36 * s, peak: 0.58, p: p * 0.85, dir: -1 });
 }
 
 /** a long blade through the air: a deeper sweep than the knife plus the blade's high frequency hum */

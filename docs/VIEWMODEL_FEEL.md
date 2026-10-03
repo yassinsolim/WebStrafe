@@ -79,18 +79,21 @@ rotation < 0.15 rad) and composited every frame.
   (`handKey`: where the fist is, where the knuckles point, where the back of
   the hand faces) and the knife follows from its grip. Keys without their own
   elbow use the grip's usual one, never the idle's.
-- The idles were matched to CS2 footage, and like CS2 every knife has its own
-  (`KNIFE_IDLES`, fitted to the tip, fist and spine side in each knife's CS2
-  idle inside a natural wrist): the M9, bayonet, flip, stiletto, butterfly,
-  gut and huntsman stand up out of a low fist leaning left, the skeleton leans
-  well over, the bowie lies out to the left almost level, the shadow daggers
-  angle in from two low fists. Knives without one use their grip's idle.
-- Like CS2, only the knife hand shows (both for the shadow daggers). Slashes
-  wind up for a few frames, cut through the crosshair edge first by about
-  0.12 s (the hit lands on the click) and carry through before a slower
-  settle; the forehand sweeps down to the left, the backhand comes back up to
-  the right. The stab draws back high on the right and drives in at the
-  crosshair; the backstab goes higher and drives in and down. Draws come up
+- The idles were matched to a 60 fps static-camera CS2 capture (cutouts
+  against a background plate; older showcase footage pans and its steady
+  frames are inspects, so don't fit to it). Every knife has its own
+  (`KNIFE_IDLES`, silhouette-fitted inside a natural wrist): the hammer-grip
+  knives point the blade left and slightly up out of a low fist at the bottom
+  right, the bowie lies almost level, the shadow daggers angle in from two low
+  fists. Knives without one use their grip's idle.
+- Like CS2, only the knife hand shows (both for the shadow daggers). The
+  hammer-grip slashes and stab follow CS2's timing frame by frame: the
+  forehand winds up at 0.06 s, cuts upright on the right at 0.1 s and is off
+  screen by 0.2 s; the backhand enters from the left and exits right by
+  0.22 s. The stab cocks at 0.05 s, thrusts up-right at the crosshair at
+  0.13 s and holds until about 0.38 s. All three stay off screen and rise back
+  into the idle from below between about 0.8 and 1.1 s. The backstab goes
+  higher and drives in and down. Draws come up
   from low on the right with the knife's flourish (twirl, toss, flip open,
   switch, balisong, ring spin) and settle by about 0.6 to 0.9 s. The shadow
   daggers jab one fist at a time (`clip.seqL` moves the left on its own).
