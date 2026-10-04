@@ -1,6 +1,7 @@
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import type { KnifeId } from '../combat/knives';
 import { frameFromYZ } from './ik';
+import { KNIFE_ATTACK_FITS } from './knifeAttackFits';
 import type { KnifeGripKind, KnifeGripSpec } from './knifeGrips';
 
 /**
@@ -188,4 +189,47 @@ export const KNIFE_IDLES: Readonly<Partial<Record<KnifeId, KnifeKey>>> = {
   skeleton: knifeKey(v(0.13, -0.125, -0.243), v(-0.879, 0.463, -0.117), v(-0.452, -0.886, -0.103), v(0.44, -0.894, 0.089)),
   bowie: knifeKey(v(0.156, -0.143, -0.227), v(-0.887, 0.456, -0.075), v(-0.332, -0.517, 0.789), v(0.674, -0.71, 0.202)),
   shadow_daggers: knifeKey(v(0.119, -0.054, -0.171), v(-0.893, 0.239, -0.381), v(-0.437, -0.66, 0.611), v(0.885, -0.391, 0.254)),
+};
+
+/** a fitted attack key's pose name, 'slashA3' (the left knife of a pair: 'slashAL3') */
+export function fittedPoseName(attack: string, i: number, left = false): string {
+  return `${attack}${left ? 'L' : ''}${i}`;
+}
+
+const fittedKey = (k: readonly number[]): ItemBase =>
+  knifeKey(v(k[1], k[2], k[3]), v(k[4], k[5], k[6]), v(k[7], k[8], k[9]), v(k[10], k[11], k[12]));
+
+/** a knife's frame fitted attack keys (knifeAttackFits.ts) as named poses */
+export function fittedAttackPoses(id: KnifeId): Record<string, ItemBase> {
+  const out: Record<string, ItemBase> = {};
+  for (const [name, fit] of Object.entries(KNIFE_ATTACK_FITS[id] ?? {})) {
+    fit.keys.forEach((k, i) => { out[fittedPoseName(name, i)] = fittedKey(k); });
+    fit.keysL?.forEach((k, i) => { out[fittedPoseName(name, i, true)] = fittedKey(k); });
+  }
+  return out;
+}
+
+// cs2 keeps the free hand in view, a loose fist low and left of the middle
+// (the bowie keeps it out of view). fitted to the same capture
+export interface LeftHandKey extends HandKey {
+  /** 0 a loose fist, 1 open (the ring knives) */
+  open: number;
+}
+
+export function leftHandKey(fist: Vector3, knuckles: Vector3, back: Vector3, pole?: Vector3, open = 0): LeftHandKey {
+  return { ...handKey(fist, knuckles, back, pole), open };
+}
+
+export const KNIFE_LEFT_FISTS: Readonly<Partial<Record<KnifeId, LeftHandKey>>> = {
+  m9_bayonet: leftHandKey(v(-0.106, -0.173, -0.309), v(0.264, 0.893, -0.363), v(0.4, 0.241, 0.884), v(-0.551, -0.829, -0.093)),
+  bayonet: leftHandKey(v(-0.104, -0.167, -0.312), v(0.324, 0.846, -0.424), v(-0.059, 0.465, 0.883), v(-0.791, -0.608, 0.063)),
+  butterfly: leftHandKey(v(-0.114, -0.194, -0.324), v(0.493, 0.541, -0.682), v(0.236, 0.671, 0.703), v(-0.746, -0.655, 0.118)),
+  flip: leftHandKey(v(-0.094, -0.16, -0.298), v(0.341, 0.7, -0.627), v(-0.177, 0.703, 0.688), v(-0.546, -0.813, -0.204)),
+  gut: leftHandKey(v(-0.097, -0.158, -0.301), v(-0.051, 0.488, -0.871), v(0.596, 0.715, 0.365), v(-0.607, -0.791, 0.079)),
+  huntsman: leftHandKey(v(-0.099, -0.16, -0.296), v(0.413, 0.83, -0.374), v(-0.104, 0.451, 0.886), v(-0.511, -0.678, -0.529)),
+  skeleton: leftHandKey(v(-0.108, -0.169, -0.3), v(0.078, 0.873, -0.481), v(0.445, 0.401, 0.801), v(-0.571, -0.753, -0.327)),
+  stiletto: leftHandKey(v(-0.11, -0.177, -0.321), v(0.624, 0.776, 0.088), v(0.151, -0.231, 0.961), v(-0.758, -0.63, 0.171)),
+  // the ring knives hold it open, both the same
+  karambit: leftHandKey(v(-0.13, -0.145, -0.327), v(0.467, 0.226, -0.855), v(0.057, 0.957, 0.284), v(0.259, -0.942, -0.212), 1),
+  talon: leftHandKey(v(-0.13, -0.145, -0.327), v(0.467, 0.226, -0.855), v(0.057, 0.957, 0.284), v(0.259, -0.942, -0.212), 1),
 };

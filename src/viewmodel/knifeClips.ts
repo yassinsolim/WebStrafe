@@ -1,5 +1,7 @@
 import type { KnifeDef, KnifeId } from '../combat/knives';
-import type { Clip } from './clips';
+import type { Clip, Key, SeqKey } from './clips';
+import { KNIFE_ATTACK_FITS, type FittedAttackName } from './knifeAttackFits';
+import { fittedPoseName } from './knifePoses';
 
 /**
  * first person knife clips, after cs2's. the hand and knife travel through
@@ -434,16 +436,59 @@ const DAGGER_ATTACKS: Readonly<Record<AttackName, Clip>> = {
 
 /** `variant` picks the rare inspect (1) over the usual one (0) when the knife has one */
 export function knifeClip(def: KnifeDef, name: KnifeClipName, variant = 0): Clip {
-  if (name === 'draw') return DRAWS[knifeDrawStyle(def)];
+  if (name === 'draw') return withLeftFist(DRAWS[knifeDrawStyle(def)], 'draw');
   if (name === 'inspect') {
-    return (variant > 0 ? rareInspect(def) : null) ?? INSPECTS[knifeInspectStyle(def)];
+    return withLeftFist((variant > 0 ? rareInspect(def) : null) ?? INSPECTS[knifeInspectStyle(def)], 'inspect');
   }
-  if (knifeUsesReverseGrip(def)) return RING_ATTACKS[name];
-  return def.shape.pair ? DAGGER_ATTACKS[name] : ATTACKS[name];
+  const fitted = name === 'backstab' ? null : fittedAttack(def.id, name);
+  if (fitted) return fitted;
+  if (knifeUsesReverseGrip(def)) return withLeftFist(RING_ATTACKS[name], 'attack');
+  return withLeftFist(def.shape.pair ? DAGGER_ATTACKS[name] : ATTACKS[name], 'attack');
+}
+
+// like cs2 the free fist rises into view with the draw, and drops out of view
+// for an inspect or an attack until the knife is back at rest
+const withLeft = new Map<Clip, Clip>();
+function withLeftFist(clip: Clip, kind: 'draw' | 'inspect' | 'attack'): Clip {
+  let out = withLeft.get(clip);
+  if (!out) {
+    const end = clip.duration;
+    const leftDrop: Key[] = kind === 'draw'
+      ? [[0, 1], [0.2, 1], [0.5, 0, 'out']]
+      : kind === 'inspect'
+        ? [[0, 0], [0.2, 1, 'in'], [end - 0.4, 1], [end - 0.05, 0, 'out']]
+        : [[0, 0], [0.03, 1, 'linear'], [end - 0.3, 1], [end, 0, 'out']];
+    out = { ...clip, tracks: { ...clip.tracks, leftDrop } };
+    withLeft.set(clip, out);
+  }
+  return out;
+}
+
+const fittedClips = new Map<string, Clip | null>();
+/** an attack fitted frame by frame to cs2's (knifeAttackFits.ts), if the knife has one */
+function fittedAttack(id: KnifeId, name: FittedAttackName): Clip | null {
+  const cacheKey = `${id}:${name}`;
+  if (!fittedClips.has(cacheKey)) {
+    const fit = KNIFE_ATTACK_FITS[id]?.[name];
+    const walk = (keys: readonly (readonly number[])[], left: boolean): SeqKey[] => [
+      [0, 'idle'],
+      ...keys.map((k, i): SeqKey => [k[0], fittedPoseName(name, i, left), 'linear']),
+      [fit!.duration, 'idle', 'linear'],
+    ];
+    fittedClips.set(cacheKey, fit ? {
+      duration: fit.duration,
+      seq: walk(fit.keys, false),
+      seqL: fit.keysL ? walk(fit.keysL, true) : undefined,
+      tracks: fit.left ? { leftDrop: fit.left.map(([t, value]): Key => [t, value, 'linear']) } : {},
+    } : null);
+  }
+  return fittedClips.get(cacheKey) ?? null;
 }
 
 /** every knife clip, for checks */
 export const ALL_KNIFE_CLIPS: readonly Clip[] = [
   ...Object.values(DRAWS), ...Object.values(INSPECTS), ...Object.values(RARE_INSPECTS),
   ...Object.values(ATTACKS), ...Object.values(RING_ATTACKS), ...Object.values(DAGGER_ATTACKS),
+  ...Object.entries(KNIFE_ATTACK_FITS).flatMap(([id, fits]) =>
+    Object.keys(fits ?? {}).map((name) => fittedAttack(id as KnifeId, name as FittedAttackName)!)),
 ];

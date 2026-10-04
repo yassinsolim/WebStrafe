@@ -12,7 +12,7 @@ import type { PlayerModel } from '../network/types';
 import { sampleClip, sampleSeq, retime, type Clip, type SeqSample } from './clips';
 import { blendHandPose, createHandPose, HAND_POSES, type HandPose, type HandPoseName, type MutableHandPose } from './handPoses';
 import { frameFromYZ } from './ik';
-import { frameXY, handKey, KNIFE_IDLES, KNIFE_POSES, knifeKey, resolveKnifeKey, type ItemBase } from './knifePoses';
+import { fittedAttackPoses, frameXY, handKey, KNIFE_IDLES, KNIFE_LEFT_FISTS, KNIFE_POSES, knifeKey, leftHandKey, resolveKnifeKey, type ItemBase, type LeftHandKey } from './knifePoses';
 import { alignRingGrip, fittedGripSpec, gripKindFor, knifeGripSpec, measureHandleDiameter, type KnifeGripSpec } from './knifeGrips';
 import { knifeClip, knifeInspectCount, type KnifeClipName } from './knifeClips';
 import {
@@ -131,6 +131,9 @@ const LEFT_LOW = { position: v(-0.25, -0.5, -0.12), rotation: frameFromYZ(v(0.3,
 const LEFT_WATCH = { position: v(0.0, -0.085, -0.27), rotation: frameFromYZ(v(0.96, 0.12, -0.25), v(-0.1, 0.5, 0.86), new Quaternion()) };
 // open hand low on the left, palm down, fingers toward the middle
 const LEFT_GUARD = { position: v(-0.18, -0.165, -0.28), rotation: frameFromYZ(v(0.75, 0.35, -0.55), v(-0.2, 0.45, 0.85), new Quaternion()) };
+// how far the free fist drops to be out of view, and how loose it is
+const LEFT_DROP_M = 0.16;
+const LEFT_FIST_LOOSEN = 0.3;
 
 // the shoulders sit behind the camera; sliding them is invisible. the awp's
 // keep the long rifle reachable, the deagle's straighten the wrists
@@ -257,6 +260,8 @@ export class ViewmodelSystem {
   private readonly guns: Partial<Record<GunItem, GunParts>> = {};
   private knife: KnifeRig | null = null;
   private knifeLeft: KnifeRig | null = null;
+  /** tools: a left hand tried in place of the knife's own */
+  private leftFistOverride: LeftHandKey | null = null;
   private knifeId: KnifeId = DEFAULT_KNIFE_ID;
   private knifeFinish: KnifeFinishSelection | null = null;
   private readonly itemPivot = new Group();
@@ -936,13 +941,26 @@ export class ViewmodelSystem {
       return;
     }
 
-    // like cs2 the free hand stays down, unless a clip brings it up
+    // like cs2 the free hand waits as a fist low in view (dropped out of view
+    // by leftDrop), unless the knife keeps it down or a clip brings it up
+    const fist = this.leftFistOverride ?? KNIFE_LEFT_FISTS[this.knifeId] ?? null;
+    const drop = Math.min(1, Math.max(0, this.channel('leftDrop')));
+    const fistIn = fist !== null && drop < 0.999;
     const guard = Math.max(0, this.channel('leftGuard'));
-    const showLeft = guard > 0.001 || this.channel('leftAttach') > 0.001 || this.channel('watch') > 0.001;
+    const showLeft = fistIn || guard > 0.001 || this.channel('leftAttach') > 0.001 || this.channel('watch') > 0.001;
     arms.setArmVisible('l', showLeft);
     if (showLeft) {
-      this.cameraTarget(LEFT_LOW, pA, qA);
-      blendHandPose(HAND_POSES.relaxed, HAND_POSES.relaxed, 0, this.poseL);
+      if (fist && fistIn) {
+        pA.copy(fist.wrist);
+        pA.y -= drop * LEFT_DROP_M;
+        this.content.localToWorld(pA);
+        this.content.getWorldQuaternion(qA).multiply(fist.hand);
+        blendHandPose(HAND_POSES.fist, HAND_POSES.relaxed, LEFT_FIST_LOOSEN, this.poseL);
+        if (fist.open > 0) blendHandPose(this.poseL, HAND_POSES.guard, fist.open, this.poseL);
+      } else {
+        this.cameraTarget(LEFT_LOW, pA, qA);
+        blendHandPose(HAND_POSES.relaxed, HAND_POSES.relaxed, 0, this.poseL);
+      }
       if (guard > 0) {
         this.cameraTarget(LEFT_GUARD, pB, qB);
         // breathes a little out of step with the knife hand
@@ -952,7 +970,7 @@ export class ViewmodelSystem {
         blendHandPose(this.poseL, HAND_POSES.guard, guard, this.poseL);
       }
       this.blendWatch(pA, qA, this.poseL);
-      arms.solveArm('l', pA, qA, this.pole(POLE_L));
+      arms.solveArm('l', pA, qA, this.pole(fist && fistIn && fist.pole ? fist.pole : POLE_L));
       arms.applyHandPose('l', this.poseL);
     }
   }
@@ -1258,6 +1276,13 @@ export class ViewmodelSystem {
     else rig.poses[name] = pose;
   }
 
+  /** tools: places the free left hand (where the fist is, where the knuckles point, where the back of the hand faces, how open), null for the knife's own */
+  public debugSetLeftFist(fist: number[] | null, knuckles?: number[], back?: number[], pole?: number[], open = 0): void {
+    this.leftFistOverride = fist && knuckles && back
+      ? leftHandKey(v(fist[0], fist[1], fist[2]), v(knuckles[0], knuckles[1], knuckles[2]), v(back[0], back[1], back[2]), pole ? v(pole[0], pole[1], pole[2]) : undefined, open)
+      : null;
+  }
+
   /**
    * tools: where the knife and the hands land on screen (ndc, x right, y up,
    * plus depth in metres) and how far the right wrist bends off the forearm
@@ -1423,6 +1448,7 @@ export class ViewmodelSystem {
     const idle = resolveKnifeKey(KNIFE_IDLES[def.id] ?? poseSet.idle, grip);
     const poses: Record<string, ItemBase> = {};
     for (const [name, key] of Object.entries(poseSet.poses)) poses[name] = resolveKnifeKey(key, grip);
+    Object.assign(poses, fittedAttackPoses(def.id));
     return {
       anchorNode,
       anchorInNode,

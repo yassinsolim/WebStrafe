@@ -3,7 +3,8 @@ import { KNIVES } from '../../combat/knives';
 import { applyEase, retime, sampleKeys, sampleSeq, type SeqSample } from '../clips';
 import { AWP_CLIPS, DEAGLE_CLIPS } from '../viewmodelClips';
 import { knifeClip, knifeDrawStyle, knifeInspectCount, knifeInspectStyle } from '../knifeClips';
-import { KNIFE_POSES } from '../knifePoses';
+import { KNIFE_ATTACK_FITS } from '../knifeAttackFits';
+import { fittedAttackPoses, KNIFE_POSES } from '../knifePoses';
 import { gripKindFor } from '../knifeGrips';
 import { FIREARM_TIMINGS } from '../../combat/FirearmTiming';
 
@@ -57,7 +58,7 @@ describe('viewmodel clips', () => {
       clips.push(['inspect', knifeClip(def, 'inspect', 1)]);
       for (const [name, clip] of clips) {
         expect(clip.duration, `${def.id} ${name}`).toBeGreaterThan(0.3);
-        for (const channel of ['px', 'py', 'pz', 'rx', 'ry', 'rz', 'tossY', 'gripOpen', 'watch', 'ringHold', 'thumbOpener',
+        for (const channel of ['px', 'py', 'pz', 'rx', 'ry', 'rz', 'tossY', 'gripOpen', 'watch', 'ringHold', 'thumbOpener', 'leftDrop',
           'raise', 'show', 'showB', 'hook', 'hookB', 'cock', 'strike']) {
           const keys = clip.tracks[channel];
           if (keys) expect(sampleKeys(keys, clip.duration), `${def.id} ${name} ${channel}`).toBeCloseTo(0, 5);
@@ -68,7 +69,7 @@ describe('viewmodel clips', () => {
 
   it('walks every knife clip through poses its grip has, ending at rest', () => {
     for (const def of KNIVES) {
-      const poses = KNIFE_POSES[gripKindFor(def)].poses;
+      const poses = { ...KNIFE_POSES[gripKindFor(def)].poses, ...fittedAttackPoses(def.id) };
       for (const name of ['draw', 'inspect', 'slashA', 'slashB', 'stab', 'backstab'] as const) {
         for (const variant of [0, 1]) {
           const clip = knifeClip(def, name, variant);
@@ -90,6 +91,19 @@ describe('viewmodel clips', () => {
   it('cuts through the crosshair fast enough to read as the hit', () => {
     for (const def of KNIVES) {
       for (const name of ['slashA', 'slashB'] as const) {
+        const fit = KNIFE_ATTACK_FITS[def.id]?.[name];
+        if (fit) {
+          // fitted to cs2: the hand or the blade tip passes near the middle of the screen by then
+          // (a ring knife's claw trails the hand)
+          const near = fit.keys.some((k) => {
+            const tipX = k[1] + k[4] * 0.18;
+            const tipZ = k[3] + k[6] * 0.18;
+            const across = (x: number, z: number) => Math.abs(x / (-z * 1.199)) < 0.35;
+            return k[0] <= 0.16 && (across(tipX, tipZ) || across(k[1], k[3]));
+          });
+          expect(near, `${def.id} ${name}`).toBe(true);
+          continue;
+        }
         const clip = knifeClip(def, name);
         const keys = [...(clip.seq ?? []), ...(clip.seqL ?? [])];
         const cut = keys.find(([, pose]) => pose.startsWith('cut') || pose === 'jab');

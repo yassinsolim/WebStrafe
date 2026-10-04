@@ -86,17 +86,23 @@ rotation < 0.15 rad) and composited every frame.
   knives point the blade left and slightly up out of a low fist at the bottom
   right, the bowie lies almost level, the shadow daggers angle in from two low
   fists. Knives without one use their grip's idle.
-- Like CS2, only the knife hand shows (both for the shadow daggers). The
-  hammer-grip slashes and stab follow CS2's timing frame by frame: the
-  forehand winds up at 0.06 s, cuts upright on the right at 0.1 s and is off
-  screen by 0.2 s; the backhand enters from the left and exits right by
-  0.22 s. The stab cocks at 0.05 s, thrusts up-right at the crosshair at
-  0.13 s and holds until about 0.38 s. All three stay off screen and rise back
-  into the idle from below between about 0.8 and 1.1 s. The backstab goes
-  higher and drives in and down. Draws come up
+- Like CS2, the free hand waits low left of the middle (`KNIFE_LEFT_FISTS`,
+  fitted to the same capture): a loose fist for the hammer grips, open for
+  the karambit and talon, none for the bowie. It drops out of view as an
+  attack or inspect starts and comes back up as the knife settles
+  (`leftDrop`).
+- Every knife's slashes and stab are fitted frame by frame to the capture
+  (`knifeAttackFits.ts`): each visible 60 fps frame was cut out and the knife
+  and arm posed until their outline matched it, inside a natural wrist, then
+  keys the playback interpolates between were kept. Out of view the knife is
+  parked under the screen until it rises back the way CS2's does. Where the
+  capture lacks an attack, the nearest knife's is used (butterfly forehand and
+  flip backhand from the stiletto, gut forehand from the bayonet). The shadow
+  daggers fit each fist on its own (`keysL`). The backstab and the hand-made
+  clips (`ATTACKS`, `RING_ATTACKS`, `DAGGER_ATTACKS`) cover knives without a
+  fit. Draws come up
   from low on the right with the knife's flourish (twirl, toss, flip open,
-  switch, balisong, ring spin) and settle by about 0.6 to 0.9 s. The shadow
-  daggers jab one fist at a time (`clip.seqL` moves the left on its own).
+  switch, balisong, ring spin) and settle by about 0.6 to 0.9 s.
 - Ring knives (karambit, talon) idle like CS2's (checked against gameplay
   footage, not the inspect): the fist low on the right with the back of the
   hand to the eye, leaning into the screen, the ring at the left end under the
