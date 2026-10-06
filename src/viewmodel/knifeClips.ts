@@ -479,6 +479,7 @@ function fittedAttack(id: KnifeId, name: FittedAttackName): Clip | null {
       duration: fit.duration,
       seq: walk(fit.keys, false),
       seqL: fit.keysL ? walk(fit.keysL, true) : undefined,
+      seqSpline: true,
       tracks: fit.left ? { leftDrop: fit.left.map(([t, value]): Key => [t, value, 'linear']) } : {},
     } : null);
   }

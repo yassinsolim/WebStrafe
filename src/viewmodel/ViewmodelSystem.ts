@@ -234,6 +234,13 @@ const eA = new Euler(0, 0, 0, 'YXZ');
 const poleWorld = new Vector3();
 const poleBlend = new Vector3();
 const seqAt: SeqSample = { before: 'idle', a: 'idle', b: 'idle', after: 'idle', u: 0 };
+const splA = new Vector3();
+const splB = new Vector3();
+const splQ0 = new Quaternion();
+const splQ1 = new Quaternion();
+const splQ2 = new Quaternion();
+const splQ3 = new Quaternion();
+const negate = (q: Quaternion): Quaternion => q.set(-q.x, -q.y, -q.z, -q.w);
 const crA = new Vector3();
 const crB = new Vector3();
 const crC = new Vector3();
@@ -628,7 +635,7 @@ export class ViewmodelSystem {
     keyPole.copy(base.pole ?? POLE_R);
     if (this.active === 'knife' && this.knife && this.clip?.seq) {
       // knife clips walk the knife through whole poses on a curved path
-      this.seqPose(this.clip.seq, this.knife, keyPos, keyRot, keyPole);
+      this.seqPose(this.clip.seq, this.knife, keyPos, keyRot, keyPole, this.clip.seqSpline);
     } else if (this.active === 'katana') {
       // the katana clips blend toward whole poses by weight
       for (const name of KEY_NAMES) {
@@ -640,7 +647,7 @@ export class ViewmodelSystem {
     }
     // a pair's left knife runs its own sequence when the clip has one, else it mirrors the right
     if (this.active === 'knife' && this.knife && this.clip?.seqL) {
-      this.seqPose(this.clip.seqL, this.knife, this.twinPos, this.twinRot, this.twinPole);
+      this.seqPose(this.clip.seqL, this.knife, this.twinPos, this.twinRot, this.twinPole, this.clip.seqSpline);
     } else {
       this.twinPos.copy(keyPos);
       this.twinRot.copy(keyRot);
@@ -676,7 +683,11 @@ export class ViewmodelSystem {
    * a centripetal catmull-rom curve through the keys (so swings arc and pass
    * through keys without stopping), rotations slerp key to key
    */
-  private seqPose(seq: NonNullable<Clip['seq']>, rig: KnifeRig, outPos: Vector3, outRot: Quaternion, outPole: Vector3): void {
+  private seqPose(seq: NonNullable<Clip['seq']>, rig: KnifeRig, outPos: Vector3, outRot: Quaternion, outPole: Vector3, spline = false): void {
+    if (spline) {
+      this.seqSpline(seq, rig, outPos, outRot, outPole);
+      return;
+    }
     sampleSeq(seq, this.time, seqAt);
     const at = (name: string): ItemBase => (name === 'idle' ? rig.base : rig.poses[name] ?? rig.base);
     const a = at(seqAt.a);
@@ -685,6 +696,58 @@ export class ViewmodelSystem {
     catmullRom(at(seqAt.before).position, a.position, b.position, at(seqAt.after).position, seqAt.u, outPos);
     const fallback = rig.pole;
     outPole.lerpVectors(a.pole ?? fallback, b.pole ?? fallback, seqAt.u);
+  }
+
+  /**
+   * dense keys (fitted clips): a cubic hermite in time through position,
+   * rotation and elbow with catmull-rom tangents, so the speed carries through
+   * every key; at rest where the clip leaves and rejoins the idle
+   */
+  private seqSpline(seq: NonNullable<Clip['seq']>, rig: KnifeRig, outPos: Vector3, outRot: Quaternion, outPole: Vector3): void {
+    const last = seq.length - 1;
+    const t = Math.min(Math.max(this.time, seq[0][0]), seq[last][0]);
+    let k = 1;
+    while (k < last && seq[k][0] < t) k += 1;
+    const key = (i: number): ItemBase => {
+      const name = seq[Math.max(0, Math.min(last, i))][1];
+      return name === 'idle' ? rig.base : rig.poses[name] ?? rig.base;
+    };
+    const time = (i: number): number => seq[Math.max(0, Math.min(last, i))][0];
+    const t1 = time(k - 1);
+    const t2 = time(k);
+    const h = t2 - t1;
+    const u = h > 1e-9 ? (t - t1) / h : 1;
+    const w1 = k - 1 > 0 ? h / (t2 - time(k - 2)) : 0;
+    const w2 = k < last ? h / (time(k + 1) - t1) : 0;
+    const u2 = u * u;
+    const u3 = u2 * u;
+    const h00 = 2 * u3 - 3 * u2 + 1;
+    const h01 = 3 * u2 - 2 * u3;
+    const m1 = (u3 - 2 * u2 + u) * w1;
+    const m2 = (u3 - u2) * w2;
+    const k0 = key(k - 2);
+    const k1 = key(k - 1);
+    const k2 = key(k);
+    const k3 = key(k + 1);
+    const curve = (p0: Vector3, p1: Vector3, p2: Vector3, p3: Vector3, out: Vector3): Vector3 =>
+      out.copy(p1).multiplyScalar(h00).addScaledVector(p2, h01).addScaledVector(splA.subVectors(p2, p0), m1).addScaledVector(splB.subVectors(p3, p1), m2);
+    curve(k0.position, k1.position, k2.position, k3.position, outPos);
+    const fallback = rig.pole;
+    curve(k0.pole ?? fallback, k1.pole ?? fallback, k2.pole ?? fallback, k3.pole ?? fallback, outPole);
+    // rotations as quaternion components on the same hemisphere, renormalised
+    splQ1.copy(k1.rotation);
+    splQ0.copy(k0.rotation);
+    splQ2.copy(k2.rotation);
+    splQ3.copy(k3.rotation);
+    if (splQ0.dot(splQ1) < 0) negate(splQ0);
+    if (splQ2.dot(splQ1) < 0) negate(splQ2);
+    if (splQ3.dot(splQ2) < 0) negate(splQ3);
+    outRot.set(
+      splQ1.x * h00 + splQ2.x * h01 + (splQ2.x - splQ0.x) * m1 + (splQ3.x - splQ1.x) * m2,
+      splQ1.y * h00 + splQ2.y * h01 + (splQ2.y - splQ0.y) * m1 + (splQ3.y - splQ1.y) * m2,
+      splQ1.z * h00 + splQ2.z * h01 + (splQ2.z - splQ0.z) * m1 + (splQ3.z - splQ1.z) * m2,
+      splQ1.w * h00 + splQ2.w * h01 + (splQ2.w - splQ0.w) * m1 + (splQ3.w - splQ1.w) * m2,
+    ).normalize();
   }
 
   private itemBase(): ItemBase {

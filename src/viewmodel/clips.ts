@@ -20,6 +20,8 @@ export interface Clip {
   seq?: readonly SeqKey[];
   /** a pair's left knife runs this one (mirrored) instead of mirroring the right */
   seqL?: readonly SeqKey[];
+  /** the seq keys are dense samples (fitted clips): played on a time spline through every channel */
+  seqSpline?: boolean;
 }
 
 /** where a pose sequence is: between poses a and b, u of the way, with the poses either side for the curve */

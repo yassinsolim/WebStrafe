@@ -93,9 +93,17 @@ rotation < 0.15 rad) and composited every frame.
   (`leftDrop`).
 - Every knife's slashes and stab are fitted frame by frame to the capture
   (`knifeAttackFits.ts`): each visible 60 fps frame was cut out and the knife
-  and arm posed until their outline matched it, inside a natural wrist, then
-  keys the playback interpolates between were kept. Out of view the knife is
-  parked under the screen until it rises back the way CS2's does. Where the
+  and arm posed until their outline matched it, inside a natural wrist. The
+  fit tracks the previous frame rather than searching wide, since a knife
+  turned about its blade or a hand nearer the camera can have nearly the same
+  outline and hopping between them reads as jitter. The track is then
+  smoothed (the twist about the blade and the elbow most) and keyed every
+  2 frames; `clip.seqSpline` plays those keys on a time spline through
+  position, rotation and elbow so the speed carries through every key. The
+  difference between CS2's idle and ours fades out over the swing's start and
+  in over the settle, so attacks leave and rejoin the idle without a pop. Out
+  of view the knife is parked under the screen until it rises back the way
+  CS2's does. Where the
   capture lacks an attack, the nearest knife's is used (butterfly forehand and
   flip backhand from the stiletto, gut forehand from the bayonet). The shadow
   daggers fit each fist on its own (`keysL`). The backstab and the hand-made
