@@ -269,6 +269,8 @@ export class ViewmodelSystem {
   private knifeLeft: KnifeRig | null = null;
   /** tools: a left hand tried in place of the knife's own */
   private leftFistOverride: LeftHandKey | null = null;
+  /** tools: no free left hand (fitting the knife arm alone) */
+  private leftHidden = false;
   private knifeId: KnifeId = DEFAULT_KNIFE_ID;
   private knifeFinish: KnifeFinishSelection | null = null;
   private readonly itemPivot = new Group();
@@ -1006,7 +1008,7 @@ export class ViewmodelSystem {
 
     // like cs2 the free hand waits as a fist low in view (dropped out of view
     // by leftDrop), unless the knife keeps it down or a clip brings it up
-    const fist = this.leftFistOverride ?? KNIFE_LEFT_FISTS[this.knifeId] ?? null;
+    const fist = this.leftHidden ? null : this.leftFistOverride ?? KNIFE_LEFT_FISTS[this.knifeId] ?? null;
     const drop = Math.min(1, Math.max(0, this.channel('leftDrop')));
     const fistIn = fist !== null && drop < 0.999;
     const guard = Math.max(0, this.channel('leftGuard'));
@@ -1346,6 +1348,26 @@ export class ViewmodelSystem {
       : null;
   }
 
+  /** tools: hides the free left hand */
+  public debugHideLeft(hidden: boolean): void {
+    this.leftHidden = hidden;
+  }
+
+  /** tools: shows the whole knife, only its blade steel, or none, with or without the arms (part masks) */
+  public debugShowParts(knife: 'all' | 'blade' | 'none', arms: boolean): void {
+    if (this.arms) this.arms.root.visible = arms;
+    for (const rig of [this.knife, this.knifeLeft]) {
+      if (!rig) continue;
+      rig.holder.visible = knife !== 'none';
+      rig.holder.traverse((node) => {
+        const mesh = node as Mesh;
+        if (!mesh.isMesh) return;
+        const name = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material)?.name ?? '';
+        mesh.visible = knife !== 'blade' || /^knife_(blade|edge)/.test(name);
+      });
+    }
+  }
+
   /**
    * tools: where the knife and the hands land on screen (ndc, x right, y up,
    * plus depth in metres) and how far the right wrist bends off the forearm
@@ -1365,6 +1387,8 @@ export class ViewmodelSystem {
       const node = rig.knife.getObjectByName(name);
       if (node) out[key] = ndc(node.getWorldPosition(new Vector3()));
     }
+    // the knife's origin is where the blade meets the guard
+    out.guard = ndc(rig.knife.getWorldPosition(new Vector3()));
     const hand = this.arms.getHandBone('r');
     const wrist = hand.getWorldPosition(new Vector3());
     const elbow = this.arms.getForearmBone('r').getWorldPosition(new Vector3());

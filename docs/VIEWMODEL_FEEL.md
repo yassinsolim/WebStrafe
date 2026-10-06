@@ -99,7 +99,16 @@ rotation < 0.15 rad) and composited every frame.
   outline and hopping between them reads as jitter. The track is then
   smoothed (the twist about the blade and the elbow most) and keyed every
   2 frames; `clip.seqSpline` plays those keys on a time spline through
-  position, rotation and elbow so the speed carries through every key. The
+  position, rotation and elbow so the speed carries through every key. An
+  outline alone can't tell a blade seen side on from one pointing into the
+  screen, and CS2's thick sleeve and glove pull a slim arm's fit off, so 21
+  of the attacks were refitted with the sleeve ignored and the blade matched
+  as a line (its direction, tip and guard on screen against the bright blade
+  in the capture). That cut the blade line error by about a third (0.46 to
+  0.29) while the outline match barely moved (0.56 to 0.54). The other
+  attacks keep the outline-only fit, because the blade-line fit jolted more
+  on them (CS2's blurred blade is hard to pick out). The butterfly stab
+  reaches further forward than our arm can, so it stays short. The
   difference between CS2's idle and ours fades out over the swing's start and
   in over the settle, so attacks leave and rejoin the idle without a pop. Out
   of view the knife is parked under the screen until it rises back the way

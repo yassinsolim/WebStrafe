@@ -2885,6 +2885,8 @@ export class GameApp {
       (name, f, k, b, pole) => this.viewmodel.debugSetHandPose(name, f, k, b, pole);
     (window as unknown as { __vmSetLeft?: (f: number[] | null, k?: number[], b?: number[], pole?: number[], open?: number) => void }).__vmSetLeft =
       (f, k, b, pole, open) => this.viewmodel.debugSetLeftFist(f, k, b, pole, open);
+    (window as unknown as { __vmHideLeft?: (hidden: boolean) => void }).__vmHideLeft = (hidden) => this.viewmodel.debugHideLeft(hidden);
+    (window as unknown as { __vmFov?: (fov: number) => void }).__vmFov = (fov) => this.viewmodelRenderer.setFov(fov);
     // tools: the viewmodel's silhouette (1 = arm or knife), rows top to bottom
     let maskTarget: WebGLRenderTarget | null = null;
     const maskBits = (w: number, h: number): Uint8Array => {
@@ -2913,6 +2915,24 @@ export class GameApp {
       return out;
     };
     (window as unknown as { __vmMaskBits?: (w: number, h: number) => Uint8Array }).__vmMaskBits = maskBits;
+    (window as unknown as { __vmKnifeBits?: (w: number, h: number) => Uint8Array }).__vmKnifeBits = (w, h) => {
+      this.viewmodel.debugShowParts('all', false);
+      const knife = maskBits(w, h);
+      this.viewmodel.debugShowParts('all', true);
+      return knife;
+    };
+    // tools: 3 where the blade steel shows, 2 the rest of the knife, 1 the arms, 0 nothing
+    (window as unknown as { __vmPartBits?: (w: number, h: number) => Uint8Array }).__vmPartBits = (w, h) => {
+      this.viewmodel.debugShowParts('blade', false);
+      const blade = maskBits(w, h).slice();
+      this.viewmodel.debugShowParts('all', false);
+      const knife = maskBits(w, h).slice();
+      this.viewmodel.debugShowParts('none', true);
+      const arms = maskBits(w, h);
+      this.viewmodel.debugShowParts('all', true);
+      for (let i = 0; i < arms.length; i += 1) arms[i] = blade[i] ? 3 : knife[i] ? 2 : arms[i];
+      return arms;
+    };
     (window as unknown as { __vmMask?: (w: number, h: number) => string }).__vmMask = (w, h) => maskBits(w, h).join('');
     if (shot.gripCheck) {
       (window as unknown as { __gripReport?: unknown }).__gripReport = await runGripCheck(this.viewmodel, shot.gripStep);
