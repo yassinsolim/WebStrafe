@@ -1,5 +1,5 @@
 import { Vector3 } from 'three';
-import { aimDirection, Inaccuracy, type AimWeaponId } from './Inaccuracy';
+import { aimDirection, type AimWeaponId } from './Inaccuracy';
 import { Recoil, RECOIL_PROFILES, type PunchAngles } from './Recoil';
 import { DEFAULT_ZOOM_SENSITIVITY_RATIO, ScopeState, type ZoomLevel } from './Scope';
 import { getWeapon, type WeaponId } from './weapons';
@@ -24,20 +24,16 @@ function aimWeapon(id: WeaponId): AimWeaponId | null {
 }
 
 /**
- * The local player's aim for the held weapon: CS spread, aim punch and the
- * AWP scope, advanced on the fixed tick. GameApp asks it for the direction of
- * the next shot (view angles + aim punch + a sampled spread offset), the
- * camera punch, the scoped fov and the sensitivity multiplier. The authority
- * still trusts the direction it is sent.
+ * Player shots follow view angles plus recoil without random spread, including
+ * movement, jumps and unscoped shots. The AWP scope still controls zoom and the
+ * bolt cycle. The authority uses the submitted shot direction.
  */
 export class CombatAim {
-  readonly inaccuracy: Inaccuracy;
   readonly recoil: Recoil;
   readonly scope = new ScopeState();
   private weapon: WeaponId = 'knife';
 
   constructor(random: () => number = Math.random) {
-    this.inaccuracy = new Inaccuracy(random);
     this.recoil = new Recoil(random);
   }
 
@@ -45,74 +41,58 @@ export class CombatAim {
     return this.weapon;
   }
 
-  /** weapon switch: unscopes and starts the new gun at its accuracy floor */
+  /** weapon switch: unscopes */
   setWeapon(id: WeaponId, nowMs: number): void {
     if (id === this.weapon) return;
     this.weapon = id;
     this.scope.cancel(nowMs);
-    this.inaccuracy.setWeapon(aimWeapon(id));
   }
 
   /** fixed tick, after movement */
-  tick(dtSec: number, motion: CombatAimMotion): void {
-    this.inaccuracy.setScoped(this.scope.isScoped());
-    this.inaccuracy.tick(dtSec, {
-      horizontalSpeed: Math.hypot(motion.velocity.x, motion.velocity.z),
-      verticalSpeed: motion.velocity.y,
-      grounded: motion.grounded,
-      maxSpeed: motion.maxSpeed,
-      jumpImpulse: motion.jumpImpulse,
-    });
+  tick(dtSec: number, _motion: CombatAimMotion): void {
     this.recoil.tick(dtSec);
   }
 
   /** per frame: brings the scope back after the bolt cycle */
   update(nowMs: number, context: CombatAimContext): void {
     this.scope.update(nowMs, { awpHeld: this.weapon === 'awp', ...context });
-    this.inaccuracy.setScoped(this.scope.isScoped());
   }
 
-  /** direction of the next shot: view angles plus aim punch plus a spread sample */
+  /** direction of the next shot: view angles plus aim punch */
   shotDirection(yawRad: number, pitchRad: number, out = new Vector3()): Vector3 {
     const punch = this.recoil.getAimOffset();
     return aimDirection(
       yawRad + punch.yaw,
       pitchRad + punch.pitch,
-      this.inaccuracy.sampleSpread(),
+      undefined,
       out,
     );
   }
 
-  /** after an accepted gun shot: accuracy penalty, recoil kick, awp unscope */
+  /** after an accepted gun shot: recoil kick and awp unscope */
   onShotFired(nowMs: number): void {
     const gun = aimWeapon(this.weapon);
     if (!gun) return;
-    this.inaccuracy.onShot();
     this.recoil.kick(RECOIL_PROFILES[gun]);
     if (gun === 'awp') {
       this.scope.onShot(nowMs, getWeapon('awp').fireIntervalMs);
     }
-    this.inaccuracy.setScoped(this.scope.isScoped());
   }
 
   /** right click with the AWP; false when the zoom did not change */
   toggleScope(nowMs: number, context: CombatAimContext): boolean {
-    const changed = this.scope.cycle(nowMs, { awpHeld: this.weapon === 'awp', ...context });
-    this.inaccuracy.setScoped(this.scope.isScoped());
-    return changed;
+    return this.scope.cycle(nowMs, { awpHeld: this.weapon === 'awp', ...context });
   }
 
   /** reload, pause or death */
   cancelScope(nowMs: number): void {
     this.scope.cancel(nowMs);
-    this.inaccuracy.setScoped(false);
   }
 
   /** fresh life */
   reset(): void {
     this.scope.reset();
     this.recoil.reset();
-    this.inaccuracy.reset();
   }
 
   /** camera-only pitch/yaw offset, radians */
@@ -120,9 +100,9 @@ export class CombatAim {
     return this.recoil.getViewOffset();
   }
 
-  /** current cone radius for the crosshair, radians (0 for the knife) */
+  /** player weapons have no random-spread cone */
   getInaccuracyRadians(): number {
-    return this.inaccuracy.getInaccuracyRadians();
+    return 0;
   }
 
   isScoped(): boolean {

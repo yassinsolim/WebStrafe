@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { KNIVES } from '../../combat/knives';
 import { applyEase, retime, sampleKeys, sampleSeq, type SeqSample } from '../clips';
 import { AWP_CLIPS, DEAGLE_CLIPS } from '../viewmodelClips';
-import { knifeClip, knifeDrawStyle, knifeInspectCount, knifeInspectStyle } from '../knifeClips';
+import { knifeAttackContactTime, knifeClip, knifeDrawStyle, knifeInspectCount, knifeInspectStyle } from '../knifeClips';
 import { KNIFE_ATTACK_FITS } from '../knifeAttackFits';
 import { fittedAttackPoses, KNIFE_POSES } from '../knifePoses';
 import { gripKindFor } from '../knifeGrips';
@@ -36,6 +36,20 @@ describe('clip sampling', () => {
 });
 
 describe('viewmodel clips', () => {
+  it('places knife contact cues at each grip family\'s attack phase', () => {
+    for (const def of KNIVES) {
+      const ring = def.id === 'karambit' || def.id === 'talon';
+      const pair = def.id === 'shadow_daggers';
+      expect(knifeAttackContactTime(def, 'slashA'), def.id).toBe(pair ? 0.12 : 0.1);
+      expect(knifeAttackContactTime(def, 'slashB'), def.id).toBe(pair ? 0.12 : 0.1);
+      expect(knifeAttackContactTime(def, 'stab'), def.id).toBe(ring ? 0.3 : 0.13);
+      expect(knifeAttackContactTime(def, 'backstab'), def.id).toBe(pair ? 0.38 : ring ? 0.36 : 0.18);
+      for (const action of ['slashA', 'slashB', 'stab', 'backstab'] as const) {
+        expect(knifeAttackContactTime(def, action), `${def.id} ${action}`).toBeLessThan(knifeClip(def, action).duration);
+      }
+    }
+  });
+
   it('finish every gun clip before the gun can act again', () => {
     expect(DEAGLE_CLIPS.fire.duration * 1000).toBeLessThanOrEqual(FIREARM_TIMINGS.deagle.fireIntervalMs);
     expect(AWP_CLIPS.fire.duration * 1000).toBeLessThanOrEqual(FIREARM_TIMINGS.awp.fireIntervalMs);
@@ -143,6 +157,25 @@ describe('viewmodel clips', () => {
     expect(knifeDrawStyle(byId.get('talon')!)).toBe('spin_in');
     expect(knifeDrawStyle(byId.get('skeleton')!)).toBe('skeleton_spin');
     expect(knifeInspectStyle(byId.get('skeleton')!)).toBe('skeleton_ring');
+  });
+
+  it('marks closing separately and gives every inspect quiet hand movement cues', () => {
+    for (const def of KNIVES) {
+      for (const variant of [0, 1]) {
+        const clip = knifeClip(def, 'inspect', variant);
+        const events = clip.events ?? [];
+        expect(events.filter(([, name]) => name === 'sound:knife_cloth'), def.id).toHaveLength(2);
+        for (const [index, [time]] of events.entries()) {
+          expect(time, def.id).toBeGreaterThanOrEqual(index > 0 ? events[index - 1][0] : 0);
+          expect(time, def.id).toBeLessThan(clip.duration);
+        }
+      }
+    }
+    for (const id of ['flip', 'stiletto']) {
+      const clip = knifeClip(KNIVES.find(def => def.id === id)!, 'inspect');
+      expect(clip.events?.some(([, name]) => name === 'sound:knife_close'), id).toBe(true);
+      expect(clip.events?.some(([, name]) => name === 'sound:knife_open'), id).toBe(true);
+    }
   });
 
   it('shows the watch in every gun inspect', () => {

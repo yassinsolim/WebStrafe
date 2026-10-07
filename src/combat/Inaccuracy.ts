@@ -1,6 +1,6 @@
 import { Vector3 } from 'three';
 
-/** Firearms that carry a CS accuracy model. The knife has none. */
+/** Firearms in the reference CS accuracy model. Player shots use CombatAim's zero-spread policy. */
 export type AimWeaponId = 'awp' | 'deagle';
 
 /**

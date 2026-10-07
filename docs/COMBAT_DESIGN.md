@@ -282,7 +282,19 @@ A slash from behind does 90, which does not kill from full health, same as CS.
   against the remotes as drawn, so the longer cooldown after a hit lines up
   with the server.
 
-### Spread (`src/combat/Inaccuracy.ts`)
+### Player accuracy (`src/combat/CombatAim.ts`)
+
+As of 2026-10-07, player firearms have zero random spread. Deagle and AWP
+shots follow view angles plus the current recoil offset, whether standing,
+running, taking off, airborne, landing or repeatedly firing. AWP no-scopes
+are equally free of random spread. The crosshair's spread radius stays zero.
+Recoil, scope zoom and bolt behavior, damage and fire intervals are unchanged.
+Bots retain their own aiming error and reaction rules.
+
+### Reference spread model (`src/combat/Inaccuracy.ts`)
+
+The earlier CS-style model is retained as reference data and tests, but is not
+used by the player firing path. Its behavior and values are documented below.
 
 The cone is spread + inaccuracy. Inaccuracy is a penalty plus a movement term
 plus an air term:

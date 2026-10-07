@@ -2,15 +2,19 @@ import {
   DepthTexture,
   HalfFloatType,
   LinearFilter,
+  Mesh,
   NoBlending,
+  OrthographicCamera,
+  PlaneGeometry,
+  Scene,
   ShaderMaterial,
   UnsignedIntType,
   Vector2,
   Vector3,
   WebGLRenderTarget,
   type Camera,
+  type Material,
   type PerspectiveCamera,
-  type Scene,
   type Texture,
   type WebGLRenderer,
 } from 'three';
@@ -123,6 +127,8 @@ export class RenderPipeline {
   private readonly ssao = new Ssao();
   private readonly composite: ShaderMaterial;
   private readonly quad: FullScreenQuad;
+  private readonly warmedMaterials = new Set<Material>();
+  private warmupGeneration = 0;
   private preset: QualityPreset = QUALITY_PRESETS.high;
   private grade: ColorGrade = { ...DEFAULT_GRADE };
   private width = 1;
@@ -165,16 +171,70 @@ export class RenderPipeline {
     return this.grade;
   }
 
+  async warmUp(scene: Scene, camera: Camera): Promise<void> {
+    const generation = this.warmupGeneration;
+    const snapshot = scene.clone(true);
+    const copies = new Map<Material, Material>();
+    snapshot.traverse(node => {
+      if (!(node instanceof Mesh)) return;
+      const copy = (source: Material): Material => {
+        let material = copies.get(source);
+        if (!material) {
+          material = source.clone();
+          material.onBeforeCompile = source.onBeforeCompile;
+          material.customProgramCacheKey = source.customProgramCacheKey.bind(source);
+          copies.set(source, material);
+        }
+        return material;
+      };
+      node.material = Array.isArray(node.material) ? node.material.map(copy) : copy(node.material);
+    });
+    let compiled = false;
+    try {
+      await this.renderer.compileAsync(snapshot, camera);
+      compiled = true;
+    } finally {
+      for (const material of copies.values()) {
+        if (compiled && generation === this.warmupGeneration) this.warmedMaterials.add(material);
+        else material.dispose();
+      }
+    }
+  }
+
+  clearWarmup(): void {
+    this.warmupGeneration += 1;
+    for (const material of this.warmedMaterials) material.dispose();
+    this.warmedMaterials.clear();
+  }
+
+  async warmUpComposite(preset: QualityPreset): Promise<void> {
+    const scene = new Scene();
+    const geometry = new PlaneGeometry(2, 2);
+    scene.add(new Mesh(geometry, this.composite));
+    this.setCompositeFeatures(preset);
+    try {
+      await this.renderer.compileAsync(scene, new OrthographicCamera(-1, 1, 1, -1, 0, 1));
+    } finally {
+      this.setCompositeFeatures(this.preset);
+      geometry.dispose();
+    }
+  }
+
   setPreset(preset: QualityPreset): void {
     const rebuild = !this.sceneTarget || preset.msaa !== this.preset.msaa || preset.ao !== this.preset.ao;
     this.preset = preset;
     if (preset.bloom) this.bloom.setLevelCount(preset.bloomLevels);
+    this.setCompositeFeatures(preset);
+    if (rebuild) this.rebuildTarget();
+  }
+
+  private setCompositeFeatures(preset: QualityPreset): void {
+    const changed = ('USE_BLOOM' in this.composite.defines) !== preset.bloom || ('USE_AO' in this.composite.defines) !== preset.ao;
     if (preset.bloom) this.composite.defines.USE_BLOOM = '';
     else delete this.composite.defines.USE_BLOOM;
     if (preset.ao) this.composite.defines.USE_AO = '';
     else delete this.composite.defines.USE_AO;
-    this.composite.needsUpdate = true;
-    if (rebuild) this.rebuildTarget();
+    if (changed) this.composite.needsUpdate = true;
   }
 
   setGrade(grade: ColorGrade): void {
@@ -244,6 +304,7 @@ export class RenderPipeline {
   }
 
   dispose(): void {
+    this.clearWarmup();
     this.sceneTarget?.dispose();
     this.sceneTarget?.depthTexture?.dispose();
     this.sceneTarget = null;

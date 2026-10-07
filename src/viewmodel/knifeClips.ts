@@ -57,6 +57,12 @@ export function knifeUsesReverseGrip(def: KnifeDef): boolean {
   return def.shape.fingerRing === true;
 }
 
+export function knifeAttackContactTime(def: KnifeDef, action: AttackName): number {
+  if (action === 'slashA' || action === 'slashB') return def.shape.pair ? 0.12 : 0.1;
+  if (action === 'backstab') return def.shape.pair ? 0.38 : knifeUsesReverseGrip(def) ? 0.36 : 0.18;
+  return knifeUsesReverseGrip(def) ? 0.3 : 0.13;
+}
+
 // every draw starts out of view low on the right ('low'), comes up into the
 // pose its flourish needs ('raise') and settles into the idle
 const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
@@ -182,7 +188,7 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
       rz: [[0, 0], [0.45, -5, 'out'], [1.1, 6, 'inOut'], [1.6, 0, 'inOut'], [2.6, 0], [2.68, 16, 'out'], [2.85, -4, 'inOut'], [3.0, 0, 'inOut']],
       ry: [[0, 0], [0.45, 8, 'out'], [1.2, -6, 'inOut'], [1.6, 0, 'inOut']],
     },
-    events: [[2.4, 'sound:knife_open'], [2.7, 'sound:knife_open']],
+    events: [[2.4, 'sound:knife_close'], [2.7, 'sound:knife_open']],
   },
   switch_show: {
     // look at it, let the blade fold, snap it out on the button, then the other side
@@ -195,7 +201,7 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
       rx: [[0, 0], [1.38, 0], [1.44, 8, 'out'], [1.6, 0, 'inOut']],
       rz: [[0, 0], [0.45, -4, 'out'], [1.0, 5, 'inOut'], [1.38, 0, 'inOut']],
     },
-    events: [[1.0, 'sound:knife_open'], [1.41, 'sound:knife_open']],
+    events: [[1.0, 'sound:knife_close'], [1.41, 'sound:knife_open']],
   },
   balisong: {
     // opens and closes in a rhythm: the hand keeps the bite handle, the safe
@@ -458,7 +464,13 @@ function withLeftFist(clip: Clip, kind: 'draw' | 'inspect' | 'attack'): Clip {
       : kind === 'inspect'
         ? [[0, 0], [0.2, 1, 'in'], [end - 0.4, 1], [end - 0.05, 0, 'out']]
         : [[0, 0], [0.03, 1, 'linear'], [end - 0.3, 1], [end, 0, 'out']];
-    out = { ...clip, tracks: { ...clip.tracks, leftDrop } };
+    const events = kind === 'inspect' ? [...(clip.events ?? [])] : undefined;
+    events?.push([0.12, 'sound:knife_cloth'], [end - 0.4, 'sound:knife_cloth']);
+    out = {
+      ...clip,
+      ...(events ? { events: events.sort((left, right) => left[0] - right[0]) } : {}),
+      tracks: { ...clip.tracks, leftDrop },
+    };
     withLeft.set(clip, out);
   }
   return out;

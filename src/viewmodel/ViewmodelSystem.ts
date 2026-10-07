@@ -498,6 +498,14 @@ export class ViewmodelSystem {
     return { active: this.active, action: this.action };
   }
 
+  public getActionTime(): number {
+    return this.time;
+  }
+
+  public checkWrist(side: 'r' | 'l') {
+    return this.arms?.getWristAngles(side) ?? null;
+  }
+
   /** muzzle socket of the active gun in world space, null for the knife */
   public getMuzzleWorldPosition(out = new Vector3()): Vector3 | null {
     if (this.active === 'knife' || this.active === 'katana') return null;
@@ -968,9 +976,9 @@ export class ViewmodelSystem {
       }
     }
     arms.setArmVisible('r', true);
-    arms.solveArm('r', pA, qA, this.pole(this.posePole));
+    arms.solveArm('r', pA, qA, this.pole(this.posePole), 0.8, true);
     arms.applyHandPose('r', this.poseR, this.knifeSpread(rig, open));
-    if (ringHold <= 0) this.keepKnifeInHand(rig, arms.getHandBone('r'), pA, qA);
+    this.keepKnifeInHand(rig, arms.getHandBone('r'), pA, qA);
 
     if (pair && this.knifeLeft) {
       const left = this.knifeLeft;
@@ -1000,7 +1008,7 @@ export class ViewmodelSystem {
       qA.premultiply(this.content.getWorldQuaternion(qB));
       blendHandPose(rig.grip.pose, HAND_POSES.open, open, this.poseL);
       arms.setArmVisible('l', true);
-      arms.solveArm('l', pA, qA, this.pole(poleBlend.set(-this.twinPole.x, this.twinPole.y, this.twinPole.z)));
+      arms.solveArm('l', pA, qA, this.pole(poleBlend.set(-this.twinPole.x, this.twinPole.y, this.twinPole.z)), 0.8, true);
       arms.applyHandPose('l', this.poseL, this.knifeSpread(rig, open));
       this.keepKnifeInHand(left, arms.getHandBone('l'), pA, qA);
       return;
@@ -1035,7 +1043,7 @@ export class ViewmodelSystem {
         blendHandPose(this.poseL, HAND_POSES.guard, guard, this.poseL);
       }
       this.blendWatch(pA, qA, this.poseL);
-      arms.solveArm('l', pA, qA, this.pole(fist && fistIn && fist.pole ? fist.pole : POLE_L));
+      arms.solveArm('l', pA, qA, this.pole(fist && fistIn && fist.pole ? fist.pole : POLE_L), 0.8, 'relaxed');
       arms.applyHandPose('l', this.poseL);
     }
   }

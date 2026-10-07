@@ -62,7 +62,7 @@ const CROSSHAIR_LABEL: Record<CrosshairStyle, string> = {
 };
 
 const QUALITY_INFO: Record<GraphicsQuality, { label: string; description: string }> = {
-  auto: { label: 'Auto', description: 'High on strong GPUs, Balanced on most, Low on weak ones' },
+  auto: { label: 'Auto', description: 'Balanced or Low, with performance-based fallback' },
   low: { label: 'Low', description: 'Fastest. Baked light, FXAA, no bloom or shadows' },
   medium: { label: 'Balanced', description: 'Sun shadows, bloom, detailed surfaces, FXAA' },
   high: { label: 'High', description: '4x MSAA (FXAA on Retina), ambient occlusion, sharper shadows' },

@@ -331,17 +331,17 @@ in game.
   re-scope after the bolt.
 - One-shot kill to the body (115 damage, head 1.5×), limb damage lower once
   hitboxes exist.
-- Inaccuracy model: standing ≈ 0, crouch lower, moving or in the air large. No
-  scoped accuracy while moving over 34% of max speed, so jump shots are
-  deliberately bad, like CS.
+- Player shots have zero random spread, including no-scopes and airborne
+  bhops (decided 2026-10-07). Movement and landing do not reduce accuracy;
+  recoil still affects the aimed direction.
 - Bolt cycle 1.46 s, which is the current `FIREARM_TIMINGS`. Reload is a
   separate animation.
 
 ### Heavy pistol (Deagle-style), phase 2
 
-- First-shot accuracy when standing still, recovering over about 0.4 s. Recoil
-  with a vertical kick and a random horizontal drift, and a view punch that
-  decays.
+- Zero random spread while standing, moving, airborne and repeatedly firing
+  (decided 2026-10-07). Recoil keeps its vertical kick, random horizontal drift
+  and decaying view punch.
 - 63 body damage, 2× headshot (126, a one-tap).
 - Fire interval 225 ms (current), 7-round magazine.
 

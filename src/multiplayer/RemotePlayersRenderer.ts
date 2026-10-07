@@ -108,19 +108,21 @@ export class RemotePlayersRenderer {
    * behind a loading screen, so the first player who shows up doesn't cost a
    * visible stall. no-op until load() finished.
    */
-  public async warmUp(renderer: WebGLRenderer, scene: Scene, camera: Camera): Promise<void> {
+  public async warmUp(renderer: WebGLRenderer, scene: Scene, camera: Camera, retain?: (scene: Scene, camera: Camera) => Promise<void>): Promise<void> {
     if (!this.loaded || !this.library) return;
-    // the probe wears the knife and decals too, their materials compile here as well
-    const probe = createCharacterSync(this.library, { ...defaultLook('terrorist'), tag: 'WARM' }, 'terrorist', { pose: 'none', lod: 0 });
-    if (probe.rig) attachKnifeModel(probe.rig.rightWeaponHand, this.knifeTemplate);
-    probe.root.position.set(0, -1000, 0);
-    scene.add(probe.root);
-    try {
-      await renderer.compileAsync(scene, camera);
-    } catch {
-      // older drivers without parallel compile just compile on first draw
-    } finally {
-      probe.dispose();
+    for (const skin of ['kit', ...this.library.skins.keys()] as const) {
+      const probe = createCharacterSync(this.library, { ...defaultLook('terrorist'), skin, tag: 'WARM' }, 'terrorist', { pose: 'none', lod: 0 });
+      if (probe.rig) attachKnifeModel(probe.rig.rightWeaponHand, this.knifeTemplate);
+      probe.root.position.set(0, -1000, 0);
+      scene.add(probe.root);
+      try {
+        if (retain) await retain(scene, camera);
+        else await renderer.compileAsync(scene, camera);
+      } catch {
+        // older drivers without parallel compile just compile on first draw
+      } finally {
+        probe.dispose();
+      }
     }
   }
 

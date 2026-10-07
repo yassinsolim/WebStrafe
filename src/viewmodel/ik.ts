@@ -6,6 +6,11 @@ const tmpX = new Vector3();
 const tmpY = new Vector3();
 const tmpZ = new Vector3();
 const tmpM = new Matrix4();
+const wristPole = new Vector3();
+const wristTurn = new Quaternion();
+const wristInverse = new Quaternion();
+const wristDirection = new Vector3();
+const wristLimited = new Vector3();
 
 /**
  * analytic two bone ik. writes the elbow position into `outElbow` and the
@@ -21,6 +26,8 @@ export function solveTwoBone(
   lenB: number,
   outElbow: Vector3,
   outWrist: Vector3,
+  handDirection?: Vector3,
+  preferredWristBendDeg = 35,
 ): boolean {
   tmpDir.subVectors(target, root);
   const rawDist = tmpDir.length();
@@ -46,9 +53,35 @@ export function solveTwoBone(
 
   const cosA = Math.min(1, Math.max(-1, (lenA * lenA + dist * dist - lenB * lenB) / (2 * lenA * dist)));
   const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+  if (handDirection) {
+    wristPole.copy(handDirection).addScaledVector(tmpDir, -handDirection.dot(tmpDir)).negate();
+    const lateral = wristPole.length();
+    const reach = lenA * sinA * lateral / lenB;
+    if (reach > 1e-6) {
+      wristPole.divideScalar(lateral);
+      const along = (dist - lenA * cosA) * handDirection.dot(tmpDir) / lenB;
+      const allowed = Math.acos(Math.min(1, Math.max(-1, (Math.cos(preferredWristBendDeg * Math.PI / 180) - along) / reach)));
+      const turn = signedAngleAbout(tmpPole, wristPole, tmpDir);
+      const excess = Math.max(0, Math.abs(turn) - allowed);
+      tmpPole.applyQuaternion(wristTurn.setFromAxisAngle(tmpDir, Math.sign(turn) * excess));
+    }
+  }
   outElbow.copy(root).addScaledVector(tmpDir, lenA * cosA).addScaledVector(tmpPole, lenA * sinA);
   outWrist.copy(root).addScaledVector(tmpDir, dist);
   return rawDist <= lenA + lenB && rawDist >= minDist;
+}
+
+export function constrainWristRotation(forearmDirection: Vector3, handRotation: Quaternion, out: Quaternion, relaxed = false): Quaternion {
+  wristDirection.copy(forearmDirection).normalize().applyQuaternion(wristInverse.copy(handRotation).invert());
+  const flex = Math.atan2(wristDirection.z, wristDirection.y);
+  const deviation = Math.atan2(wristDirection.x, wristDirection.y);
+  const limitedFlex = Math.min((relaxed ? 20 : 40) * Math.PI / 180, Math.max((relaxed ? -20 : -45) * Math.PI / 180, flex));
+  const sideways = (relaxed ? 15 : 25) * Math.PI / 180;
+  const limitedDeviation = Math.min(sideways, Math.max(-sideways, deviation));
+  if (Math.abs(flex - limitedFlex) < 1e-6 && Math.abs(deviation - limitedDeviation) < 1e-6) return out.copy(handRotation);
+  wristLimited.set(Math.tan(limitedDeviation), 1, Math.tan(limitedFlex)).normalize();
+  wristTurn.setFromUnitVectors(wristLimited, wristDirection);
+  return out.copy(handRotation).multiply(wristTurn).normalize();
 }
 
 /**

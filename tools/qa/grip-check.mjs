@@ -35,8 +35,11 @@ await page.waitForFunction(() => window.__gripReport, null, { timeout: 300000, p
 const report = await page.evaluate(() => window.__gripReport);
 await browser.close();
 
-// limits, metres. a gloved finger's centreline sits ~9-11 mm from what it holds
+// grip limits in metres, wrist limits in degrees
 const LIMITS = {
+  wristFlexion: 40,
+  wristExtension: 45,
+  wristDeviation: 25,
   bladeClearance: 0.0075, // closer and the finger cuts into the blade
   handleClearance: 0.005, // closer (with the hand closed) and the glove sinks into the handle
   handleClearanceOpen: 0.003, // hand open for a spin or toss: the knife may brush the glove, not pass through
@@ -62,6 +65,15 @@ const failures = [];
 const fail = (f, why) => failures.push(`${f.knife}${f.side === 'l' ? ' (left)' : ''} ${f.action}${f.variant ? ' (rare)' : ''}@${f.t}: ${why}`);
 for (const f of report) {
   if (f.source !== 'glb') fail(f, `knife model not loaded (${f.source})`);
+  for (const wrist of f.wrists) {
+    if (![wrist.bendDeg, wrist.flexDeg, wrist.deviationDeg].every(Number.isFinite)) fail(f, `${wrist.side} wrist measured nothing`);
+    if (wrist.flexDeg > LIMITS.wristFlexion + 0.05 || wrist.flexDeg < -LIMITS.wristExtension - 0.05) {
+      fail(f, `${wrist.side} wrist bends ${wrist.flexDeg.toFixed(1)} degrees`);
+    }
+    if (Math.abs(wrist.deviationDeg) > LIMITS.wristDeviation + 0.05) {
+      fail(f, `${wrist.side} wrist deviates ${wrist.deviationDeg.toFixed(1)} degrees sideways`);
+    }
+  }
   const closed = f.gripOpen < 0.3;
   for (const d of f.check.digits) {
     if (![d.tipToHandle, d.bladeClearance, d.handleClearance].every(Number.isFinite)) fail(f, `${d.digit} measured nothing (bad pose)`);

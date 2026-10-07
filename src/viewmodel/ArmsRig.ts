@@ -1,6 +1,6 @@
 import { Mesh, Object3D, Quaternion, SkinnedMesh, Vector3 } from 'three';
 import { sharedGltfLoader } from '../assets/gltfLoader';
-import { frameFromYZ, signedAngleAbout, solveTwoBone } from './ik';
+import { constrainWristRotation, frameFromYZ, signedAngleAbout, solveTwoBone } from './ik';
 import type { HandPose } from './handPoses';
 
 export type Side = 'l' | 'r';
@@ -42,9 +42,11 @@ const vZu = new Vector3();
 const vX = new Vector3();
 const vZf = new Vector3();
 const vHandZ = new Vector3();
+const vHandY = new Vector3();
 const qU = new Quaternion();
 const qF = new Quaternion();
 const qT = new Quaternion();
+const qH = new Quaternion();
 const qParent = new Quaternion();
 const qDelta = new Quaternion();
 const vTmp = new Vector3();
@@ -55,6 +57,12 @@ export const DIGIT_NAMES = DIGITS;
 
 /** finger spread in degrees at the first knuckle, + toward the index side */
 export type DigitSpread = Partial<Record<'index' | 'middle' | 'ring' | 'pinky', number>>;
+
+export interface WristAngles {
+  bendDeg: number;
+  flexDeg: number;
+  deviationDeg: number;
+}
 
 /** curls every finger and thumb bone to `pose` on top of its rest rotation */
 export function applyDigitPose(digits: DigitBones, rest: DigitRest, side: Side, pose: HandPose, spread?: DigitSpread): void {
@@ -125,7 +133,7 @@ export class ArmsRig {
    * `handRot`, both in world space. the elbow bends toward `pole`. the forearm
    * twist bone takes `twistShare` of the roll between forearm and hand.
    */
-  public solveArm(side: Side, wrist: Vector3, handRot: Quaternion, pole: Vector3, twistShare = 0.8): void {
+  public solveArm(side: Side, wrist: Vector3, handRot: Quaternion, pole: Vector3, twistShare = 0.8, naturalWrist: boolean | 'relaxed' = false): void {
     const arm = this.arms[side];
     arm.upperarm.getWorldPosition(vS);
     arm.forearm.getWorldPosition(vE);
@@ -135,7 +143,8 @@ export class ArmsRig {
     if (lenA < 1e-6 || lenB < 1e-6) {
       return;
     }
-    solveTwoBone(vS, wrist, pole, lenA, lenB, vE, vW);
+    solveTwoBone(vS, wrist, pole, lenA, lenB, vE, vW,
+      naturalWrist ? vHandY.set(0, 1, 0).applyQuaternion(handRot) : undefined, naturalWrist === 'relaxed' ? 20 : 35);
 
     vYu.subVectors(vE, vS).normalize();
     vYf.subVectors(vW, vE).normalize();
@@ -150,8 +159,9 @@ export class ArmsRig {
     vZf.crossVectors(vX, vYf);
     frameFromYZ(vYf, vZf, qF);
 
+    const hand = naturalWrist ? constrainWristRotation(vYf, handRot, qH, naturalWrist === 'relaxed') : handRot;
     // roll between the forearm frame and the target hand, measured about the forearm axis
-    vHandZ.set(0, 0, 1).applyQuaternion(handRot);
+    vHandZ.set(0, 0, 1).applyQuaternion(hand);
     vZf.set(0, 0, 1).applyQuaternion(qF);
     const roll = signedAngleAbout(vZf, vHandZ, vYf);
     qDelta.setFromAxisAngle(vYf, roll * twistShare);
@@ -160,7 +170,7 @@ export class ArmsRig {
     this.setWorldRotation(arm.upperarm, qU);
     this.setWorldRotation(arm.forearm, qF);
     this.setWorldRotation(arm.twist, qT);
-    this.setWorldRotation(arm.hand, handRot);
+    this.setWorldRotation(arm.hand, hand);
   }
 
   public applyHandPose(side: Side, pose: HandPose, spread?: DigitSpread): void {
@@ -193,6 +203,20 @@ export class ArmsRig {
   /** the elbow end of the arm (tools) */
   public getForearmBone(side: Side): Object3D {
     return this.arms[side].forearm;
+  }
+
+  public getWristAngles(side: Side): WristAngles | null {
+    const arm = this.arms[side];
+    if (!arm.visible) return null;
+    arm.hand.getWorldPosition(vW);
+    arm.forearm.getWorldPosition(vE);
+    arm.hand.getWorldQuaternion(qH);
+    vHandY.subVectors(vW, vE).normalize().applyQuaternion(qH.invert());
+    return {
+      bendDeg: Math.acos(Math.min(1, Math.max(-1, vHandY.y))) / DEG,
+      flexDeg: Math.atan2(vHandY.z, vHandY.y) / DEG,
+      deviationDeg: Math.atan2(vHandY.x, vHandY.y) / DEG,
+    };
   }
 
   private setWorldRotation(bone: Object3D, rotation: Quaternion): void {

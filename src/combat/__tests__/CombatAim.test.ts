@@ -40,13 +40,40 @@ describe('CombatAim', () => {
     expect(Math.abs(aim.getViewPunch().pitch)).toBeLessThan(0.001);
   });
 
-  it('opens the deagle cone after a shot', () => {
+  it('keeps the deagle cone closed after a shot while retaining recoil', () => {
     const aim = new CombatAim(createSeededRandom(2));
     aim.setWeapon('deagle', 0);
     tickFor(aim, 0.1);
-    const before = aim.getInaccuracyRadians();
     aim.onShotFired(0);
-    expect(aim.getInaccuracyRadians()).toBeGreaterThan(before * 5);
+    expect(aim.getInaccuracyRadians()).toBe(0);
+    expect(aim.getViewPunch().pitch).toBeGreaterThan(0);
+  });
+
+  it.each(['deagle', 'awp'] as const)('%s has zero spread through repeated airborne bhops and shots', weapon => {
+    const aim = new CombatAim(createSeededRandom(17));
+    aim.setWeapon(weapon, 0);
+    const motion = [
+      still,
+      { ...still, velocity: { x: 25, y: 0, z: -30 } },
+      { ...still, velocity: { x: 25, y: 5.4, z: -30 }, grounded: false },
+      { ...still, velocity: { x: 25, y: 0, z: -30 }, grounded: false },
+      { ...still, velocity: { x: 25, y: -12, z: -30 }, grounded: false },
+      { ...still, velocity: { x: 25, y: 0, z: -30 } },
+    ];
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      if (weapon === 'awp') aim.toggleScope(cycle * 2000, ready);
+      for (const state of motion) {
+        tickFor(aim, 0.1, state);
+        expect(aim.getInaccuracyRadians()).toBe(0);
+        const punch = aim.recoil.getAimOffset();
+        const expected = aimDirection(0.7 + punch.yaw, -0.2 + punch.pitch);
+        const output = new Vector3();
+        expect(aim.shotDirection(0.7, -0.2, output)).toBe(output);
+        expect(output.distanceTo(expected)).toBeLessThan(1e-12);
+        expect(aim.shotDirection(0.7, -0.2).distanceTo(output)).toBeLessThan(1e-12);
+        aim.onShotFired(cycle * 2000);
+      }
+    }
   });
 
   it('scopes only with the awp, unscopes on fire and re-scopes after the bolt', () => {
@@ -61,9 +88,8 @@ describe('CombatAim', () => {
 
     aim.onShotFired(1000);
     expect(aim.isScoped()).toBe(false);
-    // the unscoped floor applies from the next tick, like cs's per-tick update
     tickFor(aim, TICK);
-    expect(aim.getInaccuracyRadians()).toBeGreaterThan(0.08);
+    expect(aim.getInaccuracyRadians()).toBe(0);
     const bolt = getWeapon('awp').fireIntervalMs;
     aim.update(1000 + bolt - 1, ready);
     expect(aim.isScoped()).toBe(false);

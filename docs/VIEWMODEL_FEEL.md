@@ -79,6 +79,17 @@ rotation < 0.15 rad) and composited every frame.
   (`handKey`: where the fist is, where the knuckles point, where the back of
   the hand faces) and the knife follows from its grip. Keys without their own
   elbow use the grip's usual one, never the idle's.
+- Knife-arm IK treats the elbow pole as a preference when it would fold the
+  wrist: it moves the elbow just far enough toward a 35-degree wrist bend when
+  the arm can reach that configuration. Remaining impossible targets are
+  limited to 40 degrees of flexion, 45 of extension and 25 sideways. The knife
+  follows the actual hand, including ring holds, so correcting the wrist does
+  not detach the grip. The unoccupied support hand uses gentler limits of 20
+  degrees of flexion/extension and 15 sideways. This applies to both dagger
+  hands and the free support hand; firearm rig targets are unchanged.
+  `tools/qa/grip-check.mjs` checks both
+  visible wrists as well as finger clearance and attachment throughout the
+  normal and rare clips.
 - The idles were matched to a 60 fps static-camera CS2 capture (cutouts
   against a background plate; older showcase footage pans and its steady
   frames are inspects, so don't fit to it). Every knife has its own

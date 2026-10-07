@@ -109,11 +109,9 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
 };
 
 /**
- * picks a preset from the webgl renderer string. desktop class gpus (apple m
- * pro/max/ultra and m3 on, geforce gtx 10 on and rtx, radeon rx, arc a/b cards)
- * start on high, every other real gpu on balanced (medium). software gl, phone
- * gpus and old intel hd/uhd graphics get low. ultra is opt-in. adaptive
- * resolution covers the rest.
+ * auto starts on balanced; a gpu name cannot predict the cost at the current
+ * display resolution. known software, phone and older integrated gpus start
+ * on low. high and ultra remain explicit choices.
  */
 export function detectQuality(rendererName: string | null | undefined): QualityLevel {
   const name = (rendererName ?? '').toLowerCase();
@@ -121,14 +119,12 @@ export function detectQuality(rendererName: string | null | undefined): QualityL
   if (/swiftshader|llvmpipe|softpipe|software|microsoft basic/.test(name)) return 'low';
   if (/mali|adreno|powervr|apple gpu|videocore|tegra/.test(name)) return 'low';
   if (/intel/.test(name) && !/arc|iris/.test(name) && /uhd|hd graphics/.test(name)) return 'low';
-  if (/apple m(\d+)/.test(name)) {
-    const generation = Number(/apple m(\d+)/.exec(name)?.[1] ?? 0);
-    return generation >= 3 || /apple m\d+ (pro|max|ultra)/.test(name) ? 'high' : 'medium';
-  }
-  if (/geforce (rtx|gtx (1[06-9]|[2-9]\d)\d\d)|nvidia rtx|quadro rtx|rtx a\d/.test(name)) return 'high';
-  if (/radeon (rx|pro w)/.test(name) && !/vega/.test(name)) return 'high';
-  if (/arc\(tm\) [ab]\d|arc [ab]\d/.test(name)) return 'high';
   return 'medium';
+}
+
+export function autoFallbackQuality(level: QualityLevel, resolutionScale: number): QualityLevel | null {
+  if (resolutionScale > 0.71 || level === 'low') return null;
+  return level === 'medium' ? 'low' : 'medium';
 }
 
 /** unmasked gpu name when the browser shares it, else the plain renderer string */
