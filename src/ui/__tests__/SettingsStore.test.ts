@@ -181,10 +181,26 @@ describe('SettingsStore validation', () => {
 
   it('keeps the graphics quality choice and rejects unknown presets', () => {
     expect(validateSettings({ graphicsQuality: 'low' }).graphicsQuality).toBe('low');
-    expect(validateSettings({ graphicsQuality: 'ultra' }).graphicsQuality).toBe('auto');
+    expect(validateSettings({ graphicsQuality: 'ultra' }).graphicsQuality).toBe('ultra');
+    expect(validateSettings({ graphicsQuality: 'extreme' }).graphicsQuality).toBe('auto');
     const storage = new MemoryStorage();
     saveSettings({ ...defaultSettings, graphicsQuality: 'high' }, storage);
     expect(loadSettings(storage).graphicsQuality).toBe('high');
+  });
+
+  it('keeps valid per-option graphics picks and resets the rest to the preset', () => {
+    const graphics = validateSettings({ graphics: { antiAliasing: 'msaa8', shadows: 'huge', bloom: 'off', textureFiltering: 16 } }).graphics;
+    expect(graphics).toEqual({ antiAliasing: 'msaa8', shadows: 'preset', ambientOcclusion: 'preset', bloom: 'off', textureFiltering: 'preset' });
+    // settings saved before the options existed
+    expect(validateSettings({ graphicsQuality: 'high' }).graphics).toEqual(defaultSettings.graphics);
+    const storage = new MemoryStorage();
+    saveSettings({ ...defaultSettings, graphics: { ...defaultSettings.graphics, textureFiltering: '16' } }, storage);
+    expect(loadSettings(storage).graphics.textureFiltering).toBe('16');
+  });
+
+  it('allows supersampling up to twice the resolution', () => {
+    expect(validateSettings({ renderScale: 1.5 }).renderScale).toBe(1.5);
+    expect(validateSettings({ renderScale: 4 }).renderScale).toBe(2);
   });
 
   it('drops unknown fields', () => {

@@ -331,7 +331,7 @@
 /* video: graphics quality cards */
 .set-quality {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.55rem;
   padding: 0.25rem 0 0.2rem;
 }
@@ -397,6 +397,44 @@
   color: var(--ws-ink-2);
   font-size: 0.8rem;
   line-height: 1.25;
+}
+
+/* video: advanced options on top of the preset */
+.set-row-choice .set-select {
+  grid-column: 2 / -1;
+  justify-self: end;
+}
+
+.set-select {
+  min-width: 10.5rem;
+  padding: 0.35rem 2rem 0.35rem 0.6rem;
+  border: none;
+  color: var(--ws-ink);
+  cursor: pointer;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--ws-ink-2) 50%) calc(100% - 0.95rem) 55% / 0.35rem 0.35rem no-repeat,
+    linear-gradient(135deg, var(--ws-ink-2) 50%, transparent 50%) calc(100% - 0.6rem) 55% / 0.35rem 0.35rem no-repeat,
+    rgba(0, 0, 0, 0.35);
+  box-shadow: inset 0 0 0 1px var(--ws-line-2);
+  font-family: var(--font-ui);
+  font-size: 0.88rem;
+  font-weight: 600;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.set-select:hover {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.26);
+}
+
+.set-select:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--ws-ember);
+}
+
+.set-select option {
+  color: #e8ecf2;
+  background: #14181e;
 }
 
 /* controls: key list */
@@ -671,7 +709,7 @@
 
 @container (max-width: 44rem) {
   .set-quality {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .set-page-crosshair.is-active,

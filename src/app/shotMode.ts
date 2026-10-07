@@ -8,7 +8,7 @@ import { devToolsEnabled } from './devTools';
  * &yaw=<deg>&pitch=<deg>&pos=x,y,z&time=HH:MM:SS&hud=0
  * &perf=<s> (frame timing, clip keeps looping)&scope=1|2&pr=<pixel ratio>
  * &dpr=<screen ratio to emulate>&adaptive=0|1&qa=1 (window.__qa test hooks)
- * &quality=low|medium|high (graphics preset for this run)
+ * &quality=low|medium|high|ultra (graphics preset for this run)
  * &hudDemo=1|board|death|low|kill|body (sample killfeed, scores and hit feedback)
  * &vm=0 (no viewmodel, for map thumbnails)&cam=x,y,z (free camera eye position, no gravity)
  * it drops straight into the map without pointer lock, poses the viewmodel,
@@ -104,5 +104,5 @@ export function parseShotRequest(search: string, enabled = devToolsEnabled()): S
 }
 
 function parseQuality(raw: string | null): GraphicsQuality | null {
-  return raw === 'low' || raw === 'medium' || raw === 'high' || raw === 'auto' ? raw : null;
+  return raw === 'low' || raw === 'medium' || raw === 'high' || raw === 'ultra' || raw === 'auto' ? raw : null;
 }

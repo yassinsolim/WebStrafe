@@ -21,6 +21,8 @@ export class SkinMaterial extends MeshStandardMaterial {
   private readonly finish = { value: new Vector2(1, -1) };
   private readonly maskMap = { value: null as Texture | null };
   private readonly dataMap = { value: null as Texture | null };
+  /** roughness floor for non-metal texels, 0 keeps the art's gloss */
+  private readonly matte = { value: 0 };
 
   constructor() {
     super({ color: 0xffffff, roughness: 1, metalness: 1 });
@@ -46,6 +48,14 @@ export class SkinMaterial extends MeshStandardMaterial {
     const lum = SKIN_INFO[skin.id].luminance;
     this.nativeLum.value.set(lum[0], lum[1], lum[2]);
     this.needsUpdate = true;
+  }
+
+  /**
+   * lifts the art's roughness towards a floor on everything but bare metal, so
+   * glossy gloves read as fabric and leather up close in first person
+   */
+  setMatte(floor: number): void {
+    this.matte.value = Math.min(Math.max(floor, 0), 0.95);
   }
 
   applyLook(look: CharacterLook, team: PlayerModel, toneMap: CharacterToneMap = 'grade'): void {
@@ -76,6 +86,7 @@ export class SkinMaterial extends MeshStandardMaterial {
     shader.uniforms.uNativeLum = this.nativeLum;
     shader.uniforms.uGlow = this.glow;
     shader.uniforms.uFinish = this.finish;
+    shader.uniforms.uMatte = this.matte;
     shader.fragmentShader = shader.fragmentShader
       .replace(
         '#include <common>',
@@ -86,7 +97,8 @@ uniform vec3 uPaint[3];
 uniform vec3 uPaintOn;
 uniform vec3 uNativeLum;
 uniform vec3 uGlow;
-uniform vec2 uFinish;`,
+uniform vec2 uFinish;
+uniform float uMatte;`,
       )
       .replace(
         '#include <map_fragment>',
@@ -112,7 +124,8 @@ uniform vec2 uFinish;`,
       .replace(
         '#include <metalnessmap_fragment>',
         `#include <metalnessmap_fragment>
-  if (uFinish.y >= 0.0) metalnessFactor = mix(metalnessFactor, uFinish.y, skinPainted);`,
+  if (uFinish.y >= 0.0) metalnessFactor = mix(metalnessFactor, uFinish.y, skinPainted);
+  if (uMatte > 0.0) roughnessFactor = mix(uMatte + (1.0 - uMatte) * roughnessFactor, roughnessFactor, metalnessFactor * 0.7);`,
       )
       .replace(
         '#include <emissivemap_fragment>',

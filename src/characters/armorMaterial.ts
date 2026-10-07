@@ -96,7 +96,7 @@ export class ArmorMaterial extends MeshStandardMaterial {
     this.slotPbr[S.metal].set(0.3, 1, 0);
     this.slotPbr[S.cloth].set(0.92, 0, 0);
     this.slotPbr[S.trim].set(0.88, 0, 0);
-    this.slotPbr[S.muscle].set(0.46, 0.05, 0);
+    this.slotPbr[S.muscle].set(0.8, 0, 0);
     this.slotPbr[S.glow].set(0.4, 0, 4);
     this.wear.value = finish.wear;
     this.camo.value = finish.camo ? 1 : 0;
@@ -255,9 +255,9 @@ if (armorFabric) {
   totalEmissiveRadiance += armorColor * fres * 0.18;
 }
 if (armorMuscle) {
-  // synthetic muscle has a cool, slick rim like coated rubber
-  float fres = pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), 4.0);
-  totalEmissiveRadiance += (armorColor + vec3(0.03, 0.035, 0.045)) * fres * 0.22 * armorAo;
+  // a soft fabric sheen at grazing angles, not a slick rubber rim
+  float fres = pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), 3.0);
+  totalEmissiveRadiance += (armorColor + vec3(0.02, 0.022, 0.026)) * fres * 0.12 * armorAo;
 }`,
       )
       .replace(

@@ -1,16 +1,20 @@
 import {
   CROSSHAIR_STYLES,
+  GRAPHICS_OPTIONS,
   GRAPHICS_QUALITIES,
   SETTING_LIMITS,
   cloneSettings,
   defaultCrosshair,
+  defaultGraphics,
   defaultSettings,
   normalizeHexColor,
   validateSettings,
   type CrosshairStyle,
   type GameSettings,
+  type GraphicsOverrides,
   type GraphicsQuality,
 } from '../SettingsStore';
+import { QUALITY_PRESETS, type QualityPreset } from '../../render/quality';
 import { Crosshair } from '../hud/Crosshair';
 import {
   CROSSHAIR_COLORS,
@@ -58,11 +62,58 @@ const CROSSHAIR_LABEL: Record<CrosshairStyle, string> = {
 };
 
 const QUALITY_INFO: Record<GraphicsQuality, { label: string; description: string }> = {
-  auto: { label: 'Auto', description: 'Balanced on most GPUs, Low on weak ones' },
+  auto: { label: 'Auto', description: 'High on strong GPUs, Balanced on most, Low on weak ones' },
   low: { label: 'Low', description: 'Fastest. Baked light, FXAA, no bloom or shadows' },
   medium: { label: 'Balanced', description: 'Sun shadows, bloom, detailed surfaces, FXAA' },
-  high: { label: 'High', description: '4x MSAA, ambient occlusion. For strong GPUs' },
+  high: { label: 'High', description: '4x MSAA (FXAA on Retina), ambient occlusion, sharper shadows' },
+  ultra: { label: 'Ultra', description: '8x MSAA (4x on Retina), 4K shadows, 16x texture filtering' },
 };
+
+type GraphicsKey = keyof GraphicsOverrides;
+
+const GRAPHICS_ROWS: ReadonlyArray<{ key: GraphicsKey; label: string; description: string; names: Record<string, string> }> = [
+  {
+    key: 'antiAliasing',
+    label: 'Anti-aliasing',
+    description: 'Smooths jagged edges. MSAA is sharper, FXAA is cheaper',
+    names: { off: 'Off', fxaa: 'FXAA', msaa2: '2x MSAA', msaa4: '4x MSAA', msaa8: '8x MSAA' },
+  },
+  {
+    key: 'shadows',
+    label: 'Shadows',
+    description: 'Live sun shadows from players and weapons',
+    names: { off: 'Off', low: 'Low', medium: 'Medium', high: 'High' },
+  },
+  {
+    key: 'ambientOcclusion',
+    label: 'Ambient occlusion',
+    description: 'Soft contact shadows in corners and creases',
+    names: { off: 'Off', on: 'On' },
+  },
+  { key: 'bloom', label: 'Bloom', description: 'Glow around bright lights and the sun', names: { off: 'Off', on: 'On' } },
+  {
+    key: 'textureFiltering',
+    label: 'Texture filtering',
+    description: 'Keeps floors and walls sharp at a glance',
+    names: { '2': '2x', '4': '4x', '8': '8x', '16': '16x' },
+  },
+];
+
+/** what a preset picks for an option, in the option's own words */
+function presetChoice(preset: QualityPreset, key: GraphicsKey): string {
+  switch (key) {
+    case 'antiAliasing':
+      return preset.msaa > 0 ? `msaa${preset.msaa}` : preset.fxaa ? 'fxaa' : 'off';
+    case 'shadows':
+      return preset.shadowMapSize >= 4096 ? 'high' : preset.shadowMapSize >= 2048 ? 'medium' : preset.shadowMapSize > 0 ? 'low' : 'off';
+    case 'ambientOcclusion':
+      return preset.ao ? 'on' : 'off';
+    case 'bloom':
+      return preset.bloom ? 'on' : 'off';
+    case 'textureFiltering':
+      return String(preset.anisotropy);
+  }
+}
 
 const PREVIEW_BACKGROUNDS: ReadonlyArray<{ id: string; label: string; image: string | null }> = [
   { id: 'ochre', label: 'Ochre Cut', image: '/maps/aim_ochrecut/thumbnail.webp' },
@@ -99,6 +150,7 @@ export class SettingsPanel {
   private readonly pages = new Map<SettingsSectionId, HTMLElement>();
   private readonly styleButtons = new Map<CrosshairStyle, HTMLButtonElement>();
   private readonly qualityButtons = new Map<GraphicsQuality, HTMLButtonElement>();
+  private readonly choices = new Map<GraphicsKey, { select: HTMLSelectElement; presetOption: HTMLOptionElement; names: Record<string, string> }>();
   private readonly presetButtons: Array<{ button: HTMLButtonElement; preset: (typeof CROSSHAIR_PRESETS)[number] }> = [];
   private readonly presetPreviews: Crosshair[] = [];
   private readonly swatchButtons: HTMLButtonElement[] = [];
@@ -177,12 +229,26 @@ export class SettingsPanel {
       this.qualityButtons.set(quality, button);
     }
     graphics.appendChild(qualityGrid);
+    const advanced = group(video, 'Advanced');
+    for (const option of GRAPHICS_ROWS) this.choice(advanced, option.key, option.label, option.description, option.names);
+    const resetRow = el('div', 'set-inline-actions');
+    const resetButton = button('Use preset for all', 'set-btn set-btn-quiet');
+    resetButton.addEventListener('click', () => {
+      this.draft.graphics = { ...defaultGraphics };
+      this.emit();
+    });
+    resetRow.appendChild(resetButton);
+    advanced.appendChild(resetRow);
     const resolution = group(video, 'Resolution');
     this.range(resolution, 'renderScale', 'Resolution scale', L.renderScale, {
       percent: true,
-      hint: (v) => (v >= 0.999 ? 'native' : `${Math.round(v * v * 100)}% of the pixels`),
+      hint: (v) => {
+        if (Math.abs(v - 1) < 0.001) return 'native';
+        const pixels = Math.round(v * v * 100);
+        return v > 1 ? `supersampled, ${pixels}% of the pixels` : `${pixels}% of the pixels`;
+      },
     });
-    this.toggle(resolution, 'adaptiveResolution', 'Adaptive resolution', 'Lowers the resolution when the frame rate drops under 55');
+    this.toggle(resolution, 'adaptiveResolution', 'Adaptive resolution', 'Lowers the resolution when the frame rate drops under 55, raises it back when there is room');
 
     // audio --------------------------------------------------------------
     const audio = group(this.pages.get('audio') as HTMLElement, 'Volume');
@@ -512,6 +578,11 @@ export class SettingsPanel {
       qualityButton.classList.toggle('is-active', active);
       qualityButton.setAttribute('aria-checked', String(active));
     }
+    const preset = this.draft.graphicsQuality === 'auto' ? null : QUALITY_PRESETS[this.draft.graphicsQuality];
+    for (const [key, choice] of this.choices) {
+      choice.select.value = this.draft.graphics[key];
+      choice.presetOption.textContent = preset ? `Preset (${choice.names[presetChoice(preset, key)]})` : 'Preset';
+    }
     for (const { button: presetButton, preset } of this.presetButtons) {
       presetButton.classList.toggle('is-active', crosshairEquals(preset.settings, xh));
     }
@@ -615,6 +686,31 @@ export class SettingsPanel {
     });
   }
 
+  private choice(parent: HTMLElement, key: GraphicsKey, label: string, description: string, names: Record<string, string>): void {
+    const el = row(parent, label, 'set-row-choice');
+    const sub = document.createElement('span');
+    sub.className = 'set-desc';
+    sub.textContent = description;
+    el.querySelector('.set-label')?.appendChild(sub);
+    const select = document.createElement('select');
+    select.className = 'set-select';
+    select.setAttribute('aria-label', label);
+    let presetOption: HTMLOptionElement | null = null;
+    for (const value of GRAPHICS_OPTIONS[key]) {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = value === 'preset' ? 'Preset' : names[value];
+      if (value === 'preset') presetOption = option;
+      select.appendChild(option);
+    }
+    select.addEventListener('change', () => {
+      this.draft.graphics = { ...this.draft.graphics, [key]: select.value };
+      this.emit();
+    });
+    el.appendChild(select);
+    this.choices.set(key, { select, presetOption: presetOption!, names });
+  }
+
   private toggle(parent: HTMLElement, key: string, label: string, description?: string): void {
     const el = document.createElement('label');
     el.className = 'set-row set-row-toggle';
@@ -683,8 +779,8 @@ function qualityBars(quality: GraphicsQuality): string {
   if (quality === 'auto') {
     return '<svg viewBox="0 0 24 16"><path d="M13.5 1L5 9.4h5.6L9 15l9.2-9.2h-5.6z" fill="currentColor"/></svg>';
   }
-  const lit = quality === 'low' ? 1 : quality === 'medium' ? 2 : 3;
-  return [0, 1, 2].map((i) => `<i class="${i < lit ? 'is-lit' : ''}" style="height:${40 + i * 30}%"></i>`).join('');
+  const lit = quality === 'low' ? 1 : quality === 'medium' ? 2 : quality === 'high' ? 3 : 4;
+  return [0, 1, 2, 3].map((i) => `<i class="${i < lit ? 'is-lit' : ''}" style="height:${32 + i * 22}%"></i>`).join('');
 }
 
 function readPath(settings: GameSettings, key: string): unknown {

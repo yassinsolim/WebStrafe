@@ -1,7 +1,10 @@
 /**
  * drops the render resolution when frames run slow and brings it back when
  * there's headroom, so weak gpus stay playable instead of stuttering.
- * works on the rAF frame time, averaged over one-second windows.
+ * works on the rAF frame time, averaged over one-second windows. a vsynced
+ * frame rate never goes past the display's, so climbing back counts a window
+ * as good once it runs near the best rate seen (the refresh rate) or past
+ * `highFps`; a climb that drops again soon doubles the wait before the next.
  */
 export interface AdaptiveResolutionOptions {
   /** lowest scale it will go to */
@@ -20,6 +23,11 @@ export class AdaptiveResolution {
   private windowSum = 0;
   private windowFrames = 0;
   private goodWindows = 0;
+  /** best window rate so far, about the display refresh rate */
+  private peakFps = 0;
+  /** windows since the last climb, -1 when there hasn't been one */
+  private sinceRaise = -1;
+  private wait: number;
   private readonly minScale: number;
   private lowFps: number;
   private highFps: number;
@@ -34,6 +42,7 @@ export class AdaptiveResolution {
     this.raiseAfter = options.raiseAfter ?? 3;
     this.step = options.step ?? 0.15;
     this.windowMs = options.windowMs ?? 1000;
+    this.wait = this.raiseAfter;
   }
 
   /** test hook: move the step-down and step-up thresholds */
@@ -51,6 +60,8 @@ export class AdaptiveResolution {
     this.windowSum = 0;
     this.windowFrames = 0;
     this.goodWindows = 0;
+    this.sinceRaise = -1;
+    this.wait = this.raiseAfter;
   }
 
   /** feed one frame time; returns true when the scale changed */
@@ -63,15 +74,27 @@ export class AdaptiveResolution {
     const fps = (1000 * this.windowFrames) / this.windowSum;
     this.windowSum = 0;
     this.windowFrames = 0;
+    this.peakFps = Math.max(this.peakFps, fps);
+    if (this.sinceRaise >= 0) this.sinceRaise += 1;
     if (fps < this.lowFps && this.scale > this.minScale) {
+      // the last climb didn't hold: wait twice as long before the next
+      if (this.sinceRaise >= 0 && this.sinceRaise <= 5) this.wait = Math.min(64, this.wait * 2);
+      this.sinceRaise = -1;
       this.scale = Math.max(this.minScale, round(this.scale - this.step));
       this.goodWindows = 0;
       return true;
     }
-    if (fps > this.highFps && this.scale < 1) {
+    if (this.sinceRaise > 30 && this.scale >= 1) {
+      // held full resolution for a while: a later dip starts with the short wait again
+      this.sinceRaise = -1;
+      this.wait = this.raiseAfter;
+    }
+    const good = fps > Math.min(this.highFps, Math.max(this.lowFps + 2, this.peakFps * 0.95));
+    if (good && this.scale < 1) {
       this.goodWindows += 1;
-      if (this.goodWindows >= this.raiseAfter) {
+      if (this.goodWindows >= this.wait) {
         this.goodWindows = 0;
+        this.sinceRaise = 0;
         this.scale = Math.min(1, round(this.scale + this.step / 2));
         return true;
       }

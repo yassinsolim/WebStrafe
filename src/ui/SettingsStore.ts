@@ -3,9 +3,34 @@ export type CrosshairStyle = 'classic' | 'dot' | 'circle-dot';
 export const CROSSHAIR_STYLES: readonly CrosshairStyle[] = ['classic', 'dot', 'circle-dot'];
 
 /** render preset; auto picks one from the gpu the first time the renderer starts */
-export type GraphicsQuality = 'auto' | 'low' | 'medium' | 'high';
+export type GraphicsQuality = 'auto' | 'low' | 'medium' | 'high' | 'ultra';
 
-export const GRAPHICS_QUALITIES: readonly GraphicsQuality[] = ['auto', 'low', 'medium', 'high'];
+export const GRAPHICS_QUALITIES: readonly GraphicsQuality[] = ['auto', 'low', 'medium', 'high', 'ultra'];
+
+/** per-option choices on top of the preset, 'preset' keeps what the preset picks */
+export interface GraphicsOverrides {
+  antiAliasing: 'preset' | 'off' | 'fxaa' | 'msaa2' | 'msaa4' | 'msaa8';
+  shadows: 'preset' | 'off' | 'low' | 'medium' | 'high';
+  ambientOcclusion: 'preset' | 'off' | 'on';
+  bloom: 'preset' | 'off' | 'on';
+  textureFiltering: 'preset' | '2' | '4' | '8' | '16';
+}
+
+export const GRAPHICS_OPTIONS: { readonly [K in keyof GraphicsOverrides]: readonly GraphicsOverrides[K][] } = {
+  antiAliasing: ['preset', 'off', 'fxaa', 'msaa2', 'msaa4', 'msaa8'],
+  shadows: ['preset', 'off', 'low', 'medium', 'high'],
+  ambientOcclusion: ['preset', 'off', 'on'],
+  bloom: ['preset', 'off', 'on'],
+  textureFiltering: ['preset', '2', '4', '8', '16'],
+};
+
+export const defaultGraphics: GraphicsOverrides = {
+  antiAliasing: 'preset',
+  shadows: 'preset',
+  ambientOcclusion: 'preset',
+  bloom: 'preset',
+  textureFiltering: 'preset',
+};
 
 export interface CrosshairSettings {
   style: CrosshairStyle;
@@ -38,12 +63,14 @@ export interface GameSettings {
   worldFov: number;
   viewmodelFov: number;
   viewmodelScale: number;
-  /** fraction of the screen's pixel ratio the game renders at */
+  /** fraction of the screen's pixel ratio the game renders at, over 1 supersamples */
   renderScale: number;
   /** lower the resolution automatically when frames drop under 55 fps */
   adaptiveResolution: boolean;
   /** lighting, post processing and effects preset */
   graphicsQuality: GraphicsQuality;
+  /** the player's own picks on top of the preset */
+  graphics: GraphicsOverrides;
   masterVolume: number;
   effectsVolume: number;
   uiVolume: number;
@@ -76,7 +103,7 @@ export const SETTING_LIMITS = {
   worldFov: { min: 70, max: 130, step: 1 },
   viewmodelFov: { min: 45, max: 110, step: 1 },
   viewmodelScale: { min: 0.25, max: 3, step: 0.05 },
-  renderScale: { min: 0.5, max: 1, step: 0.05 },
+  renderScale: { min: 0.5, max: 2, step: 0.05 },
   masterVolume: { min: 0, max: 1, step: 0.01 },
   effectsVolume: { min: 0, max: 1, step: 0.01 },
   uiVolume: { min: 0, max: 1, step: 0.01 },
@@ -110,6 +137,7 @@ export const defaultSettings: GameSettings = {
   renderScale: 1,
   adaptiveResolution: true,
   graphicsQuality: 'auto',
+  graphics: { ...defaultGraphics },
   masterVolume: 0.8,
   effectsVolume: 1,
   uiVolume: 0.7,
@@ -123,7 +151,7 @@ export const defaultSettings: GameSettings = {
 };
 
 export function cloneSettings(settings: GameSettings): GameSettings {
-  return { ...settings, crosshair: { ...settings.crosshair } };
+  return { ...settings, crosshair: { ...settings.crosshair }, graphics: { ...settings.graphics } };
 }
 
 /**
@@ -142,6 +170,7 @@ export function validateSettings(raw: unknown, base: GameSettings = defaultSetti
     renderScale: clampNumber(src.renderScale, limits.renderScale, base.renderScale),
     adaptiveResolution: readBoolean(src.adaptiveResolution, base.adaptiveResolution),
     graphicsQuality: isGraphicsQuality(src.graphicsQuality) ? src.graphicsQuality : base.graphicsQuality,
+    graphics: validateGraphics(src.graphics, base.graphics),
     masterVolume: clampNumber(src.masterVolume, limits.masterVolume, base.masterVolume),
     effectsVolume: clampNumber(src.effectsVolume, limits.effectsVolume, base.effectsVolume),
     uiVolume: clampNumber(src.uiVolume, limits.uiVolume, base.uiVolume),
@@ -152,6 +181,21 @@ export function validateSettings(raw: unknown, base: GameSettings = defaultSetti
     showNetGraph: readBoolean(src.showNetGraph, base.showNetGraph),
     showMovementDebug: readBoolean(src.showMovementDebug, base.showMovementDebug),
     autoBhop: readBoolean(src.autoBhop, base.autoBhop),
+  };
+}
+
+export function validateGraphics(raw: unknown, base: GraphicsOverrides = defaultGraphics): GraphicsOverrides {
+  const src = isRecord(raw) ? raw : {};
+  const pick = <K extends keyof GraphicsOverrides>(key: K): GraphicsOverrides[K] => {
+    const value = src[key];
+    return (GRAPHICS_OPTIONS[key] as readonly unknown[]).includes(value) ? (value as GraphicsOverrides[K]) : base[key];
+  };
+  return {
+    antiAliasing: pick('antiAliasing'),
+    shadows: pick('shadows'),
+    ambientOcclusion: pick('ambientOcclusion'),
+    bloom: pick('bloom'),
+    textureFiltering: pick('textureFiltering'),
   };
 }
 

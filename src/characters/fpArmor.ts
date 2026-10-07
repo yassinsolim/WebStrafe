@@ -12,6 +12,9 @@ import type { PlayerModel } from '../network/types';
 /** primitives of arms.glb are named fp_<set>_<slot>, set = core or an armor set id */
 const PART = /^fp_([a-z]+)_([a-z]+)$/;
 
+// the skins' art is glossy (median roughness 0.2), which up close reads as latex
+const GLOVE_MATTE = 0.6;
+
 interface ArmsPart {
   mesh: Mesh;
   set: string;
@@ -96,6 +99,7 @@ export class FirstPersonArmor {
       if (this.skinMaterialFor !== skin.asset.id) {
         this.skinMaterialFor = skin.asset.id;
         this.skinMaterial.setSkin(skin.asset);
+        this.skinMaterial.setMatte(GLOVE_MATTE);
       }
       this.skinMaterial.applyLook(look, this.team);
     }

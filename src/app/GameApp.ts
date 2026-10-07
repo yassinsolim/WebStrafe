@@ -40,7 +40,7 @@ import { runGripCheck } from '../viewmodel/gripCheckRun';
 import { FramePerf } from './FramePerf';
 import { AdaptiveResolution } from './AdaptiveResolution';
 import { RenderPipeline } from '../render/RenderPipeline';
-import { readRendererName, resolveQuality, type QualityPreset } from '../render/quality';
+import { presetKey, readRendererName, resolveQuality, type QualityPreset } from '../render/quality';
 import { EFFECTS_LAYER } from '../render/layers';
 import { configureTextureTranscoder } from '../assets/gltfLoader';
 import { ViewmodelProbe } from '../render/ViewmodelProbe';
@@ -48,7 +48,7 @@ import type { LoadoutSelection } from '../cosmetics/types';
 import { HUD } from '../ui/HUD';
 import { LoadingScreen } from '../ui/LoadingScreen';
 import { MainMenu } from '../ui/MainMenu';
-import { defaultSettings, loadSettings, saveSettings, type GameSettings } from '../ui/SettingsStore';
+import { cloneSettings, defaultSettings, loadSettings, saveSettings, type GameSettings } from '../ui/SettingsStore';
 import { LeaderboardService, sanitizeLeaderboardName } from '../network/LeaderboardService';
 import { MultiplayerClient } from '../network/MultiplayerClient';
 import { createMultiplayer } from '../network/createMultiplayer';
@@ -152,6 +152,9 @@ export class GameApp {
   private readonly pipeline: RenderPipeline;
   private readonly viewmodelProbe: ViewmodelProbe;
   private quality: QualityPreset;
+  /** auto's high pick couldn't hold its frame rate this session, auto means balanced now */
+  private autoFallback = false;
+  private densePreset: { base: QualityPreset; preset: QualityPreset } | null = null;
   private readonly worldScene = new Scene();
   private readonly worldCamera: PerspectiveCamera;
   private readonly viewmodelRenderer: ViewmodelRenderer;
@@ -622,6 +625,7 @@ export class GameApp {
     const frameDt = Math.min(0.1, rawFrameMs / 1000);
     if (this.playing && this.settings.adaptiveResolution && !this.shot?.pixelRatio
       && this.adaptiveResolution.sample(rawFrameMs)) {
+      this.maybeFallBackFromAuto();
       this.applyRenderScale();
     }
     this.lastFrameTime = time;
@@ -1909,8 +1913,9 @@ export class GameApp {
   }
 
   private applySettings(next: GameSettings): void {
-    const qualityChanged = next.graphicsQuality !== this.settings.graphicsQuality;
-    this.settings = { ...next };
+    const qualityChanged = next.graphicsQuality !== this.settings.graphicsQuality
+      || JSON.stringify(next.graphics) !== JSON.stringify(this.settings.graphics);
+    this.settings = cloneSettings(next);
     saveSettings(next);
     if (qualityChanged) {
       this.applyQuality();
@@ -2756,8 +2761,11 @@ export class GameApp {
   /** screen pixel ratio (capped by the preset) x the resolution scale setting x the adaptive scale */
   private applyRenderScale(): void {
     const adaptive = this.settings.adaptiveResolution ? this.adaptiveResolution.getScale() : 1;
-    const screen = Math.min(this.shot?.dpr ?? (window.devicePixelRatio || 1), 2, this.quality.maxPixelRatio);
-    const ratio = this.shot?.pixelRatio ?? Math.round(screen * this.settings.renderScale * adaptive * 100) / 100;
+    const density = this.renderDensity();
+    // a scale over 1 supersamples, up to 3 drawing buffer pixels per css pixel
+    const ratio = this.shot?.pixelRatio ?? Math.min(3, Math.round(density * adaptive * 100) / 100);
+    const preset = this.pipelinePreset(density);
+    if (preset !== this.pipeline.getPreset()) this.pipeline.setPreset(preset);
     if (Math.abs(ratio - this.renderer.getPixelRatio()) < 1e-3) {
       this.syncPipelineSize();
       return;
@@ -2771,6 +2779,28 @@ export class GameApp {
     const size = this.renderer.getDrawingBufferSize(new Vector2());
     this.pipeline.setSize(size.x, size.y);
     this.combatEffects?.setResolution(size.x, size.y);
+  }
+
+  /** drawing buffer pixels per css pixel before adaptive resolution: the screen's (capped) x the scale setting */
+  private renderDensity(): number {
+    if (this.shot?.pixelRatio) return this.shot.pixelRatio;
+    return Math.min(this.shot?.dpr ?? (window.devicePixelRatio || 1), 2, this.quality.maxPixelRatio) * this.settings.renderScale;
+  }
+
+  /**
+   * the preset as the pipeline runs it. on a dense screen (retina) the msaa
+   * resolve about halves the frame rate (measured on an m5 at 2880x1800) and the
+   * small pixels hide the edges anyway, so high takes fxaa and ultra 4x there
+   * unless the player picked an anti-aliasing mode. `density` leaves the
+   * adaptive scale out so a resolution drop can't bring the msaa back.
+   */
+  private pipelinePreset(density: number): QualityPreset {
+    const q = this.quality;
+    if (q.msaa === 0 || density < 1.75 || this.settings.graphics.antiAliasing !== 'preset') return q;
+    const msaa = q.level === 'ultra' ? Math.min(q.msaa, 4) : 0;
+    if (msaa === q.msaa) return q;
+    if (this.densePreset?.base !== q) this.densePreset = { base: q, preset: { ...q, msaa, fxaa: msaa === 0 } };
+    return this.densePreset.preset;
   }
 
   /**
@@ -2808,19 +2838,32 @@ export class GameApp {
   /** picks the preset from the setting (or the gpu on auto) and pushes it everywhere */
   private applyQuality(): void {
     const setting = this.shot?.quality ?? this.settings.graphicsQuality;
-    const next = resolveQuality(setting, readRendererName(this.renderer));
-    const changed = next !== this.quality;
+    const level = setting === 'auto' && this.autoFallback ? 'medium' : setting;
+    const next = resolveQuality(level, readRendererName(this.renderer), this.settings.graphics);
+    const changed = presetKey(next) !== presetKey(this.quality);
     this.quality = next;
-    this.pipeline.setPreset(next);
+    this.pipeline.setPreset(this.pipelinePreset(this.renderDensity()));
     this.mapEnvironment.setQuality(next);
     this.combatEffects?.setQuality(next);
     this.viewmodelRenderer.setQuality(next);
     // characters switch to their lighter lods sooner on the lighter presets (a dev ?chardetail wins)
-    if (!parseDevCharacters(window.location.search)?.detail) setCharacterDetail(next.level);
+    if (!parseDevCharacters(window.location.search)?.detail) setCharacterDetail(next.level === 'ultra' ? 'high' : next.level);
     if (changed) {
       this.adaptiveResolution.reset();
     }
     this.applyRenderScale();
+  }
+
+  /**
+   * auto picked high but the gpu can't hold it: adaptive resolution had to drop
+   * two steps, so auto settles on balanced for the rest of the session
+   */
+  private maybeFallBackFromAuto(): void {
+    const auto = (this.shot?.quality ?? this.settings.graphicsQuality) === 'auto';
+    if (!auto || this.autoFallback || this.quality.level === 'medium' || this.quality.level === 'low') return;
+    if (this.adaptiveResolution.getScale() > 0.71) return;
+    this.autoFallback = true;
+    this.applyQuality();
   }
 
   private async runShot(shot: ShotRequest): Promise<void> {

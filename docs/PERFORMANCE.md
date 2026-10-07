@@ -28,21 +28,32 @@ compressed blocks on every sample.
 
 ## Scaling
 
-- **Auto picks Balanced** on every real GPU and Low on software GL, phone GPUs
-  and old Intel HD/UHD graphics. High is opt-in.
+- **Auto picks High** on desktop class GPUs (Apple M Pro/Max/Ultra and M3 on,
+  GeForce GTX 10 series on and RTX, Radeon RX, Arc A and B cards), Balanced on
+  every other real GPU and Low on software GL, phone GPUs and old Intel HD/UHD
+  graphics. When auto's High pick needs adaptive resolution to drop two steps,
+  auto settles on Balanced for the session. Ultra is opt-in.
 - **Adaptive resolution** is on by default for every preset. It drops the render
   scale in 15% steps whenever a one second window averages under 55 fps, down
-  to half, and raises it again after three windows over 90 fps.
+  to half. It climbs back after three windows near the best rate seen so far
+  (about the display refresh rate, since rAF is vsynced) or over 90 fps, so a
+  60 Hz screen recovers too. A climb that drops again within five windows
+  doubles the wait before the next one, up to 64 windows.
+- **Knife models unload** when nothing holds them (`src/cosmetics/knifeAssets.ts`).
+  Each knife's WebP textures take 48 to 64 MB once drawn, so only the knife in
+  hand and the last one put away stay loaded.
 - **Shaders compile behind the loading screen** (`renderer.compileAsync` on the
   world and the viewmodel), so the first seconds of play don't hitch.
 - Per preset (`src/render/quality.ts`, table in `docs/RENDERING.md`):
-  - anti-aliasing: FXAA on Low and Balanced, 4x MSAA on High;
-  - AO only on High;
+  - anti-aliasing: FXAA on Low and Balanced, 4x MSAA on High (FXAA on Retina),
+    8x on Ultra (4x on Retina);
+  - AO on High and Ultra;
   - bloom off, then 4 mips, then 6;
-  - one sun shadow cascade: off, 1024, 2048;
+  - one sun shadow cascade: off, 1024, 2048, 4096;
   - particle density 0.4, 0.75 and 1;
-  - bullet holes alive: 24, 48 and 96;
-  - generated normal maps: none, 512, 1024;
+  - bullet holes alive: 24, 48, 96 and 128;
+  - generated normal maps: none, 512, 1024, 2048;
+  - anisotropic filtering 2x, 4x, 8x, 16x;
   - pixel ratio cap 1, 1.25 and 2;
   - the viewmodel probe is off on Low.
 
@@ -61,9 +72,26 @@ before this branch.
 | Prismline | 526 / 164 | 500 / 241 | 303 / 120 | 164 / 70 |
 
 Values are median fps / 1% low fps (the mean of the slowest 1% of frames).
-Balanced is the default. A second run while other agents were rendering on
+Balanced was the default. A second run while other agents were rendering on
 the same machine came in 10 to 50% lower across the board (v2 included), so
 treat these as best case on an idle M5.
+
+### M5 GPU, 2880x1800 (Retina, 1440x900 window), headless Chromium, adaptive off
+
+Ochre Cut with the knife, `?perf=4`, rAF on a 120 Hz cadence, so a frame that
+misses 8.3 ms waits for the next one (60 fps is the next step down).
+
+| preset | median fps | median frame |
+|---|---|---|
+| Balanced (1.25 pixel ratio, FXAA) | 120 | 8.3 ms |
+| High with 4x MSAA | 60 | 16.7 ms |
+| High with FXAA (what Auto picks on this Mac) | 95 to 115 | 8.7 to 10.5 ms |
+| Ultra with 8x MSAA | 38 | 26 ms |
+| Ultra with 4x MSAA (its Retina default) | 60 | 16.8 ms |
+
+MSAA costs about the same at 2x and 4x here (61 against 60 fps): the resolve of
+two multisampled half float passes at 2880x1800, not the sample count, is the
+cost. AO costs about 1 fps. That's why High uses FXAA on dense screens.
 
 ### Worst-case proxy: software GL, 4x CPU throttle, 1280x720
 

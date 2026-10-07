@@ -10,6 +10,11 @@ The player's arms piece picks the kit, the plates take the primary paint and fin
 included), the muscle leans towards the secondary paint and the glow lines light up in the accent
 colour (`src/characters/fpArmor.ts`).
 
+The muscle is matte (roughness 0.8 with a soft sheen at grazing angles, like fabric). A whole-body
+skin's own arms get a roughness floor of 0.6 on everything but bare metal in first person
+(`SkinMaterial.setMatte`): the skins' art is glossy (median roughness about 0.2), which read as
+latex this close to the camera.
+
 | kit | shape language |
 |---|---|
 | Strafe | one long forearm shell with a layered plate over its wrist end, a hexagonal hand plate, oval knuckle caps, rounded finger plates |

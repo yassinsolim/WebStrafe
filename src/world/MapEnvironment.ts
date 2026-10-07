@@ -494,6 +494,9 @@ export class MapEnvironment {
     ) {
       this.applyWorldMaterials();
     }
+    if (previous.anisotropy !== preset.anisotropy && this.map) {
+      this.sharpenTextures(this.map.sceneRoot);
+    }
   }
 
   public update(dt: number, camera: Camera): void {
@@ -677,7 +680,7 @@ export class MapEnvironment {
   }
 
   private sharpenTextures(root: Object3D): void {
-    const anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    const anisotropy = Math.min(this.preset.anisotropy, this.renderer.capabilities.getMaxAnisotropy());
     root.traverse((child) => {
       if (!(child instanceof Mesh)) {
         return;
