@@ -28,7 +28,7 @@ import { buildProceduralKnife, disposeProceduralKnife, KNIFE_NODES } from '../co
 import { disposeKnifeModel, isKnifeModel, loadKnifeModel } from '../cosmetics/knifeAssets';
 import { applyKnifeFinish } from '../cosmetics/finishes/applyFinish';
 import { defaultKnifeSelection, type KnifeLoadoutSelection } from '../cosmetics/finishes/selection';
-import { gripKindFor } from '../viewmodel/knifeGrips';
+import { gripKindFor, type KnifeGripKind } from '../viewmodel/knifeGrips';
 
 const TAU = Math.PI * 2;
 const FRAME_PADDING = 1.18;
@@ -209,7 +209,7 @@ export class CharacterPreview {
       this.knife.removeFromParent();
       disposeHeldKnife(this.knife);
     }
-    this.knife = holdKnife(model, gripKindFor(getKnife(pick.knifeId)) === 'reverse_ring');
+    this.knife = holdKnife(model, gripKindFor(getKnife(pick.knifeId)));
     hand.add(this.knife);
   }
 
@@ -290,10 +290,11 @@ export const PREVIEW_BG = new Color(0x0a0c12);
  * wraps a knife for the hand the way the remote players' knives are: grip
  * socket at the origin, blade along the hand bone's pointing axis, under a
  * holder named like theirs so the menu idle seats and twirls it. ring knives
- * (`reverse`) are turned end for end so the claw comes out under the little
- * finger and the ring sits at the index, and they twirl round the ring
+ * are turned end for end so the claw comes out under the little finger and
+ * the ring sits at the index, and they twirl round the ring
  */
-function holdKnife(model: Object3D, reverse = false): Object3D {
+function holdKnife(model: Object3D, kind: KnifeGripKind): Object3D {
+  const reverse = kind === 'reverse_ring';
   model.updateMatrixWorld(true);
   const grip = model.getObjectByName(KNIFE_NODES.grip);
   if (grip) model.position.sub(grip.getWorldPosition(new Vector3()));
@@ -320,7 +321,7 @@ function holdKnife(model: Object3D, reverse = false): Object3D {
   }
   const holder = new Group();
   holder.name = 'RemoteKnifeModel';
-  holder.userData.reverseGrip = reverse;
+  holder.userData.grip = kind;
   holder.position.set(0.039, -0.0034, 0.0602);
   holder.rotation.set(1.18, -0.58, -0.5);
   holder.add(wrapper);

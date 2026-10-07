@@ -4,6 +4,7 @@ import {
   CircleGeometry,
   Euler,
   Group,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   Object3D,
@@ -19,9 +20,8 @@ import { signedAngleAbout } from '../viewmodel/ik';
  * Shared player-model rigging: locating the arm bones, attaching a knife to the
  * right hand, and posing the arms into the combat "knife hold" stance. Used both
  * by the in-game {@link RemotePlayersRenderer} (animated) and the main-menu
- * character preview (static). Both share the same attach + arm stance; the menu
- * additionally closes the fingers and seats the knife a touch deeper in the palm
- * (see {@link applyKnifeIdlePose}), which the in-game renderer never applies.
+ * character preview. on mpfb hands the knife is seated in the closed fist from
+ * the hand's own finger joints (seatKnife), so every body grips it the same.
  */
 export interface ArmRig {
   rightUpper: Bone;
@@ -92,15 +92,9 @@ const MPFB_RELAXED_THUMB = [6, 14, 10].map((d) => d * DEG);
 const THIRD_PERSON_KNIFE = 'bayonet';
 
 /**
- * Knife child-offset (relative to the right weapon-hand bone) for the static
- * menu hero pose only. The menu closes the fingers into a fist, so the knife
- * seats deeper in the palm / finger-curl pocket than the in-game default set in
- * {@link attachKnifeModel}. It slides the knife up its handle so the fist grips
- * right at the guard (leaving almost no bare wooden handle exposed between the
- * fist and the guard) and seats it up into the palm so the pommel tucks under
- * the fist rather than dangling below it — reading as a proper hammer-grip
- * knife-fight hold from the third-person menu camera. Applied by
- * {@link applyKnifeIdlePose} so the in-game third-person hold is never affected.
+ * fixed knife seat (relative to the right weapon-hand bone) for rigs without
+ * mpfb fingers, the old procedural soldiers. mpfb hands get theirs from
+ * seatKnife instead.
  */
 const MENU_KNIFE_GRIP_POSITION = new Vector3(0.04, 0.02, 0.0252);
 const MENU_KNIFE_GRIP_ROTATION = new Euler(1.18, -0.58, 0.75, 'XYZ');
@@ -424,14 +418,10 @@ export function applyKnifeIdlePose(rig: ArmRig, breath = 0): void {
     }
   }
 
-  // Seat the knife deeper in the palm and slid up to the balance point below the
-  // guard for the static menu pose only. attachKnifeModel keeps the in-game
-  // offset (gameplay is viewed at a distance with an open hand and no finger
-  // curl); here the fingers close, so re-seating the knife into the finger-curl
-  // pocket makes the fist grip the handle convincingly — without touching the
-  // in-game third-person hold.
+  // the knife in the closed fist: down the channel the fingers make on mpfb
+  // hands, the old fixed seat on the rest
   const menuKnife = rig.rightWeaponHand.getObjectByName('RemoteKnifeModel');
-  if (menuKnife) {
+  if (menuKnife && !seatKnife(rig, menuKnife)) {
     menuKnife.position.copy(MENU_KNIFE_GRIP_POSITION);
     menuKnife.rotation.copy(MENU_KNIFE_GRIP_ROTATION);
   }
@@ -448,7 +438,10 @@ export function applyKnifeIdlePose(rig: ArmRig, breath = 0): void {
     if (rig.leftLower) aimBone(rig.leftLower, STANCE.leftLower.x, STANCE.leftLower.y + inhale * 0.01, STANCE.leftLower.z);
     if (rig.leftHand) aimBone(rig.leftHand, STANCE.leftHand.x, STANCE.leftHand.y, STANCE.leftHand.z);
     // turn the fist so the blade points forward and a little up, across the body
-    if (menuKnife) aimKnife(rig.rightHand, menuKnife, STANCE.rightHand, STANCE.blade);
+    // (ring knives: the claw down under the fist, push daggers: straight ahead)
+    const grip = menuKnife?.userData.grip;
+    const stance = grip === 'reverse_ring' ? STANCE_RING : grip === 'tee' ? STANCE_TEE : STANCE;
+    if (menuKnife) aimKnife(rig.rightHand, menuKnife, stance.rightHand, stance.blade);
     // weight on the back foot, the left a short step ahead, knees soft
     for (const [leg, swing, knee] of [[rig.legs?.left, -0.16, 0.14], [rig.legs?.right, 0.1, 0.12]] as const) {
       if (!leg) continue;
@@ -518,15 +511,17 @@ export function applyMenuIdlePose(rig: ArmRig, t: number, phase = 0): void {
   // knife arm: hanging with the elbow soft, or up in front of the hip for the twirl
   const up = f.up;
   // ring knives (reverse grip, claw under the little finger) bring the forearm forward so the claw hangs in view
-  const pose = knife?.userData.reverseGrip === true ? MENU_RING : MENU;
+  const pose = knife?.userData.grip === 'reverse_ring' ? MENU_RING : MENU;
   aimBlend(rig.rightUpper, MENU.rightUpper, MENU.rightUpperUp, up, breath * 0.01);
   aimBlend(rig.rightLower, pose.rightLower, MENU.rightLowerUp, up, breath * 0.01);
   if (knife) {
-    // the menu seat for the knife, with the twirl undone while the fist is aimed
-    knife.position.copy(MENU_KNIFE_GRIP_POSITION);
-    knife.rotation.copy(MENU_KNIFE_GRIP_ROTATION);
+    // the knife seated in the fist, with the twirl undone while the fist is aimed
     const turn = knife.children[0];
     if (turn) turn.rotation.z = Math.PI / 2;
+    if (!seatKnife(rig, knife)) {
+      knife.position.copy(MENU_KNIFE_GRIP_POSITION);
+      knife.rotation.copy(MENU_KNIFE_GRIP_ROTATION);
+    }
     aimKnife(rig.rightHand, knife, blendDir(pose.rightHand, pose.rightHandUp, up, blendTmp), blendDir(pose.blade, pose.bladeUp, up, blendTmp3));
     // the knife turns once round the grip in the loosened fingers
     if (turn) turn.rotation.z = Math.PI / 2 + f.spin * Math.PI * 2;
@@ -584,10 +579,10 @@ const MENU = {
 // the front, curving in; for the twirl it spins round the index in the ring
 const MENU_RING = {
   rightLower: new Vector3(0.1, -0.35, 0.93),
-  rightHand: new Vector3(0.75, -0.25, 0.6),
-  blade: new Vector3(0.1, -0.98, 0.15),
-  rightHandUp: new Vector3(0.55, 0.05, 0.83),
-  bladeUp: new Vector3(0.15, -0.95, 0.25),
+  rightHand: new Vector3(0.7, 0.3, 0.65),
+  blade: new Vector3(0, -0.98, -0.1),
+  rightHandUp: new Vector3(0.55, 0.3, 0.78),
+  bladeUp: new Vector3(0.12, -0.97, -0.1),
 };
 // one twirl every MENU_FLOURISH_EVERY seconds, MENU_FLOURISH_AT into the cycle
 export const MENU_FLOURISH_EVERY = 11;
@@ -632,11 +627,23 @@ const STANCE = {
   rightUpper: new Vector3(-0.3, -0.93, 0.14),
   rightLower: new Vector3(0.1, 0.22, 0.97),
   // wrist cocked down and in from the forearm so the blade leans forward
-  rightHand: new Vector3(0.18, -0.35, 0.92),
+  rightHand: new Vector3(0.18, -0.5, 0.85),
   leftUpper: new Vector3(0.26, -0.93, 0.2),
   leftLower: new Vector3(-0.15, 0.2, 0.97),
   leftHand: new Vector3(-0.2, 0.1, 0.97),
   blade: new Vector3(0.2, 0.62, 0.76),
+};
+// ring knives in the stance: the wrist straight and the knuckles forward, the
+// handle running down out of the fist so the claw hangs under it, curving
+// forward (the little finger side sits back toward the wrist, so the hand tips up)
+const STANCE_RING = {
+  rightHand: new Vector3(0.2, 0.3, 0.93),
+  blade: new Vector3(0.05, -0.98, -0.12),
+};
+// push daggers: the wrist straight, the blade out between the fingers straight ahead
+const STANCE_TEE = {
+  rightHand: new Vector3(0.15, 0.02, 0.99),
+  blade: new Vector3(0.15, 0.02, 0.99),
 };
 const AXIS_X = new Vector3(1, 0, 0);
 const AXIS_Y = new Vector3(0, 1, 0);
@@ -677,15 +684,16 @@ function aimBone(bone: Bone, x: number, y: number, z: number): void {
 /** lines the hand up with `handDir`, then rolls the fist about it so the blade comes closest to `bladeDir` (model frame) */
 function aimKnife(hand: Bone, knife: Object3D, handDir: Vector3, bladeDir: Vector3): void {
   aimBone(hand, handDir.x, handDir.y, handDir.z);
-  const grip = knife.getObjectByName(KNIFE_NODES.grip);
-  const tip = knife.getObjectByName('socket_tip');
-  if (!grip || !tip) return;
+  const grip = gripSocket(knife);
+  if (!grip?.parent) return;
   knife.updateWorldMatrix(true, true);
-  tip.getWorldPosition(aimFrom);
-  aimFrom.sub(grip.getWorldPosition(aimTo)).normalize();
+  // the knife's own +x: along the handle and out through the blade (curved blades too)
+  aimFrom.setFromMatrixColumn(grip.parent.matrixWorld, 0).normalize();
   modelRotation(hand, aimModel);
   aimTo.copy(bladeDir).normalize().applyQuaternion(aimModel);
   const axis = rollAxis.copy(handDir).normalize().applyQuaternion(aimModel);
+  // a blade along the hand (push daggers) points where the hand does, a roll can't help
+  if (Math.abs(aimFrom.dot(axis)) > 0.9) return;
   rotateWorld(hand, aimQ.setFromAxisAngle(axis, signedAngleAbout(aimFrom, aimTo, axis)));
 }
 
@@ -698,6 +706,165 @@ function swingBone(bone: Bone, angle: number): void {
 function turnBone(bone: Bone, axis: Vector3, angle: number): void {
   aimTo.copy(axis).applyQuaternion(modelRotation(bone, aimModel));
   rotateWorld(bone, aimQ.setFromAxisAngle(aimTo, angle));
+}
+
+// half a finger's thickness: the guard rests this far past the index finger's middle
+const FINGER_HALF = 0.009;
+
+/** the closed fist's channel in the hand bone's frame, fitted from the curled finger joints */
+interface FistChannel {
+  centre: Vector3;
+  /** along the channel, toward the index finger */
+  axis: Vector3;
+  /** across it toward the knuckles, where the edge faces */
+  front: Vector3;
+  /** how far the index and the little finger sit from the centre along the axis */
+  index: number;
+  pinky: number;
+}
+
+const channel: FistChannel = { centre: new Vector3(), axis: new Vector3(), front: new Vector3(), index: 0, pinky: 0 };
+const fingerCentres = [new Vector3(), new Vector3(), new Vector3(), new Vector3()];
+const fingerOk = [false, false, false, false];
+const savedFingers = Array.from({ length: 12 }, () => new Quaternion());
+const joint0 = new Vector3();
+const joint1 = new Vector3();
+const joint2 = new Vector3();
+const fingerTip = new Vector3();
+const knuckles = new Vector3();
+const cirA = new Vector3();
+const cirB = new Vector3();
+const cirN = new Vector3();
+const cirT = new Vector3();
+const handInv = new Matrix4();
+const seatM = new Matrix4();
+const seatModel = new Matrix4();
+const seatInv = new Matrix4();
+const seatX = new Vector3();
+const seatY = new Vector3();
+const seatZ = new Vector3();
+const seatGrip = new Vector3();
+const seatRing = new Vector3();
+const seatOrigin = new Vector3();
+const seatScale = new Vector3();
+
+/** the centre of the circle through a, b and c into `out`; false when they're about in a line */
+function circumcentre(a: Vector3, b: Vector3, c: Vector3, out: Vector3): boolean {
+  const ab = cirA.subVectors(b, a);
+  const ac = cirB.subVectors(c, a);
+  const n = cirN.crossVectors(ab, ac);
+  const d = 2 * n.lengthSq();
+  if (d < 1e-14) return false;
+  out.crossVectors(ac, n).multiplyScalar(ab.lengthSq());
+  out.add(cirT.crossVectors(n, ab).multiplyScalar(ac.lengthSq()));
+  out.divideScalar(d).add(a);
+  return true;
+}
+
+/**
+ * where the closed fist's channel runs, in the hand bone's frame. each curled
+ * finger wraps round the handle, so its knuckle, middle joint and tip lie on a
+ * circle about the handle's line; the channel runs through those circles'
+ * centres. measured with the fingers closed (then put back), so a loosened
+ * hand still seats the knife where the fist holds it
+ */
+function fistChannel(rig: ArmRig, out: FistChannel): boolean {
+  const fingers = rig.rightFingers;
+  if (fingers.length !== 12) return false;
+  for (let i = 0; i < 12; i += 1) savedFingers[i].copy(fingers[i].quaternion);
+  curlHand(fingers, rig.rightFingerBases, [], [], MPFB_FIST, []);
+  rig.rightHand.updateMatrixWorld(true);
+  handInv.copy(rig.rightHand.matrixWorld).invert();
+  knuckles.set(0, 0, 0);
+  out.centre.set(0, 0, 0);
+  let count = 0;
+  for (let f = 0; f < 4; f += 1) {
+    joint0.setFromMatrixPosition(fingers[f * 3].matrixWorld).applyMatrix4(handInv);
+    joint1.setFromMatrixPosition(fingers[f * 3 + 1].matrixWorld).applyMatrix4(handInv);
+    joint2.setFromMatrixPosition(fingers[f * 3 + 2].matrixWorld).applyMatrix4(handInv);
+    // the tip bone isn't in the rig: the last bone is about 0.8 of the middle one
+    fingerTip.subVectors(joint2, joint1).multiplyScalar(0.8).add(joint2);
+    knuckles.add(joint0);
+    fingerOk[f] = circumcentre(joint0, joint1, fingerTip, fingerCentres[f])
+      && fingerCentres[f].distanceTo(joint0) < 0.06;
+    if (fingerOk[f]) {
+      out.centre.add(fingerCentres[f]);
+      count += 1;
+    }
+  }
+  for (let i = 0; i < 12; i += 1) fingers[i].quaternion.copy(savedFingers[i]);
+  if (count < 3 || !fingerOk[0] || !fingerOk[3]) return false;
+  out.centre.divideScalar(count);
+  out.axis.subVectors(fingerCentres[0], fingerCentres[3]).normalize();
+  // wrist to knuckles, square to the channel
+  out.front.copy(knuckles).addScaledVector(out.axis, -knuckles.dot(out.axis)).normalize();
+  out.index = joint0.subVectors(fingerCentres[0], out.centre).dot(out.axis);
+  out.pinky = joint0.subVectors(out.centre, fingerCentres[3]).dot(out.axis);
+  return true;
+}
+
+/** where the right hand holds a knife (the katana marks its right hand's spot) */
+function gripSocket(knife: Object3D): Object3D | undefined {
+  return knife.getObjectByName(KNIFE_NODES.grip) ?? knife.getObjectByName('socket_grip_r');
+}
+
+/**
+ * seats a held knife in the closed fist from the hand's own finger joints, so
+ * every body closes on the handle. by the holder's userData.grip:
+ * - hammer and balisong: the handle runs down the fist's channel, the blade
+ *   out of the thumb side, the edge toward the knuckles and the guard just past
+ *   the index finger
+ * - reverse_ring: turned end for end, the claw under the little finger and the
+ *   index finger through the ring
+ * - tee: the bar along the channel, the blade out between the fingers
+ * any twirl on the holder's child must be at rest. false when the rig has no
+ * mpfb fingers or the knife no grip socket
+ */
+function seatKnife(rig: ArmRig, knife: Object3D): boolean {
+  if (!rig.mpfbHands || !knife.parent) return false;
+  const grip = gripSocket(knife);
+  const model = grip?.parent;
+  if (!grip || !model || !fistChannel(rig, channel)) return false;
+  const kind = knife.userData.grip;
+  const reverse = kind === 'reverse_ring';
+  const s = reverse ? -1 : 1;
+  // the model's frame (+x to the tip, +y the spine, origin at the guard) in the holder's
+  knife.updateMatrixWorld(true);
+  seatInv.copy(model.matrixWorld).invert();
+  seatGrip.setFromMatrixPosition(grip.matrixWorld).applyMatrix4(seatInv);
+  const ringNode = reverse ? knife.getObjectByName(KNIFE_NODES.ring) : undefined;
+  const ring = ringNode ? seatRing.setFromMatrixPosition(ringNode.matrixWorld).applyMatrix4(seatInv) : null;
+  // the guard is the origin unless the model marks it
+  const guardNode = knife.getObjectByName('socket_guard');
+  const guard = guardNode ? seatOrigin.setFromMatrixPosition(guardNode.matrixWorld).applyMatrix4(seatInv).x : 0;
+  seatModel.copy(knife.matrixWorld).invert().multiply(model.matrixWorld);
+
+  // where the model goes in the hand's frame: the handle's line on the channel's
+  let along: number;
+  if (kind === 'tee') {
+    seatX.copy(channel.front);
+    seatY.copy(channel.axis);
+    along = 0;
+  } else {
+    seatX.copy(channel.axis).multiplyScalar(s);
+    seatY.copy(channel.front).negate();
+    if (ring) along = channel.index - s * (ring.x - seatGrip.x);
+    else if (reverse) along = -(channel.pinky + FINGER_HALF) + (guard - seatGrip.x);
+    else along = channel.index + FINGER_HALF - (guard - seatGrip.x);
+  }
+  seatZ.crossVectors(seatX, seatY);
+  seatM.makeBasis(seatX, seatY, seatZ);
+  // grip socket on the channel, the model's origin back from it
+  seatOrigin.copy(channel.centre).addScaledVector(channel.axis, along);
+  seatOrigin.sub(seatGrip.applyMatrix4(seatM));
+  seatM.setPosition(seatOrigin);
+
+  // holder = hand-frame model * (model in holder)^-1, then into its parent's frame
+  seatM.multiply(seatModel.invert());
+  seatInv.copy(handInv).multiply(knife.parent.matrixWorld).invert();
+  seatM.premultiply(seatInv);
+  seatM.decompose(knife.position, knife.quaternion, seatScale);
+  return true;
 }
 
 function curlHand(fingers: Bone[], bases: Quaternion[], thumb: Bone[], thumbBases: Quaternion[], table: number[][], thumbTable: number[]): void {

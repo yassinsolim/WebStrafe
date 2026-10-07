@@ -4,6 +4,7 @@ import { getKnife, type KnifeId } from '../combat/knives';
 import { buildProceduralKnife, KNIFE_NODES } from '../cosmetics/ProceduralKnife';
 import { applyKnifeFinish } from '../cosmetics/finishes/applyFinish';
 import type { KnifeCosmetic } from '../network/cosmetics';
+import { gripKindFor } from '../viewmodel/knifeGrips';
 import { attachKnifeModel } from './playerRig';
 
 /** knife remote players hold when they haven't picked one */
@@ -26,7 +27,8 @@ export function remoteKnifeTemplate(cosmetic: KnifeCosmetic | undefined): Group 
   const key = remoteKnifeKey(cosmetic);
   const cached = templates.get(key);
   if (cached) return cached;
-  const knife = buildProceduralKnife(getKnife(cosmetic?.id ?? DEFAULT_REMOTE_KNIFE));
+  const def = getKnife(cosmetic?.id ?? DEFAULT_REMOTE_KNIFE);
+  const knife = buildProceduralKnife(def);
   knife.updateMatrixWorld(true);
   const grip = knife.getObjectByName(KNIFE_NODES.grip);
   if (grip) knife.position.sub(grip.getWorldPosition(new Vector3()));
@@ -45,6 +47,8 @@ export function remoteKnifeTemplate(cosmetic: KnifeCosmetic | undefined): Group 
     }
   });
   const holder = new Group();
+  // how the fist holds it (ring knives upside down, push daggers with the bar across the palm), playerRig seats it
+  holder.userData.grip = gripKindFor(def);
   holder.add(wrapper);
   if (templates.size >= CACHE_LIMIT) {
     const oldest = templates.keys().next().value;
