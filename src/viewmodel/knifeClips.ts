@@ -128,7 +128,7 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
       baliBite: [[0, 1], [0.4, 1], [0.62, 0, 'out']],
       rz: [[0, 0], [0.24, -10, 'out'], [0.42, 14, 'out'], [0.58, -12, 'inOut'], [0.76, 12, 'inOut'], [0.94, -8, 'out'], [1.2, 0, 'inOut']],
     },
-    events: [[0.44, 'sound:knife_open'], [0.62, 'sound:knife_open'], [0.96, 'sound:knife_open']],
+    events: [[0.05, 'sound:knife_draw'], [0.44, 'sound:knife_open'], [0.62, 'sound:knife_open'], [0.96, 'sound:knife_open']],
   },
   spin_in: {
     // ring knives: up with the fingers open and the knife whirling twice round

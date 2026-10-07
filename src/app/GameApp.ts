@@ -82,6 +82,7 @@ import { isCombatEnabled } from '../combat/combatConfig';
 import { getWeapon, isMeleeWeapon, meleeStats, weaponMaxSpeed, type MeleeWeaponId, type WeaponId } from '../combat/weapons';
 import { RoomFullNotice } from '../ui/RoomFullNotice';
 import { DEFAULT_KNIFE_ID, getKnife, type KnifeId } from '../combat/knives';
+import { gripKindFor } from '../viewmodel/knifeGrips';
 import {
   defaultKnifeSelection,
   loadKnifeSelection,
@@ -1602,7 +1603,8 @@ export class GameApp {
     this.weapon.equip(id, performance.now());
     this.combatAim.setWeapon(id, performance.now());
     this.multiplayer.sendEquip(id);
-    this.audio.play('weaponDraw');
+    // knives and the katana get their own draw sound from the viewmodel clip
+    if (!isMeleeWeapon(id)) this.audio.play('weaponDraw');
     this.combatEffects?.clear();
     this.combatHud?.clearTransient();
     this.crosshair.classList.remove('shot-deagle', 'shot-awp');
@@ -3049,16 +3051,18 @@ export class GameApp {
         this.audio.play('awpBoltForward');
         this.audio.play('awpBoltDown', { volume: 0.8 });
         break;
-      case 'sound:knife_open':
       case 'sound:knife_draw':
-        this.audio.play('weaponDraw', { volume: 0.7 });
+        this.audio.play('knifeDeploy', { variant: this.knifeDeployVariant() });
+        break;
+      case 'sound:knife_open':
+        this.audio.play('knifeOpen', { variant: gripKindFor(getKnife(this.viewmodel.getKnife())) === 'balisong' ? 1 : 0 });
         break;
       case 'sound:knife_spin':
       case 'sound:knife_toss':
-        this.audio.play('knifeSwing', { volume: 0.35 });
+        this.audio.play('knifeFlick');
         break;
       case 'sound:knife_catch':
-        this.audio.play('weaponDraw', { volume: 0.5 });
+        this.audio.play('knifeCatch');
         break;
       case 'sound:katana_draw':
         this.audio.play('katanaDraw');
@@ -3069,6 +3073,16 @@ export class GameApp {
       default:
         break;
     }
+  }
+
+  /** how the held knife comes out: fixed blade, folder, balisong, ring knife or push daggers */
+  private knifeDeployVariant(): number {
+    const def = getKnife(this.viewmodel.getKnife());
+    const grip = gripKindFor(def);
+    if (grip === 'tee') return 4;
+    if (grip === 'reverse_ring') return 3;
+    if (grip === 'balisong') return 2;
+    return (def.shape.mechanism ?? 'fixed') === 'folder' ? 1 : 0;
   }
 
   private syncHudKnifeName(): void {
