@@ -32,7 +32,7 @@ export interface WireCosmetics {
 }
 
 const TOKEN = /^[a-z0-9_-]{1,32}$/;
-const MAX_ARMOR_SLOTS = 12;
+const MAX_ARMOR_SLOTS = 16;
 
 export function encodeCosmetics(c: PlayerCosmetics | null | undefined): WireCosmetics | undefined {
   if (!c) return undefined;

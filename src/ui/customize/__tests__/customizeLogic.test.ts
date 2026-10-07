@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ARMOR_SLOTS } from '../../../characters/catalog';
+import { ARMOR_SLOTS, SKIN_INFO } from '../../../characters/catalog';
 import { defaultLook, type CharacterLook } from '../../../characters/look';
 import {
   FOCUS_SHOTS,
@@ -24,6 +24,7 @@ import {
   viewCameraPosition,
   viewsSettled,
   wheelZoomFactor,
+  withBody,
   zoomView,
   type OrbitView,
   type ViewFocus,
@@ -216,8 +217,8 @@ describe('LookHistory', () => {
     expect(history.record(look({}))).toBe(false);
     expect(history.record(look({ helmet: 'anvil' }))).toBe(true);
     expect(history.record(look({ helmet: 'anvil', legs: 'quill' }))).toBe(true);
-    expect(history.undo()?.legs).toBe('strafe');
-    expect(history.undo()?.helmet).toBe('strafe');
+    expect(history.undo()?.legs).toBe('edge');
+    expect(history.undo()?.helmet).toBe('edge');
     expect(history.undo()).toBeNull();
     expect(history.redo()?.helmet).toBe('anvil');
     expect(history.canRedo).toBe(true);
@@ -274,7 +275,7 @@ describe('look helpers', () => {
 
   it('sameStyle ignores the tag and the watch only', () => {
     expect(sameStyle(mine, { ...mine, tag: 'OTHER', watch: true })).toBe(true);
-    expect(sameStyle(mine, { ...mine, finish: 'gloss' })).toBe(false);
+    expect(sameStyle(mine, { ...mine, finish: mine.finish === 'gloss' ? 'matte' : 'gloss' })).toBe(false);
   });
 
   it('parses the hex formats people type', () => {
@@ -295,5 +296,17 @@ describe('look helpers', () => {
   it('suggests the first free Look N name', () => {
     expect(nextSavedName([])).toBe('Look 1');
     expect(nextSavedName(['Look 1', 'look 2', 'Night'])).toBe('Look 3');
+  });
+
+  it('switches bodies: a skin starts in its own paint, the kit keeps the colours', () => {
+    const painted: CharacterLook = { ...defaultLook('terrorist'), primary: '#9e2231', finish: 'camo', tag: 'YS' };
+    const sentinel = withBody(painted, 'sentinel');
+    expect(sentinel.skin).toBe('sentinel');
+    expect([sentinel.primary, sentinel.secondary, sentinel.accent]).toEqual(Object.values(SKIN_INFO.sentinel.paint));
+    expect(sentinel.finish).toBe('satin');
+    expect(sentinel.tag).toBe('YS');
+    const kit = withBody(painted, 'kit');
+    expect(kit).toEqual({ ...painted, skin: 'kit' });
+    expect(withBody(painted, painted.skin)).toBe(painted);
   });
 });

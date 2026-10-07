@@ -21,6 +21,12 @@ below is original WebStrafe work.
 
 ## Player models
 
+- ["Sci-FI Warrior Armor", the Ronin skin](https://sketchfab.com/3d-models/sci-fi-warrior-armor-9932cc103f2c4daf8aadfc340f04ac00) by Vasian-Digital3D. License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+  Files: `public/characters/skins/ronin.glb`, `public/characters/skins/ronin_arms.glb`, `public/characters/skins/ronin_color.webp`, `public/characters/skins/ronin_normal.webp`, `public/characters/skins/ronin_data.webp`, `public/characters/skins/ronin_mask.webp`.
+  Changed: re-posed and re-weighted onto the WebStrafe skeleton, first-person arms cut from it, textures packed into one atlas with paint masks, lods.
+- ["Security Cyborg", the Sentinel skin](https://sketchfab.com/3d-models/security-cyborg-94ea8c717c374e3fa8aaa7549235b323) by fletcherkinnear. License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+  Files: `public/characters/skins/sentinel.glb`, `public/characters/skins/sentinel_arms.glb`, `public/characters/skins/sentinel_color.webp`, `public/characters/skins/sentinel_normal.webp`, `public/characters/skins/sentinel_data.webp`, `public/characters/skins/sentinel_mask.webp`.
+  Changed: re-posed and re-weighted onto the WebStrafe skeleton, first-person arms cut from it, textures packed into one atlas with paint masks and less metal, lods. The rifle from the original scene is left out.
 - [Base human body under the armor (MakeHuman system assets, posed and skinned with the MPFB2 Blender add-on)](https://static.makehumancommunity.org/about/license.html) by MakeHuman Community. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
   Files: `public/characters/armor.glb`.
   MPFB2 itself (GPL) is only used as a build tool; the assets it places are CC0.
@@ -67,11 +73,11 @@ below is original WebStrafe work.
   Files: `src/ui/hud/icons.ts`, `src/ui/brand.ts`, `public/favicon.svg`.
 - Prismline, Emberdrift, Ochre Cut and the movement test scene (built by our Blender scripts in tools/blender/maps) by WebStrafe. License: Original work.
   Files: `public/maps/surf_prismline/scene.glb`, `public/maps/bhop_emberdrift/scene.glb`, `public/maps/aim_ochrecut/scene.glb`, `public/maps/movement_test_scene/scene.glb`.
-- First-person arms, wristwatch, Deagle and AWP (built by our Blender scripts in tools/blender) by WebStrafe. License: Original work.
-  Files: `public/viewmodels/v2/arms.glb`, `public/viewmodels/v2/deagle.glb`, `public/viewmodels/v2/awp.glb`.
+- First-person arms, wristwatch, Deagle, AWP and katana (built by our Blender scripts in tools/blender) by WebStrafe. License: Original work.
+  Files: `public/viewmodels/v2/arms.glb`, `public/viewmodels/v2/deagle.glb`, `public/viewmodels/v2/awp.glb`, `public/viewmodels/v2/katana.glb`.
 - Procedural player models by WebStrafe. License: Original work.
   Files: `src/multiplayer/ProceduralPlayer.ts`.
-- Strafe, Anvil, Vector and Quill armor sets (built by our Blender scripts in tools/blender/characters) by WebStrafe. License: Original work.
-  Files: `public/characters/armor.glb`, `tools/blender/characters/armor_sets.py`.
+- Strafe, Anvil, Vector, Quill and Edge armor sets (built by our Blender scripts in tools/blender/characters) by WebStrafe. License: Original work.
+  Files: `public/characters/armor.glb`, `tools/blender/characters/armor_sets.py`, `tools/blender/characters/edge_set.py`.
 - Placeholder gloves, knife and textures by WebStrafe. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
   Files: `public/cosmetics/models/gloves_placeholder.glb`, `public/cosmetics/models/knife_placeholder.glb`.

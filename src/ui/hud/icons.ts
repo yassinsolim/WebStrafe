@@ -9,6 +9,7 @@ export type IconName =
   | 'awp'
   | 'deagle'
   | 'knife'
+  | 'katana'
   | 'headshot'
   | 'health'
   | 'ammo'
@@ -81,6 +82,17 @@ const ICONS: Record<IconName, IconDef> = {
       `<path fill="${CUT}" d="M8 9.8H9.4V14.4H8Z M11.8 9.8H13.2V14.4H11.8Z M15.6 9.8H17V14.4H15.6Z M28 10.4H44.6V11.4H28Z"/>`,
     ].join(''),
   },
+  katana: {
+    viewBox: '0 0 120 24',
+    body: [
+      // wrapped handle with a pommel cap, angular guard, long gently curved blade to a sharp tip
+      '<path d="M2 11.2C2 10 2.8 9.2 4 9.2H31V14.8H4C2.8 14.8 2 14 2 12.8Z"/>',
+      '<path d="M31 5.4L35.6 6.6V17.4L31 18.6Z"/>',
+      '<path d="M35.6 9.4H38.4V14.6H35.6Z"/>',
+      '<path d="M38.4 9.6C62 9.2 88 8.4 106 6.4L118.6 5.2C113 9.4 104 12.4 92 13.6C74 14.6 56 14.6 38.4 14.4Z"/>',
+      `<path fill="${CUT}" d="M7 9.8L9.4 14.2H10.8L8.4 9.8Z M13 9.8L15.4 14.2H16.8L14.4 9.8Z M19 9.8L21.4 14.2H22.8L20.4 9.8Z M25 9.8L27.4 14.2H28.8L26.4 9.8Z M42 10.6C64 10.2 86 9.6 102 7.8L102.4 8.6C86 10.6 64 11.4 42 11.6Z"/>`,
+    ].join(''),
+  },
   headshot: {
     viewBox: '0 0 24 24',
     body: [
@@ -145,6 +157,7 @@ export function createIcon(name: IconName, className = ''): SVGSVGElement {
 export function weaponIcon(weaponId: string): IconName {
   if (weaponId === 'awp') return 'awp';
   if (weaponId === 'deagle') return 'deagle';
+  if (weaponId === 'katana') return 'katana';
   return 'knife';
 }
 

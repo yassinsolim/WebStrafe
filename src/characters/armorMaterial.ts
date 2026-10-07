@@ -42,7 +42,7 @@ export class ArmorMaterial extends MeshStandardMaterial {
 
   // one program for every character, the look lives in uniforms
   override customProgramCacheKey(): string {
-    return `armor-v2${this.normalMap ? '-atlas' : ''}${this.simple ? '-simple' : ''}`;
+    return `armor-v3${this.normalMap ? '-atlas' : ''}${this.simple ? '-simple' : ''}`;
   }
 
   /** the library's baked atlas; only for geometry that carries atlas uvs */
@@ -79,6 +79,10 @@ export class ArmorMaterial extends MeshStandardMaterial {
     this.slotColor[S.metal].set(0.6, 0.61, 0.63);
     this.slotColor[S.cloth].copy(secondary).multiplyScalar(0.85);
     this.slotColor[S.trim].copy(accent).multiplyScalar(0.9);
+    // synthetic muscle: near black, leaning towards the secondary paint
+    this.slotColor[S.muscle].set(0.014, 0.015, 0.018).lerp(secondary, 0.16);
+    // glow lines: the accent at full brightness, so dark accents still light up
+    this.slotColor[S.glow].copy(accent).divideScalar(Math.max(accent.x, accent.y, accent.z, 0.05));
 
     const paint = (slot: number, glossier = 0) =>
       this.slotPbr[slot].set(Math.max(0.08, finish.roughness - glossier), finish.metalness, 0);
@@ -92,6 +96,8 @@ export class ArmorMaterial extends MeshStandardMaterial {
     this.slotPbr[S.metal].set(0.3, 1, 0);
     this.slotPbr[S.cloth].set(0.92, 0, 0);
     this.slotPbr[S.trim].set(0.88, 0, 0);
+    this.slotPbr[S.muscle].set(0.8, 0, 0);
+    this.slotPbr[S.glow].set(0.4, 0, 4);
     this.wear.value = finish.wear;
     this.camo.value = finish.camo ? 1 : 0;
   }
@@ -169,7 +175,8 @@ vec3 armorOrm = armorOrmA.rgb;
 float armorAo = vOcc.x * armorOrm.r;
 float armorEdge = max(vOcc.y, armorOrm.b);
 bool armorPaint = armorSlot <= 2;
-bool armorFabric = armorSlot == 3 || armorSlot >= 8;
+bool armorFabric = armorSlot == ${S.suit} || armorSlot == ${S.cloth} || armorSlot == ${S.trim};
+bool armorMuscle = armorSlot == ${S.muscle};
 // baked micro roughness: cc0 paint, fabric and leather detail
 armorRough = clamp(armorRough + (armorOrm.g - 0.5) * (armorPaint ? 0.55 : 0.8), 0.04, 1.0);
 if (armorPaint && uCamo > 0.5) {
@@ -203,6 +210,10 @@ if (armorPaint) {
   armorMetal = mix(armorMetal, 0.85, bare);
   armorRough = mix(armorRough, 0.34, bare);
   armorColor *= mix(1.0, 0.72 + 0.28 * armorAo, uWear);
+#ifndef ARMOR_SIMPLE
+  // hand painted plates are never one flat colour: a faint blotchy variation
+  armorColor *= 0.94 + 0.12 * armorNoise(vBindPos * 9.0 + 3.7);
+#endif
   // every finish: a faint lighter rim on the bevels catches light like real edge wear
   armorColor *= 1.0 + 0.12 * smoothstep(0.4, 0.9, armorEdge);
 }
@@ -213,7 +224,7 @@ else if (armorFabric) {
 }
 #endif
 // baked grime: cavity dirt and run-off streaks (stronger on worn paint)
-if (armorSlot != 5 && armorSlot != 6) {
+if (armorSlot != 5 && armorSlot != 6 && armorSlot != ${S.glow}) {
   float grime = mix(0.42, 1.0, smoothstep(0.62, 0.98, armorOrmA.a));
   armorColor *= mix(1.0, grime, armorPaint ? 0.85 + 0.15 * uWear : 0.6);
 }
@@ -242,6 +253,11 @@ if (armorFabric) {
   // soft sheen at grazing angles so cloth reads as cloth
   float fres = pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), 3.0);
   totalEmissiveRadiance += armorColor * fres * 0.18;
+}
+if (armorMuscle) {
+  // a soft fabric sheen at grazing angles, not a slick rubber rim
+  float fres = pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), 3.0);
+  totalEmissiveRadiance += (armorColor + vec3(0.02, 0.022, 0.026)) * fres * 0.12 * armorAo;
 }`,
       )
       .replace(

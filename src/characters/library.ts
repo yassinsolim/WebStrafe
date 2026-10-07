@@ -14,7 +14,9 @@ import {
 } from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { sharedGltfLoader } from '../assets/gltfLoader';
+import type { SkinId } from './catalog';
 import { ALL_JOINTS } from './skeleton';
+import type { SkinAsset } from './skins';
 
 export const ARMOR_URL = '/characters/armor.glb';
 
@@ -30,6 +32,9 @@ export const MATERIAL_SLOTS = [
   'metal',
   'cloth',
   'trim',
+  // first-person cyborg arms: synthetic muscle and glow lines
+  'muscle',
+  'glow',
 ] as const;
 export type MaterialSlot = (typeof MATERIAL_SLOTS)[number];
 
@@ -80,6 +85,8 @@ export class CharacterLibrary {
   private readonly mergedCache = new Map<string, BufferGeometry>();
   /** baked atlas every part's uvs point into: tangent normals, and ao / roughness detail / edge wear */
   public atlas: { normal: Texture; orm: Texture } | null = null;
+  /** whole-body skins that loaded (skins.ts); a look whose skin is missing wears the kit */
+  public skins = new Map<SkinId, SkinAsset>();
 
   static async load(url = ARMOR_URL): Promise<CharacterLibrary> {
     const [gltf, atlas] = await Promise.all([sharedGltfLoader().loadAsync(url), loadAtlas(url)]);

@@ -1,4 +1,4 @@
-import type { GraphicsQuality } from '../ui/SettingsStore';
+import type { GraphicsOverrides, GraphicsQuality } from '../ui/SettingsStore';
 
 export type QualityLevel = Exclude<GraphicsQuality, 'auto'>;
 
@@ -29,6 +29,8 @@ export interface QualityPreset {
   maxDecals: number;
   /** largest generated normal map for world textures, 0 on low (no normal maps) */
   normalMapSize: number;
+  /** anisotropic filtering on world textures, sharper floors and walls at a glance */
+  anisotropy: number;
 }
 
 export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
@@ -48,6 +50,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
     bloomLevels: 0,
     maxDecals: 24,
     normalMapSize: 0,
+    anisotropy: 2,
   },
   // the default: the lit look without msaa or ao, aimed at 60 fps on a typical laptop
   medium: {
@@ -65,6 +68,7 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
     bloomLevels: 4,
     maxDecals: 48,
     normalMapSize: 512,
+    anisotropy: 4,
   },
   // strong gpus: 4x msaa, ao, sharper shadows and a wider bloom
   high: {
@@ -82,13 +86,33 @@ export const QUALITY_PRESETS: Readonly<Record<QualityLevel, QualityPreset>> = {
     bloomLevels: 6,
     maxDecals: 96,
     normalMapSize: 1024,
+    anisotropy: 8,
+  },
+  // the fastest gpus: 8x msaa (where the gpu has it), 4k shadows, 16x filtering
+  ultra: {
+    level: 'ultra',
+    msaa: 8,
+    fxaa: false,
+    bloom: true,
+    ao: true,
+    shadowMapSize: 4096,
+    detailedMaterials: true,
+    reflections: true,
+    viewmodelProbe: true,
+    maxPixelRatio: 2,
+    effectDensity: 1,
+    bloomLevels: 6,
+    maxDecals: 128,
+    normalMapSize: 2048,
+    anisotropy: 16,
   },
 };
 
 /**
- * picks a preset from the webgl renderer string. auto never picks high: every
- * real gpu starts on balanced (medium) and high is opt-in in the settings.
- * software gl, phone gpus and old intel hd/uhd graphics get low. adaptive
+ * picks a preset from the webgl renderer string. desktop class gpus (apple m
+ * pro/max/ultra and m3 on, geforce gtx 10 on and rtx, radeon rx, arc a/b cards)
+ * start on high, every other real gpu on balanced (medium). software gl, phone
+ * gpus and old intel hd/uhd graphics get low. ultra is opt-in. adaptive
  * resolution covers the rest.
  */
 export function detectQuality(rendererName: string | null | undefined): QualityLevel {
@@ -97,6 +121,13 @@ export function detectQuality(rendererName: string | null | undefined): QualityL
   if (/swiftshader|llvmpipe|softpipe|software|microsoft basic/.test(name)) return 'low';
   if (/mali|adreno|powervr|apple gpu|videocore|tegra/.test(name)) return 'low';
   if (/intel/.test(name) && !/arc|iris/.test(name) && /uhd|hd graphics/.test(name)) return 'low';
+  if (/apple m(\d+)/.test(name)) {
+    const generation = Number(/apple m(\d+)/.exec(name)?.[1] ?? 0);
+    return generation >= 3 || /apple m\d+ (pro|max|ultra)/.test(name) ? 'high' : 'medium';
+  }
+  if (/geforce (rtx|gtx (1[06-9]|[2-9]\d)\d\d)|nvidia rtx|quadro rtx|rtx a\d/.test(name)) return 'high';
+  if (/radeon (rx|pro w)/.test(name) && !/vega/.test(name)) return 'high';
+  if (/arc\(tm\) [ab]\d|arc [ab]\d/.test(name)) return 'high';
   return 'medium';
 }
 
@@ -112,7 +143,41 @@ export function readRendererName(renderer: { getContext(): WebGLRenderingContext
   }
 }
 
-export function resolveQuality(setting: GraphicsQuality, rendererName: string | null | undefined): QualityPreset {
+export function resolveQuality(
+  setting: GraphicsQuality,
+  rendererName: string | null | undefined,
+  overrides?: Partial<GraphicsOverrides>,
+): QualityPreset {
   const level = setting === 'auto' ? detectQuality(rendererName) : setting;
-  return QUALITY_PRESETS[level];
+  return applyOverrides(QUALITY_PRESETS[level], overrides);
+}
+
+const SHADOW_SIZES = { off: 0, low: 1024, medium: 2048, high: 4096 } as const;
+
+/** the preset with the player's per-option choices on top, the preset itself when there are none */
+export function applyOverrides(preset: QualityPreset, overrides?: Partial<GraphicsOverrides>): QualityPreset {
+  if (!overrides) return preset;
+  const out = { ...preset };
+  const aa = overrides.antiAliasing;
+  if (aa && aa !== 'preset') {
+    out.msaa = aa.startsWith('msaa') ? Number(aa.slice(4)) : 0;
+    out.fxaa = aa === 'fxaa';
+  }
+  const shadows = overrides.shadows;
+  if (shadows && shadows !== 'preset') out.shadowMapSize = SHADOW_SIZES[shadows];
+  const ao = overrides.ambientOcclusion;
+  if (ao && ao !== 'preset') out.ao = ao === 'on';
+  const bloom = overrides.bloom;
+  if (bloom && bloom !== 'preset') {
+    out.bloom = bloom === 'on';
+    if (out.bloom && out.bloomLevels === 0) out.bloomLevels = 4;
+  }
+  const filtering = overrides.textureFiltering;
+  if (filtering && filtering !== 'preset') out.anisotropy = Number(filtering);
+  return presetKey(out) === presetKey(preset) ? preset : out;
+}
+
+/** identity of a resolved preset, to tell when anything the renderer reads changed */
+export function presetKey(preset: QualityPreset): string {
+  return JSON.stringify(preset);
 }

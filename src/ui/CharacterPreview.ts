@@ -23,7 +23,12 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import type { PlayerModel } from '../network/types';
 import { createCharacter, type CharacterHandle } from '../characters/CharacterFactory';
 import { defaultLook, type CharacterLook } from '../characters/look';
-import { attachKnifeModel, loadKnifeMesh } from '../multiplayer/playerRig';
+import { getKnife } from '../combat/knives';
+import { buildProceduralKnife, disposeProceduralKnife, KNIFE_NODES } from '../cosmetics/ProceduralKnife';
+import { disposeKnifeModel, isKnifeModel, loadKnifeModel } from '../cosmetics/knifeAssets';
+import { applyKnifeFinish } from '../cosmetics/finishes/applyFinish';
+import { defaultKnifeSelection, type KnifeLoadoutSelection } from '../cosmetics/finishes/selection';
+import { gripKindFor } from '../viewmodel/knifeGrips';
 
 const TAU = Math.PI * 2;
 const FRAME_PADDING = 1.18;
@@ -55,8 +60,9 @@ const STAGE_BOUNDS = new Box3(new Vector3(-0.42, 0, -0.3), new Vector3(0.42, 1.8
 
 /**
  * Self-contained 3D character stage for the main menu: its own transparent
- * renderer and scene with the player's armored character in the knife stance,
- * lit by a studio environment so paint finishes read. Paused while hidden.
+ * renderer and scene with the player's armored character relaxed in the menu
+ * idle, holding the player's own knife and finish, lit by a studio environment
+ * so paint finishes read. Paused while hidden.
  */
 export class CharacterPreview {
   private readonly renderer: WebGLRenderer;
@@ -67,7 +73,11 @@ export class CharacterPreview {
   private look: CharacterLook = defaultLook('terrorist');
   private team: PlayerModel = 'terrorist';
   private loadToken = 0;
-  private knifePromise: Promise<Object3D | null> | null = null;
+  private knifePick: KnifeLoadoutSelection = defaultKnifeSelection();
+  private knifeKey = '';
+  private knifeToken = 0;
+  private knife: Object3D | null = null;
+  private clock: number | null = null;
   private rafHandle: number | null = null;
   private startTime = 0;
   private lastFrame = 0;
@@ -164,28 +174,53 @@ export class CharacterPreview {
       this.character.setLook(this.look, this.team);
       return;
     }
-    const [character, knife] = await Promise.all([
-      createCharacter(this.look, this.team, { pose: 'stance', lod: 0, toneMap: 'aces' }),
-      this.getKnife(),
-    ]);
+    const character = await createCharacter(this.look, this.team, { pose: 'menu', lod: 0, toneMap: 'aces' });
     if (token !== this.loadToken) {
       character.dispose();
       return;
     }
-    if (character.rig) attachKnifeModel(character.rig.rightWeaponHand, knife);
     this.character = character;
     this.pivot.add(character.root);
     this.frameCharacter();
+    this.knifeKey = '';
+    void this.syncKnife();
   }
 
-  private getKnife(): Promise<Object3D | null> {
-    this.knifePromise ??= loadKnifeMesh().catch(() => null);
-    return this.knifePromise;
+  /** the knife the character holds: the player's pick, with its finish */
+  setKnife(selection: KnifeLoadoutSelection): void {
+    this.knifePick = { ...selection };
+    void this.syncKnife();
+  }
+
+  private async syncKnife(): Promise<void> {
+    const hand = this.character?.rig?.rightWeaponHand;
+    const pick = this.knifePick;
+    const key = `${pick.knifeId}|${pick.finishId}|${pick.wear}|${pick.seed}`;
+    if (!hand || key === this.knifeKey) return;
+    this.knifeKey = key;
+    const token = ++this.knifeToken;
+    const model = (await loadKnifeModel(pick.knifeId)) ?? buildProceduralKnife(getKnife(pick.knifeId));
+    if (token !== this.knifeToken || this.character?.rig?.rightWeaponHand !== hand) {
+      disposeHeldKnife(model);
+      return;
+    }
+    applyKnifeFinish(model, pick);
+    if (this.knife) {
+      this.knife.removeFromParent();
+      disposeHeldKnife(this.knife);
+    }
+    this.knife = holdKnife(model, gripKindFor(getKnife(pick.knifeId)) === 'reverse_ring');
+    hand.add(this.knife);
   }
 
   /** Static model yaw in radians. */
   setBaseYaw(yaw: number): void {
     this.baseYaw = yaw;
+  }
+
+  /** dev tools: hold the idle at `t` seconds (null runs the real clock) */
+  setClock(t: number | null): void {
+    this.clock = t;
   }
 
   start(): void {
@@ -203,7 +238,7 @@ export class CharacterPreview {
       const dt = Math.min(0.05, (now - this.lastFrame) / 1000);
       this.lastFrame = now;
       this.pivot.rotation.y = this.baseYaw;
-      this.character?.update(dt, (now - this.startTime) / 1000);
+      this.character?.update(dt, this.clock ?? (now - this.startTime) / 1000);
       this.renderer.render(this.scene, this.camera);
       this.rafHandle = requestAnimationFrame(loop);
     };
@@ -221,6 +256,8 @@ export class CharacterPreview {
   dispose(): void {
     this.stop();
     this.resizeObserver.disconnect();
+    if (this.knife) disposeHeldKnife(this.knife);
+    this.knife = null;
     this.character?.dispose();
     this.character = null;
     this.scene.environment?.dispose();
@@ -248,3 +285,56 @@ export class CharacterPreview {
 }
 
 export const PREVIEW_BG = new Color(0x0a0c12);
+
+/**
+ * wraps a knife for the hand the way the remote players' knives are: grip
+ * socket at the origin, blade along the hand bone's pointing axis, under a
+ * holder named like theirs so the menu idle seats and twirls it. ring knives
+ * (`reverse`) are turned end for end so the claw comes out under the little
+ * finger and the ring sits at the index, and they twirl round the ring
+ */
+function holdKnife(model: Object3D, reverse = false): Object3D {
+  model.updateMatrixWorld(true);
+  const grip = model.getObjectByName(KNIFE_NODES.grip);
+  if (grip) model.position.sub(grip.getWorldPosition(new Vector3()));
+  const wrapper = new Group();
+  wrapper.name = 'RemoteKnifeTemplate';
+  wrapper.rotation.set(0, 0, Math.PI / 2);
+  if (reverse) {
+    // turned about the spine axis, so the edge still faces the same way
+    model.updateMatrixWorld(true);
+    const ring = model.getObjectByName(KNIFE_NODES.ring)?.getWorldPosition(new Vector3());
+    const flip = new Group();
+    flip.name = 'RemoteKnifeFlip';
+    flip.rotation.y = Math.PI;
+    flip.add(model);
+    if (ring) {
+      // the ring at the wrapper's origin (the twirl's pivot), the grip still in the fist
+      const pivot = ring.applyQuaternion(flip.quaternion);
+      flip.position.copy(pivot).negate();
+      wrapper.position.copy(pivot).applyQuaternion(wrapper.quaternion);
+    }
+    wrapper.add(flip);
+  } else {
+    wrapper.add(model);
+  }
+  const holder = new Group();
+  holder.name = 'RemoteKnifeModel';
+  holder.userData.reverseGrip = reverse;
+  holder.position.set(0.039, -0.0034, 0.0602);
+  holder.rotation.set(1.18, -0.58, -0.5);
+  holder.add(wrapper);
+  holder.traverse((node) => {
+    node.frustumCulled = false;
+  });
+  return holder;
+}
+
+function disposeHeldKnife(root: Object3D): void {
+  // a held knife is the model wrapped twice (three times for ring knives); a bare model comes straight from the loader
+  let model = root.name === 'RemoteKnifeModel' ? root.children[0]?.children[0] : root;
+  if (model?.name === 'RemoteKnifeFlip') model = model.children[0];
+  if (!model) return;
+  if (isKnifeModel(model)) disposeKnifeModel(model);
+  else disposeProceduralKnife(model as Group);
+}

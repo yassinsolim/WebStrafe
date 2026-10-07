@@ -1,5 +1,6 @@
 import { KNIVES, type KnifeId } from '../combat/knives';
 import type { GripCheck } from './gripCheck';
+import { knifeInspectCount } from './knifeClips';
 import type { ViewAction, ViewmodelSystem } from './ViewmodelSystem';
 
 /** frames checked for every knife: idle plus key moments of each clip */
@@ -24,11 +25,22 @@ function framesFor(vm: ViewmodelSystem, step: number): ReadonlyArray<readonly [V
   return frames;
 }
 
+/** the rare inspect swept end to end (call with the rare variant selected) */
+function rareFrames(vm: ViewmodelSystem, step: number): ReadonlyArray<readonly [ViewAction, number]> {
+  vm.setInspectVariant(1);
+  const duration = vm.knifeActionDuration('inspect');
+  const frames: Array<readonly [ViewAction, number]> = [];
+  for (let t = 0; t <= duration + 1e-6; t += step) frames.push(['inspect', Math.round(t * 1000) / 1000]);
+  return frames;
+}
+
 export interface GripFrameReport {
   knife: KnifeId;
   /** which hand, the push daggers check both */
   side: 'r' | 'l';
   action: ViewAction;
+  /** 1 for the knife's rare inspect */
+  variant: number;
   t: number;
   /** 0 when the hand is closed on the knife, up to 1 while the fingers let go (spins, tosses) */
   gripOpen: number;
@@ -62,29 +74,39 @@ export async function runGripCheck(vm: ViewmodelSystem, step = 0): Promise<GripF
     vm.setKnife(def.id);
     await waitForModel(vm);
     const sides = def.shape.pair ? (['r', 'l'] as const) : (['r'] as const);
-    for (const [action, t] of framesFor(vm, step)) {
-      vm.seek(action, t);
-      const debug = vm.debugGrip();
-      if (!debug) continue;
-      for (const side of sides) {
-        const check = vm.checkKnifeGrip(side);
-        if (!check) continue;
-        const attach = vm.checkKnifeAttachment(side);
-        out.push({
-          knife: def.id,
-          side,
-          action,
-          t,
-          gripOpen: vm.debugGripOpen(),
-          ringHold: vm.debugChannel('ringHold'),
-          kind: String(debug.kind),
-          source: String(debug.source),
-          check,
-          attach,
-          tossY: vm.debugChannel('tossY'),
-        });
+    const usual = framesFor(vm, step);
+    const passes: Array<[number, ReadonlyArray<readonly [ViewAction, number]>]> = [[0, usual]];
+    if (knifeInspectCount(def) > 1) {
+      passes.push([1, step > 0 ? rareFrames(vm, step) : usual.filter(([action]) => action === 'inspect')]);
+    }
+    for (const [variant, frames] of passes) {
+      vm.setInspectVariant(variant);
+      for (const [action, t] of frames) {
+        vm.seek(action, t);
+        const debug = vm.debugGrip();
+        if (!debug) continue;
+        for (const side of sides) {
+          const check = vm.checkKnifeGrip(side);
+          if (!check) continue;
+          const attach = vm.checkKnifeAttachment(side);
+          out.push({
+            knife: def.id,
+            side,
+            action,
+            variant,
+            t,
+            gripOpen: vm.debugGripOpen(),
+            ringHold: vm.debugChannel('ringHold'),
+            kind: String(debug.kind),
+            source: String(debug.source),
+            check,
+            attach,
+            tossY: vm.debugChannel('tossY'),
+          });
+        }
       }
     }
+    vm.setInspectVariant(0);
     // let the page breathe between knives
     await new Promise((r) => setTimeout(r, 0));
   }

@@ -83,13 +83,23 @@ function ringSeat(curlDeg: number): { axis: Vector3; centre: Vector3 } {
 
 function ringKnifeInHand(curlDeg: number): Quaternion {
   const { axis } = ringSeat(curlDeg);
-  // edge (and the hook's curve) forward past the little finger
-  return axes([1, 0, 0], [0, -axis.z, axis.y], [0, -axis.y, -axis.z]);
+  // the claw curves the way the knuckles face (edge forward, like cs2): the
+  // knife's concave side (-y) looks up the hand, the spine back at the wrist
+  return axes([1, 0, 0], [0, axis.z, -axis.y], [0, axis.y, axis.z]);
+}
+
+// cs2 holds knives diagonally in the palm: the blade leans from square to the
+// hand toward the knuckles, so it carries on past the thumb along the hand
+export const HAMMER_LEAN_DEG = 45;
+
+function hammerKnifeInHand(leanDeg: number): Quaternion {
+  const a = (leanDeg * Math.PI) / 180;
+  return axes([-Math.cos(a), Math.sin(a), 0], [-Math.sin(a), -Math.cos(a), 0], [0, 0, 1]);
 }
 
 const KNIFE_IN_HAND: Record<KnifeGripKind, Quaternion> = {
-  hammer: axes([-1, 0, 0], [0, -1, 0], [0, 0, 1]),
-  balisong: axes([-1, 0, 0], [0, -1, 0], [0, 0, 1]),
+  hammer: hammerKnifeInHand(HAMMER_LEAN_DEG),
+  balisong: hammerKnifeInHand(HAMMER_LEAN_DEG),
   // ring axis is the knife's z (the ring lies in the blade plane)
   reverse_ring: ringKnifeInHand(INDEX_CURL_DEG),
   tee: axes([0, 1, 0], [-1, 0, 0], [0, 0, 1]),

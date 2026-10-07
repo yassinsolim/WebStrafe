@@ -190,6 +190,11 @@ export class ArmsRig {
     return this.arms[side].hand;
   }
 
+  /** the elbow end of the arm (tools) */
+  public getForearmBone(side: Side): Object3D {
+    return this.arms[side].forearm;
+  }
+
   private setWorldRotation(bone: Object3D, rotation: Quaternion): void {
     const parent = bone.parent;
     if (parent) {

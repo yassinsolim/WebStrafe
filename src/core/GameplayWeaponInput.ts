@@ -1,7 +1,7 @@
-export const GAMEPLAY_WEAPON_ORDER = ['awp', 'deagle', 'knife'] as const;
+export const GAMEPLAY_WEAPON_ORDER = ['awp', 'deagle', 'knife', 'katana'] as const;
 
 export type GameplayWeaponId = (typeof GAMEPLAY_WEAPON_ORDER)[number];
-export type WeaponSlot = 1 | 2 | 3;
+export type WeaponSlot = 1 | 2 | 3 | 4;
 export type WeaponCycleDirection = -1 | 0 | 1;
 
 interface KeyboardIdentity {
@@ -19,9 +19,11 @@ export function weaponSlotForKey(event: KeyboardIdentity): WeaponSlot | null {
   if (event.code === 'Digit1' || event.code === 'Numpad1') return 1;
   if (event.code === 'Digit2' || event.code === 'Numpad2') return 2;
   if (event.code === 'Digit3' || event.code === 'Numpad3') return 3;
+  if (event.code === 'Digit4' || event.code === 'Numpad4') return 4;
   if (event.key === '1') return 1;
   if (event.key === '2') return 2;
   if (event.key === '3') return 3;
+  if (event.key === '4') return 4;
   return null;
 }
 

@@ -2,6 +2,7 @@ import {
   AxesHelper,
   Box3,
   BufferGeometry,
+  Color,
   GridHelper,
   Group,
   Line,
@@ -16,6 +17,7 @@ import {
   Scene,
   Vector2,
   Vector3,
+  WebGLRenderTarget,
   WebGLRenderer,
 } from 'three';
 import { InputManager } from '../core/InputManager';
@@ -38,7 +40,7 @@ import { runGripCheck } from '../viewmodel/gripCheckRun';
 import { FramePerf } from './FramePerf';
 import { AdaptiveResolution } from './AdaptiveResolution';
 import { RenderPipeline } from '../render/RenderPipeline';
-import { readRendererName, resolveQuality, type QualityPreset } from '../render/quality';
+import { presetKey, readRendererName, resolveQuality, type QualityPreset } from '../render/quality';
 import { EFFECTS_LAYER } from '../render/layers';
 import { configureTextureTranscoder } from '../assets/gltfLoader';
 import { ViewmodelProbe } from '../render/ViewmodelProbe';
@@ -46,7 +48,7 @@ import type { LoadoutSelection } from '../cosmetics/types';
 import { HUD } from '../ui/HUD';
 import { LoadingScreen } from '../ui/LoadingScreen';
 import { MainMenu } from '../ui/MainMenu';
-import { defaultSettings, loadSettings, saveSettings, type GameSettings } from '../ui/SettingsStore';
+import { cloneSettings, defaultSettings, loadSettings, saveSettings, type GameSettings } from '../ui/SettingsStore';
 import { LeaderboardService, sanitizeLeaderboardName } from '../network/LeaderboardService';
 import { MultiplayerClient } from '../network/MultiplayerClient';
 import { createMultiplayer } from '../network/createMultiplayer';
@@ -77,7 +79,7 @@ import type { MeleeTarget } from '../combat/MeleeResolver';
 import { DEFAULT_ZOOM_SENSITIVITY_RATIO } from '../combat/Scope';
 import { ScopeOverlay } from '../ui/ScopeOverlay';
 import { isCombatEnabled } from '../combat/combatConfig';
-import { getWeapon, weaponMaxSpeed, type WeaponId } from '../combat/weapons';
+import { getWeapon, isMeleeWeapon, meleeStats, weaponMaxSpeed, type MeleeWeaponId, type WeaponId } from '../combat/weapons';
 import { RoomFullNotice } from '../ui/RoomFullNotice';
 import { DEFAULT_KNIFE_ID, getKnife, type KnifeId } from '../combat/knives';
 import {
@@ -101,7 +103,6 @@ import type { CustomMapRecord, LoadedMap, MapManifestEntry } from '../world/type
 // v2 ui + audio
 import { getAudioEngine } from '../audio/AudioEngine';
 import { MovementAudioTracker } from '../audio/MovementAudio';
-import { KNIFE_DAMAGE, KNIFE_RANGE_M } from '../combat/knives';
 import type { DeathEvent, HitEvent, ShotEvent } from '../network/MultiplayerTransport';
 import { GameHud } from '../ui/hud/GameHud';
 import { runHudDemo } from '../ui/hud/hudDemo';
@@ -151,6 +152,9 @@ export class GameApp {
   private readonly pipeline: RenderPipeline;
   private readonly viewmodelProbe: ViewmodelProbe;
   private quality: QualityPreset;
+  /** auto's high pick couldn't hold its frame rate this session, auto means balanced now */
+  private autoFallback = false;
+  private densePreset: { base: QualityPreset; preset: QualityPreset } | null = null;
   private readonly worldScene = new Scene();
   private readonly worldCamera: PerspectiveCamera;
   private readonly viewmodelRenderer: ViewmodelRenderer;
@@ -552,7 +556,12 @@ export class GameApp {
         const remoteProfile = remoteModel
           ? this.getKnifeSoundProfileFromModel(remoteModel)
           : this.activeKnifeSoundProfile;
-        this.remoteKnifeAudio.play(kind, 0.48, remoteProfile, this.remoteChestPosition(playerId) ?? undefined);
+        const at = this.remoteChestPosition(playerId) ?? undefined;
+        if (this.remotePlayers.isHoldingKatana(playerId) && at) {
+          this.audio.playAt('katanaSwing', at, { volume: 0.55, variant: kind === 'secondary' ? 1 : 0 });
+        } else {
+          this.remoteKnifeAudio.play(kind, 0.48, remoteProfile, at);
+        }
       }
     };
     this.multiplayer.connect();
@@ -616,6 +625,7 @@ export class GameApp {
     const frameDt = Math.min(0.1, rawFrameMs / 1000);
     if (this.playing && this.settings.adaptiveResolution && !this.shot?.pixelRatio
       && this.adaptiveResolution.sample(rawFrameMs)) {
+      this.maybeFallBackFromAuto();
       this.applyRenderScale();
     }
     this.lastFrameTime = time;
@@ -714,7 +724,7 @@ export class GameApp {
           if (!dead) {
             this.viewmodel.cancelInspect();
             const activeWeapon = this.weapon.getActive();
-            if (this.combatEnabled && activeWeapon !== 'knife') {
+            if (this.combatEnabled && !isMeleeWeapon(activeWeapon)) {
               this.fireCombatWeapon(time);
             } else if (this.combatEnabled) {
               this.attackCombatKnife('primary', time);
@@ -732,7 +742,7 @@ export class GameApp {
               this.viewmodel.cancelInspect();
               this.viewmodel.knifeAttack('secondary');
               this.multiplayer.sendAttack('secondary');
-            } else if (activeWeapon === 'knife') {
+            } else if (isMeleeWeapon(activeWeapon)) {
               this.viewmodel.cancelInspect();
               this.attackCombatKnife('secondary', time);
             } else if (activeWeapon === 'awp') {
@@ -791,7 +801,7 @@ export class GameApp {
       this.playing
       && this.combatEnabled
       && this.localAlive
-      && this.weapon.getActive() === 'knife'
+      && isMeleeWeapon(this.weapon.getActive())
       && findBackstabOpportunity({
         attackerFeet: this.movement.getFeetPosition(),
         attackerForward: this.movement.getForwardVector(),
@@ -808,7 +818,11 @@ export class GameApp {
     );
     const startedKnifeAttack = this.viewmodel.consumeStartedAttack();
     if (startedKnifeAttack) {
-      this.knifeAudio.play(startedKnifeAttack);
+      if (this.viewmodel.getActiveItem() === 'katana') {
+        this.audio.play('katanaSwing', { variant: startedKnifeAttack === 'secondary' ? 1 : 0, delay: startedKnifeAttack === 'secondary' ? 0.26 : 0.06 });
+      } else {
+        this.knifeAudio.play(startedKnifeAttack);
+      }
       this.playKnifeWallHit(startedKnifeAttack);
     }
     // sway, bob, landing dip and recoil kick from ViewmodelRenderer on top of the clips
@@ -1293,7 +1307,7 @@ export class GameApp {
     };
     this.multiplayer.onHit = ({ shooterId, hitbox, killed, weaponId, melee }) => {
       if (shooterId === this.multiplayer.getLocalId()) {
-        if (weaponId === 'knife' && melee) {
+        if (isMeleeWeapon(weaponId as WeaponId) && melee) {
           this.localKnife.onServerHit(melee);
         }
         const confirmation = planHitConfirmation(hitbox, killed);
@@ -1491,12 +1505,13 @@ export class GameApp {
     }
     const origin = this.movement.getCameraPosition();
     const direction = this.movement.getForwardVector();
+    const held = this.weapon.getActive();
     const swing = this.localKnife.tryAttack(kind, nowMs, {
       origin,
       direction,
       targets: this.getDrawnPlayerCapsules(),
       isBlocked: (from, to) => this.collisionWorld.segmentIntersectsGeometry(from, to),
-    });
+    }, meleeStats(isMeleeWeapon(held) ? held : 'knife'));
     if (!swing.accepted) {
       return;
     }
@@ -1624,7 +1639,7 @@ export class GameApp {
 
   private canInspectActiveWeapon(nowMs: number): boolean {
     const active = this.weapon.getActive();
-    if (active === 'knife') {
+    if (isMeleeWeapon(active)) {
       return this.viewmodel.canInspect();
     }
     return !this.weapon.isReloading(nowMs)
@@ -1898,8 +1913,9 @@ export class GameApp {
   }
 
   private applySettings(next: GameSettings): void {
-    const qualityChanged = next.graphicsQuality !== this.settings.graphicsQuality;
-    this.settings = { ...next };
+    const qualityChanged = next.graphicsQuality !== this.settings.graphicsQuality
+      || JSON.stringify(next.graphics) !== JSON.stringify(this.settings.graphics);
+    this.settings = cloneSettings(next);
     saveSettings(next);
     if (qualityChanged) {
       this.applyQuality();
@@ -2405,8 +2421,8 @@ export class GameApp {
     this.playing = this.loadedMap !== null && !this.runComplete;
     this.multiplayer.setCombatReady(this.playing);
     void this.prepareCombatAudio(true);
-    if (this.combatEnabled && this.localAlive && this.weapon.getActive() === 'knife') {
-      this.viewmodel.equip('knife');
+    if (this.combatEnabled && this.localAlive && isMeleeWeapon(this.weapon.getActive())) {
+      this.viewmodel.equip(this.weapon.getActive());
     }
     this.menu?.setVisible(false);
     this.setCrosshairVisible(this.playing && this.debugCameraMode === 'firstPerson');
@@ -2719,7 +2735,7 @@ export class GameApp {
       },
       fire: () => {
         const now = performance.now();
-        if (this.weapon.getActive() === 'knife') this.attackCombatKnife('primary', now);
+        if (isMeleeWeapon(this.weapon.getActive())) this.attackCombatKnife('primary', now);
         else this.fireCombatWeapon(now);
       },
       stab: () => this.attackCombatKnife('secondary', performance.now()),
@@ -2745,8 +2761,11 @@ export class GameApp {
   /** screen pixel ratio (capped by the preset) x the resolution scale setting x the adaptive scale */
   private applyRenderScale(): void {
     const adaptive = this.settings.adaptiveResolution ? this.adaptiveResolution.getScale() : 1;
-    const screen = Math.min(this.shot?.dpr ?? (window.devicePixelRatio || 1), 2, this.quality.maxPixelRatio);
-    const ratio = this.shot?.pixelRatio ?? Math.round(screen * this.settings.renderScale * adaptive * 100) / 100;
+    const density = this.renderDensity();
+    // a scale over 1 supersamples, up to 3 drawing buffer pixels per css pixel
+    const ratio = this.shot?.pixelRatio ?? Math.min(3, Math.round(density * adaptive * 100) / 100);
+    const preset = this.pipelinePreset(density);
+    if (preset !== this.pipeline.getPreset()) this.pipeline.setPreset(preset);
     if (Math.abs(ratio - this.renderer.getPixelRatio()) < 1e-3) {
       this.syncPipelineSize();
       return;
@@ -2760,6 +2779,28 @@ export class GameApp {
     const size = this.renderer.getDrawingBufferSize(new Vector2());
     this.pipeline.setSize(size.x, size.y);
     this.combatEffects?.setResolution(size.x, size.y);
+  }
+
+  /** drawing buffer pixels per css pixel before adaptive resolution: the screen's (capped) x the scale setting */
+  private renderDensity(): number {
+    if (this.shot?.pixelRatio) return this.shot.pixelRatio;
+    return Math.min(this.shot?.dpr ?? (window.devicePixelRatio || 1), 2, this.quality.maxPixelRatio) * this.settings.renderScale;
+  }
+
+  /**
+   * the preset as the pipeline runs it. on a dense screen (retina) the msaa
+   * resolve about halves the frame rate (measured on an m5 at 2880x1800) and the
+   * small pixels hide the edges anyway, so high takes fxaa and ultra 4x there
+   * unless the player picked an anti-aliasing mode. `density` leaves the
+   * adaptive scale out so a resolution drop can't bring the msaa back.
+   */
+  private pipelinePreset(density: number): QualityPreset {
+    const q = this.quality;
+    if (q.msaa === 0 || density < 1.75 || this.settings.graphics.antiAliasing !== 'preset') return q;
+    const msaa = q.level === 'ultra' ? Math.min(q.msaa, 4) : 0;
+    if (msaa === q.msaa) return q;
+    if (this.densePreset?.base !== q) this.densePreset = { base: q, preset: { ...q, msaa, fxaa: msaa === 0 } };
+    return this.densePreset.preset;
   }
 
   /**
@@ -2797,19 +2838,32 @@ export class GameApp {
   /** picks the preset from the setting (or the gpu on auto) and pushes it everywhere */
   private applyQuality(): void {
     const setting = this.shot?.quality ?? this.settings.graphicsQuality;
-    const next = resolveQuality(setting, readRendererName(this.renderer));
-    const changed = next !== this.quality;
+    const level = setting === 'auto' && this.autoFallback ? 'medium' : setting;
+    const next = resolveQuality(level, readRendererName(this.renderer), this.settings.graphics);
+    const changed = presetKey(next) !== presetKey(this.quality);
     this.quality = next;
-    this.pipeline.setPreset(next);
+    this.pipeline.setPreset(this.pipelinePreset(this.renderDensity()));
     this.mapEnvironment.setQuality(next);
     this.combatEffects?.setQuality(next);
     this.viewmodelRenderer.setQuality(next);
     // characters switch to their lighter lods sooner on the lighter presets (a dev ?chardetail wins)
-    if (!parseDevCharacters(window.location.search)?.detail) setCharacterDetail(next.level);
+    if (!parseDevCharacters(window.location.search)?.detail) setCharacterDetail(next.level === 'ultra' ? 'high' : next.level);
     if (changed) {
       this.adaptiveResolution.reset();
     }
     this.applyRenderScale();
+  }
+
+  /**
+   * auto picked high but the gpu can't hold it: adaptive resolution had to drop
+   * two steps, so auto settles on balanced for the rest of the session
+   */
+  private maybeFallBackFromAuto(): void {
+    const auto = (this.shot?.quality ?? this.settings.graphicsQuality) === 'auto';
+    if (!auto || this.autoFallback || this.quality.level === 'medium' || this.quality.level === 'low') return;
+    if (this.adaptiveResolution.getScale() > 0.71) return;
+    this.autoFallback = true;
+    this.applyQuality();
   }
 
   private async runShot(shot: ShotRequest): Promise<void> {
@@ -2863,7 +2917,66 @@ export class GameApp {
       }
     }
     await this.spawnDevCharacters();
+    await this.viewmodel.armsReady();
     this.viewmodel.seek(shot.clip as ViewAction, shot.t);
+    // tools: scrub clips in one page load (filmstrips)
+    (window as unknown as { __vmSeek?: (clip: string, t: number) => void }).__vmSeek = (clip, t) => this.viewmodel.seek(clip as ViewAction, t);
+    (window as unknown as { __vmProbe?: () => unknown }).__vmProbe = () => this.viewmodel.probe(this.viewmodelRenderer.camera);
+    (window as unknown as { __vmSetPose?: (name: string, g: number[], b: number[], s: number[], pole?: number[]) => void }).__vmSetPose =
+      (name, g, b, s, pole) => this.viewmodel.debugSetKnifePose(name, g, b, s, pole);
+    (window as unknown as { __vmSetHand?: (name: string, f: number[], k: number[], b: number[], pole?: number[]) => void }).__vmSetHand =
+      (name, f, k, b, pole) => this.viewmodel.debugSetHandPose(name, f, k, b, pole);
+    (window as unknown as { __vmSetLeft?: (f: number[] | null, k?: number[], b?: number[], pole?: number[], open?: number) => void }).__vmSetLeft =
+      (f, k, b, pole, open) => this.viewmodel.debugSetLeftFist(f, k, b, pole, open);
+    (window as unknown as { __vmHideLeft?: (hidden: boolean) => void }).__vmHideLeft = (hidden) => this.viewmodel.debugHideLeft(hidden);
+    (window as unknown as { __vmFov?: (fov: number) => void }).__vmFov = (fov) => this.viewmodelRenderer.setFov(fov);
+    // tools: the viewmodel's silhouette (1 = arm or knife), rows top to bottom
+    let maskTarget: WebGLRenderTarget | null = null;
+    const maskBits = (w: number, h: number): Uint8Array => {
+      if (!maskTarget || maskTarget.width !== w || maskTarget.height !== h) {
+        maskTarget?.dispose();
+        maskTarget = new WebGLRenderTarget(w, h);
+      }
+      const vm = this.viewmodelRenderer;
+      const background = vm.scene.background;
+      const clearColor = this.renderer.getClearColor(new Color());
+      const clearAlpha = this.renderer.getClearAlpha();
+      vm.scene.background = null;
+      this.renderer.setRenderTarget(maskTarget);
+      this.renderer.setClearColor(0x000000, 0);
+      this.renderer.clear();
+      this.renderer.render(vm.scene, vm.camera);
+      const px = new Uint8Array(w * h * 4);
+      this.renderer.readRenderTargetPixels(maskTarget, 0, 0, w, h, px);
+      this.renderer.setRenderTarget(null);
+      this.renderer.setClearColor(clearColor, clearAlpha);
+      vm.scene.background = background;
+      const out = new Uint8Array(w * h);
+      for (let y = 0; y < h; y += 1) {
+        for (let x = 0; x < w; x += 1) out[y * w + x] = px[((h - 1 - y) * w + x) * 4 + 3] > 0 ? 1 : 0;
+      }
+      return out;
+    };
+    (window as unknown as { __vmMaskBits?: (w: number, h: number) => Uint8Array }).__vmMaskBits = maskBits;
+    (window as unknown as { __vmKnifeBits?: (w: number, h: number) => Uint8Array }).__vmKnifeBits = (w, h) => {
+      this.viewmodel.debugShowParts('all', false);
+      const knife = maskBits(w, h);
+      this.viewmodel.debugShowParts('all', true);
+      return knife;
+    };
+    // tools: 3 where the blade steel shows, 2 the rest of the knife, 1 the arms, 0 nothing
+    (window as unknown as { __vmPartBits?: (w: number, h: number) => Uint8Array }).__vmPartBits = (w, h) => {
+      this.viewmodel.debugShowParts('blade', false);
+      const blade = maskBits(w, h).slice();
+      this.viewmodel.debugShowParts('all', false);
+      const knife = maskBits(w, h).slice();
+      this.viewmodel.debugShowParts('none', true);
+      const arms = maskBits(w, h);
+      this.viewmodel.debugShowParts('all', true);
+      for (let i = 0; i < arms.length; i += 1) arms[i] = blade[i] ? 3 : knife[i] ? 2 : arms[i];
+      return arms;
+    };
+    (window as unknown as { __vmMask?: (w: number, h: number) => string }).__vmMask = (w, h) => maskBits(w, h).join('');
     if (shot.gripCheck) {
       (window as unknown as { __gripReport?: unknown }).__gripReport = await runGripCheck(this.viewmodel, shot.gripStep);
       (window as unknown as { __shotReady?: boolean }).__shotReady = true;
@@ -2947,6 +3060,12 @@ export class GameApp {
       case 'sound:knife_catch':
         this.audio.play('weaponDraw', { volume: 0.5 });
         break;
+      case 'sound:katana_draw':
+        this.audio.play('katanaDraw');
+        break;
+      case 'sound:katana_flourish':
+        this.audio.play('katanaSwing', { volume: 0.4 });
+        break;
       default:
         break;
     }
@@ -2976,16 +3095,18 @@ export class GameApp {
 
   private handleHitFeedback(event: HitEvent): void {
     const localId = this.multiplayer.getLocalId();
-    if (event.weaponId === 'knife') {
-      const heavy = event.damage >= KNIFE_DAMAGE.primaryBackstab;
+    if (isMeleeWeapon(event.weaponId as WeaponId)) {
+      const katana = event.weaponId === 'katana';
+      const heavy = event.damage >= meleeStats(event.weaponId as MeleeWeaponId).damage.primaryBackstab;
+      const sound = heavy ? 'backstab' : katana ? 'katanaHit' : 'knifeHitFlesh';
       if (event.shooterId === localId) {
-        this.audio.play(heavy ? 'backstab' : 'knifeHitFlesh');
+        this.audio.play(sound);
       } else if (event.targetId === localId) {
-        this.audio.play(heavy ? 'backstab' : 'knifeHitFlesh', { volume: 0.8 });
+        this.audio.play(sound, { volume: 0.8 });
       } else {
         const at = this.remoteChestPosition(event.targetId);
         if (at) {
-          this.audio.playAt(heavy ? 'backstab' : 'knifeHitFlesh', at);
+          this.audio.playAt(sound, at);
         }
       }
     }
@@ -2993,7 +3114,7 @@ export class GameApp {
       return;
     }
     // firearm hits already got a precise arc from the shot event just before
-    if (event.weaponId !== 'knife' && performance.now() - this.lastShotDirectionAtMs < 150) {
+    if (!isMeleeWeapon(event.weaponId as WeaponId) && performance.now() - this.lastShotDirectionAtMs < 150) {
       return;
     }
     const attacker = this.remoteChestPosition(event.shooterId);
@@ -3033,7 +3154,8 @@ export class GameApp {
     }
     const origin = this.movement.getCameraPosition();
     const forward = this.movement.getForwardVector();
-    const reach = KNIFE_RANGE_M[kind] + 0.35;
+    const held = this.weapon.getActive();
+    const reach = meleeStats(isMeleeWeapon(held) ? held : 'knife').range[kind] + 0.35;
     const hit = this.collisionWorld.raycastGeometry(origin, forward, reach);
     if (!hit) {
       return;
@@ -3048,12 +3170,14 @@ export class GameApp {
       return distance < hit.distance + 0.5 && (dx * forward.x + dz * forward.z) / Math.max(distance, 1e-3) > 0.7;
     });
     if (!playerInWay) {
-      this.audio.playAt('knifeHitWall', hit.point, { delay: kind === 'primary' ? 0.09 : 0.16 });
+      // the knife's stab only reaches the wall with the thrust, ~0.13 s in
+      const delay = kind === 'primary' ? 0.09 : held === 'katana' ? 0.16 : 0.13;
+      this.audio.playAt('knifeHitWall', hit.point, { delay });
     }
   }
 
   private maybeDryFire(weaponId: WeaponId, ammoRemaining: number, nowMs: number): void {
-    if (weaponId === 'knife' || ammoRemaining > 0 || nowMs - this.lastDryFireAtMs < 250) {
+    if (isMeleeWeapon(weaponId) || ammoRemaining > 0 || nowMs - this.lastDryFireAtMs < 250) {
       return;
     }
     this.lastDryFireAtMs = nowMs;

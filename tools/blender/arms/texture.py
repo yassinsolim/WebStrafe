@@ -1,15 +1,22 @@
-"""texel space procedural textures for the glove, skin and sleeve atlas.
+"""texel space procedural textures for the cyborg arms atlas.
 
-1. cycles bakes data maps of the packed atlas: position, smooth normal,
-   uv tangent and an object id, one texel = one surface point.
-2. numpy works out every texel's surface coordinates (panel side, distance
-   to seams, position along the finger, cuff angle...) from the same
-   analytic shape the mesh came from, and builds height, colour and
-   roughness from them. the glove normal comes from the sdf gradient so the
-   decimated mesh shades like the dense one.
-3. the height gradient bends that normal, the result is written as an
-   object space normal image and cycles re-bakes it to a tangent space map
-   (so it matches blender/gltf mikktspace exactly), plus an ao bake.
+1. cycles bakes data maps of the packed atlas: position, normal, uv tangent
+   and an object id, one texel = one surface point.
+2. numpy works out every texel's surface coordinates from the same analytic
+   shapes the meshes came from and builds a height and two masks:
+     muscle: corded synthetic fibres along the limb, flex ribs across the
+             wrist and finger joints, grip pads on the palm and finger pads
+     plates: an engraved panel line inset from the edge, faint casting grain,
+             the edge mask the runtime chips paint on
+     mech:   ribbed bands and wound cables
+   the base normal is the gradient of the piece's own sdf, so the decimated
+   meshes shade like the dense ones (chamfers stay crisp).
+3. the height gradient bends that normal, the object space result is
+   re-baked by cycles to a tangent space map (mikktspace exact), and ao is
+   baked per kit (each kit against the core and itself, never the others).
+
+outputs two images: arms_normal (tangent space) and arms_orm (r ao, g
+roughness detail around 0.5, b edge wear), read by src/characters/fpArmor.ts.
 """
 
 import math
@@ -19,7 +26,7 @@ import bpy
 import numpy as np
 
 import arm as A
-import materials as MAT
+import kits as K
 import params as P
 import sdf
 
@@ -52,7 +59,7 @@ def value_noise(p, scale, seed=0):
     return out
 
 
-def fbm(p, scale, octaves=4, seed=0, gain=0.5):
+def fbm(p, scale, octaves=3, seed=0, gain=0.5):
     out = np.zeros(len(p))
     amp = 1.0
     total = 0.0
@@ -69,25 +76,159 @@ def smoothstep(e0, e1, x):
 
 
 def line(d, width):
-    """soft line profile, 1 on the line, 0 beyond width"""
     return np.exp(-(d / width) ** 2)
 
 
-def dashes(along, period, duty=0.62, soft=0.12):
-    """0..1 stitch dashes along a coordinate"""
-    ph = np.mod(along / period, 1.0)
-    return smoothstep(0.0, soft, ph) * (1.0 - smoothstep(duty - soft, duty, ph))
+# ---------------------------------------------------------------- surfaces
+def fibres(along, across, p, seed=0):
+    """(height, cord mask) of corded synthetic muscle running along `along`"""
+    warp = 0.12 * (fbm(p, 2.0, 2, seed=seed) - 0.5)
+    c = across + warp
+    cord = np.abs(np.sin(math.pi * c / 0.5))
+    h = 0.026 * (np.power(cord, 0.5) - 0.64)
+    # faint straight striations inside each cord
+    h += 0.0014 * np.sin(2 * math.pi * c / 0.11)
+    # cords pinch slightly every so often like bundled cable
+    h += 0.003 * np.sin(2 * math.pi * along / 1.3 + 4.0 * value_noise(p, 1.2, seed + 7))
+    return h, cord
 
 
-def stitch(d_signed, offset, along, period=0.29, width=0.028):
-    """(height, mask) of a row of stitches running at d = offset"""
-    across = np.abs(d_signed - offset)
-    m = line(across, width) * dashes(along, period)
-    return m, m
+def ribs(t, centre, half, period=0.12, depth=0.014):
+    """flex ribs across a joint: ridges around the limb within +-half of centre"""
+    w = 1.0 - smoothstep(half * 0.6, half, np.abs(t - centre))
+    return depth * (np.abs(np.sin(math.pi * (t - centre) / period)) - 0.5) * w, w
 
 
-def srgb(c):
-    return np.array(MAT.srgb_to_linear(c))
+def grip_pads(a, b, cell=0.3):
+    """raised rounded square pads in a grid"""
+    fa = np.mod(a / cell, 1.0) - 0.5
+    fb = np.mod(b / cell, 1.0) - 0.5
+    d = np.maximum(np.abs(fa), np.abs(fb))
+    return smoothstep(0.36, 0.28, d)
+
+
+def _chain(p, pts):
+    """closest segment index and arc length along a joint chain"""
+    best = np.full(len(p), np.inf)
+    seg = np.zeros(len(p), dtype=np.int64)
+    t_out = np.zeros(len(p))
+    acc = 0.0
+    lens = []
+    for i in range(len(pts) - 1):
+        a, b = pts[i], pts[i + 1]
+        ab = b - a
+        L = float(np.linalg.norm(ab))
+        lens.append(L)
+        t = np.clip(((p - a) @ ab) / (L * L), 0.0, 1.0)
+        d = np.linalg.norm(p - (a + np.outer(t, ab)), axis=1)
+        better = d < best
+        best = np.where(better, d, best)
+        seg = np.where(better, i, seg)
+        t_out = np.where(better, acc + t * L, t_out)
+        acc += L
+    return seg, t_out, lens
+
+
+def muscle_surface(p, n, parts=None):
+    """height and roughness detail of the muscle suit (hand frame cm)"""
+    if parts is None:
+        _, parts = K.SUIT.fields(p, want_parts=True)
+    names = list(parts.keys())
+    which = np.argmin(np.stack([parts[k] for k in names], axis=1), axis=1)
+    h = np.zeros(len(p))
+    rough = np.full(len(p), 0.5)
+
+    # forearm and wrist: fibres along the arm, flex ribs over the wrist joint
+    s = -p[:, 1]
+    half_w, top, bot, _ = A.core_section(np.clip(s, -2.0, 60.0))
+    theta = np.arctan2(p[:, 2] - (top + bot) * 0.5, p[:, 0])
+    across = theta * (half_w + (top - bot) * 0.5) * 0.5
+    ha, cord = fibres(s, across, p, seed=11)
+    rib, rw = ribs(s, 0.0, 1.35, period=0.15, depth=0.016)
+    arm_h = ha * (1 - rw) + rib
+    arm_r = 0.5 - 0.1 * cord * (1 - rw) + 0.08 * rw
+
+    # back of the hand: fibres towards the knuckles; palm: grip pads
+    palm_side = smoothstep(0.1, 0.5, -n[:, 2])
+    hh, hcord = fibres(p[:, 1], p[:, 0], p, seed=13)
+    pads = grip_pads(p[:, 0] + 0.07 * p[:, 1], p[:, 1] - 0.07 * p[:, 0])
+    hand_h = hh * (1 - palm_side) + palm_side * (0.012 * pads - 0.006)
+    hand_r = (0.5 - 0.1 * hcord) * (1 - palm_side) + palm_side * (0.62 + 0.1 * pads)
+
+    out_h = np.where(np.isin(which, [names.index("arm")]), arm_h, hand_h)
+    out_r = np.where(np.isin(which, [names.index("arm")]), arm_r, hand_r)
+
+    # digits: fibres along each segment, ribs over every joint, pads underneath
+    for digit in P.FINGER_ORDER + ("thumb",):
+        sel = which == names.index(digit)
+        if not sel.any():
+            continue
+        q = p[sel]
+        segs = K.digit_segments(digit)
+        pts = [segs[0][0]] + [sg[1] for sg in segs]
+        si, t, lens = _chain(q, pts)
+        dors = np.stack([segs[i][4] for i in si])
+        side = np.stack([segs[i][5] for i in si])
+        a = np.stack([segs[i][0] for i in si])
+        rel = q - a
+        ang = np.arctan2(np.sum(rel * side, axis=1), np.sum(rel * dors, axis=1))
+        r = segs[0][2]
+        dh, dc = fibres(t, ang * r * 0.8, q, seed=17)
+        jh = np.zeros(len(q))
+        jw = np.zeros(len(q))
+        acc = 0.0
+        for L in lens[:-1]:
+            acc += L
+            rb, w = ribs(t, acc, 0.42, period=0.1, depth=0.012)
+            jh += rb
+            jw = np.maximum(jw, w)
+        under = smoothstep(0.35, 0.75, -np.sum(n[sel] * dors, axis=1))
+        fp = grip_pads(t, ang * r, cell=0.22)
+        hd = (dh * (1 - jw) + jh) * (1 - under) + under * (0.01 * fp - 0.005)
+        rd = (0.5 - 0.1 * dc) * (1 - under) + under * (0.64 + 0.08 * fp)
+        out_h[sel] = hd
+        out_r[sel] = rd
+    out_r += 0.06 * (fbm(p, 0.7, 2, seed=19) - 0.5)
+    return out_h, out_r
+
+
+def upper_surface(p):
+    s = -p[:, 1]
+    half_w, top, bot, _ = A.core_section(s)
+    theta = np.arctan2(p[:, 2] - (top + bot) * 0.5, p[:, 0])
+    h, cord = fibres(s, theta * (half_w + (top - bot) * 0.5) * 0.5, p, seed=21)
+    # the raised lip where the upper arm sleeve starts
+    lip, _ = ribs(s, P.ARM_SDF_END_S - 0.1, 0.5, period=0.1, depth=0.01)
+    return h + lip, 0.5 - 0.1 * cord
+
+
+def plate_surface(pc, p):
+    """(height, roughness detail, edge mask) of a plate"""
+    f = pc.foot(p)
+    edge = smoothstep(-0.1, 0.0, f)
+    big = pc.rig == "arm" or "hand" in pc.name or pc.name == "anvil_knuckles"
+    h = 0.0015 * (value_noise(p, 0.06, seed=31) - 0.5)
+    r = 0.5 + 0.12 * (fbm(p, 0.8, 3, seed=33) - 0.5)
+    if big:
+        groove = line(f + 0.3, 0.022)
+        h = h - 0.02 * groove
+        r = r + 0.12 * groove
+    else:
+        # small plates: a soft ridge along the middle catches light
+        h = h + 0.004 * smoothstep(-0.05, -0.25, f)
+    return h, r, edge
+
+
+def mech_surface(pc, p):
+    s = -p[:, 1]
+    if pc.name == "wrist_band":
+        h = 0.007 * np.abs(np.sin(math.pi * s / 0.09))
+        return h, np.full(len(p), 0.45)
+    # wound cable: a fine helix
+    half_w, top, bot, _ = A.core_section(np.clip(s, 0.0, 40.0))
+    theta = np.arctan2(p[:, 2] - (top + bot) * 0.5, p[:, 0])
+    h = 0.006 * np.sin(2 * math.pi * (s / 0.09) + theta * 8.0)
+    return h, np.full(len(p), 0.5)
 
 
 # ---------------------------------------------------------------- baking
@@ -136,15 +277,16 @@ def _emission(nt, color_socket):
     return em.outputs["Emission"]
 
 
-def _bake(objs, mat, bake_type, samples=1, device=None, **kw):
+def _bake(objs, mats, bake_type, samples=1, device=None, **kw):
+    """bakes objs (each with its own material from mats, or one shared)"""
     scene = bpy.context.scene
     prev_device = scene.cycles.device
     if device is not None:
         scene.cycles.device = device
     saved = {o.name: list(o.data.materials) for o in objs}
-    for o in objs:
+    for k, o in enumerate(objs):
         o.data.materials.clear()
-        o.data.materials.append(mat)
+        o.data.materials.append(mats[k] if isinstance(mats, list) else mats)
     bpy.ops.object.select_all(action="DESELECT")
     for o in objs:
         o.select_set(True)
@@ -161,7 +303,6 @@ def _bake(objs, mat, bake_type, samples=1, device=None, **kw):
 
 
 def bake_data_maps(objs, size, bmin, bsize):
-    """position (encoded 0..1 in bmin/bsize), normal, tangent, object id, coverage"""
     maps = {}
 
     def build_pos(nt):
@@ -185,8 +326,7 @@ def bake_data_maps(objs, size, bmin, bsize):
         return _emission(nt, ma.outputs[0])
 
     def build_nrm(nt):
-        geo = nt.nodes.new("ShaderNodeNewGeometry")
-        return encode(nt, geo.outputs["Normal"])
+        return encode(nt, nt.nodes.new("ShaderNodeNewGeometry").outputs["Normal"])
 
     def build_tan(nt):
         tg = nt.nodes.new("ShaderNodeTangent")
@@ -201,26 +341,25 @@ def bake_data_maps(objs, size, bmin, bsize):
         maps[key] = _read(img)
         bpy.data.materials.remove(mat)
 
-    # object id: one bake per object into the same image, colour = id
+    # object ids in one pass: every object emits its own index
     img = _float_image("bake_id", size)
-    ident = np.zeros((size, size), dtype=np.int32)
-    for k, o in enumerate(objs):
+    id_mats = []
+    for k in range(len(objs)):
         def build_id(nt, k=k):
             rgb = nt.nodes.new("ShaderNodeRGB")
-            rgb.outputs[0].default_value = (1.0, 1.0, 1.0, 1.0)
+            rgb.outputs[0].default_value = ((k + 1) / 1024.0, 1.0, 0.0, 1.0)
             return _emission(nt, rgb.outputs[0])
-        mat = _bake_material("bake_id_mat", img, build_id)
-        _bake([o], mat, "EMIT")
-        px = _read(img)
-        ident[(px[..., 0] > 0.5) & (px[..., 3] > 0.5)] = k + 1
-        bpy.data.materials.remove(mat)
-    maps["id"] = ident
+        id_mats.append(_bake_material(f"bake_id_mat{k}", img, build_id))
+    _bake(objs, id_mats, "EMIT")
+    px = _read(img)
+    maps["id"] = np.where(px[..., 1] > 0.5, np.rint(px[..., 0] * 1024.0).astype(np.int32), 0)
+    for m in id_mats:
+        bpy.data.materials.remove(m)
     return maps
 
 
 def dilate(arr, mask, levels=None):
-    """pull-push fill: empty texels get a smooth blend of the nearest covered
-    ones, so mips and bilinear filtering never pull black into the islands"""
+    """pull-push fill so mips and filtering never pull black into the islands"""
     a = np.asarray(arr, dtype=np.float32)
     flat = a.ndim == 2
     if flat:
@@ -240,7 +379,6 @@ def dilate(arr, mask, levels=None):
         wt = wt.reshape(hh // 2, 2, ww // 2, 2).sum(axis=(1, 3))
         vals.append(v)
         wts.append(wt)
-    # normalized colour per level, then push the coarse colour into empty texels
     filled = vals[-1] / np.maximum(wts[-1], 1e-6)[..., None]
     for k in range(len(vals) - 2, -1, -1):
         up = np.repeat(np.repeat(filled, 2, axis=0), 2, axis=1)
@@ -251,443 +389,29 @@ def dilate(arr, mask, levels=None):
     return out[..., 0] if flat else out
 
 
-# ---------------------------------------------------------------- glove
-GLOVE_BLACK = srgb((0.125, 0.13, 0.135))
-GLOVE_CUFF = srgb((0.11, 0.115, 0.12))
-PALM_GREY = srgb((0.35, 0.355, 0.36))
-PAD_GREY = srgb((0.3, 0.305, 0.31))
-PATCH_GREY = srgb((0.24, 0.245, 0.25))
-STRAP_BLACK = srgb((0.165, 0.17, 0.175))
-TAB_RUBBER = srgb((0.085, 0.085, 0.09))
-THREAD_DARK = srgb((0.17, 0.17, 0.175))
-THREAD_LIGHT = srgb((0.27, 0.275, 0.28))
+def _byte_image(name, rgba_linear, colorspace):
+    h, w = rgba_linear.shape[:2]
+    img = bpy.data.images.new(name, w, h, alpha=False, float_buffer=False)
+    img.colorspace_settings.name = colorspace
+    data = np.clip(rgba_linear, 0, 1).astype(np.float64)
+    data[..., 3] = 1.0
+    img.pixels.foreach_set(data.astype(np.float32).ravel())
+    img.filepath_raw = os.path.join(TEX_DIR, f"{name}.png")
+    img.file_format = "PNG"
+    img.save()
+    return img
 
 
-class GloveGeo:
-    """surface coordinates of glove texels (hand frame, cm)"""
-
-    def __init__(self, shape):
-        self.shape = shape
-        self.fingers = {}
-        for name in P.FINGER_ORDER:
-            pts, axis = P.finger_chain(name)
-            dors = []
-            for i in range(3):
-                u = P.normalize(pts[i + 1] - pts[i])
-                dors.append(P.normalize(np.cross(u, axis)))
-            self.fingers[name] = dict(pts=pts, dors=dors, axis=axis, radii=P.finger_radii(name))
-        tpts, tpads, taxis = P.thumb_chain()
-        self.thumb = dict(pts=tpts, dors=[-np.asarray(x) for x in tpads], axis=taxis, radii=list(P.THUMB["r"]))
-
-    @staticmethod
-    def chain_coords(p, pts, dors, radii):
-        """closest point on the chain: arc length t, cos to the dorsal dir,
-        signed side (along the flex axis), local radius"""
-        best = np.full(len(p), np.inf)
-        t_out = np.zeros(len(p))
-        c_out = np.zeros(len(p))
-        s_out = np.zeros(len(p))
-        r_out = np.zeros(len(p))
-        acc = 0.0
-        for i in range(len(pts) - 1):
-            a, b = pts[i], pts[i + 1]
-            ab = b - a
-            L = float(np.linalg.norm(ab))
-            u = ab / L
-            raw = ((p - a) @ ab) / (L * L)
-            lo = -np.inf if i == 0 else 0.0
-            hi = np.inf if i == len(pts) - 2 else 1.0
-            t = np.clip(raw, lo, hi)
-            q = a + np.outer(np.clip(t, 0, 1), ab)
-            rel = p - q
-            d = np.linalg.norm(rel, axis=1)
-            better = d < best - 1e-9
-            dirn = rel / np.maximum(d, 1e-9)[:, None]
-            side_axis = np.cross(dors[i], u)
-            best = np.where(better, d, best)
-            t_out = np.where(better, acc + t * L, t_out)
-            c_out = np.where(better, dirn @ dors[i], c_out)
-            s_out = np.where(better, dirn @ side_axis, s_out)
-            r_out = np.where(better, radii[i] + (radii[i + 1] - radii[i]) * np.clip(t, 0, 1), r_out)
-            acc += L
-        return t_out, c_out, s_out, r_out, acc
-
-    def context(self, p):
-        sh = self.shape
-        _, parts = sh.glove_fields(p, want_parts=True)
-        names = list(parts.keys())
-        D = np.stack([parts[n] for n in names], axis=1)
-        D = D - D.min(axis=1, keepdims=True)
-        Wt = np.exp(-D / 0.22)
-        Wt /= Wt.sum(axis=1, keepdims=True)
-        w = {n: Wt[:, i] for i, n in enumerate(names)}
-        ctx = {"w": w, "p": p}
-        x, y, z = p[:, 0], p[:, 1], p[:, 2]
-        top, bot = sh.palm_top(x, y), sh.palm_bot(x, y)
-        half = np.maximum((top - bot) * 0.5, 0.5)
-        c_palm = np.clip((z - (top + bot) * 0.5) / half, -1, 1)
-        c = w["palm"] * c_palm
-        scale = w["palm"] * half
-        along = w["palm"] * y
-        dom = np.argmax(Wt, axis=1)
-        fing = {}
-        for n in P.FINGER_ORDER:
-            f = self.fingers[n]
-            t, cf, sf, rf, L = self.chain_coords(p, f["pts"], f["dors"], f["radii"])
-            fing[n] = dict(t=t, c=cf, side=sf, r=rf, L=L)
-            c = c + w[n] * cf
-            scale = scale + w[n] * rf
-        th = self.thumb
-        t, cf, sf, rf, L = self.chain_coords(p, th["pts"], th["dors"], th["radii"])
-        fing["thumb"] = dict(t=t, c=cf, side=sf, r=rf, L=L)
-        c = c + w["thumb"] * cf
-        scale = scale + w["thumb"] * rf
-        # thenar: palm side of the thumb metacarpal
-        c = c + w["thenar"] * np.minimum(cf, -0.2)
-        scale = scale + w["thenar"] * 1.3
-        c = c + w["cuff"] * 1.0
-        scale = scale + w["cuff"] * 1.0
-        ctx.update(c=c, scale=scale, fing=fing, dom=dom, names=names)
-        ctx["seam"] = c * scale  # signed geodesic-ish distance to the side seam, <0 on the palm
-        # along coordinate for seam stitches from the dominant part
-        along_parts = {"palm": y, "thenar": fing["thumb"]["t"], "cuff": y, "thumb": fing["thumb"]["t"]}
-        for n in P.FINGER_ORDER:
-            along_parts[n] = fing[n]["t"]
-        al = np.zeros(len(p))
-        for i, n in enumerate(names):
-            al = np.where(dom == i, along_parts[n], al)
-        ctx["along"] = al
-        # pads, cuff and strap coordinates
-        ctx["kfoot"] = sh.knuckle_pad_foot(p)
-        ctx["kpar"] = self._polyline_param(p, sh.knuckle_line)
-        ctx["dorsal"] = z
-        ffoot = np.full(len(p), 1e3)
-        for n in P.FINGER_ORDER:
-            ffoot = np.minimum(ffoot, sh.finger_pad_foot(p, n))
-        ctx["ffoot"] = ffoot
-        theta = np.mod(sh.cuff_angle(p) + 2 * math.pi, 2 * math.pi)
-        ctx["theta"] = theta
-        d_rad = sh.sd_cuff_radial(p)
-        _, foot = sh.sd_strap(p, d_rad)
-        ctx["strap_foot"] = foot
-        t0, t1 = sh.STRAP_THETA
-        ctx["strap_u"] = (theta - (t0 + t1) * 0.5) * 2.95
-        ctx["strap_hu"] = (t1 - t0) * 0.5 * 2.95
-        return ctx
-
-    @staticmethod
-    def _polyline_param(p, pts2):
-        x, y = p[:, 0], p[:, 1]
-        best = np.full(len(p), np.inf)
-        par = np.zeros(len(p))
-        acc = 0.0
-        for i in range(len(pts2) - 1):
-            ax, ay = pts2[i]
-            bx, by = pts2[i + 1]
-            ex, ey = bx - ax, by - ay
-            L = math.hypot(ex, ey)
-            t = np.clip(((x - ax) * ex + (y - ay) * ey) / (L * L), -0.6 if i == 0 else 0.0, 1.6 if i == len(pts2) - 2 else 1.0)
-            dx, dy = x - (ax + ex * t), y - (ay + ey * t)
-            d = np.sqrt(dx * dx + dy * dy)
-            better = d < best
-            best = np.where(better, d, best)
-            par = np.where(better, acc + t * L, par)
-            acc += L
-        return par
-
-
-def glove_surface(geo, p, want_color=True):
-    ctx = geo.context(p)
-    w = ctx["w"]
-    x, y, z = p[:, 0], p[:, 1], p[:, 2]
-    n = len(p)
-    h = np.zeros(n)
-    seam = ctx["seam"]
-    along = ctx["along"]
-    cuff = smoothstep(0.35, -0.05, y)  # 1 on the cuff panel
-    hand = 1.0 - cuff
-
-    # ---- panels
-    palm_side = smoothstep(0.03, -0.03, seam) * hand
-    kfoot = ctx["kfoot"]
-    kpad = smoothstep(0.02, -0.02, kfoot) * smoothstep(0.1, 0.5, z) * hand
-    fpad = smoothstep(0.02, -0.02, ctx["ffoot"]) * hand * (1 - kpad)
-    # fingertip caps, curved on the back of the finger
-    tipcap = np.zeros(n)
-    tip_t = np.zeros(n)
-    for name in P.FINGER_ORDER + ("thumb",):
-        f = ctx["fing"][name]
-        cap_len = 1.35 if name != "thumb" else 1.45
-        tb = f["L"] - cap_len - 0.3 * (1 - f["c"])
-        wpart = w[name]
-        tipcap = np.maximum(tipcap, smoothstep(-0.02, 0.02, f["t"] - tb) * wpart)
-        tip_t = np.where(wpart > 0.5, f["t"] - tb, tip_t)
-    tipcap = tipcap * hand
-    # palm reinforcement patches (palm side, projected from above)
-    heel_poly = [(-0.6, 0.9), (3.6, 0.7), (4.9, 3.2), (5.25, 6.6), (3.3, 7.3), (0.9, 5.9), (-0.9, 3.1)]
-    saddle_poly = [(-4.8, 5.2), (-2.9, 5.9), (-1.7, 8.4), (-2.3, 10.2), (-3.7, 9.9), (-5.4, 7.9)]
-    d_heel = sdf.sd_polygon2(x, y, heel_poly)
-    d_sad = sdf.sd_polygon2(x, y, saddle_poly)
-    patch = np.maximum(smoothstep(0.02, -0.02, d_heel), smoothstep(0.02, -0.02, d_sad)) * smoothstep(0.1, -0.3, seam) * hand
-    d_patch = np.minimum(d_heel, d_sad)
-    # velcro strap on the cuff and its rubber tab
-    sfoot = ctx["strap_foot"]
-    strap = smoothstep(0.02, -0.02, sfoot) * smoothstep(-P.CUFF_END_S + 0.1, -P.CUFF_END_S + 0.35, y)
-    su = ctx["strap_u"]
-    hu = ctx["strap_hu"]
-    yc = -2.225
-    tab_q = np.maximum(np.abs(su - (hu - 1.15)) - 0.75, np.abs(y - yc) - 0.78)
-    tab = smoothstep(0.02, -0.02, tab_q) * strap
-
-    # ---- heights (cm)
-    # side seam groove with puckered edges, stitches on the palm panel side
-    sd = np.abs(seam)
-    h += (-0.03 * line(sd, 0.035) + 0.01 * line(sd - 0.08, 0.04)) * hand
-    st_side, _ = stitch(seam, -0.13, along)
-    st_mask = st_side * hand * (1 - kpad)
-    # wrist seam and cuff hem
-    dw = y - 0.12
-    h += -0.03 * line(dw, 0.035)
-    st_w, _ = stitch(y, 0.02, ctx["theta"] * 2.9)
-    st_mask = np.maximum(st_mask, st_w * cuff)
-    dh = y + P.CUFF_END_S - 0.3
-    st_hem1, _ = stitch(y, -P.CUFF_END_S + 0.22, ctx["theta"] * 2.9)
-    st_hem2, _ = stitch(y, -P.CUFF_END_S + 0.38, ctx["theta"] * 2.9 + 0.14)
-    st_mask = np.maximum(st_mask, np.maximum(st_hem1, st_hem2) * (1 - strap))
-    h += -0.012 * line(dh, 0.05) * (1 - strap)
-    # knuckle guard: border stitch, quilting grooves between the knuckles
-    kb = smoothstep(0.1, 0.5, z) * hand
-    h += -0.03 * line(kfoot, 0.03) * kb
-    st_k, _ = stitch(kfoot, -0.15, ctx["kpar"] * 1.0)
-    st_mask = np.maximum(st_mask, st_k * kb)
-    groove = np.zeros(n)
-    kl = geo.shape.knuckle_line
-    seglen = [math.hypot(*(kl[i + 1] - kl[i])) for i in range(len(kl) - 1)]
-    acc = 0.0
-    for L in seglen:
-        mid = acc + L * 0.5
-        groove = np.maximum(groove, line(ctx["kpar"] - mid, 0.05))
-        acc += L
-    groove = np.maximum(groove, line(kfoot + 0.55, 0.035) * 0.8)
-    h += -0.035 * groove * kpad
-    # finger pads
-    h += -0.025 * line(ctx["ffoot"], 0.03) * hand
-    st_f, _ = stitch(ctx["ffoot"], -0.12, (y + x) * 1.0)
-    st_mask = np.maximum(st_mask, st_f * hand * (1 - kpad))
-    h += -0.02 * line(ctx["ffoot"] + 0.38, 0.03) * fpad
-    # fingertip cap seam on the back, stitched
-    h += -0.025 * line(tip_t, 0.03) * hand * smoothstep(-0.4, 0.1, seam)
-    st_t, _ = stitch(tip_t, 0.12, ctx["seam"] * 1.0 + x * 0.3)
-    st_mask = np.maximum(st_mask, st_t * hand * smoothstep(-0.3, 0.2, seam))
-    # palm patches: raised with a stitched border
-    h += 0.02 * patch - 0.02 * line(d_patch, 0.03) * smoothstep(0.1, -0.3, seam) * hand
-    st_p, _ = stitch(d_patch, -0.13, (x - y) * 1.0)
-    st_mask = np.maximum(st_mask, st_p * smoothstep(0.1, -0.3, seam) * hand)
-    # strap: raised border stitch and ridged rubber tab
-    st_s, _ = stitch(sfoot, -0.15, su + y)
-    st_mask = np.maximum(st_mask, st_s * strap * (1 - tab))
-    h += 0.025 * tab + 0.008 * np.sin(su * 2 * math.pi / 0.13) * tab
-    h += -0.02 * line(sfoot, 0.03) * smoothstep(-3.9, -3.6, y)
-
-    # joint wrinkles on the back of the fingers, flex creases on the palm side
-    wr = np.zeros(n)
-    for name in P.FINGER_ORDER + ("thumb",):
-        f = ctx["fing"][name]
-        if name == "thumb":
-            L = [np.linalg.norm(geo.thumb["pts"][i + 1] - geo.thumb["pts"][i]) for i in range(3)]
-        else:
-            L = [np.linalg.norm(geo.fingers[name]["pts"][i + 1] - geo.fingers[name]["pts"][i]) for i in range(3)]
-        joints = [L[0], L[0] + L[1]]
-        wp = w[name] * hand
-        dors = smoothstep(0.05, 0.5, f["c"])
-        palm_c = smoothstep(-0.1, -0.5, f["c"])
-        bend = 0.12 * (1 - f["c"])
-        for tj in joints:
-            for off, depth in ((-0.24, 0.6), (-0.06, 1.0), (0.14, 0.8), (0.32, 0.45)):
-                wr += depth * line(f["t"] - tj - off - bend, 0.03) * dors * wp
-            wr += 1.3 * line(f["t"] - tj, 0.035) * palm_c * wp
-        # crease where the finger meets the palm
-        wr += 1.1 * line(f["t"] - 0.95, 0.04) * palm_c * wp * (0.0 if name == "thumb" else 1.0)
-    h += -0.02 * wr
-    # palm creases through the leather
-    creases = [
-        [(-3.0, 9.35), (-1.0, 8.9), (1.5, 8.45), (3.5, 8.15), (5.3, 7.95)],
-        [(-3.5, 7.3), (-1.2, 7.35), (1.6, 6.7), (4.0, 5.7)],
-        [(-2.3, 8.3), (-1.4, 6.1), (-0.9, 3.6), (-0.7, 1.3)],
-    ]
-    cr = np.zeros(n)
-    for pl in creases:
-        d = np.full(n, 1e3)
-        for (ax, ay), (bx, by) in zip(pl[:-1], pl[1:]):
-            ex, ey = bx - ax, by - ay
-            t = np.clip(((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey), 0, 1)
-            d = np.minimum(d, np.hypot(x - ax - ex * t, y - ay - ey * t))
-        cr = np.maximum(cr, line(d, 0.05))
-    h += -0.02 * cr * palm_side * (1 - patch * 0.5)
-    # compression wrinkles on the back of the hand above the wrist seam
-    dorsal_hand = smoothstep(0.2, 0.6, ctx["c"]) * hand * (1 - kpad)
-    wob = 0.18 * np.sin(x * 1.3 + 0.7) + 0.08 * np.sin(x * 3.1)
-    for yc_, a_ in ((0.75, 1.0), (1.35, 0.8), (2.05, 0.55)):
-        h += -0.016 * a_ * line(y - yc_ - wob, 0.05) * dorsal_hand
-
-    # micro texture: pebbled leather on grey panels, knit wales on the back fabric
-    grey = np.clip(palm_side + kpad + fpad + tipcap + patch, 0, 1)
-    if want_color:
-        pebble = value_noise(p, 0.07, seed=3)
-    else:
-        pebble = value_noise(p, 0.07, seed=3)
-    h += 0.004 * (smoothstep(0.35, 0.75, pebble) - 0.5) * grey
-    knit = np.sin((x * 0.8 + z * 0.6) * 2 * math.pi / 0.11) * 0.5 + np.sin(y * 2 * math.pi / 0.16) * 0.5
-    fabric = (1 - grey) * (1 - strap)
-    h += 0.0025 * knit * fabric
-    h += 0.006 * (fbm(p, 0.6, 3, seed=5) - 0.5) * fabric
-    # stitch threads sit proud of the fabric
-    h += 0.011 * st_mask
-
-    if not want_color:
-        return h
-
-    # ---- colour and roughness
-    col = np.tile(GLOVE_BLACK, (n, 1))
-    col = col * (1 - cuff)[:, None] + GLOVE_CUFF * cuff[:, None]
-    col = col * (1 - palm_side)[:, None] + PALM_GREY * palm_side[:, None]
-    col = col * (1 - tipcap)[:, None] + PALM_GREY * tipcap[:, None]
-    col = col * (1 - patch)[:, None] + PATCH_GREY * patch[:, None]
-    col = col * (1 - kpad)[:, None] + PAD_GREY * kpad[:, None]
-    col = col * (1 - fpad)[:, None] + PAD_GREY * fpad[:, None]
-    col = col * (1 - strap)[:, None] + STRAP_BLACK * strap[:, None]
-    col = col * (1 - tab)[:, None] + TAB_RUBBER * tab[:, None]
-    thread = np.where(grey[:, None] > 0.5, THREAD_DARK, THREAD_LIGHT)
-    col = col * (1 - st_mask)[:, None] + thread * st_mask[:, None]
-    # slight wear: lighter on raised pads, dirt in grooves
-    grime = fbm(p, 1.2, 3, seed=9)
-    col *= (0.93 + 0.12 * grime)[:, None]
-    col *= (1.0 - 0.35 * np.clip(-h * 25, 0, 1))[:, None]
-    rough = 0.9 * fabric + 0.62 * grey + 0.7 * strap + 0.5 * tab
-    rough = rough / np.maximum(fabric + grey + strap + tab, 1e-6)
-    rough = np.clip(rough + 0.06 * (pebble - 0.5) + 0.1 * st_mask, 0.3, 1.0)
-    return h, col, rough
-
-
-# ---------------------------------------------------------------- skin
-SKIN_BASE = srgb((0.78, 0.59, 0.48))
-SKIN_INNER = srgb((0.84, 0.66, 0.56))
-
-
-def skin_surface(p, want_color=True):
-    s = -p[:, 1]
-    half_w, top, bot, n_ = P.forearm_section(s)
-    cz = (top + bot) * 0.5
-    theta = np.arctan2(p[:, 2] - cz, p[:, 0])
-    dorsal = np.sin(theta)
-    h = np.zeros(len(p))
-    # pores and fine skin lines
-    h += 0.003 * (value_noise(p, 0.05, seed=21) - 0.5)
-    h += 0.004 * (fbm(p, 0.35, 3, seed=22) - 0.5)
-    lines_ = np.sin((p[:, 0] * 0.7 + p[:, 1] * 0.3 + p[:, 2] * 0.64) * 2 * math.pi / 0.09)
-    h += 0.0015 * lines_
-    # a few veins on the back and thumb side of the forearm
-    veins = np.zeros(len(p))
-    for th0, drift, wob, w in ((1.35, 0.018, 0.12, 0.09), (2.2, -0.012, 0.1, 0.075), (0.75, 0.01, 0.09, 0.06)):
-        path = th0 + drift * s + wob * np.sin(s * 0.55 + th0 * 3.0)
-        dth = np.mod(theta - path + math.pi, 2 * math.pi) - math.pi
-        r = half_w * 0.9
-        veins = np.maximum(veins, line(dth * r, w) * smoothstep(1.0, 3.5, s) * (1 - smoothstep(12.0, 15.0, s)))
-    h += 0.018 * veins
-    if not want_color:
-        return h
-    t = smoothstep(-0.2, 0.9, -dorsal)
-    col = SKIN_BASE * (1 - t)[:, None] + SKIN_INNER * t[:, None]
-    mottling = fbm(p, 1.6, 4, seed=23)
-    col *= (0.92 + 0.14 * mottling)[:, None]
-    red = fbm(p, 2.5, 3, seed=24)
-    col = col * np.stack([1.0 + 0.05 * red, 1.0 - 0.02 * red, 1.0 - 0.03 * red], axis=1)
-    vein_tint = np.array([0.82, 0.86, 0.95])
-    col = col * (1 - 0.35 * veins[:, None]) + col * vein_tint * 0.35 * veins[:, None]
-    # arm hair reads as a faint darker, less shiny haze on the back of the forearm
-    hair = fbm(np.stack([p[:, 0] * 2.5, p[:, 1] * 0.8, p[:, 2] * 2.5], axis=1), 0.5, 3, seed=25)
-    hair = smoothstep(0.35, 0.75, hair) * smoothstep(0.0, 0.7, dorsal) * smoothstep(1.5, 4.0, s)
-    col *= (1.0 - 0.07 * hair)[:, None]
-    freckle = smoothstep(0.83, 0.9, value_noise(p, 0.12, seed=26))
-    col *= (1.0 - 0.18 * freckle)[:, None]
-    rough = 0.52 + 0.1 * (fbm(p, 0.8, 3, seed=27) - 0.5) + 0.08 * hair
-    return h, col, rough
-
-
-# ---------------------------------------------------------------- sleeve
-SLEEVE_BASE = srgb((0.33, 0.35, 0.25))
-SLEEVE_DARK = srgb((0.27, 0.29, 0.2))
-THREAD_OLIVE = srgb((0.27, 0.285, 0.2))
-
-
-def sleeve_surface(p, want_color=True):
-    s = -p[:, 1]
-    half_w, top, bot, n_ = A.core_section(s)
-    cz = (top + bot) * 0.5
-    theta = np.arctan2(p[:, 2] - cz, p[:, 0])
-    circ_r = half_w * 1.15
-    h = np.zeros(len(p))
-    hem = P.SLEEVE_HEM_S
-    # hem: two stitch rows and the fold line of the turned edge
-    ahem = theta * circ_r
-    st1, _ = stitch(s, hem + 0.55, ahem, period=0.33, width=0.03)
-    st2, _ = stitch(s, hem + 0.85, ahem + 0.15, period=0.33, width=0.03)
-    stitches = np.maximum(st1, st2)
-    h += 0.008 * stitches
-    h += -0.02 * line(s - (hem + 1.15), 0.05)
-    # underarm seam along the palm side of the sleeve
-    dseam = (np.mod(theta + 0.5 * math.pi + math.pi, 2 * math.pi) - math.pi) * circ_r
-    h += -0.03 * line(dseam, 0.04) + 0.012 * line(np.abs(dseam) - 0.1, 0.05)
-    st3, _ = stitch(dseam, 0.28, s, period=0.33, width=0.03)
-    st4, _ = stitch(dseam, -0.28, s + 0.1, period=0.33, width=0.03)
-    stitches = np.maximum(stitches, np.maximum(st3, st4) * smoothstep(hem + 1.3, hem + 1.8, s))
-    h += 0.008 * np.maximum(st3, st4)
-    # fine crinkles where the fabric bunches, following the folds
-    bunch = smoothstep(hem + 1.0, hem + 2.0, s) * (1 - smoothstep(24.0, 28.0, s))
-    crinkle = np.abs(fbm(np.stack([theta * 3.0, s * 0.9, np.zeros_like(s)], axis=1), 0.8, 3, seed=31) - 0.5)
-    h += -0.02 * (0.5 - crinkle) * bunch
-    # soft shell face: faint texture
-    h += 0.003 * (value_noise(p, 0.06, seed=32) - 0.5)
-    h += 0.004 * (fbm(p, 0.5, 3, seed=33) - 0.5)
-    if not want_color:
-        return h
-    var = fbm(p, 2.0, 4, seed=34)
-    col = SLEEVE_BASE * (0.9 + 0.18 * var)[:, None]
-    col = col * (1 - stitches)[:, None] + THREAD_OLIVE * stitches[:, None]
-    rough = 0.82 + 0.08 * (var - 0.5)
-    return h, col, rough
-
-
-def sleeve_analytic_normal(p, n_geom):
-    """normal of the exact folded sleeve surface, so folds shade crisply even
-    where the ring spacing of the mesh is coarse. the rolled hem keeps the
-    mesh normal."""
-    s = -p[:, 1]
-    half_w, top, bot, n_ = A.core_section(s)
-    theta = np.arctan2(p[:, 2] - (top + bot) * 0.5, p[:, 0])
-    e = 0.004
-    pa = np.stack(A.sleeve_outer_point(theta + e, s), axis=1)
-    pb = np.stack(A.sleeve_outer_point(theta - e, s), axis=1)
-    pc = np.stack(A.sleeve_outer_point(theta, s + 0.02), axis=1)
-    pd = np.stack(A.sleeve_outer_point(theta, s - 0.02), axis=1)
-    nn = np.cross(pa - pb, pc - pd)
-    nn /= np.maximum(np.linalg.norm(nn, axis=1, keepdims=True), 1e-9)
-    nn *= np.sign(np.sum(nn * n_geom, axis=1, keepdims=True) + 1e-9)
-    w = smoothstep(A.SLEEVE_OUTER_START + 0.05, A.SLEEVE_OUTER_START + 0.4, s)[:, None]
-    out = n_geom * (1 - w) + nn * w
-    return out / np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-9)
+def _normalize(v):
+    return v / np.maximum(np.linalg.norm(v, axis=1, keepdims=True), 1e-9)
 
 
 # ---------------------------------------------------------------- assembly
-def build_arm_textures(glove, skin, sleeve, shape, size, log):
-    objs = [glove, skin, sleeve]
+def build_textures(suit, upper, built, size, log):
     os.makedirs(TEX_DIR, exist_ok=True)
-    allco = []
-    for o in objs:
-        co = np.zeros(len(o.data.vertices) * 3)
-        o.data.vertices.foreach_get("co", co)
-        allco.append(co.reshape(-1, 3))
-    allco = np.concatenate(allco)
+    objs = [suit, upper] + [o for _, o in built]
+    info = [("suit", None), ("upper", None)] + [(pc.style, pc) for pc, _ in built]
+    allco = np.concatenate([np.array([v.co for v in o.data.vertices]) for o in objs])
     bmin = allco.min(axis=0) - 0.01
     bsize = allco.max(axis=0) + 0.01 - bmin
 
@@ -700,51 +424,67 @@ def build_arm_textures(glove, skin, sleeve, shape, size, log):
     tan = maps["tan"][..., :3].astype(np.float64) * 2 - 1
 
     height = np.zeros(cover.shape)
-    albedo = np.zeros(cover.shape + (3,))
-    rough = np.full(cover.shape, 0.8)
+    rough = np.full(cover.shape, 0.5)
+    edge = np.zeros(cover.shape)
     n_obj = np.zeros(cover.shape + (3,))
-    eps = 0.012  # cm, finite difference step for the height gradient
+    eps = 0.01
 
-    for k, fn in ((1, "glove"), (2, "skin"), (3, "sleeve")):
-        sel = ident == k
+    for k, (kind, pc) in enumerate(info):
+        sel = ident == k + 1
         if not sel.any():
             continue
         p = (pos[sel] - P.WRIST_R) / P.CM
-        n0 = nrm[sel]
-        n0 /= np.maximum(np.linalg.norm(n0, axis=1, keepdims=True), 1e-9)
-        if fn == "glove":
-            geo = GloveGeo(shape)
-            p = sdf.project_to_surface(shape.sdf, p, eps=0.01, iterations=2)
-            g = sdf.gradient(shape.sdf, p, 0.01)
-            n_base = g / np.maximum(np.linalg.norm(g, axis=1, keepdims=True), 1e-9)
-            surf = lambda q, col=True: glove_surface(geo, q, col)
-        elif fn == "skin":
-            n_base = n0
-            surf = skin_surface
+        n0 = _normalize(nrm[sel])
+        if kind == "suit":
+            fn = K.SUIT.sdf
+        elif kind == "upper":
+            fn = None
         else:
-            n_base = sleeve_analytic_normal(p, n0)
-            surf = sleeve_surface
-        h, col, rgh = surf(p, True)
-        # tangent frame around the base normal
-        t0 = tan[sel]
-        t0 = t0 - n_base * np.sum(t0 * n_base, axis=1, keepdims=True)
-        t0 /= np.maximum(np.linalg.norm(t0, axis=1, keepdims=True), 1e-9)
-        b0 = np.cross(n_base, t0)
-        hp = surf(p + t0 * eps, False)
-        hm = surf(p - t0 * eps, False)
-        dh_t = (hp - hm) / (2 * eps)
-        hp = surf(p + b0 * eps, False)
-        hm = surf(p - b0 * eps, False)
-        dh_b = (hp - hm) / (2 * eps)
-        nn = n_base - t0 * dh_t[:, None] - b0 * dh_b[:, None]
-        nn /= np.linalg.norm(nn, axis=1, keepdims=True)
-        n_obj[sel] = nn
-        height[sel] = h
-        albedo[sel] = col
-        rough[sel] = rgh
-        log(f"textured {fn}: {sel.sum()} texels")
+            fn = pc.fn
+        if fn is not None:
+            p = sdf.project_to_surface(fn, p, eps=0.008, iterations=2)
+            n_base = _normalize(sdf.gradient(fn, p, 0.006))
+            # a texel can land on the wrong side of a thin shell, keep the mesh's side
+            n_base *= np.sign(np.sum(n_base * n0, axis=1, keepdims=True) + 1e-9)
+        else:
+            n_base = n0
 
-    # object space normal -> tangent space through cycles (mikktspace exact)
+        if kind == "suit":
+            def surf(q):
+                return muscle_surface(q, n_base)[0]
+            h, r = muscle_surface(p, n_base)
+            e = np.zeros(len(p))
+        elif kind == "upper":
+            def surf(q):
+                return upper_surface(q)[0]
+            h, r = upper_surface(p)
+            e = np.zeros(len(p))
+        elif kind == "plate":
+            def surf(q, pc=pc):
+                return plate_surface(pc, q)[0]
+            h, r, e = plate_surface(pc, p)
+        elif kind == "mech":
+            def surf(q, pc=pc):
+                return mech_surface(pc, q)[0]
+            h, r = mech_surface(pc, p)
+            e = np.zeros(len(p))
+        else:
+            def surf(q):
+                return np.zeros(len(q))
+            h, r, e = np.zeros(len(p)), np.full(len(p), 0.5), np.zeros(len(p))
+
+        t0 = tan[sel]
+        t0 = _normalize(t0 - n_base * np.sum(t0 * n_base, axis=1, keepdims=True))
+        b0 = np.cross(n_base, t0)
+        dh_t = (surf(p + t0 * eps) - surf(p - t0 * eps)) / (2 * eps)
+        dh_b = (surf(p + b0 * eps) - surf(p - b0 * eps)) / (2 * eps)
+        n_obj[sel] = _normalize(n_base - t0 * dh_t[:, None] - b0 * dh_b[:, None])
+        height[sel] = h
+        rough[sel] = r
+        edge[sel] = e
+    log("texel surfaces done")
+
+    # object space normal -> tangent space through cycles
     nimg = _float_image("bake_nobj", size)
     arr = np.zeros(cover.shape + (4,), dtype=np.float32)
     arr[..., :3] = dilate(n_obj * 0.5 + 0.5, cover)
@@ -769,61 +509,44 @@ def build_arm_textures(glove, skin, sleeve, shape, size, log):
     bpy.data.materials.remove(mat)
     log("baked tangent space normals")
 
-    # ambient occlusion of the arm pieces on each other
-    aimg = _float_image("bake_ao", size)
+    # ao per group: the core alone, then each kit over the core (kits share the
+    # same space, so they must never shadow each other)
     world = bpy.context.scene.world or bpy.data.worlds.new("BakeWorld")
     bpy.context.scene.world = world
-    world.light_settings.distance = 0.035
-    mat = _bake_material("bake_ao_mat", aimg, lambda nt: nt.nodes.new("ShaderNodeBsdfDiffuse").outputs["BSDF"])
-    # cpu: the metal ao bake is not bit exact from run to run, this keeps
-    # rebuilds byte identical
-    _bake(objs, mat, "AO", samples=96, device="CPU")
-    ao = _read(aimg)[..., 0]
-    bpy.data.materials.remove(mat)
-    log("baked ambient occlusion")
-    cavity = np.clip(1.0 + height * 18.0, 0.55, 1.0)
-    ao = np.clip(ao, 0.0, 1.0) * cavity
+    world.light_settings.distance = 0.03
+    sets = ["core"] + sorted({pc.set for pc, _ in built if pc.set != "core"})
+    set_of = ["core", "core"] + [pc.set for pc, _ in built]
+    ao = np.ones(cover.shape)
+    for group in sets:
+        for o, s in zip(objs, set_of):
+            o.hide_render = not (s == "core" or s == group)
+        targets = [o for o, s in zip(objs, set_of) if s == group]
+        aimg = _float_image("bake_ao", size)
+        mat = _bake_material("bake_ao_mat", aimg, lambda nt: nt.nodes.new("ShaderNodeBsdfDiffuse").outputs["BSDF"])
+        _bake(targets, mat, "AO", samples=64, device="CPU")
+        px = _read(aimg)[..., 0]
+        ids = [k + 1 for k, s in enumerate(set_of) if s == group]
+        sel = np.isin(ident, ids)
+        ao[sel] = px[sel]
+        bpy.data.materials.remove(mat)
+        bpy.data.images.remove(aimg)
+        log(f"baked ao for {group}")
+    for o in objs:
+        o.hide_render = False
+    ao = np.clip(ao, 0.0, 1.0) * np.clip(1.0 + height * 14.0, 0.6, 1.0)
 
-    # images (bottom row first, like blender pixels)
-    base = np.ones(cover.shape + (4,), dtype=np.float32)
-    base[..., :3] = dilate(albedo * (0.72 + 0.28 * ao)[..., None], cover)
     orm = np.ones(cover.shape + (4,), dtype=np.float32)
     orm[..., 0] = dilate(ao, cover)
-    orm[..., 1] = dilate(rough, cover)
-    orm[..., 2] = 0.0
+    orm[..., 1] = dilate(np.clip(rough, 0.0, 1.0), cover)
+    orm[..., 2] = dilate(edge, cover)
     nmap = np.ones(cover.shape + (4,), dtype=np.float32)
     nmap[..., :3] = dilate(ntan, cover)
-
-    base_img = _byte_image("arms_basecolor", base, "sRGB")
     orm_img = _byte_image("arms_orm", orm, "Non-Color")
     n_img = _byte_image("arms_normal", nmap, "Non-Color")
-    for img in (nimg, timg, aimg):
+    for img in (nimg, timg):
         bpy.data.images.remove(img)
     for key in ("pos", "nrm", "tan", "id"):
         im = bpy.data.images.get(f"bake_{key}")
         if im is not None:
             bpy.data.images.remove(im)
-    # one atlas for all three; the normal strengths differ a little, which
-    # also keeps the optimizer's dedup from folding them into one material
-    mats = {
-        "mat_glove": MAT.textured("mat_glove", base_img, orm_img, n_img, normal_strength=1.0),
-        "mat_skin": MAT.textured("mat_skin", base_img, orm_img, n_img, normal_strength=0.85),
-        "mat_sleeve": MAT.textured("mat_sleeve", base_img, orm_img, n_img, normal_strength=1.1),
-    }
-    return mats
-
-
-def _byte_image(name, rgba_linear, colorspace):
-    h, w = rgba_linear.shape[:2]
-    img = bpy.data.images.new(name, w, h, alpha=False, float_buffer=False)
-    img.colorspace_settings.name = colorspace
-    data = np.clip(rgba_linear, 0, 1).astype(np.float64)
-    if colorspace == "sRGB":
-        c = data[..., :3]
-        data[..., :3] = np.where(c <= 0.0031308, c * 12.92, 1.055 * np.power(c, 1 / 2.4) - 0.055)
-    data[..., 3] = 1.0
-    img.pixels.foreach_set(data.astype(np.float32).ravel())
-    img.filepath_raw = os.path.join(TEX_DIR, f"{name}.png")
-    img.file_format = "PNG"
-    img.save()
-    return img
+    return {"normal": n_img, "orm": orm_img}

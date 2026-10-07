@@ -11,7 +11,7 @@ mkdir -p "$OUT"
 ATLAS=${1:-4096}
 BLENDER=${BLENDER:-blender}
 if ! "$BLENDER" -b --python-exit-code 1 -P tools/blender/characters/build_characters.py -- \
-  --sets strafe,anvil,vector,quill --atlas "$ATLAS" --out "$OUT/armor_raw.glb" > "$OUT/log_armor.txt" 2>&1; then
+  --sets strafe,anvil,vector,quill,edge --atlas "$ATLAS" --out "$OUT/armor_raw.glb" > "$OUT/log_armor.txt" 2>&1; then
   tail -30 "$OUT/log_armor.txt"
   echo "blender build failed, see $OUT/log_armor.txt"
   exit 1

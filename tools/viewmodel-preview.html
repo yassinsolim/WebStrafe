@@ -22,6 +22,7 @@
       import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
       import { ViewmodelRenderer } from '/src/cosmetics/ViewmodelRenderer.ts';
       import { ViewmodelSystem } from '/src/viewmodel/ViewmodelSystem.ts';
+      import { configureTextureTranscoder } from '/src/assets/gltfLoader.ts';
       import { KNIVES } from '/src/combat/knives.ts';
 
       const params = new URLSearchParams(location.search);
@@ -38,6 +39,7 @@
       renderer.outputColorSpace = SRGBColorSpace;
       renderer.toneMapping = ACESFilmicToneMapping;
       document.body.appendChild(renderer.domElement);
+      configureTextureTranscoder(renderer);
 
       const vm = new ViewmodelRenderer(Number(params.get('fov') ?? 68), width / height);
       vm.scene.environment = new PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
@@ -101,6 +103,8 @@
         vm.scene.add(camera);
       }
       renderer.render(vm.scene, camera);
+      // scripts measure and re-pose through this (seek, then render)
+      window.__vm = { system, camera, fpCamera: vm.camera, render: () => renderer.render(vm.scene, camera) };
       window.__viewmodelReady = true;
       document.title = 'ready';
     </script>

@@ -4,9 +4,10 @@ weights are computed from the build geometry instead of blender's heat
 weighting (which is flaky headless on meshes like this):
   - along the arm axis: upperarm -> forearm across the elbow, forearm ->
     forearm_twist over the distal forearm, twist -> hand across the wrist.
-  - on the glove: a soft assignment to parts (palm, thenar, each finger,
-    thumb) from the sdf part distances, then per part rules along the bone
-    chain with smooth blends centred on every joint.
+  - on the muscle suit: a soft assignment to parts (palm, thenar, each
+    finger, thumb, forearm) from the sdf part distances, then per part rules
+    along the bone chain with smooth blends centred on every joint.
+  - plates on the hand and digits are rigid on their bone.
 max 4 influences, normalized.
 """
 
@@ -126,7 +127,7 @@ def glove_weights(p_cm, parts, tau=0.24):
         for k, v in arm.items():
             add(k, w * v)
 
-    for n in ("palm", "cuff"):
+    for n in ("palm", "arm"):
         if n in part_w:
             add_arm(part_w[n])
     if "thenar" in part_w:

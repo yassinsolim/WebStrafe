@@ -1,4 +1,6 @@
-import { KNIFE_TIMING_MS, type KnifeAttack } from './knives';
+import { KNIFE_TIMING_MS, type KnifeAttack, type MeleeStats } from './knives';
+
+type Timing = MeleeStats['timing'];
 
 /**
  * CS knife attack timing (source weapon_knife.cpp, SwingOrStab). A slash locks
@@ -22,18 +24,18 @@ export class KnifeController {
   }
 
   /** true when a slash at `nowMs` would deal the reduced follow-up damage */
-  isFollowUp(nowMs: number): boolean {
-    return nowMs < this.nextPrimaryAtMs + KNIFE_TIMING_MS.followUpWindow;
+  isFollowUp(nowMs: number, timing: Timing = KNIFE_TIMING_MS): boolean {
+    return nowMs < this.nextPrimaryAtMs + timing.followUpWindow;
   }
 
-  /** records an accepted attack once it is known whether it connected */
-  commit(kind: KnifeAttack, nowMs: number, hit: boolean): void {
+  /** records an accepted attack once it is known whether it connected; `timing` is the held weapon's */
+  commit(kind: KnifeAttack, nowMs: number, hit: boolean, timing: Timing = KNIFE_TIMING_MS): void {
     if (kind === 'primary') {
-      this.nextPrimaryAtMs = nowMs + (hit ? KNIFE_TIMING_MS.primaryIntervalHit : KNIFE_TIMING_MS.primaryInterval);
-      this.nextSecondaryAtMs = nowMs + KNIFE_TIMING_MS.secondaryAfterPrimary;
+      this.nextPrimaryAtMs = nowMs + (hit ? timing.primaryIntervalHit : timing.primaryInterval);
+      this.nextSecondaryAtMs = nowMs + timing.secondaryAfterPrimary;
       return;
     }
-    const lock = hit ? KNIFE_TIMING_MS.secondaryIntervalHit : KNIFE_TIMING_MS.secondaryInterval;
+    const lock = hit ? timing.secondaryIntervalHit : timing.secondaryInterval;
     this.nextPrimaryAtMs = nowMs + lock;
     this.nextSecondaryAtMs = nowMs + lock;
   }

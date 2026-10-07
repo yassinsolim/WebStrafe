@@ -1,9 +1,8 @@
 /**
- * Knife catalog. One entry per CS2 knife type (verified list of 20, current as
- * of the Kukri in Feb 2024; no newer type through Sep 2026). In-game names are
- * our own generic descriptions; `referenceType` records which CS2 type each one
- * plays like, for balancing and loadout mapping only. Every model is built
- * procedurally in ProceduralKnife.ts, nothing is taken from Valve.
+ * Knife catalog: twelve of the CS2 knife types, each clearly its own shape,
+ * under their CS2 type names (plain knife words). Every model is our own,
+ * built in Blender (tools/blender/knives) or procedurally (ProceduralKnife.ts),
+ * nothing is taken from Valve. `referenceType` is the CS2 type it plays like.
  */
 
 export type BladeProfile =
@@ -76,9 +75,8 @@ export interface KnifeDef {
 }
 
 export type KnifeId =
-  | 'bayonet' | 'm9_bayonet' | 'karambit' | 'butterfly' | 'flip' | 'gut' | 'huntsman'
-  | 'falchion' | 'bowie' | 'shadow_daggers' | 'navaja' | 'stiletto' | 'talon' | 'ursus'
-  | 'classic' | 'paracord' | 'survival' | 'nomad' | 'skeleton' | 'kukri';
+  | 'karambit' | 'butterfly' | 'm9_bayonet' | 'talon' | 'skeleton' | 'bayonet'
+  | 'flip' | 'stiletto' | 'huntsman' | 'bowie' | 'gut' | 'shadow_daggers';
 
 const STEEL = 0xc9ced6;
 const DARK_STEEL = 0x70767f;
@@ -88,107 +86,67 @@ const TAN = 0x9c7a52;
 const WOOD = 0x6b4226;
 const ORANGE = 0xff6a2b;
 
-/** CS2 knife types, in the order they were introduced. */
+/** the loadout order: the most wanted first */
 export const KNIVES: readonly KnifeDef[] = [
-  {
-    id: 'bayonet', name: 'Trench Bayonet', referenceType: 'Bayonet',
-    shape: { profile: 'spear', bladeLength: 0.2, bladeHeight: 0.032, bladeThickness: 0.006, fuller: true, guard: 'cross', handle: 'grip', handleLength: 0.12, bladeColor: STEEL, handleColor: BLACK, accentColor: DARK_STEEL, grind: 'sabre' },
-    timing: { drawMs: 1000, inspectMs: 4200 },
-  },
-  {
-    id: 'flip', name: 'Flip Folder', referenceType: 'Flip Knife',
-    shape: { profile: 'drop', bladeLength: 0.1, bladeHeight: 0.028, bladeThickness: 0.004, guard: 'bolster', handle: 'scales', handleLength: 0.11, bladeColor: STEEL, handleColor: BLACK, accentColor: STEEL, mechanism: 'folder', grind: 'hollow' },
-    timing: { drawMs: 1000, inspectMs: 3600 },
-  },
-  {
-    id: 'gut', name: 'Gut Hook', referenceType: 'Gut Knife',
-    shape: { profile: 'gut', bladeLength: 0.105, bladeHeight: 0.034, bladeThickness: 0.005, guard: 'none', handle: 'grip', handleLength: 0.1, bladeColor: STEEL, handleColor: BLACK, accentColor: DARK_STEEL, grind: 'flat' },
-    timing: { drawMs: 1000, inspectMs: 3400 },
-  },
   {
     id: 'karambit', name: 'Karambit', referenceType: 'Karambit',
     shape: { profile: 'hawkbill', bladeLength: 0.085, bladeHeight: 0.03, bladeThickness: 0.004, guard: 'none', handle: 'ring', handleLength: 0.095, bladeColor: STEEL, handleColor: BLACK, accentColor: STEEL, fingerRing: true, grind: 'hollow' },
     timing: { drawMs: 1000, inspectMs: 4400 },
   },
   {
-    id: 'm9_bayonet', name: 'Field Bayonet', referenceType: 'M9 Bayonet',
-    shape: { profile: 'clip', bladeLength: 0.18, bladeHeight: 0.036, bladeThickness: 0.006, serratedSpine: true, guard: 'ring', handle: 'grip', handleLength: 0.125, bladeColor: STEEL, handleColor: OLIVE, accentColor: DARK_STEEL, grind: 'sabre' },
-    timing: { drawMs: 1000, inspectMs: 4400 },
-  },
-  {
-    id: 'huntsman', name: 'Hunting Knife', referenceType: 'Huntsman Knife',
-    shape: { profile: 'clip', bladeLength: 0.16, bladeHeight: 0.038, bladeThickness: 0.006, serratedSpine: true, guard: 'cross', handle: 'grip', handleLength: 0.12, bladeColor: STEEL, handleColor: TAN, accentColor: DARK_STEEL, grind: 'flat' },
-    timing: { drawMs: 1000, inspectMs: 4000 },
-  },
-  {
-    id: 'butterfly', name: 'Balisong', referenceType: 'Butterfly Knife',
+    id: 'butterfly', name: 'Butterfly Knife', referenceType: 'Butterfly Knife',
     shape: { profile: 'drop', bladeLength: 0.1, bladeHeight: 0.024, bladeThickness: 0.004, guard: 'none', handle: 'split', handleLength: 0.125, bladeColor: STEEL, handleColor: DARK_STEEL, accentColor: STEEL, mechanism: 'balisong', grind: 'flat' },
     timing: { drawMs: 1300, inspectMs: 4600 },
   },
   {
-    id: 'falchion', name: 'Falchion Folder', referenceType: 'Falchion Knife',
-    shape: { profile: 'cleaver', bladeLength: 0.11, bladeHeight: 0.036, bladeThickness: 0.004, guard: 'bolster', handle: 'scales', handleLength: 0.11, bladeColor: STEEL, handleColor: BLACK, accentColor: STEEL, mechanism: 'folder', grind: 'flat' },
-    timing: { drawMs: 1000, inspectMs: 3800 },
+    id: 'm9_bayonet', name: 'M9 Bayonet', referenceType: 'M9 Bayonet',
+    shape: { profile: 'clip', bladeLength: 0.18, bladeHeight: 0.036, bladeThickness: 0.006, serratedSpine: true, guard: 'ring', handle: 'grip', handleLength: 0.125, bladeColor: STEEL, handleColor: OLIVE, accentColor: DARK_STEEL, grind: 'sabre' },
+    timing: { drawMs: 1000, inspectMs: 4400 },
   },
   {
-    id: 'shadow_daggers', name: 'Push Daggers', referenceType: 'Shadow Daggers',
-    shape: { profile: 'spear', bladeLength: 0.075, bladeHeight: 0.03, bladeThickness: 0.004, guard: 'none', handle: 'tee', handleLength: 0.09, bladeColor: DARK_STEEL, handleColor: BLACK, accentColor: STEEL, pair: true, grind: 'flat' },
-    timing: { drawMs: 1000, inspectMs: 3400 },
-  },
-  {
-    id: 'bowie', name: 'Bowie', referenceType: 'Bowie Knife',
-    shape: { profile: 'clip', bladeLength: 0.21, bladeHeight: 0.045, bladeThickness: 0.007, guard: 'cross', handle: 'wood', handleLength: 0.12, bladeColor: STEEL, handleColor: WOOD, accentColor: 0xb08d57, grind: 'flat' },
-    timing: { drawMs: 1000, inspectMs: 4000 },
-  },
-  {
-    id: 'navaja', name: 'Navaja', referenceType: 'Navaja Knife',
-    shape: { profile: 'drop', bladeLength: 0.095, bladeHeight: 0.022, bladeThickness: 0.003, guard: 'bolster', handle: 'wood', handleLength: 0.11, bladeColor: STEEL, handleColor: WOOD, accentColor: 0xb08d57, mechanism: 'folder', grind: 'flat' },
-    timing: { drawMs: 1000, inspectMs: 3400 },
-  },
-  {
-    id: 'stiletto', name: 'Stiletto', referenceType: 'Stiletto Knife',
-    shape: { profile: 'needle', bladeLength: 0.12, bladeHeight: 0.018, bladeThickness: 0.004, guard: 'cross', handle: 'scales', handleLength: 0.12, bladeColor: STEEL, handleColor: BLACK, accentColor: STEEL, mechanism: 'folder', grind: 'flat' },
-    timing: { drawMs: 1000, inspectMs: 3600 },
-  },
-  {
-    id: 'talon', name: 'Folding Hawkbill', referenceType: 'Talon Knife',
+    id: 'talon', name: 'Talon Knife', referenceType: 'Talon Knife',
     shape: { profile: 'hawkbill', bladeLength: 0.1, bladeHeight: 0.028, bladeThickness: 0.004, guard: 'bolster', handle: 'scales', handleLength: 0.11, bladeColor: STEEL, handleColor: 0x2f3a4a, accentColor: STEEL, mechanism: 'folder', fingerRing: true, grind: 'hollow' },
     timing: { drawMs: 1000, inspectMs: 4000 },
   },
   {
-    id: 'ursus', name: 'Heavy Folder', referenceType: 'Ursus Knife',
-    shape: { profile: 'drop', bladeLength: 0.11, bladeHeight: 0.034, bladeThickness: 0.005, guard: 'bolster', handle: 'grip', handleLength: 0.12, bladeColor: STEEL, handleColor: BLACK, accentColor: DARK_STEEL, mechanism: 'folder', grind: 'flat' },
-    timing: { drawMs: 1000, inspectMs: 3600 },
-  },
-  {
-    id: 'classic', name: 'Classic Fixed Blade', referenceType: 'Classic Knife',
-    shape: { profile: 'drop', bladeLength: 0.16, bladeHeight: 0.032, bladeThickness: 0.005, guard: 'cross', handle: 'grip', handleLength: 0.12, bladeColor: STEEL, handleColor: BLACK, accentColor: DARK_STEEL, grind: 'hollow' },
-    timing: { drawMs: 1000, inspectMs: 3800 },
-  },
-  {
-    id: 'paracord', name: 'Cord-Wrap Knife', referenceType: 'Paracord Knife',
-    shape: { profile: 'tanto', bladeLength: 0.11, bladeHeight: 0.028, bladeThickness: 0.005, guard: 'none', handle: 'cord', handleLength: 0.11, bladeColor: DARK_STEEL, handleColor: OLIVE, accentColor: BLACK, grind: 'flat' },
-    timing: { drawMs: 1000, inspectMs: 3400 },
-  },
-  {
-    id: 'survival', name: 'Survival Knife', referenceType: 'Survival Knife',
-    shape: { profile: 'drop', bladeLength: 0.13, bladeHeight: 0.034, bladeThickness: 0.006, serratedSpine: true, guard: 'cross', handle: 'cord', handleLength: 0.11, bladeColor: DARK_STEEL, handleColor: TAN, accentColor: BLACK, grind: 'sabre' },
-    timing: { drawMs: 1000, inspectMs: 3600 },
-  },
-  {
-    id: 'nomad', name: 'Wanderer', referenceType: 'Nomad Knife',
-    shape: { profile: 'drop', bladeLength: 0.11, bladeHeight: 0.03, bladeThickness: 0.005, guard: 'none', handle: 'scales', handleLength: 0.11, bladeColor: STEEL, handleColor: 0x5a3b2a, accentColor: ORANGE, mechanism: 'folder', grind: 'flat' },
-    timing: { drawMs: 1000, inspectMs: 3600 },
-  },
-  {
-    id: 'skeleton', name: 'Skeleton Blade', referenceType: 'Skeleton Knife',
+    id: 'skeleton', name: 'Skeleton Knife', referenceType: 'Skeleton Knife',
     shape: { profile: 'drop', bladeLength: 0.11, bladeHeight: 0.03, bladeThickness: 0.005, guard: 'none', handle: 'skeleton', handleLength: 0.11, bladeColor: STEEL, handleColor: DARK_STEEL, accentColor: ORANGE, grind: 'hollow' },
     timing: { drawMs: 1000, inspectMs: 3600 },
   },
   {
-    id: 'kukri', name: 'Kukri', referenceType: 'Kukri Knife',
-    shape: { profile: 'recurve', bladeLength: 0.2, bladeHeight: 0.05, bladeThickness: 0.007, guard: 'bolster', handle: 'wood', handleLength: 0.12, bladeColor: STEEL, handleColor: WOOD, accentColor: 0xb08d57, grind: 'flat' },
+    id: 'bayonet', name: 'Bayonet', referenceType: 'Bayonet',
+    shape: { profile: 'spear', bladeLength: 0.2, bladeHeight: 0.032, bladeThickness: 0.006, fuller: true, guard: 'cross', handle: 'grip', handleLength: 0.12, bladeColor: STEEL, handleColor: BLACK, accentColor: DARK_STEEL, grind: 'sabre' },
+    timing: { drawMs: 1000, inspectMs: 4200 },
+  },
+  {
+    id: 'flip', name: 'Flip Knife', referenceType: 'Flip Knife',
+    shape: { profile: 'drop', bladeLength: 0.1, bladeHeight: 0.028, bladeThickness: 0.004, guard: 'bolster', handle: 'scales', handleLength: 0.11, bladeColor: STEEL, handleColor: BLACK, accentColor: STEEL, mechanism: 'folder', grind: 'hollow' },
+    timing: { drawMs: 1000, inspectMs: 3600 },
+  },
+  {
+    id: 'stiletto', name: 'Stiletto Knife', referenceType: 'Stiletto Knife',
+    shape: { profile: 'needle', bladeLength: 0.12, bladeHeight: 0.018, bladeThickness: 0.004, guard: 'cross', handle: 'scales', handleLength: 0.12, bladeColor: STEEL, handleColor: BLACK, accentColor: STEEL, mechanism: 'folder', grind: 'flat' },
+    timing: { drawMs: 1000, inspectMs: 3600 },
+  },
+  {
+    id: 'huntsman', name: 'Huntsman Knife', referenceType: 'Huntsman Knife',
+    shape: { profile: 'clip', bladeLength: 0.16, bladeHeight: 0.038, bladeThickness: 0.006, serratedSpine: true, guard: 'cross', handle: 'grip', handleLength: 0.12, bladeColor: STEEL, handleColor: TAN, accentColor: DARK_STEEL, grind: 'flat' },
     timing: { drawMs: 1000, inspectMs: 4000 },
+  },
+  {
+    id: 'bowie', name: 'Bowie Knife', referenceType: 'Bowie Knife',
+    shape: { profile: 'clip', bladeLength: 0.21, bladeHeight: 0.045, bladeThickness: 0.007, guard: 'cross', handle: 'wood', handleLength: 0.12, bladeColor: STEEL, handleColor: WOOD, accentColor: 0xb08d57, grind: 'flat' },
+    timing: { drawMs: 1000, inspectMs: 4000 },
+  },
+  {
+    id: 'gut', name: 'Gut Knife', referenceType: 'Gut Knife',
+    shape: { profile: 'gut', bladeLength: 0.105, bladeHeight: 0.034, bladeThickness: 0.005, guard: 'none', handle: 'grip', handleLength: 0.1, bladeColor: STEEL, handleColor: BLACK, accentColor: DARK_STEEL, grind: 'flat' },
+    timing: { drawMs: 1000, inspectMs: 3400 },
+  },
+  {
+    id: 'shadow_daggers', name: 'Shadow Daggers', referenceType: 'Shadow Daggers',
+    shape: { profile: 'spear', bladeLength: 0.075, bladeHeight: 0.03, bladeThickness: 0.004, guard: 'none', handle: 'tee', handleLength: 0.09, bladeColor: DARK_STEEL, handleColor: BLACK, accentColor: STEEL, pair: true, grind: 'flat' },
+    timing: { drawMs: 1000, inspectMs: 3400 },
   },
 ];
 
@@ -256,15 +214,35 @@ export const KNIFE_RANGE_M = {
 /** radius of the swept sphere; cs head_hull is 16 units (0.41 m) wide each side */
 export const KNIFE_SWEEP_RADIUS_M = 0.41;
 
+/** everything a melee weapon's swings need: the knife and the katana each have one */
+export interface MeleeStats {
+  damage: { [K in keyof typeof KNIFE_DAMAGE]: number };
+  timing: { [K in keyof typeof KNIFE_TIMING_MS]: number };
+  range: { [K in keyof typeof KNIFE_RANGE_M]: number };
+  sweepRadius: number;
+}
+
+export const KNIFE_MELEE: MeleeStats = {
+  damage: KNIFE_DAMAGE,
+  timing: KNIFE_TIMING_MS,
+  range: KNIFE_RANGE_M,
+  sweepRadius: KNIFE_SWEEP_RADIUS_M,
+};
+
 /** cs:go backstab: attacker-to-victim direction dot victim forward above 0.475 (cs:s used 0.8) */
 export const BACKSTAB_DOT = 0.475;
 
-export function knifeDamage(attack: KnifeAttack, backstab: boolean, followUp: boolean): number {
+export function knifeDamage(
+  attack: KnifeAttack,
+  backstab: boolean,
+  followUp: boolean,
+  table: MeleeStats['damage'] = KNIFE_DAMAGE,
+): number {
   if (attack === 'secondary') {
-    return backstab ? KNIFE_DAMAGE.secondaryBackstab : KNIFE_DAMAGE.secondary;
+    return backstab ? table.secondaryBackstab : table.secondary;
   }
-  if (backstab) return KNIFE_DAMAGE.primaryBackstab;
-  return followUp ? KNIFE_DAMAGE.primaryFollowUp : KNIFE_DAMAGE.primary;
+  if (backstab) return table.primaryBackstab;
+  return followUp ? table.primaryFollowUp : table.primary;
 }
 
 /**

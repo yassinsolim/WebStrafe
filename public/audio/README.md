@@ -38,5 +38,12 @@ hits on flesh and walls, backstabs, the AWP bolt cycle, Deagle slide rack and
 release, dry fire, scope zoom, hitmarker, headshot and kill confirms, UI
 sounds and the respawn cue. They are original WebStrafe work.
 
+The knife sounds follow the shape of CS2's, measured from reference clips for
+length and spectrum only (nothing is sampled): a miss is a broadband swish that
+swells for about 70 ms and peaks as the blade crosses the crosshair, a flesh hit
+is a bright crack, a meaty thump about 30 ms later and a short hiss, and a wall
+hit is a short crack and scrape with only a faint steel tick. None of them has a
+pitched layer or a narrow swept filter, which is what made the old ones whirr.
+
 The knife swing `.ogg` files that used to live here had no recorded source or
 licence and were removed.

@@ -7,7 +7,7 @@ import {
 } from '../src/combat/BotPerception';
 import type { CombatArena } from '../src/combat/CombatArena';
 import { computeBotSpawnCandidate, groundBotSpawn } from '../src/combat/BotSpawn';
-import { getWeapon } from '../src/combat/weapons';
+import { getWeapon, isMeleeWeapon } from '../src/combat/weapons';
 import { loadHeadlessMap, type HeadlessMap } from './mapCollision';
 
 export { computeBotSpawnCandidate } from '../src/combat/BotSpawn';
@@ -217,7 +217,7 @@ export class BotManager {
         }
         const fwd = bot.controller.getForwardVector();
         const weaponId = this.arena.getActiveWeapon(bot.id);
-        const worldImpact = weaponId && weaponId !== 'knife'
+        const worldImpact = weaponId && !isMeleeWeapon(weaponId)
           ? world.world.raycastGeometry(eye, fwd, getWeapon(weaponId).range)
           : null;
         events.push({

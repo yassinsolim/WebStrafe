@@ -35,7 +35,7 @@ from parts import Anchor, Part, mirror_bone  # noqa: E402
 from rig import Rig  # noqa: E402
 
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
-ALL_SETS = ["strafe", "anvil", "vector", "quill"]
+ALL_SETS = ["strafe", "anvil", "vector", "quill", "edge"]
 
 
 def parse_args():
@@ -139,6 +139,8 @@ def kit_bone_weights(obj, spec, rig):
 KIT_LODS = ((0, 1.0), (1, 0.4), (2, 0.14))
 # thin strips and straps fall apart under collapse, never go below this per piece
 KIT_FLOOR = {0: 260, 1: 60, 2: 12}
+# finger segments and knuckle caps are tiny and simple, they hold their shape at far fewer
+SMALL_FLOOR = {0: 90, 1: 28, 2: 12}
 
 
 def kit_sources(body, points, sets, slots):
@@ -159,10 +161,11 @@ def kit_lods(pieces, rig, arm, lod0_ratio):
         name = ob.name.split(".")[-1]
         weights = kit_bone_weights(ob, spec, rig)
         base = B.tri_count(ob)
+        floor = SMALL_FLOOR if name.startswith(("finger_", "knuckle_")) else KIT_FLOOR
         for lod, frac in KIT_LODS:
             # helmets fill the frame in the menu and the customize screen: twice the density up close
             ratio = min(1.0, lod0_ratio * (2.0 if slot == "helmet" else 1.0))
-            target = max(int(base * frac * ratio), min(base, KIT_FLOOR[lod]))
+            target = max(int(base * frac * ratio), min(base, floor[lod]))
             dup = B.copy_object(ob, f"{slot}.{sid}.{name}.lod{lod}")
             B.decimate(dup, max(12, target))
             dup.data.validate(clean_customdata=False)
@@ -339,7 +342,17 @@ def render_previews(folder, sets):
         lo.rotation_euler = (math.radians(55), 0, math.radians(angle))
         scene.collection.objects.link(lo)
     os.makedirs(folder, exist_ok=True)
+    # edge renders in its default paint (gloss black, graphite, chrome) so the preview reads like the game
+    palettes = {"edge": {"primary": ((0.012, 0.013, 0.015), 0.22, 0.0), "secondary": ((0.05, 0.053, 0.058), 0.3, 0.3)}}
+    base = {slot: B.SLOT_PREVIEW[slot] for slot in ("primary", "secondary")}
     for set_id in sets:
+        for slot, (color, rough, metal) in {**base, **palettes.get(set_id, {})}.items():
+            mat = bpy.data.materials.get(f"char_{slot}")
+            bsdf = mat.node_tree.nodes.get("Principled BSDF") if mat and mat.use_nodes else None
+            if bsdf:
+                bsdf.inputs["Base Color"].default_value = (*color, 1.0)
+                bsdf.inputs["Roughness"].default_value = rough
+                bsdf.inputs["Metallic"].default_value = metal
         for obj in scene.objects:
             if obj.type != "MESH":
                 continue
@@ -351,6 +364,15 @@ def render_previews(folder, sets):
             # character faces -y in blender
             cam.location = Vector((r * math.sin(a), -r * math.cos(a), 1.05))
             common.look_at(cam, (0, 0, 0.92))
+            scene.render.filepath = os.path.join(folder, f"{set_id}_{view}.png")
+            bpy.ops.render.render(write_still=True)
+        # close-ups: the head three quarter and the left hand from outside
+        for view, loc, target in (("head", (0.30, -0.62, 1.74), (0.0, -0.02, 1.68)),
+                                  ("face", (0.0, -0.70, 1.70), (0.0, -0.02, 1.68)),
+                                  ("chest", (0.12, -1.25, 1.38), (0.0, 0.0, 1.30)),
+                                  ("hand", (0.95, -0.42, 1.02), (0.57, -0.07, 0.96))):
+            cam.location = Vector(loc)
+            common.look_at(cam, target)
             scene.render.filepath = os.path.join(folder, f"{set_id}_{view}.png")
             bpy.ops.render.render(write_still=True)
     B.log(f"renders in {folder}")
@@ -389,7 +411,7 @@ def main():
         if args.atlas:
             bake_atlas.unwrap_and_pack([p[0] for p in pieces], keep_uv)
         if with_body:
-            mesh_made += process_mesh("body", "core", "suit", body_src, "suit", BODY_TRIS, arm)
+            mesh_made += process_mesh("body", "core", "suit", body_src, "muscle", BODY_TRIS, arm)
             mesh_made += process_mesh("body", "core", "hands", hands_src, "dark", HAND_TRIS, arm)
         for ob in (body_src, hands_src):
             bpy.data.objects.remove(ob, do_unlink=True)

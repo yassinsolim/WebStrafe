@@ -11,14 +11,12 @@ import { resolveHit, type TargetCapsule } from './HitResolver';
 import { KnifeController } from './KnifeController';
 import {
   isBackstab,
-  KNIFE_RANGE_M,
-  KNIFE_SWEEP_RADIUS_M,
   knifeDamage,
   type KnifeAttack,
 } from './knives';
 import { resolveMeleeHit, type SegmentBlocked } from './MeleeResolver';
 import { WeaponController } from './WeaponController';
-import { type WeaponId } from './weapons';
+import { isMeleeWeapon, meleeStats, type WeaponId } from './weapons';
 import { interpolateSamples, MAX_EXTRAPOLATION_MS } from '../netcode/InterpolationBuffer';
 import { clampDuck, eyeHeight, hullHeight, STAND_EYE_HEIGHT, STAND_HEIGHT } from '../movement/hull';
 
@@ -377,7 +375,7 @@ export class CombatArena {
     if (!shooter || !shooter.combat.alive) {
       return { fired: false };
     }
-    if (shooter.weapon.getActive() === 'knife') {
+    if (isMeleeWeapon(shooter.weapon.getActive())) {
       return this.handleMelee(shooterId, 'primary', origin, dir, nowMs, {
         observedAtMs,
         targetTimes: lag?.targetTimes,
@@ -463,9 +461,11 @@ export class CombatArena {
     options: MeleeOptions = {},
   ): FireOutcome {
     const shooter = this.players.get(shooterId);
-    if (!shooter || !shooter.combat.alive || shooter.weapon.getActive() !== 'knife') {
+    const held = shooter?.weapon.getActive();
+    if (!shooter || !shooter.combat.alive || !isMeleeWeapon(held)) {
       return { fired: false };
     }
+    const stats = meleeStats(held);
     const requested = options.attackTimeMs;
     const attackAt = typeof requested === 'number' && Number.isFinite(requested)
       ? Math.min(nowMs, Math.max(nowMs - MELEE_ATTACK_TIME_SLACK_MS, requested))
@@ -473,7 +473,7 @@ export class CombatArena {
     if (!shooter.knife.canAttack(kind, attackAt)) {
       return { fired: false };
     }
-    const followUp = kind === 'primary' && shooter.knife.isFollowUp(attackAt);
+    const followUp = kind === 'primary' && shooter.knife.isFollowUp(attackAt, stats.timing);
 
     const originVec = new Vector3(origin[0], origin[1], origin[2]);
     const dirVec = new Vector3(dir[0], dir[1], dir[2]);
@@ -481,17 +481,17 @@ export class CombatArena {
       dirVec.lengthSq() < 1e-8
       || this.originDeviation(shooter, originVec, options.shooterTimeMs) > MAX_MELEE_ORIGIN_DEVIATION
     ) {
-      shooter.knife.commit(kind, attackAt, false);
+      shooter.knife.commit(kind, attackAt, false, stats.timing);
       return { fired: true, melee: kind };
     }
     dirVec.normalize();
 
     const rewound = this.rewoundTargets(shooter, nowMs, options.observedAtMs, options.targetTimes);
-    const range = KNIFE_RANGE_M[kind];
+    const range = stats.range[kind];
     const wallDistance = options.blockingDistance;
     const hasWallDistance = wallDistance !== undefined && Number.isFinite(wallDistance);
     const hit = resolveMeleeHit(
-      { origin: originVec, direction: dirVec, range, radius: KNIFE_SWEEP_RADIUS_M },
+      { origin: originVec, direction: dirVec, range, radius: stats.sweepRadius },
       rewound.map((target) => ({
         id: target.capsule.id,
         feet: target.capsule.feet,
@@ -505,7 +505,7 @@ export class CombatArena {
         return options.isBlocked?.(from, to) ?? false;
       },
     );
-    shooter.knife.commit(kind, attackAt, hit !== null);
+    shooter.knife.commit(kind, attackAt, hit !== null, stats.timing);
     if (!hit) {
       return { fired: true, melee: kind };
     }
@@ -522,7 +522,7 @@ export class CombatArena {
     ];
     const victimFeet = victim.capsule.feet;
     const backstab = isBackstab(attackerFeet, [victimFeet.x, victimFeet.y, victimFeet.z], victim.yaw);
-    const result = applyFlatDamage(target.combat, knifeDamage(kind, backstab, followUp), nowMs);
+    const result = applyFlatDamage(target.combat, knifeDamage(kind, backstab, followUp, stats.damage), nowMs);
     const outcome: FireOutcome = {
       fired: true,
       melee: kind,
@@ -531,7 +531,7 @@ export class CombatArena {
       hit: {
         shooterId,
         targetId: hit.targetId,
-        weaponId: 'knife',
+        weaponId: held,
         damage: result.applied,
         hitbox: 'body',
         killed: result.killed,
@@ -543,7 +543,7 @@ export class CombatArena {
       outcome.death = {
         victimId: hit.targetId,
         killerId: shooterId,
-        weaponId: 'knife',
+        weaponId: held,
         headshot: false,
       };
     }

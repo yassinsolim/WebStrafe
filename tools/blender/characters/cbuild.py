@@ -15,7 +15,7 @@ from mathutils import Vector
 import csdf as S
 
 # material slots, the runtime reads the slot from the material name
-SLOTS = ["primary", "secondary", "accent", "suit", "dark", "light", "visor", "metal", "cloth", "trim"]
+SLOTS = ["primary", "secondary", "accent", "suit", "dark", "light", "visor", "metal", "cloth", "trim", "muscle", "glow"]
 SLOT_PREVIEW = {
     "primary": ((0.52, 0.45, 0.33), 0.5, 0.1),
     "secondary": ((0.12, 0.14, 0.09), 0.6, 0.0),
@@ -27,6 +27,8 @@ SLOT_PREVIEW = {
     "metal": ((0.55, 0.56, 0.58), 0.3, 1.0),
     "cloth": ((0.1, 0.12, 0.08), 0.9, 0.0),
     "trim": ((0.4, 0.12, 0.05), 0.85, 0.0),
+    "muscle": ((0.03, 0.032, 0.036), 0.45, 0.05),
+    "glow": ((1.0, 0.2, 0.1), 0.4, 0.0),
 }
 
 T0 = time.time()
@@ -65,7 +67,7 @@ def slot_material(slot):
         bsdf.inputs["Base Color"].default_value = (*color, 1.0)
         bsdf.inputs["Roughness"].default_value = rough
         bsdf.inputs["Metallic"].default_value = metal
-        if slot == "light":
+        if slot in ("light", "glow"):
             bsdf.inputs["Emission Color"].default_value = (*color, 1.0)
             bsdf.inputs["Emission Strength"].default_value = 4.0
     return mat

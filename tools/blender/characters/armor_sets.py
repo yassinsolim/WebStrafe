@@ -25,7 +25,7 @@ BIG = dict(n=56, rings=5)
 
 # prototype zones -> game material slots (armorMaterial.ts)
 ZONE = {"primary": "primary", "secondary": "secondary", "paint": "accent", "light": "light",
-        "trim": "metal", "visor": "visor", "rubber": "dark", "cloth": "cloth"}
+        "trim": "metal", "visor": "visor", "rubber": "dark", "cloth": "cloth", "muscle": "muscle", "glow": "glow"}
 
 
 class Kit:
@@ -535,13 +535,24 @@ def helmet(k, st):
         visor = [(-0.120, vz + 0.040), (0.0, vz + 0.048), (0.120, vz + 0.040), (0.150, vz - 0.010), (0.080, vz - 0.060),
                  (0.0, vz - 0.075), (-0.080, vz - 0.060), (-0.150, vz - 0.010)]
         vf = [0.03, 0.02, 0.03, 0.03, 0.03, 0.03, 0.03, 0.03]
+    elif style == "blade":
+        # a thin slit that dips to a shallow v between the eyes
+        visor = [(-0.156, vz + 0.020), (-0.060, vz + 0.010), (0.0, vz + 0.002), (0.060, vz + 0.010), (0.156, vz + 0.020),
+                 (0.162, vz + 0.008), (0.060, vz - 0.004), (0.0, vz - 0.012), (-0.060, vz - 0.004), (-0.162, vz + 0.008)]
+        vf = 0.003
     else:  # chevron
         visor = [(-0.150, vz + 0.040), (0.0, vz + 0.004), (0.150, vz + 0.040), (0.162, vz + 0.018), (0.0, vz - 0.024),
                  (-0.162, vz + 0.018)]
         vf = [0.006, 0.004, 0.006, 0.006, 0.004, 0.006]
-    vis = k.add(ak.plate("visor", T_H0, HEL, visor, n=96, rings=7, thickness=0.004, bevel=0.0015, fillet_r=vf,
-                         smooth_iters=4),
-                "head", "visor", "helmet")
+    if style == "blade":
+        # far too thin for a ring fill: a grid band between the slit's upper and lower edges
+        half = len(visor) // 2
+        vis = k.add(ak.band_plate("visor", T_H0, HEL, visor[half:][::-1], visor[:half], cols=80, rows=3,
+                                  thickness=0.004, bevel=0.0012, smooth_iters=2), "head", "visor", "helmet")
+    else:
+        vis = k.add(ak.plate("visor", T_H0, HEL, visor, n=96, rings=7, thickness=0.004, bevel=0.0015, fillet_r=vf,
+                             smooth_iters=4),
+                    "head", "visor", "helmet")
     # glass reflects everything: take the smooth shell normals, not the projected ring surface
     m = vis.modifiers.new("n", "DATA_TRANSFER")
     m.object = helm
@@ -556,18 +567,32 @@ def helmet(k, st):
                 (-0.060, top + 0.074 * st["brow"]), (-0.176, top + 0.054 * st["brow"])]
         # grid filled: a ring fill pinched a crease along the middle of this wide, thin band
         k.add(ak.band_plate("brow", T_H2, HEL, brow[:5], list(reversed(brow[5:])), cols=72, rows=6,
-                            thickness=0.013 * st["thick"], bevel=0.004, smooth_iters=3), "head", "primary", "helmet")
+                            thickness=0.013 * st["thick"], bevel=0.004, smooth_iters=3, inner=style == "blade"),
+              "head", "primary", "helmet")
         bottom = min(v for _, v in visor)
         jd = st["jaw_h"]
+        chin = st.get("chin", 0.0)
         jaw = [(-0.180, bottom + 0.010), (-0.082, bottom - 0.004), (0.0, bottom - 0.010), (0.082, bottom - 0.004),
-               (0.180, bottom + 0.010), (0.172, bottom - 0.064 * jd), (0.060, bottom - 0.086 * jd),
-               (-0.060, bottom - 0.086 * jd), (-0.172, bottom - 0.064 * jd)]
+               (0.180, bottom + 0.010), (0.172, bottom - 0.064 * jd), (0.060, bottom - (0.086 + 0.010 * chin) * jd),
+               (-0.060, bottom - (0.086 + 0.010 * chin) * jd), (-0.172, bottom - 0.064 * jd)]
+        if chin:
+            # pointed chin: the lower edge comes to a point under the mouth (kept on the shell, rays
+            # much lower miss the helmet's open bottom)
+            jaw[6:8] = [(0.050, bottom - 0.088 * jd), (0.0, bottom - (0.088 + 0.012 * chin) * jd),
+                        (-0.050, bottom - 0.088 * jd)]
         k.add(ak.band_plate("jaw", T_H2, HEL, jaw[:5], list(reversed(jaw[5:])), cols=72, rows=6,
-                            thickness=0.010 * st["thick"], bevel=0.0035, smooth_iters=3), "head", "primary", "helmet")
+                            thickness=0.010 * st["thick"], bevel=0.0035, smooth_iters=3, inner=style == "blade"),
+              "head", "primary", "helmet")
         for j in range(st["vents"]):
             e = bottom - 0.030 - 0.009 * j
             k.add(ak.strip(f"vent_{j}", T_H3, HEL, [(-0.030 + 0.003 * j, e), (0.030 - 0.003 * j, e)], 0.0045,
                            thickness=0.006, n=24), "head", "trim", "helmet")
+        if st.get("cheek_lights"):
+            # two short glowing slits on each cheek, angled down towards the chin
+            for j in range(2):
+                e = bottom - 0.026 - 0.016 * j
+                k.add(ak.strip(f"cheek_light_{j}_l", T_H3, HEL, [(0.074, e), (0.112, e + 0.012)], 0.0040,
+                               thickness=0.0045, n=24), "head", "light", "helmet")
     else:
         # faceplate rim and a thin brow line
         rim = [(-0.184, vz + 0.070), (0.184, vz + 0.070), (0.184, vz + 0.052), (-0.184, vz + 0.052)]
@@ -606,6 +631,17 @@ def helmet(k, st):
                      rot=(math.radians(-14), 0, 0), taper=(0.5, 0.55)), "head", "paint", "helmet")
         k.add(ak.strip("crest_light", T_H3, HEL_TOP, [(0.0, -0.10), (0.0, 0.06)], 0.006, thickness=0.004, n=32),
               "head", "light", "helmet")
+    elif crest == "blades":
+        # a low centre ridge and two thin blades swept back from the temples
+        k.add(ak.plate("crest", T_H0, HEL_TOP, [(-0.010, -0.120), (0.010, -0.120), (0.016, 0.060), (0.0, 0.092),
+                                               (-0.016, 0.060)], n=44, rings=3, thickness=0.008, bevel=0.0028,
+                       fillet_r=[0.004, 0.004, 0.006, 0.003, 0.006]), "head", "primary", "helmet")
+        k.add(ak.strip("crest_light", T_H3, HEL_TOP, [(0.0, -0.090), (0.0, 0.040)], 0.0042, thickness=0.0035, n=32),
+              "head", "light", "helmet")
+        temple = V((0.112 * wide, hc.y + 0.010, hc.z + 0.046))
+        k.add(ak.box("temple_blade_l", (0.006, 0.150, 0.026), temple + V((0.010, 0.066, 0.016)), bevel=0.0025,
+                     rot=(math.radians(-16), math.radians(-12), math.radians(-6)), taper=(0.45, 0.25)),
+              "head", "trim", "helmet")
     HEL_BACK = ak.Sphere(hc, BACK, UP, r0=0.13)
     for j in range(st["neckguard"]):
         e0, e1, w = (-0.050 - 0.030 * j, -0.085 - 0.028 * j, 0.150 - 0.016 * j)
@@ -715,6 +751,10 @@ STYLES = {
                   thigh_w=0.95, tasset=0.30, knee=0.95, greave_w=0.95, boot=1.0, belt=0.9, pouches=(),
                   helm_w=1.0, helm_ex=0.9, jaw=1.2, visor="chevron", brow=0.8, jaw_h=0.9, vents=2, crest="plume",
                   neckguard=2, ear=1.1, antenna=False, **{"class": "array"}),
+    # the cyborg set: its body pieces live in edge_set.py, only the helmet, boots and belt use these
+    "edge": dict(thick=0.78, bulk=0.85, boot=0.9, belt=0.62, legs="plate", pouches=(),
+                 helm_w=0.95, helm_ex=0.95, jaw=1.55, visor="blade", brow=0.62, jaw_h=1.0, chin=1.0, vents=0,
+                 cheek_lights=True, crest="blades", neckguard=3, ear=0.62, antenna=False, **{"class": "scabbard"}),
 }
 
 
@@ -722,15 +762,19 @@ def build_set(k, set_id, slots=("helmet", "arms", "chest", "legs", "classItem"))
     st = STYLES[set_id]
     k.set = set_id
     start = len(k.pieces)
-    if "chest" in slots:
+    if set_id == "edge":
+        import edge_set
+
+        edge_set.build(k, st, slots)
+    if set_id != "edge" and "chest" in slots:
         chest(k, st)
-    if "arms" in slots:
+    if set_id != "edge" and "arms" in slots:
         arms(k, st)
-    if "legs" in slots:
+    if set_id != "edge" and "legs" in slots:
         legs(k, st)
-    if "helmet" in slots:
+    if set_id != "edge" and "helmet" in slots:
         helmet(k, st)
-    if "classItem" in slots:
+    if set_id != "edge" and "classItem" in slots:
         class_item(k, st)
     # mirror every left piece
     for ob, bone, mat, slot, sid in list(k.pieces[start:]):

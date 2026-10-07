@@ -22,7 +22,7 @@ import { buildProceduralKnife, disposeProceduralKnife } from '../../cosmetics/Pr
 import { disposeKnifeModel, isKnifeModel, loadKnifeModel } from '../../cosmetics/knifeAssets';
 
 /** swatches show the blade of this knife, a plain drop point */
-const SWATCH_KNIFE: KnifeId = 'classic';
+const SWATCH_KNIFE: KnifeId = 'm9_bayonet';
 const AUTO_SPIN = 0.4;
 const RESUME_AFTER_MS = 1600;
 

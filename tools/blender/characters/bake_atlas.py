@@ -29,9 +29,11 @@ DETAIL = {
     "metal": ("metal009_n.jpg", "metal009_r.jpg", 0.22, 0.7, 0.0018, 0.0),
     "cloth": ("fabric004_n.jpg", "fabric004_r.jpg", 0.09, 1.0, 0.0012, 0.0),
     "suit": ("bi_stretch_n.jpg", "bi_stretch_r.jpg", 0.16, 0.9, 0.0, 0.0),
+    "muscle": ("bi_stretch_n.jpg", "bi_stretch_r.jpg", 0.11, 1.0, 0.0, 0.0),
     "dark": ("leather014_n.jpg", "leather014_r.jpg", 0.10, 0.8, 0.0012, 0.0),
     "trim": ("metal027_n.jpg", "metal027_r.jpg", 0.30, 0.5, 0.0018, 0.0),
     "light": (None, None, 1.0, 0.0, 0.0010, 0.0),
+    "glow": (None, None, 1.0, 0.0, 0.0010, 0.0),
     "visor": (None, None, 1.0, 0.0, 0.0, 0.0),
 }
 UV = "UVMap"

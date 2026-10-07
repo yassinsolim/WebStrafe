@@ -2,12 +2,18 @@ import type { PlayerModel } from '../network/types';
 import {
   ARMOR_SET_INFO,
   ARMOR_SETS,
+  bodyCode,
+  bodyFromCode,
   EMBLEM_INFO,
   EMBLEMS,
   FINISH_INFO,
   FINISHES,
+  isBodyId,
+  SKIN_INFO,
+  SKINS,
   SWATCHES,
   type ArmorSetId,
+  type BodyId,
   type ClassItemId,
   type EmblemId,
   type FinishId,
@@ -18,6 +24,8 @@ import {
  * never read any of this.
  */
 export interface CharacterLook {
+  /** a whole-body skin, or 'kit' for the piece by piece armor below */
+  skin: BodyId;
   helmet: ArmorSetId;
   arms: ArmorSetId;
   chest: ArmorSetId;
@@ -37,35 +45,35 @@ export interface CharacterLook {
   watch: boolean;
 }
 
-export const LOOK_WIRE_VERSION = '1';
-/** longest wire string we accept, a full v1 look is about 50 chars */
+export const LOOK_WIRE_VERSION = '2';
+/** longest wire string we accept, a full v2 look is about 55 chars */
 export const MAX_LOOK_WIRE_LENGTH = 96;
 export const MAX_TAG_LENGTH = 8;
 
 const DEFAULT_LOOKS: Record<PlayerModel, CharacterLook> = {
+  // a skin per team in its artist's colours: the dark ronin for t, the white sentinel for ct.
+  // the kit pieces only show if a player switches to the kit
   terrorist: {
-    helmet: 'strafe',
-    arms: 'strafe',
-    chest: 'strafe',
-    legs: 'strafe',
-    classItem: 'strafe',
-    primary: '#c2a67a',
-    secondary: '#556043',
-    accent: '#a4502a',
+    skin: 'ronin',
+    helmet: 'edge',
+    arms: 'edge',
+    chest: 'edge',
+    legs: 'edge',
+    classItem: 'edge',
+    ...SKIN_INFO.ronin.paint,
     finish: 'satin',
     emblem: 'chevron',
     tag: '',
     watch: true,
   },
   counterterrorist: {
-    helmet: 'strafe',
-    arms: 'strafe',
-    chest: 'strafe',
-    legs: 'strafe',
-    classItem: 'strafe',
-    primary: '#26334a',
-    secondary: '#8a949f',
-    accent: '#2f5fa8',
+    skin: 'sentinel',
+    helmet: 'edge',
+    arms: 'edge',
+    chest: 'edge',
+    legs: 'edge',
+    classItem: 'edge',
+    ...SKIN_INFO.sentinel.paint,
     finish: 'satin',
     emblem: 'chevron',
     tag: '',
@@ -104,9 +112,14 @@ function isSet(value: unknown): value is ArmorSetId {
  */
 export function sanitizeLook(input: unknown, fallback: CharacterLook = defaultLook()): CharacterLook {
   const src = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+  const skin = isBodyId(src.skin) ? src.skin : fallback.skin;
+  // a look saved before skins existed had its colours and finish picked for the kit;
+  // on a skin it starts from the skin's own paint instead
+  const legacy = !isBodyId(src.skin) && skin !== 'kit';
   const color = (key: 'primary' | 'secondary' | 'accent'): string =>
-    isHexColor(src[key]) ? (src[key] as string).toLowerCase() : fallback[key];
+    !legacy && isHexColor(src[key]) ? (src[key] as string).toLowerCase() : fallback[key];
   return {
+    skin,
     helmet: isSet(src.helmet) ? src.helmet : fallback.helmet,
     arms: isSet(src.arms) ? src.arms : fallback.arms,
     chest: isSet(src.chest) ? src.chest : fallback.chest,
@@ -115,7 +128,7 @@ export function sanitizeLook(input: unknown, fallback: CharacterLook = defaultLo
     primary: color('primary'),
     secondary: color('secondary'),
     accent: color('accent'),
-    finish: (FINISHES as readonly string[]).includes(src.finish as string) ? (src.finish as FinishId) : fallback.finish,
+    finish: !legacy && (FINISHES as readonly string[]).includes(src.finish as string) ? (src.finish as FinishId) : fallback.finish,
     emblem: (EMBLEMS as readonly string[]).includes(src.emblem as string) ? (src.emblem as EmblemId) : fallback.emblem,
     tag: typeof src.tag === 'string' ? sanitizeTag(src.tag) : fallback.tag,
     watch: typeof src.watch === 'boolean' ? src.watch : fallback.watch,
@@ -131,9 +144,9 @@ const FINISH_BY_CODE = new Map(FINISHES.map((id) => [FINISH_INFO[id].code, id]))
 const EMBLEM_BY_CODE = new Map(EMBLEMS.map((id) => [EMBLEM_INFO[id].code, id]));
 
 /**
- * compact wire form for join/presence, about 50 chars:
- *   1.<helmet>.<arms>.<chest>.<legs>.<class>.<primary>.<secondary>.<accent>.<finish>.<emblem>.<watch>.<tag>
- * pieces and emblems are two letters, colours six hex digits, finish one letter.
+ * compact wire form for join/presence, about 55 chars:
+ *   2.<helmet>.<arms>.<chest>.<legs>.<class>.<primary>.<secondary>.<accent>.<finish>.<emblem>.<watch>.<skin>.<tag>
+ * pieces, skins and emblems are two letters, colours six hex digits, finish one letter.
  */
 export function encodeLook(look: CharacterLook): string {
   const set = (id: ArmorSetId) => ARMOR_SET_INFO[id].code;
@@ -150,6 +163,7 @@ export function encodeLook(look: CharacterLook): string {
     FINISH_INFO[look.finish].code,
     EMBLEM_INFO[look.emblem].code,
     look.watch ? '1' : '0',
+    bodyCode(look.skin),
     sanitizeTag(look.tag),
   ].join('.');
 }
@@ -158,14 +172,16 @@ export function encodeLook(look: CharacterLook): string {
  * parses a wire look from an untrusted peer. returns null when it isn't a
  * look at all (wrong type, too long, unknown version); otherwise every field
  * that doesn't parse falls back to `fallback`, so a newer client's unknown
- * piece just shows our default piece in that slot
+ * piece just shows our default piece in that slot. version 1 predates the
+ * skins, so those peers wear the kit they picked
  */
 export function decodeLook(wire: unknown, fallback: CharacterLook = defaultLook()): CharacterLook | null {
   if (typeof wire !== 'string' || wire.length === 0 || wire.length > MAX_LOOK_WIRE_LENGTH) {
     return null;
   }
   const parts = wire.split('.');
-  if (parts[0] !== LOOK_WIRE_VERSION || parts.length < 12) {
+  const v1 = parts[0] === '1' && parts.length >= 12;
+  if (!v1 && (parts[0] !== LOOK_WIRE_VERSION || parts.length < 13)) {
     return null;
   }
   const set = (code: string | undefined, fb: ArmorSetId): ArmorSetId => SET_BY_CODE.get(code ?? '') ?? fb;
@@ -173,6 +189,7 @@ export function decodeLook(wire: unknown, fallback: CharacterLook = defaultLook(
     hex && /^[0-9a-fA-F]{6}$/.test(hex) ? `#${hex.toLowerCase()}` : fb;
   const classCode = parts[5];
   return {
+    skin: v1 ? 'kit' : bodyFromCode(parts[12]) ?? fallback.skin,
     helmet: set(parts[1], fallback.helmet),
     arms: set(parts[2], fallback.arms),
     chest: set(parts[3], fallback.chest),
@@ -185,7 +202,7 @@ export function decodeLook(wire: unknown, fallback: CharacterLook = defaultLook(
     emblem: EMBLEM_BY_CODE.get(parts[10]) ?? fallback.emblem,
     watch: parts[11] === '1' ? true : parts[11] === '0' ? false : fallback.watch,
     // the tag is last so a stray '.' can only ever end up in it
-    tag: sanitizeTag(parts.slice(12).join('')),
+    tag: sanitizeTag(parts.slice(v1 ? 12 : 13).join('')),
   };
 }
 
@@ -251,16 +268,20 @@ export function randomLook(seed?: number | string): CharacterLook {
   const scheme = pick(SCHEMES);
   const swatch = () => pick(SWATCHES).hex;
   const classRoll = next();
+  const skin = pick(SKINS);
+  // a good share keep the skin's own paint, the rest repaint it
+  const own = next() < 0.4;
   return {
+    skin,
     helmet: piece(),
     arms: piece(),
     chest: piece(),
     legs: piece(),
     classItem: classRoll < 0.12 ? 'none' : piece(),
-    primary: scheme[0],
-    secondary: next() < 0.8 ? scheme[1] : swatch(),
-    accent: next() < 0.8 ? scheme[2] : swatch(),
-    finish: pick(FINISHES),
+    primary: own ? SKIN_INFO[skin].paint.primary : scheme[0],
+    secondary: own ? SKIN_INFO[skin].paint.secondary : next() < 0.8 ? scheme[1] : swatch(),
+    accent: own ? SKIN_INFO[skin].paint.accent : next() < 0.8 ? scheme[2] : swatch(),
+    finish: pick(['satin', 'satin', 'matte', 'gloss', 'metallic'] as const),
     emblem: pick(EMBLEMS.filter((id) => id !== 'none')),
     tag: '',
     watch: true,
@@ -274,11 +295,12 @@ export function lookForBot(id: string): CharacterLook {
 
 /**
  * the look as the `armor` part of the shared cosmetics field
- * (network/cosmetics.ts): slot -> item id, lowercase tokens, at most 12 slots.
+ * (network/cosmetics.ts): slot -> item id, lowercase tokens, at most 16 slots.
  * colours go without the '#', the callsign lowercased; empty values are left out.
  */
 export function lookToArmor(look: CharacterLook): Record<string, string> {
   const armor: Record<string, string> = {
+    skin: look.skin,
     helmet: look.helmet,
     arms: look.arms,
     chest: look.chest,
@@ -302,6 +324,7 @@ export function armorToLook(armor: Record<string, string> | undefined, fallback:
   const hex = (v: string | undefined) => (typeof v === 'string' && /^[0-9a-f]{6}$/i.test(v) ? `#${v.toLowerCase()}` : undefined);
   return sanitizeLook(
     {
+      skin: armor.skin,
       helmet: armor.helmet,
       arms: armor.arms,
       chest: armor.chest,

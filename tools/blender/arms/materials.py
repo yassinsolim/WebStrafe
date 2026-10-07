@@ -101,6 +101,49 @@ def base_color_textured(mat, img, uv_name="UVMap"):
     return mat
 
 
+# preview look per runtime slot (the game recolours them from the player's look,
+# see src/characters/fpArmor.ts): white plates, black muscle, gunmetal, red glow
+CYBORG_PREVIEW = {
+    "muscle": dict(color=(0.05, 0.052, 0.058), rough=0.42, metal=0.0),
+    "primary": dict(color=(0.84, 0.85, 0.86), rough=0.3, metal=0.0),
+    "dark": dict(color=(0.12, 0.125, 0.135), rough=0.34, metal=0.8),
+    "metal": dict(color=(0.66, 0.67, 0.69), rough=0.24, metal=1.0),
+    "glow": dict(color=(1.0, 0.16, 0.08), rough=0.4, metal=0.0, emission=(1.0, 0.13, 0.06), strength=9.0),
+}
+
+
+def cyborg(name, slot, images=None, uv_name="UVMap"):
+    """one fp_<set>_<slot> material: flat preview colour plus the shared atlas
+    (tangent normal map, occlusion from the orm red channel)"""
+    spec = CYBORG_PREVIEW[slot]
+    mat = plain(name, spec["color"], spec["rough"], metallic=spec["metal"], emission_srgb=spec.get("emission"),
+                emission_strength=spec.get("strength", 0.0))
+    if not images:
+        return mat
+    nt = mat.node_tree
+    nodes, links = nt.nodes, nt.links
+    bsdf = nodes.get("Principled BSDF")
+    uv = nodes.new("ShaderNodeUVMap")
+    uv.uv_map = uv_name
+    tex_orm = nodes.new("ShaderNodeTexImage")
+    tex_orm.image = images["orm"]
+    links.new(uv.outputs["UV"], tex_orm.inputs["Vector"])
+    sep = nodes.new("ShaderNodeSeparateColor")
+    links.new(tex_orm.outputs["Color"], sep.inputs["Color"])
+    grp = nodes.new("ShaderNodeGroup")
+    grp.node_tree = _gltf_output_group()
+    links.new(sep.outputs["Red"], grp.inputs["Occlusion"])
+    tex_n = nodes.new("ShaderNodeTexImage")
+    tex_n.image = images["normal"]
+    links.new(uv.outputs["UV"], tex_n.inputs["Vector"])
+    nmap = nodes.new("ShaderNodeNormalMap")
+    nmap.space = "TANGENT"
+    nmap.uv_map = uv_name
+    links.new(tex_n.outputs["Color"], nmap.inputs["Color"])
+    links.new(nmap.outputs["Normal"], bsdf.inputs["Normal"])
+    return mat
+
+
 def watch_materials():
     return {
         "mat_watch_steel": plain("mat_watch_steel", (0.78, 0.78, 0.8), 0.26, metallic=1.0),

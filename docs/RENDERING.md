@@ -27,23 +27,39 @@ lowest channel of dark colours to zero, which made warm shadows muddy.
 
 ## Presets
 
-`src/render/quality.ts`. Auto never picks High: every real GPU starts on
-Balanced (the `medium` id), and software GL, phone GPUs and old Intel HD/UHD
-graphics get Low. High is opt-in in Settings > Video. Adaptive resolution
-(`src/app/AdaptiveResolution.ts`) stays on for every preset and steps the
-render scale down whenever a one second window drops below 55 fps.
+`src/render/quality.ts`. Auto starts desktop class GPUs on High (Apple M
+Pro/Max/Ultra and M3 on, GeForce GTX 10 series on and RTX, Radeon RX, Arc A and B
+cards), every other real GPU on Balanced (the `medium` id), and software GL,
+phone GPUs and old Intel HD/UHD graphics on Low. If auto's High pick makes
+adaptive resolution drop two steps, auto settles on Balanced for the session.
+Ultra is opt-in. Adaptive resolution (`src/app/AdaptiveResolution.ts`) stays on
+for every preset and steps the render scale down whenever a one second window
+drops below 55 fps.
 
-| | Low | Balanced | High |
-|---|---|---|---|
-| anti-aliasing | FXAA | FXAA | 4x MSAA |
-| bloom | off | 4 mips | 6 mips |
-| SSAO | off | off | half res |
-| sun shadows (players, one cascade) | off | 1024 | 2048 |
-| world materials | Lambert over the lightmap | standard, generated normal maps and gloss | same as Balanced |
-| viewmodel light | sky capture | world probe | world probe |
-| pixel ratio cap | 1 | 1.25 | 2 |
-| particle density | 0.4 | 0.75 | 1 |
-| bullet holes alive | 24 | 48 | 96 |
+| | Low | Balanced | High | Ultra |
+|---|---|---|---|---|
+| anti-aliasing | FXAA | FXAA | 4x MSAA (FXAA on Retina) | 8x MSAA (4x on Retina) |
+| bloom | off | 4 mips | 6 mips | 6 mips |
+| SSAO | off | off | half res | half res |
+| sun shadows (players, one cascade) | off | 1024 | 2048 | 4096 |
+| world materials | Lambert over the lightmap | standard, generated normal maps and gloss | same as Balanced | same as Balanced |
+| generated normal maps | none | 512 | 1024 | 2048 |
+| texture filtering (anisotropic) | 2x | 4x | 8x | 16x |
+| viewmodel light | sky capture | world probe | world probe | world probe |
+| pixel ratio cap | 1 | 1.25 | 2 | 2 |
+| particle density | 0.4 | 0.75 | 1 | 1 |
+| bullet holes alive | 24 | 48 | 96 | 128 |
+
+Settings > Video > Advanced lets the player override anti-aliasing (off, FXAA,
+2x, 4x or 8x MSAA), shadows, AO, bloom and texture filtering on top of any
+preset (`applyOverrides`). The resolution scale goes from 50% to 200%; over
+100% supersamples, capped at 3 drawing buffer pixels per CSS pixel.
+
+"Retina" means 1.75 or more drawing buffer pixels per CSS pixel before the
+adaptive scale (`GameApp.pipelinePreset`). There the MSAA resolve costs the
+most and the small pixels hide the edges, so High's preset anti-aliasing turns
+into FXAA and Ultra's into 4x. An anti-aliasing mode picked under Advanced is
+always used as is.
 
 Balanced drops MSAA on purpose. three.js resolves a multisampled target after
 every `render()` call and the frame renders the world and the viewmodel in two

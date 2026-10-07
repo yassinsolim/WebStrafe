@@ -12,40 +12,36 @@ import {
 } from '../knives';
 import { buildProceduralKnife, disposeProceduralKnife } from '../../cosmetics/ProceduralKnife';
 
-// verified sep 2026: 20 types, kukri (feb 2024) is the newest
+// twelve of cs2's twenty types, picked so no two look alike
 const CS2_KNIFE_TYPES = [
-  'Bayonet', 'M9 Bayonet', 'Karambit', 'Butterfly Knife', 'Flip Knife', 'Gut Knife',
-  'Huntsman Knife', 'Falchion Knife', 'Bowie Knife', 'Shadow Daggers', 'Navaja Knife',
-  'Stiletto Knife', 'Talon Knife', 'Ursus Knife', 'Classic Knife', 'Paracord Knife',
-  'Survival Knife', 'Nomad Knife', 'Skeleton Knife', 'Kukri Knife',
+  'Karambit', 'Butterfly Knife', 'M9 Bayonet', 'Talon Knife', 'Skeleton Knife', 'Bayonet',
+  'Flip Knife', 'Stiletto Knife', 'Huntsman Knife', 'Bowie Knife', 'Gut Knife', 'Shadow Daggers',
 ];
 
 describe('knife catalog', () => {
-  it('covers every CS2 knife type exactly once', () => {
-    expect(KNIVES).toHaveLength(20);
-    expect(new Set(KNIVES.map((k) => k.referenceType))).toEqual(new Set(CS2_KNIFE_TYPES));
-    expect(new Set(KNIVES.map((k) => k.id)).size).toBe(20);
+  it('has twelve distinct cs2 knife types, once each', () => {
+    expect(KNIVES).toHaveLength(12);
+    expect(KNIVES.map((k) => k.referenceType)).toEqual(CS2_KNIFE_TYPES);
+    expect(new Set(KNIVES.map((k) => k.id)).size).toBe(12);
   });
 
-  it('uses our own display names, not the reference names', () => {
-    const renamed = KNIVES.filter((k) => k.name !== k.referenceType);
-    // generic knife words (karambit, kukri, navaja...) may stay as they are
-    expect(renamed.length).toBeGreaterThanOrEqual(14);
-    expect(KNIVES.some((k) => /shadow daggers|ursus|talon|nomad|paracord/i.test(k.name))).toBe(false);
+  it('goes by the cs2 type names', () => {
+    for (const k of KNIVES) expect(k.name, k.id).toBe(k.referenceType);
   });
 
   it('marks the folders, the balisong and the ring knives', () => {
     const by = (pred: (k: (typeof KNIVES)[number]) => boolean) => KNIVES.filter(pred).map((k) => k.id).sort();
-    expect(by((k) => k.shape.mechanism === 'folder')).toEqual(
-      ['falchion', 'flip', 'navaja', 'nomad', 'stiletto', 'talon', 'ursus']);
+    expect(by((k) => k.shape.mechanism === 'folder')).toEqual(['flip', 'stiletto', 'talon']);
     expect(by((k) => k.shape.mechanism === 'balisong')).toEqual(['butterfly']);
     expect(by((k) => k.shape.fingerRing === true)).toEqual(['karambit', 'talon']);
     expect(by((k) => k.shape.pair === true)).toEqual(['shadow_daggers']);
   });
 
-  it('falls back to the default knife for unknown ids', () => {
+  it('falls back to the default knife for unknown and retired ids', () => {
     expect(getKnife('nope').id).toBe('karambit');
-    expect(isKnifeId('kukri')).toBe(true);
+    expect(getKnife('kukri').id).toBe('karambit');
+    expect(isKnifeId('kukri')).toBe(false);
+    expect(isKnifeId('talon')).toBe(true);
     expect(isKnifeId('awp')).toBe(false);
   });
 

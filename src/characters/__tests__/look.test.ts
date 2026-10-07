@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ARMOR_SETS, EMBLEMS, FINISHES, slotOptions } from '../catalog';
+import { ARMOR_SETS, BODIES, EMBLEMS, FINISHES, SKIN_INFO, SKINS, slotOptions } from '../catalog';
 import {
   decodeLook,
   defaultLook,
@@ -15,6 +15,7 @@ import {
 import { BUILTIN_PRESETS } from '../presets';
 
 const full: CharacterLook = {
+  skin: 'sentinel',
   helmet: 'quill',
   arms: 'anvil',
   chest: 'vector',
@@ -32,37 +33,45 @@ const full: CharacterLook = {
 describe('look wire codec', () => {
   it('round trips every field', () => {
     const wire = encodeLook(full);
-    expect(wire).toBe('1.qu.an.ve.st.no.123abc.ffeedd.00ff7f.w.rt.0.YS-07');
+    expect(wire).toBe('2.qu.an.ve.st.no.123abc.ffeedd.00ff7f.w.rt.0.sn.YS-07');
     expect(decodeLook(wire)).toEqual(full);
   });
 
-  it('round trips every piece, finish and emblem', () => {
-    for (const set of ARMOR_SETS) {
-      for (const finish of FINISHES) {
-        for (const emblem of EMBLEMS) {
-          const look = { ...full, helmet: set, chest: set, classItem: set, finish, emblem };
-          expect(decodeLook(encodeLook(look))).toEqual(look);
+  it('round trips every body, piece, finish and emblem', () => {
+    for (const skin of BODIES) {
+      for (const set of ARMOR_SETS) {
+        for (const finish of FINISHES) {
+          for (const emblem of EMBLEMS) {
+            const look = { ...full, skin, helmet: set, chest: set, classItem: set, finish, emblem };
+            expect(decodeLook(encodeLook(look))).toEqual(look);
+          }
         }
       }
     }
   });
 
+  it('reads version 1 looks from before the skins as the kit', () => {
+    const look = decodeLook('1.qu.an.ve.st.no.123abc.ffeedd.00ff7f.w.rt.0.YS-07')!;
+    expect(look).toEqual({ ...full, skin: 'kit' });
+  });
+
   it('stays compact and within the accepted length', () => {
     const wire = encodeLook({ ...full, tag: 'ABCDEFGH' });
-    expect(wire.length).toBeLessThanOrEqual(56);
+    expect(wire.length).toBeLessThanOrEqual(59);
     expect(wire.length).toBeLessThan(MAX_LOOK_WIRE_LENGTH);
     expect(isPlausibleLookWire(wire)).toBe(true);
   });
 
   it('rejects things that are not a look at all', () => {
-    for (const bad of [undefined, null, 42, {}, [], '', 'hello', '2.st.st.st.st.st.aaaaaa.bbbbbb.cccccc.s.cv.1.X', 'x'.repeat(200)]) {
+    for (const bad of [undefined, null, 42, {}, [], '', 'hello', '3.st.st.st.st.st.aaaaaa.bbbbbb.cccccc.s.cv.1.rn.X', '2.st.st.st.st.st.aaaaaa.bbbbbb.cccccc.s.cv.1', 'x'.repeat(200)]) {
       expect(decodeLook(bad)).toBeNull();
     }
   });
 
   it('falls back per field on garbage from a peer', () => {
     const fallback = defaultLook('counterterrorist');
-    const look = decodeLook('1.zz.an.??.st.q9.nothex.ffeedd.12345.k.xx.7.<script>', fallback)!;
+    const look = decodeLook('2.zz.an.??.st.q9.nothex.ffeedd.12345.k.xx.7.qq.<script>', fallback)!;
+    expect(look.skin).toBe(fallback.skin);
     expect(look.helmet).toBe(fallback.helmet);
     expect(look.arms).toBe('anvil');
     expect(look.chest).toBe(fallback.chest);
@@ -92,7 +101,8 @@ describe('sanitizing', () => {
   });
 
   it('keeps valid fields and replaces broken ones', () => {
-    const look = sanitizeLook({ helmet: 'anvil', primary: '#ABCDEF', finish: 'shiny', tag: 'hi there' }, defaultLook());
+    const look = sanitizeLook({ skin: 'ronin', helmet: 'anvil', primary: '#ABCDEF', finish: 'shiny', tag: 'hi there' }, defaultLook());
+    expect(look.skin).toBe('ronin');
     expect(look.helmet).toBe('anvil');
     expect(look.primary).toBe('#abcdef');
     expect(look.finish).toBe(defaultLook().finish);
@@ -100,7 +110,23 @@ describe('sanitizing', () => {
     expect(sanitizeLook('nonsense')).toEqual(defaultLook());
   });
 
+  it('puts looks saved before the skins on the default skin in its own paint', () => {
+    const old = { helmet: 'anvil', arms: 'quill', primary: '#121316', secondary: '#3a3f47', accent: '#b3122e', finish: 'gloss', tag: 'YS', watch: false };
+    const look = sanitizeLook(old, defaultLook('counterterrorist'));
+    const fresh = defaultLook('counterterrorist');
+    expect(look.skin).toBe('sentinel');
+    expect([look.primary, look.secondary, look.accent]).toEqual([fresh.primary, fresh.secondary, fresh.accent]);
+    expect(look.primary).toBe(SKIN_INFO.sentinel.native.primary);
+    expect(look.finish).toBe('satin');
+    // the rest of what they picked stays
+    expect(look.helmet).toBe('anvil');
+    expect(look.arms).toBe('quill');
+    expect(look.tag).toBe('YS');
+    expect(look.watch).toBe(false);
+  });
+
   it('team defaults differ so an untouched look still reads as its side', () => {
+    expect(defaultLook('terrorist').skin).not.toBe(defaultLook('counterterrorist').skin);
     expect(defaultLook('terrorist').primary).not.toBe(defaultLook('counterterrorist').primary);
   });
 });
@@ -121,13 +147,18 @@ describe('random looks', () => {
     const seen = new Set<string>();
     for (let i = 0; i < 400; i += 1) {
       const look = randomLook(i * 7919);
+      seen.add(`s:${look.skin}`);
       seen.add(`h:${look.helmet}`);
       seen.add(`k:${look.classItem}`);
       seen.add(`f:${look.finish}`);
+      seen.add(`own:${look.primary === SKIN_INFO[look.skin as (typeof SKINS)[number]].paint.primary}`);
     }
+    for (const skin of SKINS) expect(seen.has(`s:${skin}`)).toBe(true);
     for (const option of slotOptions('classItem')) expect(seen.has(`k:${option}`)).toBe(true);
     for (const set of ARMOR_SETS) expect(seen.has(`h:${set}`)).toBe(true);
-    for (const finish of FINISHES) expect(seen.has(`f:${finish}`)).toBe(true);
+    // the finishes a skin shows well; worn and camo are kit paint jobs
+    for (const finish of ['matte', 'satin', 'gloss', 'metallic']) expect(seen.has(`f:${finish}`)).toBe(true);
+    expect(seen.has('own:true') && seen.has('own:false')).toBe(true);
   });
 });
 

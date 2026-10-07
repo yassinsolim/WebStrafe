@@ -51,6 +51,9 @@ file, bone suffix `_l` / `_r`:
 - Skin weights: at most 4 influences, normalized, smooth blends at every joint.
   The distal forearm blends from `forearm_s` into `forearm_twist_s` so wrist
   roll twists the forearm instead of pinching the wrist.
+- Materials are `fp_<set>_<slot>`: set `core` or a plate kit (one per armor set),
+  slot a runtime paint slot (`muscle`, `primary`, `dark`, `metal`, `glow`). The
+  runtime shows the core plus the player's kit, see `docs/assets/arms.md`.
 - The watch is rigid: an empty `watch` parented to bone `forearm_twist_l`, local
   `+Z` out of the dial, local `+Y` towards 12 o'clock (12 faces the little-finger
   side, the crown at 3 faces the hand). Child meshes `watch_case`, `watch_bezel`,

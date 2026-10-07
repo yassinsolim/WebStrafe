@@ -104,5 +104,6 @@ export function weaponDisplayName(weaponId: string, knifeName = 'Knife'): string
   if (weaponId === 'awp') return 'AWP';
   if (weaponId === 'deagle') return 'Deagle';
   if (weaponId === 'knife') return knifeName;
+  if (weaponId === 'katana') return 'Katana';
   return weaponId;
 }

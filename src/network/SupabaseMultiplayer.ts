@@ -1188,6 +1188,7 @@ export class SupabaseMultiplayer implements MultiplayerTransport {
         t: record.t ?? undefined,
         clock: id,
         pvp: record.pvp,
+        ...(record.weapon ? { weapon: record.weapon } : {}),
         ...(record.cosmetics ? { cosmetics: record.cosmetics } : {}),
       });
     }

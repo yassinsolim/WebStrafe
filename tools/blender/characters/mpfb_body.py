@@ -62,7 +62,8 @@ for s in ("l", "r"):
         f"hand_{s}": (f"hand_{s}", f"weapon_hand_{s}", False),
     })
 
-MACROS = {"gender": 1.0, "muscle": 0.78, "weight": 0.55, "height": 0.56, "proportions": 0.95}
+# lean and athletic: the cyborg sets read slim, and heavier settings made the gloves look chubby
+MACROS = {"gender": 1.0, "muscle": 0.85, "weight": 0.45, "height": 0.56, "proportions": 1.0}
 
 
 def _mpfb(pkg, key):

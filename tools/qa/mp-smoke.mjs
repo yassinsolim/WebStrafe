@@ -144,7 +144,8 @@ try {
     // stand next to (knife) or 8 m from (guns) the victim so cover never blocks the line
     const v = (await state(victim)).feet;
     await qa(victim, (q) => q.move(0, 0));
-    const offsets = weaponId === 'knife' ? [[0, 1], [1, 0], [0, -1], [-1, 0]] : [[0, 7], [7, 0], [0, -7], [-7, 0], [5, 5], [-5, -5], [5, -5], [-5, 5]];
+    const melee = weaponId === 'knife' || weaponId === 'katana';
+    const offsets = melee ? [[0, 1], [1, 0], [0, -1], [-1, 0]] : [[0, 7], [7, 0], [0, -7], [-7, 0], [5, 5], [-5, -5], [5, -5], [-5, 5]];
     let clear = false;
     for (const [dx, dz] of offsets) {
       await qa(shooter, (q, a) => q.teleport(a.x, a.y, a.z, 0), { x: v[0] + dx, y: v[1] + 0.05, z: v[2] + dz });
@@ -162,8 +163,8 @@ try {
       const vs = await state(victim);
       if (!vs.alive) break;
       await qa(shooter, (q, id) => q.aimAt(id), victimId);
-      await qa(shooter, (q, w) => (w === 'knife' ? q.stab() : q.fire()), weaponId);
-      await sleep(weaponId === 'awp' ? 1600 : weaponId === 'knife' ? 1150 : 350);
+      await qa(shooter, (q, w) => (w === 'knife' || w === 'katana' ? q.stab() : q.fire()), weaponId);
+      await sleep(weaponId === 'awp' ? 1600 : weaponId === 'katana' ? 1350 : weaponId === 'knife' ? 1150 : 350);
     }
     let dead = false;
     for (let i = 0; i < 20 && !dead; i += 1) {
@@ -188,6 +189,7 @@ try {
   await killWith(A, idB, B, 'awp', 3);
   await killWith(A, idB, B, 'deagle', 8);
   await killWith(A, idC, C, 'knife', 4);
+  await killWith(A, idB, B, 'katana', 4);
 
   await A.page.bringToFront();
   await A.page.keyboard.down('Tab');

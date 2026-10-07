@@ -1,6 +1,15 @@
 # Knife models (v2)
 
-All 20 knives in `public/knives/<id>.glb` are original geometry built by
+The game ships 12 knives, each a distinct CS2 type under its CS2 name: Karambit,
+Butterfly Knife, M9 Bayonet, Talon Knife, Skeleton Knife, Bayonet, Flip Knife,
+Stiletto Knife, Huntsman Knife, Bowie Knife, Gut Knife and Shadow Daggers
+(`src/combat/knives.ts`). Their models are in `public/knives/<id>.glb`. The
+eight retired types (falchion, navaja, ursus, classic, paracord, survival,
+nomad, kukri) were dropped from the loadout as near duplicates; their builders
+and notes below are kept and still build by id, and the screenshots further
+down still show all 20.
+
+Every model is original geometry built by
 committed Blender scripts. Nothing is imported: no Valve or Counter-Strike
 meshes, textures or screenshots were downloaded or used. Each knife follows the
 real-world knife CS2 patterned it on (listed below) plus CS2's published item
@@ -16,7 +25,7 @@ and hints.
 ## Rebuild
 
 ```bash
-# all 20 raw glbs (lod0 and lod1) into .blender-tmp/knives, about 5 min on the M5 (texture bakes on the gpu)
+# the 12 shipped knives' raw glbs (lod0 and lod1) into .blender-tmp/knives, a few minutes on the M5 (texture bakes on the gpu)
 blender -b --factory-startup --python-exit-code 1 -P tools/blender/knives/build_knives.py
 # or a few: ... build_knives.py -- karambit talon [--no-bake] [--no-lod] [--quick]
 npx tsx tools/blender/knives/optimize_knives.ts          # -> public/knives/<id>.glb (webp up to 2048) and <id>_lod1.glb (512)

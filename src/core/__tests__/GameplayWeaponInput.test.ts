@@ -27,8 +27,9 @@ describe('gameplay weapon wheel input', () => {
   it('cycles deterministically in both directions with wraparound', () => {
     expect(selectWeaponFromInput('awp', null, 1)).toBe('deagle');
     expect(selectWeaponFromInput('deagle', null, 1)).toBe('knife');
-    expect(selectWeaponFromInput('knife', null, 1)).toBe('awp');
-    expect(selectWeaponFromInput('awp', null, -1)).toBe('knife');
+    expect(selectWeaponFromInput('knife', null, 1)).toBe('katana');
+    expect(selectWeaponFromInput('katana', null, 1)).toBe('awp');
+    expect(selectWeaponFromInput('awp', null, -1)).toBe('katana');
     expect(selectWeaponFromInput('knife', null, -1)).toBe('deagle');
   });
 

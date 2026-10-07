@@ -1,8 +1,8 @@
 import type { CosmeticsManifest, LoadoutSelection } from '../cosmetics/types';
 import type { CharacterLook } from '../characters/look';
-import type { KnifeId } from '../combat/knives';
+import { DEFAULT_KNIFE_ID, type KnifeId } from '../combat/knives';
 import type { KnifeFinishSelection } from '../cosmetics/finishes/catalog';
-import type { KnifeLoadoutSelection } from '../cosmetics/finishes/selection';
+import { defaultKnifeSelection, type KnifeLoadoutSelection } from '../cosmetics/finishes/selection';
 import type { MapManifestEntry } from '../world/types';
 import { devToolsEnabled } from '../app/devTools';
 import type { GameSettings } from './SettingsStore';
@@ -98,6 +98,7 @@ export class MainMenu {
   private activeTab: TabId = 'play';
   private visible = true;
   private preview: CharacterPreview | null = null;
+  private knifePick: KnifeLoadoutSelection = defaultKnifeSelection();
 
   constructor(parent: HTMLElement, settings: GameSettings, private readonly callbacks: MainMenuCallbacks) {
     this.settings = { ...settings };
@@ -190,8 +191,14 @@ export class MainMenu {
 
     const loadoutSection = this.makeSection('loadout', 'Loadout', 'Your AWP, Deagle and the knife you carry.');
     this.loadoutPanel = new LoadoutPanel(loadoutSection, {
-      onKnifeSelected: (knifeId) => this.callbacks.onKnifeSelected?.(knifeId),
-      onKnifeFinishChanged: (selection) => this.callbacks.onKnifeFinishChanged?.(selection),
+      onKnifeSelected: (knifeId) => {
+        this.showKnife({ ...this.knifePick, knifeId: knifeId ?? DEFAULT_KNIFE_ID });
+        this.callbacks.onKnifeSelected?.(knifeId);
+      },
+      onKnifeFinishChanged: (selection) => {
+        this.showKnife({ ...this.knifePick, ...selection, knifeId: this.knifePick.knifeId });
+        this.callbacks.onKnifeFinishChanged?.(selection);
+      },
     });
     panels.appendChild(loadoutSection);
 
@@ -205,7 +212,7 @@ export class MainMenu {
       customize.className = 'cz-open-btn';
       customize.innerHTML = '<span class="cz-open-label">Customize character</span>'
         + '<span class="cz-open-go">Open</span>'
-        + '<span class="cz-open-sub">Armor, paint, emblem and tag</span>';
+        + '<span class="cz-open-sub">Skin, paint, emblem and tag</span>';
       customize.addEventListener('click', () => this.callbacks.onCustomize?.());
       characterSection.appendChild(customize);
     }
@@ -295,6 +302,12 @@ export class MainMenu {
 
     try {
       this.preview = new CharacterPreview(stageMount);
+      this.preview.setKnife(this.knifePick);
+      // dev tools: freeze the menu idle at a time for screenshots
+      if (devToolsEnabled()) {
+        (window as unknown as { __menuClock?: (t: number | null) => void }).__menuClock = (t) => this.preview?.setClock(t);
+        (window as unknown as { __menuPreview?: CharacterPreview | null }).__menuPreview = this.preview;
+      }
     } catch {
       this.preview = null; // WebGL unavailable, menu still works, just no 3D
     }
@@ -460,11 +473,19 @@ export class MainMenu {
   /** Reflects the stored knife choice without firing the callback. */
   public setSelectedKnife(knifeId: KnifeId | null): void {
     this.loadoutPanel.setSelectedKnife(knifeId);
+    this.showKnife({ ...this.knifePick, knifeId: knifeId ?? DEFAULT_KNIFE_ID });
   }
 
   /** reflects the stored knife finish without firing the callback */
   public setKnifeFinish(selection: KnifeFinishSelection): void {
     this.loadoutPanel.setKnifeFinish(selection);
+    this.showKnife({ ...this.knifePick, finishId: selection.finishId, wear: selection.wear, seed: selection.seed });
+  }
+
+  /** the menu character holds the knife and finish the player carries */
+  private showKnife(pick: KnifeLoadoutSelection): void {
+    this.knifePick = pick;
+    this.preview?.setKnife(pick);
   }
 
   private refreshPlayLabel(): void {
