@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { Vector3 } from 'three';
+import { BoxGeometry, Group, Mesh, MeshBasicMaterial, Vector3 } from 'three';
 import { CollisionWorld } from '../../world/CollisionWorld';
 import { createMovementTestScene } from '../../movement/MovementTestScene';
+import { STAND_EYE_HEIGHT } from '../../movement/hull';
 import { PLAYER_CAPSULE_HEIGHT, PLAYER_CAPSULE_RADIUS } from '../CombatArena';
 import { resolveHit } from '../HitResolver';
+import { createSeededRandom } from '../Inaccuracy';
 import {
   BotController,
   DEFAULT_BOT_PARAMS,
@@ -79,7 +81,7 @@ describe('decideBotInput', () => {
     // Bot at origin facing -Z (yaw 0). Target straight ahead, close, at eye height.
     const aimed = decideBotInput(
       state({ pitchRad: 0 }),
-      { targetFeet: new Vector3(0, -0.4, -30) }, // feet+1.2 ≈ eye(1.6): near-zero pitch
+      { targetFeet: new Vector3(0, STAND_EYE_HEIGHT - 1.2, -30) },
       DEFAULT_BOT_PARAMS,
       dt,
     );
@@ -100,6 +102,23 @@ describe('decideBotInput', () => {
     // Target well above -> desired pitch > 0 -> positive pitchDelta.
     const d = decideBotInput(state(), { targetFeet: new Vector3(0, 100, -30) }, DEFAULT_BOT_PARAMS, dt);
     expect(d.pitchDelta).toBeGreaterThan(0);
+  });
+
+  it('advances, strafes both ways and creates space from visible targets', () => {
+    const distant = { targetFeet: new Vector3(0, 0, -40), targetVisible: true };
+    expect(decideBotInput(state(), distant, DEFAULT_BOT_PARAMS, dt).forwardMove).toBe(1);
+    const inRange = { targetFeet: new Vector3(0, 0, -10), targetVisible: true };
+    const left = decideBotInput(state({ timeSec: 3 }), inRange, DEFAULT_BOT_PARAMS, dt);
+    const right = decideBotInput(state({ timeSec: 1 }), inRange, DEFAULT_BOT_PARAMS, dt);
+    expect(left.sideMove * right.sideMove).toBeLessThan(0);
+    expect(left.forwardMove).toBe(0);
+    expect(decideBotInput(state(), { ...inRange, targetFeet: new Vector3(0, 0, -3) }, DEFAULT_BOT_PARAMS, dt).forwardMove).toBeLessThan(0);
+  });
+
+  it('does not fire several metres off target at long range', () => {
+    const target = { targetFeet: new Vector3(0, STAND_EYE_HEIGHT - 1.2, -100), targetVisible: true };
+    expect(decideBotInput(state({ yawRad: 0.03 }), target, DEFAULT_BOT_PARAMS, dt).fire).toBe(false);
+    expect(decideBotInput(state(), target, DEFAULT_BOT_PARAMS, dt).fire).toBe(true);
   });
 
   it('air-strafes (holds a strafe, no forward) instead of walking while surfing', () => {
@@ -159,7 +178,7 @@ describe('bot visibility fairness', () => {
   });
 
   it('will not fire through blocked line of sight', () => {
-    const target = new Vector3(0, -0.4, -30);
+    const target = new Vector3(0, STAND_EYE_HEIGHT - 1.2, -30);
     const visible = decideBotInput(
       state({ pitchRad: 0 }),
       { targetFeet: target, targetVisible: true },
@@ -175,7 +194,8 @@ describe('bot visibility fairness', () => {
 
     expect(visible.fire).toBe(true);
     expect(blocked.fire).toBe(false);
-    expect(visible.forwardMove).toBe(0);
+    expect(visible.forwardMove).toBe(1);
+    expect(Math.abs(visible.sideMove)).toBeGreaterThan(0);
     expect(blocked.forwardMove).toBe(1);
   });
 
@@ -327,7 +347,7 @@ describe('bot visibility fairness', () => {
     expect(resolveHit(body.origin, body.direction, 100, capsule)?.hitbox).toBe('body');
     expect(resolveHit(fatalBody.origin, fatalBody.direction, 100, capsule)?.hitbox).toBe('body');
     expect(Math.abs(warning.yaw - body.yaw)).toBeGreaterThan(0.05);
-    expect(fatalBody.yaw).toBeCloseTo(body.yaw, 2);
+    expect(fatalBody.origin.distanceTo(body.origin)).toBeGreaterThan(0.01);
 
     bot.tick(dt, world, { ...target, targetVisible: false });
     const peekWarning = tickToShot();
@@ -410,6 +430,47 @@ describe('BotController (integrates real physics)', () => {
     world.setCollisionFromRoot(root);
     return world;
   }
+
+  it.each([15, 40, 80])('moves and lands sustained shots on a moving target at %s metres', distance => {
+    const floor = new Mesh(new BoxGeometry(240, 1, 240), new MeshBasicMaterial());
+    floor.position.y = -0.5;
+    const root = new Group();
+    root.add(floor);
+    const world = new CollisionWorld();
+    world.setCollisionFromRoot(root);
+    const bot = new BotController(new Vector3(0, 0.04, 0), 0, {
+      ...DEFAULT_BOT_PARAMS,
+      stopDistance: distance,
+    }, createSeededRandom(42));
+    const target = new Vector3(0, 0.04, -distance);
+    let accepted = 0;
+    let attempts = 0;
+    let hits = 0;
+    let minX = 0;
+    let maxX = 0;
+    for (let frame = 0; frame < 1800; frame += 1) {
+      target.x = Math.sin(frame * dt * 0.6) * 3;
+      bot.tick(dt, world, { targetId: 'moving-human', targetFeet: target, targetVisible: true });
+      minX = Math.min(minX, bot.getFeet().x);
+      maxX = Math.max(maxX, bot.getFeet().x);
+      if (!bot.wantsToFire()) continue;
+      accepted += 1;
+      if (accepted > 3) {
+        attempts += 1;
+        if (resolveHit(bot.getCameraPosition(), bot.getForwardVector(), 110, [{
+          id: 'moving-human', feet: target, height: PLAYER_CAPSULE_HEIGHT, radius: PLAYER_CAPSULE_RADIUS,
+        }])) hits += 1;
+      }
+      bot.onShotFired();
+    }
+    expect(maxX - minX).toBeGreaterThan(2);
+    expect(attempts).toBeGreaterThanOrEqual(6);
+    expect(hits / attempts, `${hits}/${attempts} sustained hits`).toBeGreaterThan(0.6);
+    expect(bot.hasFallenOff()).toBe(false);
+    world.clear();
+    floor.geometry.dispose();
+    floor.material.dispose();
+  });
 
   it('moves toward a target over time without leaving the world (no noclip)', () => {
     const world = makeWorld();

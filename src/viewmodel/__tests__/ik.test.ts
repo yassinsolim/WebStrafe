@@ -65,6 +65,26 @@ describe('solveTwoBone', () => {
     expect(elbow.distanceTo(wrist)).toBeCloseTo(b, 5);
   });
 
+  it('never flips the elbow across when the hand asks for it half a turn away', () => {
+    const shoulder = new Vector3(0, 0, 0);
+    const target = new Vector3(0, -0.2, -0.4);
+    const pole = new Vector3(1, -0.5, 0);
+    const along = target.clone().normalize();
+    const elbow = new Vector3();
+    const wrist = new Vector3();
+    let previous: Vector3 | null = null;
+    let worst = 0;
+    for (let degrees = 90; degrees <= 270; degrees += 1) {
+      const away = new Vector3(1, 0, 0).applyAxisAngle(along, degrees * Math.PI / 180);
+      const handDirection = along.clone().multiplyScalar(0.2).add(away).normalize();
+      solveTwoBone(shoulder, target, pole, a, b, elbow, wrist, handDirection);
+      if (previous) worst = Math.max(worst, elbow.distanceTo(previous));
+      previous = elbow.clone();
+    }
+    // a 1 degree change in the request moves the elbow millimetres, not across the arm
+    expect(worst).toBeLessThan(0.012);
+  });
+
   it('keeps the authored elbow when the wrist is already comfortable', () => {
     const target = new Vector3(0.12, -0.16, -0.3);
     const pole = new Vector3(0.5, -0.8, 0);
@@ -121,6 +141,21 @@ describe('constrainWristRotation', () => {
         expect(actual.length()).toBeCloseTo(1, 6);
       }
     }
+  });
+
+  it('moves the hand smoothly while the request folds back through straight behind the forearm', () => {
+    const forearm = new Vector3(0, 1, 0);
+    const axis = new Vector3(1, 0.15, 0).normalize();
+    let previous: Quaternion | null = null;
+    let worst = 0;
+    for (let degrees = 120; degrees <= 240; degrees += 1) {
+      const desired = new Quaternion().setFromAxisAngle(axis, -degrees * Math.PI / 180);
+      const actual = constrainWristRotation(forearm, desired, new Quaternion());
+      if (previous) worst = Math.max(worst, actual.angleTo(previous) - desired.angleTo(new Quaternion().setFromAxisAngle(axis, -(degrees - 1) * Math.PI / 180)));
+      previous = actual.clone();
+    }
+    // it used to jump from +40 to -45 degrees of flex in one step
+    expect(worst * 180 / Math.PI).toBeLessThan(12);
   });
 });
 

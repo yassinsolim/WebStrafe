@@ -822,6 +822,7 @@ export class GameApp {
     );
     const startedKnifeAttack = this.viewmodel.consumeStartedAttack();
     if (startedKnifeAttack) {
+      this.playerCharacter?.triggerAttack(startedKnifeAttack);
       if (this.viewmodel.getActiveItem() === 'katana') {
         this.audio.play('katanaSwing', { variant: startedKnifeAttack === 'secondary' ? 1 : 0, delay: startedKnifeAttack === 'secondary' ? 0.26 : 0.06 });
       } else {
@@ -840,6 +841,8 @@ export class GameApp {
       this.movement.getFeetPosition(),
       this.movement.getYawRad(),
       this.playing && this.debugCameraMode === 'thirdPerson',
+      this.movement.getPitchRad(),
+      this.movement.isGrounded(),
     );
     if (this.combatEnabled) {
       this.updateCombat(time);
@@ -863,12 +866,14 @@ export class GameApp {
 
     this.mapEnvironment.update(frameDt, this.worldCamera);
     const firstPerson = this.playing && this.debugCameraMode === 'firstPerson' && this.shot?.viewmodel !== false;
-    this.pipeline.render(
-      this.worldScene,
-      this.worldCamera,
-      firstPerson ? this.viewmodelRenderer.scene : null,
-      firstPerson ? this.viewmodelRenderer.camera : null,
-    );
+    if (this.playing) {
+      this.pipeline.render(
+        this.worldScene,
+        this.worldCamera,
+        firstPerson ? this.viewmodelRenderer.scene : null,
+        firstPerson ? this.viewmodelRenderer.camera : null,
+      );
+    }
     if (perf) {
       perf.cpu(performance.now() - loopStart, this.renderer.info.render.calls, this.renderer.info.render.triangles);
     }
@@ -1698,12 +1703,12 @@ export class GameApp {
     }
 
     const message = status === 'running'
-      ? 'Combat audio ready · Deagle/AWP fire + reload active'
+      ? 'Audio ready'
       : status === 'suspended'
-        ? 'Combat audio waiting for a browser gesture'
+        ? 'Audio paused by browser'
         : status === 'unavailable'
-          ? 'Combat audio unavailable · visual feedback remains active'
-          : 'Combat audio failed to start · see console for details';
+          ? 'Audio unavailable'
+          : 'Audio failed to start';
     this.showStatus(message, status === 'running' ? 3200 : 5000);
   }
 
@@ -2030,7 +2035,7 @@ export class GameApp {
       this.worldCamera.rotation.set(this.movement.getPitchRad(), this.movement.getYawRad(), 0, 'YXZ');
     }
 
-    this.viewmodelRenderer.update(dt, this.worldCamera, this.movement.getVelocity(), look);
+    this.viewmodelRenderer.update(dt, this.worldCamera, this.movement.getVelocity(), look, this.movement.isGrounded());
     this.syncViewmodelLighting(dt);
     this.setCrosshairVisible(
       this.playing && this.debugCameraMode === 'firstPerson' && !this.combatAim.isScoped(),
@@ -2909,6 +2914,7 @@ export class GameApp {
       renderer: this.renderer,
       pipeline: this.pipeline,
       environment: this.mapEnvironment,
+      remotePlayers: this.remotePlayers,
     };
     if (shot.time) this.viewmodel.setClockOverride(shot.time);
     if (shot.knife) this.viewmodel.setKnife(shot.knife as KnifeId);

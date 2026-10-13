@@ -3,9 +3,10 @@
 Reference notes for the menu character and first-person weapon presentation.
 The motion language is inspired by polished tactical shooters, without copying
 proprietary assets, animation data, or gameplay. Shared camera-space movement is
-implemented in `src/cosmetics/ViewmodelRenderer.ts`; authored knife actions live
-in `src/cosmetics/KnifePresentationMotion.ts`; firearm-local mechanics live in
-`src/cosmetics/WeaponViewmodels.ts`.
+implemented in `src/cosmetics/ViewmodelRenderer.ts`; the arms, knives and guns
+and their clips live in `src/viewmodel/` (`ViewmodelSystem.ts`, `clips.ts`,
+`knifeClips.ts`, `viewmodelClips.ts`); the springs and blends everything
+shares are in `src/viewmodel/motion.ts`.
 
 The whole point: a weapon that's rigidly bolted to the camera feels dead. Real
 FPS weapons have a handful of small, layered procedural motions that sell the
@@ -14,25 +15,27 @@ rotation < 0.15 rad) and composited every frame.
 
 ## The layers
 
-1. **Sway / lag** — the weapon lags a frame behind fast view rotation, then eases
+1. **Sway / lag** — the weapon lags behind fast view rotation, then eases
    back to centre. Both a positional offset and a rotational (yaw/pitch) lag.
-   Driven by the frame's look delta, clamped, and low-pass filtered. This is the
-   single most important "alive" cue.
+   Driven by the look rate (per second, so it is the same at any frame rate),
+   clamped, and followed on a critically damped spring; heavier guns lag more.
+   This is the single most important "alive" cue.
 
 2. **Walk / run bob** — a gentle figure-8: horizontal sway at the step frequency,
-   vertical bounce at twice that, plus a little roll. Amplitude scales with
-   horizontal speed (0 when still, full when running).
+   vertical bounce at twice that, plus a little roll. Amplitude follows
+   horizontal speed on a spring and only plays with feet on the ground (not
+   while bhopping or surfing).
 
 3. **Sprint lower** — when moving fast the weapon drops slightly and pitches down
    (the "lowered ready" look). Scales with the same speed factor as the bob.
 
-4. **Jump / land dip** — driven by vertical velocity. Rising (jump) lifts the
-   weapon a touch; a hard landing punches it down + pitches up, then recovers.
-   Landing intensity scales with impact speed.
+4. **Jump / land dip** — driven by vertical velocity. Rising lifts the weapon a
+   touch on a spring; a hard landing kicks a spring downward, so the dip builds
+   over a few frames and settles instead of popping in one.
 
 5. **Fire kick** — on each shot the weapon kicks back (+Z, toward the camera) and
-   the muzzle rises (pitch up), then recovers quickly. Layered on top of any
-   authored fire animation clip.
+   the muzzle rises (pitch up), then recovers. A shot fired during a recovery
+   stacks on top of it (softly topped out) instead of snapping it back to zero.
 
 6. **Reload presentation** — combat timing stays authoritative while the visible
    weapon samples its licensed source rig's authored reload clip by normalized
@@ -109,8 +112,13 @@ rotation < 0.15 rad) and composited every frame.
   turned about its blade or a hand nearer the camera can have nearly the same
   outline and hopping between them reads as jitter. The track is then
   smoothed (the twist about the blade and the elbow most) and keyed every
-  2 frames; `clip.seqSpline` plays those keys on a time spline through
-  position, rotation and elbow so the speed carries through every key. An
+  2 frames. At load the keys are resampled every frame, smoothed again over
+  about a frame and a half and keyed every other frame
+  (`knifePoses.fittedAttackTrack`), which keeps the cut's speed but irons out
+  the capture's wobble, gaps and held frames. Every pose sequence plays on a
+  cubic hermite in time (`clips.seqWeights`): each key has one velocity, so
+  the motion runs through keys instead of stopping at each, and only rests on
+  holds, eased keys and the end. An
   outline alone can't tell a blade seen side on from one pointing into the
   screen, and CS2's thick sleeve and glove pull a slim arm's fit off, so 21
   of the attacks were refitted with the sleeve ignored and the blade matched
@@ -119,9 +127,10 @@ rotation < 0.15 rad) and composited every frame.
   0.29) while the outline match barely moved (0.56 to 0.54). The other
   attacks keep the outline-only fit, because the blade-line fit jolted more
   on them (CS2's blurred blade is hard to pick out). The butterfly stab
-  reaches further forward than our arm can, so it stays short. The
-  difference between CS2's idle and ours fades out over the swing's start and
-  in over the settle, so attacks leave and rejoin the idle without a pop. Out
+  reaches further forward than our arm can, so it stays short. An attack
+  starts on the capture's first frame already moving; the switch into it
+  carries the hand there from wherever it was (see Wiring), and it settles
+  into our idle over 0.18 s at the end. Out
   of view the knife is parked under the screen until it rises back the way
   CS2's does. Where the
   capture lacks an attack, the nearest knife's is used (butterfly forehand and
@@ -168,15 +177,23 @@ rotation < 0.15 rad) and composited every frame.
 
 ## Wiring
 
-- `ViewmodelRenderer.update(dt, worldCamera, velocity, lookDelta)` computes a
-  **dynamic delta** (`motionPos` + `motionRot`) once per frame. Each weapon uses
-  the same motion language with its own scale: the knife is lightest and most
-  agile, the Deagle is restrained, and the AWP is heaviest.
-- `GameApp` copies that delta onto `WeaponViewmodels.root`; the knife receives it
-  through the renderer root. Gun seating and firearm recoil remain independent.
-- `KnifePresentationMotion` adds a short equip settle and restrained
-  primary/secondary envelopes around the exact baked clip durations. Every
-  envelope reaches a zero delta before returning to idle, avoiding pose snaps.
+- `ViewmodelRenderer.update(dt, worldCamera, velocity, lookDelta, grounded)`
+  computes a **dynamic delta** (`motionPos` + `motionRot`) once per frame. Each
+  weapon uses the same motion language with its own scale: the knife is
+  lightest and most agile, the Deagle is restrained, and the AWP is heaviest.
+- `GameApp` copies that delta onto `ViewmodelSystem.root`, so the arms, knives
+  and guns all ride it.
+- Switching clips in `ViewmodelSystem` (an attack during an attack, a cancel, a
+  clip ending) never freezes or crossfades: the difference between where the
+  old clip left the item, its elbow and every channel, and how fast they were
+  moving, is kept as an offset that dies away on a critically damped spring
+  (inertial blending, `motion.ts`). Attacks take it out fastest.
+- The arm solve keeps the elbow's swing round the arm and the wrist limit's
+  correction on short springs during play, so an elbow hint passing over the
+  arm line or a hand asked past the wrist limit rounds the corner instead of
+  whipping across. Scrubbing (`seek`, the grip check) solves each frame fresh.
+- The free fist follows its clip's `leftDrop` on a spring: a clip that wants
+  it down takes it down, and keeps it down when it already is.
 - `ViewmodelRenderer.addFireKick()` is called from the local fire path (guns) to
   add the recoil kick.
 - `Y` starts a client-side inspect only from an idle weapon. The shared envelope
@@ -204,3 +221,24 @@ the main tuning surfaces. Keep them subtle; the effect should read as "alive",
 never floaty, clipped, or nauseating. The integrated knife applies a bounded
 gain to the shared motion scale so its large baked hand rig remains readable
 without changing the firearm profiles.
+
+## Third person
+
+Other players (and your own body in the third person debug camera) move on
+top of the knife stance (`src/multiplayer/thirdPersonMotion.ts`, posed by
+`playerRig.applyBodyMotion`): a stride that follows their real ground speed
+and direction (backwards and across too), hips turning with it, leans, the
+chest and head following the aim pitch, the free arm swinging, legs tucked in
+the air with a dip on landing, and knife attacks with a wind up, cut and
+follow through that carry on from each other.
+
+## Checking motion
+
+- `node tools/qa/animation-audit.mjs <url> <out> [knife ...|guns] --live
+  [--video]` plays every knife and gun clip and real sequences (slash spam,
+  cancels, repeat fire) and counts pops, jolts, hitches, finger snaps and the
+  free arm flickering. `tools/qa/animation-audit-compare.mjs` diffs two runs.
+- `node tools/qa/third-person-motion.mjs <url> <out> [--video]` drives dev
+  characters through walking, strafing, jumping, aiming and attacks.
+- The grip check (`STEP=0.0333 node tools/qa/grip-check.mjs`) must stay at
+  zero failures after any clip or finger change.

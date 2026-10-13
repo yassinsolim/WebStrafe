@@ -15,6 +15,7 @@ import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { getKnife } from '../combat/knives';
 import { buildProceduralKnife, KNIFE_NODES } from '../cosmetics/ProceduralKnife';
 import { signedAngleAbout } from '../viewmodel/ik';
+import type { BodyMotion } from './thirdPersonMotion';
 
 /**
  * Shared player-model rigging: locating the arm bones, attaching a knife to the
@@ -602,7 +603,8 @@ export function menuFlourish(t: number): { up: number; spin: number; loosen: num
   };
   const up = smooth(0, 0.4, local) * (1 - smooth(1.05, 1.65, local));
   const spin = smooth(0.38, 0.9, local);
-  const loosen = Math.sin(Math.PI * Math.min(1, Math.max(0, (local - 0.34) / 0.62))) * 0.85;
+  // sin squared: the fingers ease open and shut instead of starting at full speed
+  const loosen = Math.sin(Math.PI * Math.min(1, Math.max(0, (local - 0.34) / 0.62))) ** 2 * 0.85;
   const glance = smooth(0.15, 0.45, local) * (1 - smooth(1.0, 1.5, local));
   return { up, spin: spin >= 1 ? 0 : spin, loosen, glance };
 }
@@ -700,6 +702,69 @@ function aimKnife(hand: Bone, knife: Object3D, handDir: Vector3, bladeDir: Vecto
 /** swings a leg bone forward (negative) or back about the model's left-right axis */
 function swingBone(bone: Bone, angle: number): void {
   turnBone(bone, AXIS_X, angle);
+}
+
+// the stance's footwork (applyKnifeIdlePose), faded out as the stride or a jump takes over
+const STANCE_LEGS = { left: [-0.16, 0.14], right: [0.1, 0.12] } as const;
+const attackEuler = new Euler(0, 0, 0, 'XYZ');
+const attackQuat = new Quaternion();
+
+function composeOnto(bone: Bone, offset: readonly number[]): void {
+  attackEuler.set(offset[0], offset[1], offset[2], 'XYZ');
+  bone.quaternion.multiply(attackQuat.setFromEuler(attackEuler)).normalize();
+}
+
+/**
+ * the moving body on top of the knife stance (pose that first): hips turning
+ * with the stride and the chest turning back, leans, the aim pitch spread up
+ * the spine to the head, the free arm swinging against the legs, the legs
+ * striding (or tucked in the air) and the knife arm's attack. the numbers come
+ * from thirdPersonMotion.ts
+ */
+export function applyBodyMotion(rig: ArmRig, motion: BodyMotion): void {
+  if (rig.pelvis && rig.pelvisBase) {
+    rig.pelvis.quaternion.copy(rig.pelvisBase);
+    if (motion.hipTwist) turnBone(rig.pelvis, AXIS_Y, motion.hipTwist);
+  }
+  if (rig.spineMid) {
+    turnBone(rig.spineMid, AXIS_Y, -motion.hipTwist);
+    turnBone(rig.spineMid, AXIS_X, motion.lean * 0.6 - motion.aimPitch * 0.25);
+    turnBone(rig.spineMid, AXIS_Z, motion.sideLean * 0.6);
+  }
+  if (rig.spineUpper) {
+    turnBone(rig.spineUpper, AXIS_X, motion.lean * 0.4 - motion.aimPitch * 0.35);
+    turnBone(rig.spineUpper, AXIS_Z, motion.sideLean * 0.4);
+    if (motion.attack.twist) turnBone(rig.spineUpper, AXIS_Y, motion.attack.twist);
+  }
+  // the head stays level through the leans
+  if (rig.neck) turnBone(rig.neck, AXIS_X, -motion.lean * 0.5 - motion.aimPitch * 0.15);
+  if (rig.head) {
+    turnBone(rig.head, AXIS_X, -motion.lean * 0.5 - motion.aimPitch * 0.25);
+    turnBone(rig.head, AXIS_Z, -motion.sideLean);
+  }
+  if (rig.leftUpper && motion.armSwing) turnBone(rig.leftUpper, AXIS_X, -motion.armSwing);
+  if (motion.armSwing) turnBone(rig.rightUpper, AXIS_X, motion.armSwing * 0.25);
+  composeOnto(rig.rightUpper, motion.attack.upper);
+  composeOnto(rig.rightLower, motion.attack.lower);
+  composeOnto(rig.rightHand, motion.attack.hand);
+  if (!rig.legs) return;
+  for (const side of ['left', 'right'] as const) {
+    const leg = rig.legs[side];
+    if (!leg) continue;
+    const m = motion.legs[side];
+    const stance = rig.mpfbHands ? motion.footwork : 0;
+    const swing = STANCE_LEGS[side][0] * stance + m.swing;
+    const knee = STANCE_LEGS[side][1] * stance + m.knee;
+    leg.upper.quaternion.copy(leg.upperBase);
+    leg.lower.quaternion.copy(leg.lowerBase);
+    leg.foot.quaternion.copy(leg.footBase);
+    swingBone(leg.upper, swing - knee * 0.5);
+    if (m.side) turnBone(leg.upper, AXIS_Z, m.side);
+    swingBone(leg.lower, knee);
+    // the sole stays flat
+    swingBone(leg.foot, -(swing + knee * 0.5));
+    if (m.side) turnBone(leg.foot, AXIS_Z, -m.side);
+  }
 }
 
 /** turns a bone about an axis of the model's frame, on top of its current pose */

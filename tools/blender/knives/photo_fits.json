@@ -1,0 +1,14 @@
+{
+  "karambit": { "bladeLength": 0.76, "bladeHeight": 0.88, "handleLength": 0.88, "handleHeight": 1.12, "handleBend": 0.0144 },
+  "butterfly": { "bladeLength": 1.1, "bladeHeight": 0.94, "handleLength": 1, "handleHeight": 1, "handleBend": -0.0144 },
+  "m9_bayonet": { "bladeLength": 1.3, "bladeHeight": 0.94, "handleLength": 0.94, "handleHeight": 1, "handleBend": 0 },
+  "talon": { "bladeLength": 0.85, "bladeHeight": 1, "handleLength": 0.97, "handleHeight": 1, "handleBend": 0.0144 },
+  "skeleton": { "bladeLength": 0.85, "bladeHeight": 0.91, "handleLength": 1, "handleHeight": 0.82, "handleBend": 0 },
+  "bayonet": { "bladeLength": 1.12, "bladeHeight": 1, "handleLength": 1, "handleHeight": 0.94, "handleBend": 0 },
+  "flip": { "bladeLength": 1, "bladeHeight": 1, "handleLength": 1, "handleHeight": 1, "handleBend": 0 },
+  "stiletto": { "bladeLength": 1, "bladeHeight": 1, "handleLength": 1, "handleHeight": 1, "handleBend": 0 },
+  "huntsman": { "bladeLength": 1, "bladeHeight": 1, "handleLength": 1, "handleHeight": 0.94, "handleBend": -0.018 },
+  "bowie": { "bladeLength": 1, "bladeHeight": 1, "handleLength": 1, "handleHeight": 1, "handleBend": 0 },
+  "gut": { "bladeLength": 1, "bladeHeight": 1.09, "handleLength": 1, "handleHeight": 1.06, "handleBend": -0.018 },
+  "shadow_daggers": { "bladeLength": 1.21, "bladeHeight": 0.94, "handleLength": 0.82, "handleHeight": 0.8, "handleBend": 0 }
+}

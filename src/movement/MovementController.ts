@@ -433,6 +433,11 @@ export class MovementController {
     return this.velocity.clone();
   }
 
+  /** standing on the ground after the last tick (not airborne or surfing) */
+  public isGrounded(): boolean {
+    return this.debugState.grounded;
+  }
+
   public setVelocity(velocity: Vector3): void {
     this.velocity.copy(velocity);
   }

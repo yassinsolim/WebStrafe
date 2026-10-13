@@ -18,6 +18,7 @@ klib.py. the design notes and references for each knife are in
 docs/assets/knives.md.
 """
 
+import json
 import math
 import os
 import sys
@@ -42,6 +43,8 @@ MAX_TRIS = 15000
 LOD1_RATIO = 0.4
 STEEL_TEX, HANDLE_TEX, FITTING_TEX = 1024, 2048, 1024
 ONLY = [a for i, a in enumerate(ARGS) if not a.startswith("--") and (i == 0 or ARGS[i - 1] != "--out")]
+with open(os.path.join(os.path.dirname(__file__), "photo_fits.json"), encoding="utf-8") as photo_file:
+    PHOTO_FITS = json.load(photo_file)
 
 # cs2's ursus is a fixed blade ("no moving parts"); the contract lists it with the
 # folders, so it ships with blade_pivot. set False to build it fixed
@@ -231,8 +234,8 @@ def m9_guard(M, cy, top_y):
     """crossguard plate with the 22 mm muzzle ring above the spine (nato flash hider)"""
     guard = K.front("guard", [(-11, -13, 4), (-9, 13, 4), (top_y, 13, 5), (top_y, -13, 5)], -8.5, 0.0, M["metal"])
     K.bevel(guard, 1.0, segs=2)
-    ring_y = top_y + 15.0
-    ring = K.torus("muzzle_ring", -4.25, ring_y, 15.0, 3.6, 4.2, M["metal"], segs=32, tsegs=10, axis="X", e=3.0)
+    ring_y = top_y + 1.5
+    ring = K.torus("muzzle_ring", -4.25, ring_y, 13.7, 2.3, 2.8, M["metal"], segs=32, tsegs=10, axis="X", e=4.5)
     web = K.front("ring_web", [(top_y - 4, -9, 2), (top_y + 6, -7, 2), (top_y + 6, 7, 2), (top_y - 4, 9, 2)], -8.2, -0.3,
                   M["metal"])
     K.bevel(web, 0.8, segs=1)
@@ -262,25 +265,30 @@ def m9_pommel(M, cy, x0, half_h=(17.5, 15.0), half_w=14.0):
 
 def bayonet():
     k = K.Knife("bayonet")
-    M = K.materials(handle=(0x1c1d20, 0.72, 0.0, {"detail": "pebble", "strength": 0.7}),
-                    metal=(0x2b2d31, 0.42, 0.85), accent=(0x8c9198, 0.35, 1.0))
-    L, H, T = 180.0, 36.0, 5.8
-    ty = 16.5
-    edge = path(line((-4, 0), (112, 0), 8), quad((112, 0), (163, 0.4), (L, ty), 12))
-    spine = path(line((-4, H), (98, H), 7), line((98, H), (L, ty), 10))
-    b, tip, info = K.blade("blade", edge, spine, M, T, stations=50, grind="hollow", grind_h=0.46, ricasso=16,
-                           swedge={"from": 0.56, "width": 5.5, "depth": 0.62},
-                           fuller={"from": 0.07, "to": 0.5, "lo": 0.56, "hi": 0.73, "depth": 0.75})
+    M = K.materials(handle=(0x777e53, 0.67, 0.0, {"detail": "knurl", "strength": 0.45}),
+                    metal=(0x626b60, 0.42, 0.9), accent=(0x69736a, 0.4, 1.0))
+    L, H, T = 200.0, 32.0, 5.0
+    ty = 24.0
+    edge = path(line((-4, 0), (124, 0), 12), quad((124, 0), (177, 2.0), (L, ty), 16))
+    spine = path(line((-4, H), (123, H), 12), quad((123, H), (172, 31.0), (L, ty), 16))
+    b, tip, info = K.blade("blade", edge, spine, M, T, stations=54, grind="flat", grind_h=0.56, ricasso=13,
+                           swedge={"from": 0.66, "width": 5.5, "depth": 0.65},
+                           fuller={"from": 0.07, "to": 0.7, "lo": 0.64, "hi": 0.84, "depth": 1.25})
+    K.cut(b, hole_cutter(M, stadium((130.0, 24.0), (137.0, 24.0), 3.1, 8)))
     k.add_blade(b)
-    cy = H / 2
+    cy = 18.0
 
     def gshape(t):
-        s = 1.0 + 0.05 * math.sin(math.pi * t) + 0.07 * bump(t, 0.0, 0.05) + 0.06 * bump(t, 1.0, 0.05)
-        g = grooves(t, 11, 0.07, 0.07, 0.93, 1.5)
-        return (s * g, s * g, s * g)
+        swell = 1.0 + 0.025 * math.sin(math.pi * t)
+        groove = sum(0.095 * bump(t, center, 0.017) for center in (0.16, 0.29, 0.42, 0.55, 0.68, 0.81))
+        collar = 0.04 * bump(t, 0.02, 0.018) + 0.035 * bump(t, 0.96, 0.022)
+        return (swell - groove + collar,) * 3
 
-    handle = grip("grip", -8.0, -116.0, cy, 30.0, 26.5, M["handle"], rings=56, segs=24, shape=gshape)
-    k.add(*m9_guard(M, cy, 42.0), handle, *m9_pommel(M, cy, -115.0))
+    handle = grip("grip", -8.0, -116.0, cy, 30.0, 26.5, M["handle"], rings=88, segs=20, e=2.8, shape=gshape)
+    guard = K.front("guard", [(cy - 29.0, -11.0, 2.0), (cy - 29.0, 11.0, 2.0),
+                               (cy + 27.0, 10.0, 2.0), (cy + 27.0, -10.0, 2.0)], -6.0, 0.0, M["metal"])
+    K.bevel(guard, 0.6, segs=2)
+    k.add(guard, handle, *m9_pommel(M, cy, -115.0))
     k.socket("socket_tip", *tip)
     k.socket("socket_grip", -62.0, cy)
     k.extras = std_extras("hammer", info, 131, 28.6, 33.0)
@@ -291,26 +299,28 @@ def bayonet():
 
 def m9_bayonet():
     k = K.Knife("m9_bayonet")
-    M = K.materials(handle=(0x25271f, 0.7, 0.0, {"detail": "knurl", "strength": 1.0}),
+    M = K.materials(handle=(0x333832, 0.67, 0.0, {"detail": "knurl", "strength": 0.5}),
                     metal=(0x26282b, 0.4, 0.85), accent=(0x8c9198, 0.35, 1.0))
-    L, H, T = 190.0, 38.0, 6.0
-    ty = 17.0
-    edge = path(line((-4, 0), (120, 0), 8), quad((120, 0), (172, 0.4), (L, ty), 12))
-    spine = path(line((-4, H), (106, H), 8), line((106, H), (L, ty), 10))
-    b, tip, info = K.blade("blade", edge, spine, M, T, stations=54, grind="hollow", grind_h=0.44, ricasso=16,
-                           swedge={"from": 0.56, "width": 5.5, "depth": 0.6})
+    L, H, T = 190.0, 42.0, 6.0
+    ty = 22.0
+    edge = path(line((-4, 0), (116, 0), 10), cubic((116, 0), (146, -1.5), (177, 4.0), (L, ty), 16))
+    spine = path(line((-4, H), (103, H), 10), quad((103, H), (146, 24.0), (L, ty), 16))
+    b, tip, info = K.blade("blade", edge, spine, M, T, stations=54, grind="flat", grind_h=0.6, ricasso=14,
+                           swedge={"from": 0.53, "width": 7.0, "depth": 0.7})
     # wire cutter hole about 1.6 in behind the tip (it pivots on the scabbard's post)
-    hole = hole_cutter(M, K.rounded([(140.5, 12.0, 3.5), (158.5, 13.6, 3.5), (157.9, 20.6, 3.5), (139.9, 19.0, 3.5)], 6))
+    hole = hole_cutter(M, K.rounded([(119.0, 17.0, 3.0), (132.0, 17.7, 3.0), (131.7, 24.7, 3.0), (118.7, 24.0, 3.0)], 6))
     K.cut(b, hole)
-    saw = K.teeth("saw", spine, 14.0, 100.0, 13, 3.6, K.spine_thickness(T, spine), M["blade"], rake=0.66)
+    saw = K.teeth("saw", spine, 16.0, 100.0, 11, 2.8, K.spine_thickness(T, spine), M["blade"], rake=0.78, tip_frac=0.3)
     k.add_blade(b, saw)
-    cy = H / 2
+    cy = 19.0
 
     def gshape(t):
-        s = 1.0 + 0.06 * bump(t, 0.0, 0.06) + 0.05 * bump(t, 1.0, 0.06) - 0.035 * math.sin(math.pi * t)
-        return (s, s, s)
+        swell = 1.0 - 0.025 * math.sin(math.pi * t)
+        groove = sum(0.09 * bump(t, center, 0.014) for center in (0.14, 0.27, 0.4, 0.53, 0.66, 0.79, 0.9))
+        collar = 0.045 * bump(t, 0.035, 0.025) + 0.035 * bump(t, 0.975, 0.015)
+        return (swell - groove + collar,) * 3
 
-    handle = grip("grip", -8.0, -118.0, cy, 32.0, 30.0, M["handle"], rings=16, segs=28, e=2.1, shape=gshape)
+    handle = grip("grip", -8.0, -118.0, cy, 32.0, 30.0, M["handle"], rings=100, segs=20, e=2.6, shape=gshape)
     k.add(*m9_guard(M, cy, 44.0), handle, *m9_pommel(M, cy, -117.0, (18.5, 16.5), 15.0))
     k.socket("socket_tip", *tip)
     k.socket("socket_grip", -63.0, cy)
@@ -333,14 +343,16 @@ def hawkbill(cx, cy, R, W0, th0, th1, n=40, taper=0.55, edge_k=0.96):
 
 def karambit():
     k = K.Knife("karambit")
-    M = K.materials(handle=(0x232427, 0.6, 0.0, {"detail": "g10", "strength": 0.90}),
-                    metal=(0xbfc4cb, 0.3, 1.0), accent=(0x9aa0a8, 0.3, 1.0))
+    M = K.materials(handle=(0x303633, 0.68, 0.0, {"detail": "g10", "strength": 0.65}),
+                    metal=(0x737c7b, 0.44, 1.0), accent=(0x454b48, 0.5, 0.85))
     T = 4.2
-    W0 = 13.0
-    edge, spine = hawkbill(0.0, -67.0, 80.0, W0, 93.0, 27.0, n=44)
+    W0 = 16.5
+    edge, spine = hawkbill(0.0, -80.0, 95.0, W0, 94.0, 24.0, n=48)
+    edge = [(position * 1.12, height) for position, height in edge]
+    spine = [(position * 1.12, height) for position, height in spine]
     edge = [(x, y + W0 * 0.04 * (1 if i < 2 else 0)) for i, (x, y) in enumerate(edge)]
-    b, tip, info = K.blade("blade", edge, spine, M, T, stations=50, grind="hollow", grind_h=0.56, ricasso=9,
-                           swedge={"from": 0.58, "width": 4.0, "depth": 0.6}, taper=0.45)
+    b, tip, info = K.blade("blade", edge, spine, M, T, stations=54, grind="hollow", grind_h=0.7, ricasso=6,
+                           swedge={"from": 0.64, "width": 3.0, "depth": 0.5}, taper=0.5)
     jimp = K.teeth("jimping", spine, 3.0, 17.0, 8, 0.9, K.spine_thickness(T, spine, 0.45), M["blade"], rake=0.5, sink=0.3)
     k.add_blade(b, jimp)
 
@@ -353,8 +365,8 @@ def karambit():
 
     def bot(x):
         t = -x / 88.0
-        return axis(x) - (12.5 + 6.5 * bump(t, 0.04, 0.045) - 2.8 * bump(t, 0.3, 0.12) + 1.2 * bump(t, 0.64, 0.16)
-                          - 1.5 * smooth(t, 0.75, 1.0))
+        scallops = sum(depth * bump(t, center, 0.105) for center, depth in ((0.25, 7.2), (0.49, 6.8), (0.72, 6.2)))
+        return axis(x) - (12.5 + 6.5 * bump(t, 0.04, 0.045) - scallops - 1.5 * smooth(t, 0.82, 1.0))
 
     Tp, Bt = outline(2.0, -91.0, 34, top, bot, r0=0.0, r1=0.0)
     tang = K.plate("tang", Tp + list(reversed(Bt)), T - 0.12, M["metal"])
@@ -362,11 +374,26 @@ def karambit():
     scale_t = 4.4
     scales = [K.slab("scale", Ts, Bs, T / 2, scale_t, s, M["handle"], dome=0.55) for s in (1, -1)]
     zout = T / 2 + scale_t
-    pins = [K.pin("pin", x, axis(x) + 0.5, 2.1, -zout + 0.3, zout - 0.3, M["accent"]) for x in (-13.0, -43.0, -71.0)]
+    for scale, side in zip(scales, (1, -1)):
+        for center in (0.25, 0.49, 0.72):
+            finger_x = -88.0 * center
+            pocket = W.sphere("finger_pocket", (finger_x * MM, (bot(finger_x) + 2.0) * MM,
+                                               side * (zout + 5.0) * MM), MM, 24, M["handle"],
+                              rings=16, scale=(12.0, 9.8, 7.2))
+            K.cut(scale, pocket)
+    pins = [K.pin("pin", x, top(x) - 4.0, 0.85, -zout + 0.3, zout - 0.3, M["accent"]) for x in (-8.0, -76.0)]
     ring_c = (-99.8, -22.4)
-    ring = K.torus("ring", ring_c[0], ring_c[1], 14.7, 3.2, T / 2 + 1.0, M["metal"], segs=40, tsegs=10, e=2.4)
-    clear_ring([tang], ring_c, 11.5, M)
-    k.add(tang, ring, *scales, *pins)
+    ring_profile = path(line((-80.0, -3.0), (-94.53, -7.93)), arc(ring_c[0], ring_c[1], 15.4, 70.0, 270.0, 32),
+                        quad((-99.8, -37.8), (-91.0, -38.5), (-84.5, -38.0), 8),
+                        quad((-84.5, -38.0), (-81.5, -22.0), (-80.0, -3.0), 12))
+    ring_housing = K.plate("ring_housing", ring_profile, 7.4, M["handle"])
+    clear_ring([tang, ring_housing], ring_c, 11.9, M)
+    K.bevel(ring_housing, 0.65, segs=2, angle=35)
+    ring = K.torus("ring_liner", ring_c[0], ring_c[1], 11.9, 0.4, 3.5, M["metal"], segs=36, tsegs=8, e=4.0)
+    thumb_ridges = K.teeth("thumb_ridges", list(reversed(Tp)), -27.0, -3.0, 7, 1.4, T, M["metal"], rake=0.55)
+    butt_ridges = K.teeth("butt_ridges", [(-105.0, -5.5), (-81.0, -0.5)], -103.0, -84.0,
+                          5, 1.2, 6.4, M["handle"], rake=0.55, sink=0.35)
+    k.add(tang, ring_housing, ring, thumb_ridges, butt_ridges, *scales, *pins)
     k.socket("socket_tip", *tip)
     k.socket("socket_grip", -43.0, axis(-43.0))
     k.socket("socket_ring", *ring_c)
@@ -382,8 +409,8 @@ def smooth(t, a, b):
 
 def butterfly():
     k = K.Knife("butterfly")
-    M = K.materials(handle=(0x2a2d31, 0.38, 0.85, {"detail": "bead", "strength": 1.0}),
-                    metal=(0xb8bdc4, 0.28, 1.0), accent=(0x1b1c1e, 0.5, 0.3))
+    M = K.materials(handle=(0x272c29, 0.43, 0.85, {"detail": "bead", "strength": 0.45}),
+                    metal=(0x9ca39e, 0.31, 1.0), accent=(0x777c74, 0.49, 0.75))
     L, H, T = 102.0, 23.0, 3.6
     ty = 10.5
     # curved clip point with a long concave swedge and a slight recurve (hybrid scimitar)
@@ -414,28 +441,62 @@ def butterfly():
         if s < 0:
             sec = [(y, z, *r) for (y, z, *r) in reversed(sec)]
         body = K.front(name + "_body", sec, -Lh, 0.0, M["handle"])
-        side = K.prism("c", [(-Lh + 3, cy - s * 1, 4), (-1.0, cy - s * 1, 2), (-1.0, y_out + s * 0.6, 3),
-                             (-Lh + 5, y_out + s * 0.6, 5)], -10, 10, M["handle"])
+        side = K.prism("c", [(-Lh + 3, cy - s * 1, 4), (-1.0, cy - s * 1, 6), (-1.0, y_out + s * 0.6, 6),
+                     (-Lh + 5, y_out + s * 0.6, 4)], -10, 10, M["handle"])
         W.boolean(body, side, op="INTERSECT")
         # the back is cut away round the pivot so the tang can sit between the walls
         K.cut(body, K.front("c", [(cy - s * 0.2, -gap), (cy - s * 0.2, gap), (yb + s * 0.4, gap), (yb + s * 0.4, -gap)],
                             -17.0, 2.0, M["handle"]))
         # drilled walls, like the milled titanium handles of the gargoyle-style original
         yc = cy + s * (band * 0.55 + 0.4)
-        slots = [hole_cutter(M, stadium((x - ln / 2, yc), (x + ln / 2, yc), 2.6, 6), depth=12.0)
-                 for x, ln in ((-34.0, 13.0), (-54.0, 13.0), (-74.0, 13.0), (-94.0, 11.0))]
+        slots = [K.lathe_z("vent", [(radius, -12.0), (radius, 12.0)], 12, M["handle"], position, yc)
+             for position, radius in ((-23.0, 1.8), (-33.0, 1.6), (-100.0, 1.7), (-110.0, 1.6), (-119.0, 1.4))]
         K.cut(body, slots)
         K.bevel(body, 0.55, segs=2, angle=35)
         px, py = pins[name]
         parts = [body] + [K.screw_head("pivot", px, py, 3.1, sz * zw, sz, M["metal"], socket="torx") for sz in (1, -1)]
-        parts += [K.screw_head("zen", x, cy + s * 6.8, 1.9, sz * zw, sz, M["metal"]) for x in (-64.0, -113.0) for sz in (1, -1)]
+        parts += [K.screw_head("zen", x, cy + s * 6.8, 1.5, sz * zw, sz, M["metal"], height=0.35)
+                  for x in (-17.0, -124.0) for sz in (1, -1)]
+        for face in (-1, 1):
+            inset_panel = K.prism("handle_inlay", stadium((-44.0, yc), (-87.0, yc), 3.2, 10),
+                                    *sorted((face * (zw - 0.45), face * (zw + 0.15))), M["accent"])
+            K.bevel(inset_panel, 0.2, segs=1, angle=35)
+            parts.append(inset_panel)
         if s < 0:
+            guard_profile = path(quad((-7.5, cy - 10.0), (-2.0, cy - 12.0), (-0.5, cy - 16.5), 6),
+                                 quad((-0.5, cy - 16.5), (0.2, cy - 21.0), (3.5, cy - 23.0), 6),
+                                 quad((3.5, cy - 23.0), (-3.0, cy - 21.5), (-4.8, cy - 16.0), 6),
+                                 line((-4.8, cy - 16.0), (-9.0, cy - 13.0)))
+            parts.append(K.plate("pivot_guard", guard_profile, 2.8, M["metal"]))
             latch = K.prism("latch", [(-Lh + 2.5, cy - 4.5, 2.0), (-Lh + 24.0, cy - 5.5, 2.5), (-Lh + 24.0, cy - 9.5, 2.0),
                                       (-Lh + 6.0, cy - 15.2, 2.0), (-Lh + 1.0, cy - 13.0, 2.0)], -1.3, 1.3, M["metal"])
             K.bevel(latch, 0.35, segs=1)
             latch_pin = K.pin("latch_pin", -Lh + 6.5, cy - 8.0, 1.5, -zw - 0.2, zw + 0.2, M["metal"])
             parts += [latch, latch_pin]
         k.handles[name] = (parts, pins[name])
+    for parts, _pivot in k.handles.values():
+        for part in parts:
+            working = K.bmesh.new()
+            working.from_mesh(part.data)
+            K.bmesh.ops.triangulate(working, faces=list(working.faces), quad_method="BEAUTY", ngon_method="BEAUTY")
+            for lower, upper, cuts in ((80.0, 1000.0, 5), (40.0, 80.0, 3), (20.0, 40.0, 1)):
+                long_edges = [edge for edge in working.edges
+                              if lower * MM < abs(edge.verts[0].co.x - edge.verts[1].co.x) <= upper * MM]
+                if long_edges:
+                    K.bmesh.ops.subdivide_edges(working, edges=long_edges, cuts=cuts, use_grid_fill=True)
+            working.to_mesh(part.data)
+            working.free()
+            for vertex in part.data.vertices:
+                position = vertex.co.x / MM
+                vertex.co.y -= 0.001 * (position + 6.5) * (position + 64.0) * MM
+            part.data.update()
+    kbake.decimate([part for parts, _pivot in k.handles.values() for part in parts], 0.82)
+    for part in k.blade:
+        for vertex in part.data.vertices:
+            position = max(0.0, vertex.co.x / MM)
+            vertex.co.y += 0.001 * position * (position - 44.5) * MM
+        part.data.update()
+    tip = (tip[0], tip[1] + 0.001 * tip[0] * (tip[0] - 44.5))
     k.socket("socket_tip", *tip)
     k.socket("socket_grip", -64.0, cy)
     k.socket("socket_pivot_safe", *pins["handle_safe"])
@@ -448,33 +509,42 @@ def butterfly():
 
 def flip():
     k = K.Knife("flip")
-    M = K.materials(handle=(0x1c1d20, 0.55, 0.0, {"detail": "g10", "strength": 0.99}),
-                    metal=(0xa9aeb5, 0.32, 1.0), accent=(0x151618, 0.5, 0.3))
-    L, H, T = 100.0, 30.0, 3.3
-    ty = 13.5
-    # broad blade with an angular (tanto-ish) swedge break and an upswept belly
-    edge = path(line((-4, 0), (52, 0), 5), cubic((52, 0), (78, 0.1), (94, 3.4), (L, ty), 12))
-    spine = path(line((-4, H), (54, 30.6), 6), line((54, 30.6), (L, ty), 8))
-    b, tip, info = K.blade("blade", edge, spine, M, T, stations=46, grind="flat", grind_h=0.6, ricasso=8,
-                           swedge={"from": 0.56, "width": 5.0, "depth": 0.62}, corner_deg=10.0)
+    M = K.materials(handle=(0x46523b, 0.72, 0.0, {"detail": "g10", "strength": 0.7}),
+                    metal=(0x747f6c, 0.4, 1.0), accent=(0x343e30, 0.5, 0.7))
+    L, H, T = 100.0, 29.0, 3.3
+    ty = 34.0
+    edge = path(line((-4, 0), (18, 0), 5), cubic((18, 0), (56, -2.0), (91, 11.0), (L, ty), 22))
+    spine = path(line((-4, H), (29, H), 6), quad((29, H), (70, 22.0), (L, ty), 20))
+    b, tip, info = K.blade("blade", edge, spine, M, T, stations=52, grind="hollow", grind_h=0.65, ricasso=6,
+                           swedge={"from": 0.48, "width": 4.0, "depth": 0.55})
+    serrations = [K.lathe_z("edge_scallop", [(2.1, -6.0), (2.1, 6.0)], 8, M["edge"], position, -0.5)
+                  for position in (7.0, 12.5, 18.0, 23.5, 29.0)]
+    K.cut(b, serrations, transfer=True)
     px = -9.0
 
     def top(x):
-        return 32.8 + 0.6 * bump(x, -40, 30) - 2.2 * smooth(x, -95.0, -126.0)
+        return 31.5 - 0.0016 * (x + 62.0) ** 2 + 6.0 * bump(x, -15.0, 20.0) - 8.0 * smooth(-x / 126.0, 0.68, 1.0) ** 2
 
     def bot(x):
-        return -3.8 + 3.6 * bump(x, -20, 8) - 1.6 * bump(x, -66, 24) + 1.8 * smooth(x, -100.0, -126.0)
+        return -2.5 - 0.0016 * (x + 62.0) ** 2 + 5.0 * bump(x, -24.0, 11.0) - 8.0 * smooth(-x / 126.0, 0.68, 1.0) ** 2
 
     py = fit_pivot("flip", px, edge, spine, top, bot)
     bb = back_line(top, px, py, edge, 3.4)
     rt = min(top(px) - py, py - bot(px)) - 0.9
-    tang = K.plate("tang", folder_tang(px, py, rt, H - 0.5, 0.5,
-                                       extra_bottom=[(px + 1.5, -2.0), (px + 2.5, -10.0, 3.0), (px + 9.0, -11.0, 3.0),
-                                                     (px + 12.5, -3.0, 2.0)]), T - 0.12, M["blade"])
-    k.add_blade(b, tang)
+    tang = K.plate("tang", folder_tang(px, py, rt, H - 0.5, 0.5), T - 0.12, M["blade"])
+    stud = K.pin("thumb_stud", 8.0, 23.0, 2.0, -T / 2 - 1.6, T / 2 + 1.6, M["accent"], dome=0.15)
+    k.add_blade(b, tang, stud)
     Tp, Bt = outline(-1.5, -126.0, 36, top, bot, r0=5.0, r1=8.0)
     parts, zout = folder_handle(M, T, Tp, Bt, liner_t=0.9, scale_t=3.4, back=(-36.0, -122.0, 3.4), back_bottom=bb)
-    hw = [K.screw_head("pivot", px, py, 4.4, s * (zout - 0.2), s, M["metal"], socket="torx") for s in (1, -1)]
+    for part in parts:
+        if not part.name.startswith("scale"):
+            continue
+        face = -1 if sum(vertex.co.z for vertex in part.data.vertices) < 0 else 1
+        for position in (-34.0, -46.0, -58.0, -70.0, -82.0, -94.0):
+            channel = stadium((position, bot(position) + 6.0), (position + 2.5, top(position) - 5.0), 1.4, 6)
+            cutter = K.prism("grip_flute", channel, *sorted((face * (zout - 0.8), face * (zout + 1.0))), M["handle"])
+            K.cut(part, cutter)
+    hw = [K.screw_head("pivot", px, py, 4.0, s * (zout - 0.2), s, M["metal"], socket="torx", height=0.4) for s in (1, -1)]
     hw += screws(M, [(-62.0, 28.4), (-114.0, 18.0)], zout - 0.2, r=2.4)
     # tip-up pocket clip on the +z side, screwed at the butt
     clip = K.prism("clip", [(-121.0, 21.0, 2.0), (-64.0, 23.0, 3.0), (-58.0, 19.0, 3.0), (-64.0, 15.0, 3.0), (-121.0, 13.0, 2.0)],
@@ -493,32 +563,38 @@ def flip():
 
 def gut():
     k = K.Knife("gut")
-    M = K.materials(handle=(0x1b1c1e, 0.78, 0.0, {"detail": "pebble", "strength": 0.8}),
-                    metal=(0xaab0b7, 0.32, 1.0), accent=(0x55595f, 0.45, 0.8))
-    L, H, T = 100.0, 32.0, 4.5
-    ty = 12.0
-    edge = path(line((-4, 0), (62, 0), 6), quad((62, 0), (92, 0.6), (L, ty), 10))
-    spine = path(line((-4, H), (48, H), 5), quad((48, H), (82, 31.5), (L, ty), 12))
-    b, tip, info = K.blade("blade", edge, spine, M, T, stations=46, grind="flat", grind_h=0.62, ricasso=9,
-                           swedge={"from": 0.62, "width": 4.0, "depth": 0.5})
-    K.cut(b, hook_cutter(M, (55.0, 21.6), (69.5, 35.0), 3.6, T), transfer=True)
-    k.add_blade(b)
+    M = K.materials(handle=(0x7a3924, 0.48, 0.0, {"detail": "wood", "color2": 0x492519, "strength": 0.55}),
+                    metal=(0x737b79, 0.4, 1.0), accent=(0x333a37, 0.48, 0.8))
+    L, H, T = 120.0, 44.0, 4.5
+    ty = 40.0
+    edge = path(line((-4, 0), (16, -1), 4), cubic((16, -1), (55, -11), (99, 5), (L, ty), 24))
+    spine = path(line((-4, H), (44, 46), 7), quad((44, 46), (91, 46), (L, ty), 16))
+    b, tip, info = K.blade("blade", edge, spine, M, T, stations=52, grind="flat", grind_h=0.78, ricasso=6,
+                           swedge={"from": 0.76, "width": 3.0, "depth": 0.4})
+    K.cut(b, hook_cutter(M, (90.0, 35.0), (114.0, 49.0), 5.6, T), transfer=True)
+    thumb_ridges = K.teeth("thumb_ridges", spine, 0.0, 29.0, 9, 0.85, T, M["blade"], rake=0.55, sink=0.3)
+    k.add_blade(b, thumb_ridges)
     cy = 16.0
-    guard = K.prism("guard", [(-5.0, 34.5, 2.5), (0.0, 34.5, 1.5), (0.0, -1.0), (4.5, -6.5, 3.0), (2.0, -10.5, 2.5),
-                              (-5.0, -7.0, 3.0)], -8.2, 8.2, M["metal"])
-    K.bevel(guard, 1.0, segs=2)
 
-    def gshape(t):
-        s = 1.0 + 0.07 * bump(t, 0.58, 0.22) + 0.05 * bump(t, 0.0, 0.05)
-        bottom = s * (1 - 0.13 * bump(t, 0.13, 0.07)) * (1 + 0.1 * bump(t, 0.02, 0.04))
-        return (s, bottom, s * (1 + 0.03 * bump(t, 0.58, 0.2)), -1.0 * smooth(t, 0.8, 1.0))
+    def axis(position):
+        return cy - 0.00165 * (position + 45.0) ** 2
 
-    handle = grip("grip", -5.0, -111.0, cy, 29.0, 24.0, M["handle"], rings=34, segs=24, shape=gshape)
-    csecs = [(x, K.superellipse(cy - 1.0, 14.3 * s, 14.3 * s, 11.9 * s, 24, 2.4))
-             for x, s in ((-110.0, 1.0), (-112.5, 1.02), (-117.0, 0.94), (-119.0, 0.7), (-119.8, 0.4))]
-    cap = K.loft("butt_cap", csecs, M["metal"])
-    K.cut(cap, K.lathe_z("c", [(2.6, -20), (2.6, 20)], 14, M["metal"], -114.5, cy - 1.0))
-    k.add(guard, handle, cap)
+    def top(position):
+        return axis(position) + 14.5 + 1.5 * bump(position, -56.0, 32.0)
+
+    def bottom(position):
+        return axis(position) - 14.5 + 9.0 * bump(position, -23.0, 12.0) + 2.0 * bump(position, -91.0, 13.0)
+
+    upper, lower = outline(-2.0, -120.0, 44, top, bottom, r0=4.0, r1=7.0)
+    tang = K.plate("tang", upper + list(reversed(lower)), T, M["metal"])
+    scale_upper, scale_lower = outline(-7.0, -110.0, 42, lambda position: top(position) - 1.0,
+                                       lambda position: bottom(position) + 1.0, r0=5.0, r1=7.0)
+    scales = [K.slab("wood_scale", scale_upper, scale_lower, T / 2, 10.0, side, M["handle"], dome=0.65)
+              for side in (1, -1)]
+    pins = [K.pin("scale_pin", position, axis(position), 1.8, -12.0, 12.0, M["accent"], dome=0.1)
+            for position in (-20.0, -63.0, -99.0)]
+    K.cut(tang, K.lathe_z("c", [(3.0, -8), (3.0, 8)], 16, M["metal"], -114.5, axis(-114.5)))
+    k.add(tang, *scales, *pins)
     k.socket("socket_tip", *tip)
     k.socket("socket_grip", -58.0, cy)
     k.extras = std_extras("hammer", info, 120, 25.0, 31.0)
@@ -529,34 +605,53 @@ def gut():
 
 def huntsman():
     k = K.Knife("huntsman")
-    M = K.materials(handle=(0x2a221c, 0.8, 0.0, {"detail": "pebble", "strength": 0.8}),
-                    metal=(0x9ba1a8, 0.34, 1.0), accent=(0x3d4a2e, 0.85, 0.0, {"detail": "cord", "strength": 0.8}))
-    L, H, T = 155.0, 38.0, 5.2
-    ty = 18.0
-    edge = path(line((-4, 0), (2.0, 0)), arc(7.5, 0.0, 5.5, 180, 0, 8), line((13.0, 0), (102, 0), 7),
-                quad((102, 0), (142, 0.8), (L, ty), 12))
-    spine = path(line((-4, H), (100, H), 8), quad((100, H), (126, 26.5), (L, ty), 12))
-    b, tip, info = K.blade("blade", edge, spine, M, T, stations=52, grind="flat", grind_h=0.56, ricasso=16,
-                           swedge={"from": 0.6, "width": 6.0, "depth": 0.62})
-    saw = K.teeth("saw", spine, 16.0, 96.0, 12, 3.8, K.spine_thickness(T, spine), M["blade"], rake=0.64)
-    k.add_blade(b, saw)
+    M = K.materials(handle=(0x202522, 0.7, 0.0, {"detail": "g10", "strength": 0.65}),
+                    metal=(0x606a66, 0.42, 1.0), accent=(0x929b8c, 0.38, 0.8))
+    L, H, T = 155.0, 42.0, 5.2
+    ty = 36.0
+    edge = path(line((-4, 0), (2.0, 0)), arc(7.5, 0.0, 5.5, 180, 0, 8), line((13.0, 0), (102, 0), 8),
+                line((102, 0), (139, 22.0), 8), line((139, 22.0), (L, ty), 5))
+    spine = path(line((-4, H), (91, H), 9), line((91, H), (L, ty), 12))
+    b, tip, info = K.blade("blade", edge, spine, M, T, stations=52, grind="flat", grind_h=0.68, ricasso=15,
+                           swedge={"from": 0.65, "width": 6.0, "depth": 0.68}, corner_deg=12.0,
+                           fuller={"from": 0.09, "to": 0.65, "lo": 0.75, "hi": 0.8, "depth": 0.6})
+    notches = [K.lathe_z("c", [(3.0, -10), (3.0, 10)], 12, M["blade"], position, H + 0.4)
+               for position in (18.0, 28.0, 38.0, 48.0, 58.0, 68.0, 78.0, 88.0)]
+    K.cut(b, notches)
+    k.add_blade(b)
     cy = 19.0
-    guard = K.prism("guard", [(-7.0, 48.0, 3.0), (0.0, 48.0, 2.0), (0.0, -9.5, 2.0), (-7.0, -9.5, 3.0)], -7.0, 7.0,
-                    M["metal"])
-    K.bevel(guard, 1.2, segs=2)
 
-    def gshape(t):
-        s = 1.0 + 0.06 * bump(t, 0.6, 0.25) + 0.08 * bump(t, 1.0, 0.07)
-        fing = grooves(t, 4, 0.13, 0.04, 0.62, 1.6)
-        return (s, s * fing, s, -0.8 * smooth(t, 0.75, 1.0))
+    def axis(position):
+        return cy - 0.00165 * (position + 58.0) ** 2
 
-    handle = grip("grip", -7.0, -118.0, cy, 31.0, 26.0, M["handle"], rings=44, segs=24, shape=gshape)
-    psecs = [(x, K.superellipse(cy - 0.8, 17.2 * s, 17.2 * s, 14.2 * s, 24, 2.6))
-             for x, s in ((-117.0, 1.0), (-119.5, 1.03), (-124.0, 0.98), (-126.5, 0.78), (-127.3, 0.45))]
-    pommel = K.loft("pommel", psecs, M["metal"])
-    K.cut(pommel, K.lathe_z("c", [(2.8, -20), (2.8, 20)], 14, M["metal"], -122.0, cy - 0.8))
-    lan = lanyard_loop(M, -122.0, cy - 0.8, length=34.0, width=9.0, cord=1.7)
-    k.add(guard, handle, pommel, lan)
+    def top(position):
+        return axis(position) + 15.5 + 2.0 * bump(position, -87.0, 26.0)
+
+    def bottom(position):
+        return axis(position) - 16.0 + sum(depth * bump(position, center, 10.0)
+                                         for center, depth in ((-27.0, 11.0), (-54.0, 6.5), (-82.0, 4.0)))
+
+    upper, lower = outline(-5.0, -128.0, 48, top, bottom, r0=1.0, r1=5.0)
+    tang = K.plate("tang", upper + list(reversed(lower)), T, M["metal"])
+    scale_upper, scale_lower = outline(-13.0, -120.0, 46, lambda position: top(position) - 0.8,
+                                       lambda position: bottom(position) + 0.8, r0=3.0, r1=6.0)
+    scales = [K.slab("grip_scale", scale_upper, scale_lower, T / 2, 10.0, side, M["handle"], dome=0.45)
+              for side in (1, -1)]
+    for scale, side in zip(scales, (1, -1)):
+        channels = []
+        for position in (-36.0, -49.0, -62.0, -75.0, -88.0, -101.0):
+            channel = stadium((position - 3.0, top(position) - 5.0),
+                              (position + 5.0, bottom(position) + 5.0), 0.85, 5)
+            channels.append(K.prism("grip_channel", channel, *sorted((side * 11.9, side * 13.5)), M["handle"]))
+        K.cut(scale, channels)
+    guard = K.plate("guard", [(-13.0, 37.0, 2.0), (1.0, 42.0, 2.0), (0.0, 29.0), (-2.0, 8.0),
+                               (-8.0, -15.0, 2.0), (-14.0, -13.0, 2.0), (-10.0, 7.0, 3.0), (-19.0, 14.0, 2.0)],
+                    6.0, M["metal"])
+    K.cut(guard, K.lathe_z("c", [(2.0, -8), (2.0, 8)], 12, M["metal"], -10.0, -7.0))
+    pins = [K.screw_head("grip_pin", position, axis(position) + 4.0, 2.4, side * 12.6, side,
+                         M["accent"], socket="hex", height=0.4)
+            for position in (-23.0, -68.0, -112.0) for side in (1, -1)]
+    k.add(tang, guard, *scales, *pins)
     k.socket("socket_tip", *tip)
     k.socket("socket_grip", -62.0, cy)
     k.extras = std_extras("hammer", info, 127, 27.0, 33.5)
@@ -617,40 +712,34 @@ def falchion():
 
 def shadow_daggers():
     k = K.Knife("shadow_daggers")
-    M = K.materials(handle=(0x1a1a1c, 0.7, 0.0, {"detail": "g10", "strength": 0.81}),
-                    metal=(0x9aa0a8, 0.34, 1.0), accent=(0x6d737b, 0.4, 0.9))
-    L, H, T = 66.0, 26.0, 4.6
-    cy = H / 2
-    # narrow neck where the blade passes between the middle and ring fingers,
-    # the leaf only flares once it is clear of the fist
-    edge = path(quad((-6, cy - 3.5), (3, cy - 3.8), (13, 0.6), 8), line((13, 0.6), (38, 1.4), 4),
-                quad((38, 1.4), (58, 3.5), (L, cy), 8))
-    spine = [(x, H - y) for x, y in edge]
-    b, tip, info = K.blade("blade", edge, spine, M, T, stations=36, grind="flat", grind_h=0.47, ricasso=6,
-                           double_from=0.0, taper=0.5)
+    M = K.materials(handle=(0xa5adaa, 0.4, 0.95, {"detail": "bead", "strength": 0.45}),
+                    metal=(0x626c69, 0.4, 1.0), accent=(0x363e3a, 0.5, 0.8),
+                    blade=(0x7f8885, 0.38, 1.0, {"detail": "brushed", "strength": 0.55}))
+    L, H, T = 78.0, 42.0, 4.6
+    cy = 13.0
+    edge = path(cubic((-10, cy - 3.5), (-2, cy - 3.5), (2, cy - 14.0), (3, cy - 21.0), 12),
+                cubic((3, cy - 21.0), (32, cy - 21.0), (64, cy - 9.0), (L, cy), 24))
+    spine = [(position, 2 * cy - height) for position, height in edge]
+    b, tip, info = K.blade("blade", edge, spine, M, T, stations=44, grind="flat", grind_h=0.47, ricasso=3,
+                           double_from=0.0, taper=0.65)
     stem = K.plate("stem", [(-19.0, cy - 3.2, 1.2), (-4.0, cy - 3.4, 1.5), (-4.0, cy + 3.4, 1.5), (-19.0, cy + 3.2, 1.2)],
                    T * 0.9, M["blade"])
     k.add_blade(b, stem)
-    # t-bar across the palm: lofted along the bar, finger grooves on the blade side
-    bar_x, depth, thick, half_len = -24.0, 14.0, 18.0, 46.0
-    secs = []
-    n = 44
-    for i in range(n):
-        u = K.lerp(-half_len, half_len, i / (n - 1))
-        e = abs(u) / half_len
-        rnd = math.sqrt(max(0.06, 1 - ((e - 0.84) / 0.16) ** 2)) if e > 0.84 else 1.0
-        g = 1.0
-        for c in (-33.0, -15.0, 15.0, 33.0):
-            g -= 0.16 * bump(u, c, 5.5)
-        front = depth / 2 * rnd * g
-        back = depth / 2 * rnd * (1.0 + 0.05 * (1 - e))
-        secs.append((u, K.superellipse(-bar_x, back, front, thick / 2 * rnd * (1 - 0.08 * e), 20, 2.3)))
-    bar = K.loft("tee", secs, M["handle"])
-    K.xform(bar, K.Matrix.Rotation(math.radians(90), 4, "Z"))
-    K.xform(bar, K.Matrix.Translation((0.0, cy * MM, 0.0)))
-    screws_ = [K.screw_head("screw", bar_x, cy + dy, 2.2, s * (thick / 2 - 0.4), s, M["metal"], socket="hex")
-               for dy in (-8.0, 8.0) for s in (1, -1)]
-    k.add(bar, *screws_)
+    bar_x, depth, thick, half_len = -24.0, 16.0, 8.5, 43.0
+    outline_points = [(-30, cy + 43, 3), (-20, cy + 42, 2), (-13, cy + 35, 3), (-14, cy + 25, 3),
+                      (-11, cy + 19, 3), (-6, cy + 16, 2), (-8, cy + 7, 2), (-18, cy + 4, 1),
+                      (-18, cy - 4, 1), (-8, cy - 7, 2), (-6, cy - 16, 2), (-11, cy - 19, 3),
+                      (-14, cy - 25, 3), (-13, cy - 35, 3), (-20, cy - 42, 2), (-30, cy - 43, 3),
+                      (-37, cy - 33, 5), (-41, cy - 14, 5), (-42, cy, 6), (-41, cy + 14, 5), (-37, cy + 33, 5)]
+    bar = K.plate("tee", outline_points, thick, M["handle"])
+    central_window = K.rounded([(-34.5, cy + 22.0, 3.0), (-19.0, cy, 2.5), (-34.5, cy - 22.0, 3.0)], 8)
+    K.cut(bar, hole_cutter(M, central_window))
+    for side in (-1, 1):
+        outer_window = K.rounded([(-28.0, cy + side * 38.0, 2.0), (-19.0, cy + side * 35.0, 2.0),
+                                  (-20.0, cy + side * 29.0, 1.5), (-30.0, cy + side * 30.0, 2.0)], 6)
+        K.cut(bar, hole_cutter(M, outer_window))
+    K.bevel(bar, 0.7, segs=3, angle=35)
+    k.add(bar)
     k.socket("socket_tip", *tip)
     k.socket("socket_grip", bar_x, cy)
     k.socket("socket_tee", bar_x, cy, 0.0, rot=(-math.pi / 2, 0.0, 0.0))
@@ -662,32 +751,37 @@ def shadow_daggers():
 
 def bowie():
     k = K.Knife("bowie")
-    M = K.materials(handle=(0x4a2e1c, 0.55, 0.0, {"detail": "wood", "color2": 0x2e1a0f}),
-                    metal=(0xb58c4a, 0.3, 1.0), accent=(0x3a1d14, 0.6, 0.0))
-    L, H, T = 185.0, 42.0, 5.2
-    ty = 19.0
-    edge = path(line((-4, 0), (95, 0), 7), cubic((95, 0), (140, -1.6), (174, 3.5), (L, ty), 14))
-    spine = path(line((-4, H), (102, H), 8), quad((102, H), (140, 28.5), (L, ty), 12))
-    b, tip, info = K.blade("blade", edge, spine, M, T, stations=54, grind="flat", grind_h=0.55, ricasso=16,
-                           swedge={"from": 0.58, "width": 6.5, "depth": 0.62})
-    saw = K.teeth("saw", spine, 24.0, 98.0, 14, 3.1, K.spine_thickness(T, spine), M["blade"], rake=0.55)
+    M = K.materials(handle=(0x4e593e, 0.72, 0.0, {"detail": "g10", "strength": 0.55}),
+                    metal=(0x747e73, 0.4, 1.0), accent=(0xa5ada0, 0.34, 1.0))
+    L, H, T = 210.0, 46.0, 5.2
+    ty = 35.0
+    edge = path(line((-4, 0), (107, -1), 10), cubic((107, -1), (155, -12.0), (195, 3.5), (L, ty), 18))
+    spine = path(line((-4, H), (105, H), 10), quad((105, H), (154, 18.5), (L, ty), 18))
+    b, tip, info = K.blade("blade", edge, spine, M, T, stations=58, grind="flat", grind_h=0.63, ricasso=15,
+                           swedge={"from": 0.51, "width": 10.0, "depth": 0.7},
+                           fuller={"from": 0.08, "to": 0.46, "lo": 0.7, "hi": 0.82, "depth": 0.55})
+    saw = K.teeth("saw", spine, 25.0, 96.0, 9, 2.8, K.spine_thickness(T, spine), M["blade"], rake=0.6)
     k.add_blade(b, saw)
     cy = 20.0
     guard = K.prism("guard", [(-8.0, 51.0, 3.5), (-3.0, 53.5, 3.0), (0.5, 50.0, 2.0), (0.0, -8.0, 2.0), (-2.5, -12.5, 3.0),
                               (-8.0, -10.0, 3.5)], -8.0, 8.0, M["metal"])
     K.bevel(guard, 1.2, segs=2)
-    spacer = K.loft("spacer", [(x, K.superellipse(cy, 16.4, 16.4, 13.4, 24, 2.4)) for x in (-8.0, -10.0)], M["accent"])
+    def axis(position):
+        return cy - 0.00065 * (position + 60.0) ** 2
 
-    def gshape(t):
-        s = 1.0 + 0.06 * bump(t, 0.55, 0.25) - 0.03 * bump(t, 0.1, 0.06)
-        return (s, s, s)
-
-    handle = grip("grip", -10.0, -112.0, cy, 31.0, 25.5, M["handle"], rings=24, segs=24, shape=gshape)
-    psecs = [(x, K.superellipse(cy, 16.0 * s, 16.0 * s, 13.2 * s, 24, 2.4))
-             for x, s in ((-111.0, 1.0), (-113.0, 1.07), (-120.5, 1.04), (-123.5, 0.82), (-124.6, 0.5), (-125.0, 0.2))]
+    upper, lower = outline(-9.0, -116.0, 40,
+                           lambda position: axis(position) + 15.0 - 1.0 * bump(position, -40.0, 22.0),
+                           lambda position: axis(position) - 15.0 + 4.5 * bump(position, -25.0, 14.0), r0=2.0, r1=4.0)
+    tang = K.plate("tang", upper + list(reversed(lower)), T, M["metal"])
+    scales = [K.slab("olive_scale", upper, lower, T / 2, 10.0, side, M["handle"], dome=1.0) for side in (1, -1)]
+    pins = [K.pin("handle_pin", position, axis(position), 2.6, -13.5, 13.5, M["accent"], dome=0.12)
+            for position in (-39.0, -94.0)]
+    psecs = [(position, K.superellipse(cy + lift, 16.0 * scale, 16.0 * scale, 13.2 * scale, 24, 2.4))
+             for position, scale, lift in ((-111.0, 1.0, 0.0), (-115.0, 1.07, 0.0), (-121.0, 1.09, 1.0),
+                                           (-124.0, 0.94, 3.5), (-125.0, 0.35, 6.0))]
     pommel = K.loft("pommel", psecs, M["metal"])
     K.cut(pommel, K.lathe_z("c", [(2.6, -20), (2.6, 20)], 14, M["metal"], -118.0, cy))
-    k.add(guard, spacer, handle, pommel)
+    k.add(guard, tang, pommel, *scales, *pins)
     k.socket("socket_tip", *tip)
     k.socket("socket_grip", -60.0, cy)
     k.extras = std_extras("hammer", info, 125, 27.0, 33.0)
@@ -762,21 +856,21 @@ def navaja():
 
 def stiletto():
     k = K.Knife("stiletto")
-    M = K.materials(handle=(0x3a2417, 0.45, 0.0, {"detail": "wood", "color2": 0x1f120a}),
-                    metal=(0xcfd3d8, 0.2, 1.0), accent=(0xb9bec5, 0.25, 1.0))
+    M = K.materials(handle=(0x51331e, 0.46, 0.0, {"detail": "wood", "color2": 0x27180f}),
+                    metal=(0xb9bfb4, 0.26, 1.0), accent=(0x303633, 0.36, 0.9))
     L, H, T = 125.0, 16.0, 2.8
     ty = 8.0
-    edge = path(line((-4, 0), (80, 0), 8), quad((80, 0), (112, 0.7), (L, ty), 10))
-    spine = path(line((-4, H), (60, H), 6), line((60, H), (L, ty), 10))
-    b, tip, info = K.blade("blade", edge, spine, M, T, stations=46, grind="flat", grind_h=0.6, ricasso=12,
-                           swedge={"from": 0.46, "width": 5.0, "depth": 0.85}, taper=0.5)
+    edge = path(line((-4, 2), (79, 2), 10), quad((79, 2), (111, 3.0), (L, ty), 14))
+    spine = [(position, 16.0 - height) for position, height in edge]
+    b, tip, info = K.blade("blade", edge, spine, M, T, stations=50, grind="flat", grind_h=0.43, ricasso=9,
+                           double_from=0.0, taper=0.65)
     px = -11.0
 
     def top(x):
-        return 18.3
+        return 18.3 - 1.8 * bump(x, -76.0, 35.0) + 0.6 * bump(x, -14.0, 8.0)
 
     def bot(x):
-        return -2.5
+        return -2.5 + 1.8 * bump(x, -76.0, 35.0)
 
     py = fit_pivot("stiletto", px, edge, spine, top, bot, back=0.8, margin=0.3)
     bb = back_line(top, px, py, edge, 1.6, min_t=0.8)
@@ -799,25 +893,29 @@ def stiletto():
     # small quillons on the front bolsters, one per side so the blade swings between them
     quill = []
     for s in (1, -1):
-        q = K.prism("quillon", [(-4.4, -8.2, 1.4), (-1.6, -8.2, 1.4), (-1.6, 24.0, 1.4), (-4.4, 24.0, 1.4)],
-                    *sorted((s * (gap + 0.1), s * (zout - 0.4))), M["metal"])
-        K.bevel(q, 0.5, segs=1)
-        quill.append(q)
-        for yy in (-8.6, 24.4):
-            quill.append(W.sphere("quillon_ball", (-3.0 * MM, yy * MM, s * (zout + gap) / 2 * MM), 2.5 * MM, 12,
-                                  M["metal"], rings=6))
+        for guard_side in (1, -1):
+            guard_profile = [(-13.0, 17.0, 1.0), (-4.0, 17.0, 1.0), (1.0, 20.0, 1.5),
+                             (2.0, 24.0, 1.0), (-1.0, 25.0, 1.0), (-5.5, 22.0, 1.8), (-13.0, 21.0, 1.0)]
+            if guard_side < 0:
+                guard_profile = [(position, 16.0 - height, radius) for position, height, radius in reversed(guard_profile)]
+            quillon = K.prism("quillon", guard_profile, *sorted((s * (gap + 0.1), s * (zout - 0.4))), M["metal"])
+            K.bevel(quillon, 0.35, segs=2)
+            quill.append(quillon)
     back = [p for p in Tp if -140.0 <= p[0] <= -14.0]
     spring = K.plate("backspring", [(x, y - 0.25) for x, y in back] + [(x, bb(x)) for x, y in reversed(back)],
                      2 * gap, M["metal"])
     # push button and the sliding safety on the show side (-z)
-    button = K.lathe_z("button", [(0.0, -zout - 1.6), (3.0, -zout - 1.5), (3.8, -zout - 0.9), (3.8, -zout + 0.4)], 16,
+    button = K.lathe_z("button", [(0.0, -zout - 0.7), (3.0, -zout - 0.7), (3.0, -zout + 0.2)], 16,
                        M["accent"], -44.0, 8.0)
+    button_rim = K.lathe_z("button_rim", [(3.0, -zout - 0.6), (3.5, -zout - 0.6),
+                           (3.6, -zout - 0.3), (3.0, -zout - 0.15)], 16, M["metal"], -44.0, 8.0, closed=True)
     safety = K.prism("safety", [(-62.0, 6.0, 1.2), (-53.0, 6.0, 1.2), (-53.0, 10.0, 1.2), (-62.0, 10.0, 1.2)],
                      -zout - 1.0, -zout + 0.3, M["accent"])
     K.bevel(safety, 0.3, segs=1)
     hw = [K.pin("pivot_pin", px, py, 2.6, -zout - 0.3, zout + 0.3, M["metal"], segs=14),
+            K.pin("rivet", -93.0, 8.0, 2.1, -zout - 0.2, zout + 0.2, M["metal"], segs=12),
           K.pin("rivet", -137.0, 8.0, 1.6, -zout - 0.2, zout + 0.2, M["metal"], segs=10)]
-    k.add(*parts, *quill, spring, button, safety, *hw)
+    k.add(*parts, *quill, spring, button, button_rim, safety, *hw)
     k.pivot = (px, py)
     k.socket("socket_tip", *tip, parent="blade_pivot")
     k.socket("socket_pivot", px, py)
@@ -826,50 +924,59 @@ def stiletto():
     return k
 
 
-# ---------------------------------------------------------------- 13 talon (folding hawkbill with a ring)
+# ---------------------------------------------------------------- 13 talon
 
 def talon():
     k = K.Knife("talon")
     M = K.materials(handle=(0xe6dcc3, 0.42, 0.0, {"detail": "ivory", "color2": 0xcfc2a2, "strength": 0.6}),
                     metal=(0xbcc1c8, 0.28, 1.0), accent=(0xc49a4a, 0.3, 1.0))
     T = 3.8
-    W0 = 13.5
-    edge, spine = hawkbill(0.0, -60.0, 73.5, W0, 93.0, 29.0, n=42)
-    b, tip, info = K.blade("blade", edge, spine, M, T, stations=48, grind="hollow", grind_h=0.56, ricasso=8,
-                           swedge={"from": 0.6, "width": 3.8, "depth": 0.6}, taper=0.45)
-    K.cut(b, K.lathe_z("c", [(3.9, -12), (3.9, 12)], 18, M["blade"], 15.0, 18.0))
-    ridges = K.teeth("saw_ridges", spine, 24.0, 44.0, 6, 1.9, K.spine_thickness(T, spine, 0.45), M["blade"], rake=0.7, sink=0.35)
-    px = -8.0
+    W0 = 17.5
+    edge, spine = hawkbill(0.0, -78.0, 95.0, W0, 94.0, 23.0, n=48)
+    edge = [(position * 1.1, height) for position, height in edge]
+    spine = [(position * 1.1, height) for position, height in spine]
+    b, tip, info = K.blade("blade", edge, spine, M, T, stations=54, grind="hollow", grind_h=0.67, ricasso=6,
+                           swedge={"from": 0.67, "width": 3.5, "depth": 0.5}, taper=0.45)
+    for position, radius in ((12.0, 3.0), (20.0, 2.6), (29.0, 2.2)):
+        spine_point = K.point_at_x(spine, position)[0]
+        K.cut(b, K.lathe_z("c", [(radius, -12), (radius, 12)], 18, M["blade"], position, spine_point[1] - 6.5))
+    ridges = K.teeth("saw_ridges", spine, 32.0, 68.0, 6, 1.9, K.spine_thickness(T, spine, 0.45),
+                     M["blade"], rake=0.78, sink=0.25, tip_frac=0.3)
+    k.add_blade(b, ridges)
 
     def axis(x):
-        return 13.5 - 0.0032 * x * x
+        return 16.0 - 0.067 * x - 0.006187 * x * x
 
     def top(x):
         return axis(x) + 13.0
 
     def bot(x):
-        return axis(x) - 13.0 + 2.2 * bump(x, -24, 9)
+        return axis(x) - 13.0 + 5.0 * bump(x, -23.0, 10.0) + 3.0 * bump(x, -49.0, 11.0)
 
-    py = (top(px) - 3.2) / 2
-    tang = K.plate("tang", folder_tang(px, py, 12.6, 26.6, 0.4), T - 0.12, M["blade"])
-    k.add_blade(b, ridges, tang)
-    Tp, Bt = outline(-1.5, -86.0, 30, top, bot, r0=4.0, r1=0.0)
-    parts, zout = folder_handle(M, T, Tp, Bt, liner_t=0.9, scale_t=3.2, back=(-30.0, -86.0, 3.2), back_mat=M["metal"])
-    Tb = [p for p in Tp if p[0] >= -15.0]
-    Bb = [p for p in Bt if p[0] >= -15.0]
-    gap = T / 2 + 0.3
-    bols = [K.slab("bolster", Tb, Bb, gap + 0.9, 3.4, s, M["metal"], dome=0.45) for s in (1, -1)]
-    rivets = [K.pin("rivet", x, axis(x), 1.9, -zout - 0.25, zout + 0.25, M["accent"], segs=12, dome=0.5)
-              for x in (-30.0, -52.0, -74.0)]
-    hw = [K.screw_head("pivot", px, py, 3.8, s * (zout + 0.3), s, M["metal"], socket="torx") for s in (1, -1)]
-    ring_c = (-95.5, -15.3)
-    ring = K.torus("ring", ring_c[0], ring_c[1], 14.4, 2.9, gap + 0.9, M["metal"], segs=40, tsegs=10, e=2.6)
-    clear_ring(parts, ring_c, 11.5, M)
-    k.add(*parts, *bols, *rivets, *hw, ring)
-    k.pivot = (px, py)
-    k.socket("socket_tip", *tip, parent="blade_pivot")
-    k.socket("socket_pivot", px, py)
-    k.socket("socket_grip", -42.0, axis(-42.0))
+    Tp, Bt = outline(-1.5, -89.0, 46, top, bot, r0=3.0, r1=1.0)
+    tang = K.plate("tang", Tp + list(reversed(Bt)), T, M["metal"])
+    parts = []
+    for front, back in ((-3.0, -28.2), (-28.45, -59.2), (-59.45, -89.0)):
+        upper, lower = outline(front, back, 18, lambda position: top(position) - 0.8,
+                               lambda position: bot(position) + 0.8, r0=0.35, r1=0.35)
+        parts.extend(K.slab("ivory_scale", upper, lower, T / 2, 4.3, side, M["handle"], dome=0.35)
+                     for side in (1, -1))
+    zout = T / 2 + 4.3
+    rivets = [K.pin("rivet", position, axis(position) + height, radius, -zout - 0.15, zout + 0.15,
+                    M["accent"], segs=12, dome=0.25)
+              for position, height, radius in ((-12.0, 5.0, 1.4), (-22.0, -3.0, 1.4), (-35.0, 6.0, 1.25),
+                                                (-44.0, 0.0, 2.8), (-55.0, -5.0, 1.25),
+                                                (-69.0, 4.0, 1.4), (-79.0, -3.0, 1.4))]
+    ring_c = (-96.0, -29.0)
+    ring = K.torus("ring", ring_c[0], ring_c[1], 13.8, 2.3, 2.25, M["metal"], segs=32, tsegs=10, e=5.0)
+    shoulder = [(-77.0, -5.0, 2.0), (-91.0, -8.0, 3.0), (-103.0, -14.0, 3.0),
+                (-109.0, -25.0, 2.0), (-105.0, -30.0, 1.5), (-93.0, -23.0, 2.0), (-82.0, -23.0, 2.0)]
+    parts.extend(K.prism("ivory_ring_shoulder", shoulder, *sorted((side * T / 2, side * (T / 2 + 3.0))),
+                         M["handle"]) for side in (1, -1))
+    clear_ring([tang, *parts], ring_c, 11.5, M)
+    k.add(tang, ring, *parts, *rivets)
+    k.socket("socket_tip", *tip)
+    k.socket("socket_grip", -42.0, 7.9)
     k.socket("socket_ring", *ring_c)
     k.extras = std_extras("reverse_ring", info, 84, 2 * zout, 26.0, ringInnerRadius=0.0115)
     return k
@@ -1096,41 +1203,47 @@ def skeleton():
     k = K.Knife("skeleton")
     M = K.materials(handle=(0x141416, 0.88, 0.0, {"detail": "tape", "strength": 0.7}),
                     metal=(0xbfc4cb, 0.3, 1.0), accent=(0x2b2d30, 0.6, 0.2))
-    L, H, T = 100.0, 28.0, 4.2
-    ty = 12.0
-    edge = path(line((-4, 0), (60, 0), 6), quad((60, 0), (92, 0.5), (L, ty), 10))
-    spine = path(line((-4, H), (54, H), 5), quad((54, H), (86, 26.4), (L, ty), 10))
-    b, tip, info = K.blade("blade", edge, spine, M, T, stations=44, grind="hollow", grind_h=0.58, ricasso=8,
-                           swedge={"from": 0.6, "width": 4.0, "depth": 0.55})
+    L, H, T = 140.0, 28.0, 4.2
+    ty = 14.0
+    edge = path(line((-4, 0), (62, 0.5), 10), quad((62, 0.5), (107, 4.0), (L, ty), 18))
+    spine = path(line((-4, H), (61, 27.5), 10), quad((61, 27.5), (105, 24.0), (L, ty), 18))
+    b, tip, info = K.blade("blade", edge, spine, M, T, stations=52, grind="flat", grind_h=0.54, ricasso=5,
+                           swedge={"from": 0.15, "width": 6.0, "depth": 0.65})
+    for position, radius in ((8.0, 3.0), (19.0, 2.6), (29.0, 2.2), (38.0, 1.8)):
+        K.cut(b, K.lathe_z("c", [(radius, -8), (radius, 8)], 16, M["blade"], position, 14.0))
     k.add_blade(b)
     cy = 14.0
-    frame_pts = [(1.5, 27.0), (-10.0, 27.8, 6.0), (-46.0, 27.0, 20.0), (-80.0, 25.0, 8.0), (-88.0, 20.0, 3.0),
-                 (-88.0, 8.0, 3.0), (-80.0, 3.0, 8.0), (-46.0, 1.2, 20.0), (-16.0, 0.8, 8.0), (-8.0, -3.0, 3.0),
-                 (-3.0, -3.2, 3.0), (1.5, 0.5)]
+    frame_pts = [(3.0, 28.0), (-8.0, 31.0, 3.0), (-18.0, 32.0, 4.0), (-36.0, 27.5, 4.0),
+                 (-99.0, 26.0, 4.0), (-109.0, 20.0, 4.0), (-109.0, 8.0, 4.0), (-99.0, 1.0, 4.0),
+                 (-36.0, 0.5, 4.0), (-19.0, -3.0, 4.0), (-8.0, -1.0, 3.0), (3.0, 0.0)]
     frame = K.plate("frame", frame_pts, T - 0.12, M["metal"])
-    cut1 = hole_cutter(M, K.rounded([(-7.0, 8.0, 5.0), (-27.0, 8.6, 5.0), (-27.0, 20.4, 5.0), (-7.0, 21.0, 5.0)], 5))
-    cut2 = hole_cutter(M, K.rounded([(-58.0, 8.6, 5.0), (-79.0, 9.4, 4.5), (-79.0, 19.2, 4.5), (-58.0, 20.4, 5.0)], 5))
-    K.cut(frame, [cut1, cut2])
+    K.cut(frame, K.lathe_z("c", [(3.2, -8), (3.2, 8)], 18, M["metal"], -103.0, cy))
     K.bevel(frame, 0.7, segs=2, angle=40)
-    ring_c = (-97.0, cy)
-    ring = K.torus("ring", ring_c[0], ring_c[1], 13.75, 2.75, T / 2 + 0.15, M["metal"], segs=36, tsegs=10, e=2.8)
-    clear_ring([frame], ring_c, 11.0, M)
-    # grip tape band between the two windows
+    ring_c = (-17.0, cy)
+    K.cut(frame, K.lathe_z("finger_hole", [(11.0, -8.0), (11.0, 8.0)], 32, M["metal"], ring_c[0], ring_c[1]))
     tsecs = []
-    for i in range(14):
-        t = i / 13
-        x = K.lerp(-29.0, -56.0, t)
-        ridge = 0.25 if i in (4, 9) else 0.0
-        top_y = 27.9 - 0.9 * bump(x, -46.0, 30) + 1.0 + ridge
-        bot_y = 1.2 - 1.0 - ridge
-        tsecs.append((x, K.superellipse((top_y + bot_y) / 2, (top_y - bot_y) / 2, (top_y - bot_y) / 2, T / 2 + 1.1 + ridge,
+    for i in range(64):
+        t = i / 63
+        x = K.lerp(-35.0, -97.0, t)
+        ridge = 0.08 * math.sin(t * math.pi * 10.0) ** 2
+        top_y = 27.0 + ridge
+        bot_y = 1.0 - ridge
+        tsecs.append((x, K.superellipse((top_y + bot_y) / 2, (top_y - bot_y) / 2, (top_y - bot_y) / 2, T / 2 + 0.9 + ridge,
                                         20, 8.0)))
     tape = K.loft("tape", tsecs, M["handle"])
-    k.add(frame, ring, tape)
+    overlaps = []
+    for position in (-38.0, -45.0, -52.0, -59.0, -66.0, -73.0, -80.0, -87.0, -94.0):
+        strip = [(position - 1.0, 25.5), (position + 0.3, 25.5),
+                 (position + 4.5, 2.5), (position + 3.2, 2.5)]
+        for side in (1, -1):
+            overlap = K.prism("tape_overlap", strip, *sorted((side * (T / 2 + 0.88), side * (T / 2 + 1.18))), M["handle"])
+            K.bevel(overlap, 0.12, segs=1)
+            overlaps.append(overlap)
+    k.add(frame, tape, *overlaps)
     k.socket("socket_tip", *tip)
     k.socket("socket_grip", -44.0, cy)
     k.socket("socket_ring", *ring_c)
-    k.extras = std_extras("hammer", info, 88, T + 1.5, 28.0, ringInnerRadius=0.011)
+    k.extras = std_extras("hammer", info, 110, T + 1.8, 28.0, ringInnerRadius=0.011)
     return k
 
 
@@ -1224,10 +1337,54 @@ def quick_renders(kid, root):
         K.bpy.data.objects.remove(light, do_unlink=True)
 
 
+def apply_photo_fit(knife):
+    values = PHOTO_FITS.get(knife.id)
+    if values is None:
+        return
+    grip_center = knife.sockets["socket_grip"][0]
+    ring_center = knife.sockets.get("socket_ring", (None,))[0]
+
+    def deform(point):
+        horizontal, vertical, depth = point
+        blend = K.smoothstep(-8.0, 8.0, horizontal)
+        return K.Vector((horizontal * K.lerp(values["handleLength"], values["bladeLength"], blend),
+                         grip_center[1] + (vertical - grip_center[1]) * K.lerp(values["handleHeight"], values["bladeHeight"], blend)
+                         + (1.0 - blend) * values["handleBend"] * 1000.0 * (horizontal / 120.0) ** 2,
+                         depth))
+
+    moved_ring = deform(ring_center) if ring_center else None
+    parts = list(knife.static) + list(knife.blade) + [part for group, _pivot in knife.handles.values() for part in group]
+    for part in parts:
+        is_blade = part in knife.blade
+        for vertex in part.data.vertices:
+            original = vertex.co / MM
+            fitted = deform(original)
+            if ring_center and not is_blade:
+                radius = math.hypot(original.x - ring_center[0], original.y - ring_center[1])
+                weight = 1.0 - K.smoothstep(16.5, 25.0, radius)
+                fitted = fitted.lerp(original - K.Vector(ring_center) + moved_ring, weight)
+            vertex.co = fitted * MM
+        part.data.update()
+    knife.sockets = {name: (tuple(deform(position)), rotation, parent)
+                     for name, (position, rotation, parent) in knife.sockets.items()}
+    if knife.pivot is not None:
+        knife.pivot = tuple(deform((*knife.pivot, 0.0)))[:2]
+    knife.handles = {name: (parts, tuple(deform((*pivot, 0.0)))[:2]) for name, (parts, pivot) in knife.handles.items()}
+    knife.extras["bladeLength"] = round(knife.extras["bladeLength"] * values["bladeLength"], 4)
+    knife.extras["bladeHeight"] = round(knife.extras["bladeHeight"] * values["bladeHeight"], 4)
+    tee = knife.extras["grip"] == "tee"
+    knife.extras["handleLength"] = round(knife.extras["handleLength"] * values["handleHeight" if tee else "handleLength"], 4)
+    knife.extras["handleHeight"] = round(knife.extras["handleHeight"] * values["handleLength" if tee else "handleHeight"], 4)
+
+
 def build_one(kid):
     K.common.reset_scene()
     k = BUILDERS[kid]()
+    apply_photo_fit(k)
     root, meshes = K.assemble(k)
+    for mesh in meshes:
+        mesh.data.validate(clean_customdata=False)
+        mesh.data.update()
     total = K.report(kid, meshes)
     assert total <= MAX_TRIS, f"{kid} over budget: {total}"
     os.makedirs(OUT, exist_ok=True)

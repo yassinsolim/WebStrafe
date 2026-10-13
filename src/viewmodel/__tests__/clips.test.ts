@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { KNIVES } from '../../combat/knives';
-import { applyEase, retime, sampleKeys, sampleSeq, type SeqSample } from '../clips';
+import { applyEase, retime, sampleKeys, seqWeights, type SeqKey, type SeqWeights } from '../clips';
 import { AWP_CLIPS, DEAGLE_CLIPS } from '../viewmodelClips';
 import { knifeAttackContactTime, knifeClip, knifeDrawStyle, knifeInspectCount, knifeInspectStyle } from '../knifeClips';
 import { KNIFE_ATTACK_FITS } from '../knifeAttackFits';
@@ -17,6 +17,9 @@ describe('clip sampling', () => {
     expect(sampleKeys(keys, 5)).toBe(0);
     expect(applyEase('out', 0.5)).toBeGreaterThan(0.5);
     expect(applyEase('step', 0.99)).toBe(0);
+    // an 'out' sets off from rest instead of at full speed, then does most of its move early
+    expect(applyEase('out', 1e-3) / 1e-3).toBeLessThan(0.05);
+    expect(applyEase('out', 0.5)).toBeGreaterThan(0.6);
   });
 
   it('retimes keys and events', () => {
@@ -25,13 +28,45 @@ describe('clip sampling', () => {
     expect(clip.events?.[0][0]).toBeCloseTo(DEAGLE_CLIPS.reload.events![0][0] / 2);
   });
 
-  it('samples a pose sequence as a segment with its neighbours', () => {
-    const seq = [[0, 'idle'], [0.1, 'wind', 'linear'], [0.2, 'cut', 'linear'], [0.5, 'idle', 'linear']] as const;
-    const at: SeqSample = { before: '', a: '', b: '', after: '', u: 0 };
-    expect(sampleSeq(seq, 0.15, at)).toEqual({ before: 'idle', a: 'wind', b: 'cut', after: 'idle', u: expect.closeTo(0.5, 5) });
-    expect(sampleSeq(seq, -1, at)).toMatchObject({ a: 'idle', b: 'idle', u: 0 });
-    expect(sampleSeq(seq, 9, at)).toMatchObject({ a: 'idle', b: 'idle', u: 1 });
-    expect(retime({ duration: 0.5, tracks: {}, seq }, 1).seq?.[2][0]).toBeCloseTo(0.4);
+  it('runs a pose sequence through its keys at speed and rests only where it says', () => {
+    const seq: SeqKey[] = [[0, 'idle'], [0.1, 'wind', 'out'], [0.2, 'cut', 'linear'], [0.3, 'end', 'linear'], [0.4, 'end'], [0.6, 'idle', 'inOut']];
+    const values = [0, 1, 3, 4, 4, 0];
+    const at: SeqWeights = { keys: [0, 0, 0, 0], weights: [0, 0, 0, 0] };
+    const sample = (t: number) => {
+      seqWeights(seq, t, at);
+      expect(at.weights.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 9);
+      return at.keys.reduce((sum, key, s) => sum + values[key] * at.weights[s], 0);
+    };
+    const speed = (t: number, side: 1 | -1) => (sample(t + side * 1e-6) - sample(t)) / (side * 1e-6);
+    expect(sample(-1)).toBe(0);
+    expect(sample(9)).toBe(0);
+    for (const [t] of seq) expect(sample(t)).toBeCloseTo(values[seq.findIndex((k) => k[0] === t)], 9);
+    // the cut and the end of the swing are passed through at the speed of the line between their neighbours
+    expect(speed(0.2, -1)).toBeCloseTo(speed(0.2, 1), 3);
+    expect(speed(0.2, 1)).toBeCloseTo((4 - 1) / 0.2, 3);
+    // rests: an 'out' key, a hold and the end
+    expect(Math.abs(speed(0.1, -1))).toBeLessThan(1e-3);
+    expect(Math.abs(speed(0.1, 1))).toBeLessThan(1e-3);
+    expect(Math.abs(speed(0.35, 1))).toBeLessThan(1e-3);
+    expect(Math.abs(speed(0.6, -1))).toBeLessThan(1e-3);
+    expect(retime({ duration: 0.6, tracks: {}, seq }, 1.2).seq?.[2][0]).toBeCloseTo(0.4);
+  });
+
+  it('sets only a fitted (linear) sequence off at speed', () => {
+    const at: SeqWeights = { keys: [0, 0, 0, 0], weights: [0, 0, 0, 0] };
+    const value = (seq: SeqKey[], t: number) => {
+      seqWeights(seq, t, at);
+      return at.keys.reduce((sum, key, s) => sum + key * at.weights[s], 0);
+    };
+    // key index stands in for the pose: 0 -> 1 over 0.2 s
+    expect(value([[0, 'a'], [0.2, 'b', 'linear'], [0.4, 'c', 'linear']], 1e-6) / 1e-6).toBeCloseTo(1 / 0.2, 2);
+    expect(value([[0, 'low'], [0.2, 'raise', 'out']], 1e-6) / 1e-6).toBeCloseTo(0, 3);
+    expect(value([[0, 'a'], [0.2, 'b', 'inOut']], 1e-6) / 1e-6).toBeCloseTo(0, 3);
+    // rest to rest follows the ease
+    expect(value([[0, 'low'], [0.2, 'raise', 'out']], 0.1)).toBeCloseTo(applyEase('out', 0.5), 9);
+    seqWeights([[0, 'idle']], 0.3, at);
+    expect(at.keys).toEqual([0, 0, 0, 0]);
+    expect(at.weights).toEqual([0, 1, 0, 0]);
   });
 });
 

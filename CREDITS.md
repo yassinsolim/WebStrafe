@@ -35,6 +35,14 @@ below is original WebStrafe work.
 - [Bi-stretch fabric (undersuit detail), baked into the armor atlas](https://polyhaven.com/a/bi_stretch) by Poly Haven. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
   Files: `tools/blender/characters/textures/bi_stretch_n.jpg`, `tools/blender/characters/textures/bi_stretch_r.jpg`.
 
+## Knives
+
+- [Metal009, Metal027 and Scratches005, baked knife surface detail](https://ambientcg.com) by ambientCG. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `tools/blender/characters/textures/metal009_r.jpg`, `tools/blender/characters/textures/metal027_r.jpg`, `tools/blender/characters/textures/scratches005.jpg`, `tools/blender/knives/kbake.py`.
+  Existing CC0 scan maps reused as offline roughness and scratch inputs; no Valve textures are included.
+- [Counter-Strike 2 knife designs and finishes: visual inspiration](https://www.counter-strike.net/cs2) by Valve. License: Visual reference only; no Valve assets redistributed.
+  WebStrafe knife models and textures are independently created using Counter-Strike 2 imagery as visual reference. WebStrafe is not affiliated with or endorsed by Valve.
+
 ## Audio
 
 - [Magnum Research Desert Eagle](https://freesound.org/people/areniporgen/sounds/712310/) by areniporgen. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
@@ -86,6 +94,7 @@ below is original WebStrafe work.
 
 - [three.js](https://threejs.org/) by mrdoob and contributors. License: [MIT](https://opensource.org/license/mit).
 - [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) by Garrett Johnson. License: [MIT](https://opensource.org/license/mit).
+- [Lucide icons](https://lucide.dev/) by Lucide contributors and Cole Bemis (Feather-derived icons). License: [ISC / MIT](https://lucide.dev/license).
 - [idb](https://github.com/jakearchibald/idb) by Jake Archibald. License: [ISC](https://opensource.org/license/isc-license-txt).
 - [supabase-js](https://github.com/supabase/supabase-js) by Supabase. License: [MIT](https://opensource.org/license/mit).
 - [ws](https://github.com/websockets/ws) by Einar Otto Stangvik and contributors. License: [MIT](https://opensource.org/license/mit).

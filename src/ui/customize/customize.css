@@ -2,46 +2,43 @@
    top of the main menu, colours and fonts follow the menu in style.css */
 
 .cz-screen {
-  --cz-panel: rgba(17, 20, 26, 0.72);
-  --cz-panel-hover: rgba(30, 35, 44, 0.9);
-  --cz-well: rgba(0, 0, 0, 0.28);
-  --cz-line: rgba(140, 158, 178, 0.14);
-  --cz-line-strong: rgba(140, 158, 178, 0.3);
-  --cz-ink: #f2f4f8;
-  --cz-ink-dim: #8c96a5;
-  --cz-ink-faint: #5d6776;
-  --cz-accent: #ff6a2b;
-  --cz-accent-2: #ff9a4d;
-  --cz-cyan: #46d5ff;
-  --cz-bad: #ff4d5e;
-  --cz-selected: linear-gradient(120deg, rgba(255, 106, 43, 0.18), rgba(255, 106, 43, 0.03));
-  --cz-font-ui: var(--font-ui, 'Rajdhani', 'Segoe UI', system-ui, sans-serif);
+  --cz-panel: #ffffff03;
+  --cz-panel-hover: #ffffff09;
+  --cz-well: #11151380;
+  --cz-line: var(--ws-line);
+  --cz-line-strong: var(--ws-line-2);
+  --cz-ink: var(--ws-ink);
+  --cz-ink-dim: var(--ws-ink-2);
+  --cz-ink-faint: var(--ws-ink-3);
+  --cz-accent: var(--ws-ember);
+  --cz-accent-2: var(--ws-ember-hi);
+  --cz-cyan: var(--ws-prism);
+  --cz-bad: var(--ws-bad);
+  --cz-selected: #ef493e0b;
+  --cz-font-ui: var(--font-ui, 'Barlow Semi Condensed', sans-serif);
   --cz-font-mono: var(--font-mono, 'Space Mono', ui-monospace, 'SFMono-Regular', monospace);
-  --cz-notch: polygon(0 0, 100% 0, 100% 100%, 0.75em 100%, 0 calc(100% - 0.75em));
-  --cz-gap: clamp(10px, 1vw, 20px);
+  --cz-notch: none;
+  --cz-gap: 24px;
   --cz-paint: #8a949f;
 
   position: fixed;
   inset: 0;
   z-index: 60;
   display: none;
-  grid-template-columns: minmax(16.5rem, 22em) minmax(0, 1fr) minmax(19rem, 25em);
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  grid-template-rows: 72px minmax(0, 1fr) 64px;
   grid-template-areas:
     'head head head'
     'left stage right'
-    'left stage actions';
+    'actions actions actions';
   gap: var(--cz-gap);
-  padding: var(--cz-gap) calc(var(--cz-gap) * 1.4);
+  padding: 0 32px;
   overflow: hidden;
   color: var(--cz-ink);
   font-family: var(--cz-font-ui);
-  font-size: clamp(13px, min(calc(6px + 0.55vw), calc(4px + 1.3vh)), 19px);
+  font-size: 16px;
   line-height: 1.25;
-  background:
-    radial-gradient(60% 55% at 50% 42%, rgba(255, 106, 43, 0.07), transparent 70%),
-    radial-gradient(90% 70% at 0% 100%, rgba(70, 213, 255, 0.05), transparent 55%),
-    linear-gradient(180deg, #0b0e13, #050607);
+  background: linear-gradient(115deg, #111513 15%, #252c26 55%, #171c19 78%);
 }
 
 .cz-screen.is-open {
@@ -69,8 +66,7 @@
   display: none !important;
 }
 
-.cz-screen button,
-.cz-screen input {
+.cz-screen :where(button, input) {
   font: inherit;
   color: inherit;
 }
@@ -99,10 +95,10 @@
 .cz-head {
   grid-area: head;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 1.4em;
   min-width: 0;
-  padding-bottom: 0.7em;
+  padding-bottom: 0;
   border-bottom: 1px solid var(--cz-line);
 }
 
@@ -110,7 +106,7 @@
   display: block;
   font-family: var(--cz-font-mono);
   font-size: max(10px, 0.66em);
-  letter-spacing: 0.32em;
+  letter-spacing: 0;
   text-transform: uppercase;
   color: var(--cz-accent);
 }
@@ -120,7 +116,7 @@
   font-size: 2.1em;
   font-weight: 700;
   line-height: 0.9;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -147,7 +143,7 @@
   border: 1px solid var(--cz-line-strong);
   font-family: var(--cz-font-mono);
   font-size: max(10px, 0.68em);
-  letter-spacing: 0.16em;
+  letter-spacing: 0;
   text-transform: uppercase;
   transition: color 120ms ease, border-color 120ms ease;
 }
@@ -170,13 +166,11 @@
 .cz-col {
   display: flex;
   flex-direction: column;
-  gap: 0.8em;
+  gap: 24px;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
-  padding: 1em 1.05em 1.1em;
-  background: var(--cz-panel);
-  border: 1px solid var(--cz-line);
+  padding: 0 10px 16px 0;
   scrollbar-width: thin;
   scrollbar-color: rgba(140, 158, 178, 0.3) transparent;
 }
@@ -213,7 +207,7 @@
   font-family: var(--cz-font-mono);
   font-size: max(10px, 0.68em);
   font-weight: 400;
-  letter-spacing: 0.24em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -221,7 +215,7 @@
   color: var(--cz-ink-dim);
   font-size: 0.9em;
   font-weight: 600;
-  letter-spacing: 0.03em;
+  letter-spacing: 0;
 }
 
 .cz-hint {
@@ -265,14 +259,14 @@
 }
 
 .cz-slot-tab.is-active {
-  background: linear-gradient(90deg, rgba(255, 106, 43, 0.2), rgba(255, 106, 43, 0.03));
+  background: var(--cz-selected);
   border-left-color: var(--cz-accent);
 }
 
 .cz-slot-label {
   flex: none;
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -295,7 +289,7 @@
   color: var(--cz-ink-dim);
   font-size: 0.92em;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
 }
 
 .cz-options {
@@ -320,7 +314,6 @@
 
 .cz-option:hover {
   background: var(--cz-panel-hover);
-  transform: translateY(-1px);
 }
 
 .cz-option.is-selected {
@@ -339,16 +332,13 @@
   width: 2.7em;
   height: 2.7em;
   color: var(--cz-ink-dim);
-  border: 1px solid var(--cz-line-strong);
-  font-size: 0.95em;
+  font-size: 1.1em;
   font-weight: 700;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
 }
 
 .cz-option.is-selected .cz-option-badge {
-  color: #120600;
-  background: var(--cz-accent);
-  border-color: var(--cz-accent);
+  color: var(--cz-accent);
 }
 
 .cz-option-body {
@@ -369,7 +359,7 @@
   color: var(--cz-ink-faint);
   font-family: var(--cz-font-mono);
   font-size: max(10px, 0.62em);
-  letter-spacing: 0.16em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -384,7 +374,7 @@
 .cz-credit {
   margin-top: 0.35em;
   text-transform: none;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 .cz-original {
@@ -397,12 +387,11 @@
   right: 0.75em;
   display: none;
   padding: 0.12em 0.5em;
-  color: #120600;
-  background: var(--cz-accent);
+  color: var(--cz-accent-2);
   font-family: var(--cz-font-mono);
   font-size: max(9px, 0.56em);
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -417,27 +406,10 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--cz-line);
-  background:
-    radial-gradient(42% 46% at 50% 44%, rgba(255, 140, 80, 0.1), transparent 72%),
-    radial-gradient(36% 14% at 50% 90%, rgba(70, 213, 255, 0.07), transparent 72%),
-    linear-gradient(180deg, rgba(22, 26, 34, 0.75), rgba(8, 10, 13, 0.9));
-  clip-path: polygon(0 0, calc(100% - 1.4em) 0, 100% 1.4em, 100% 100%, 1.4em 100%, 0 calc(100% - 1.4em));
 }
 
 .cz-stage::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.55;
-  background-image:
-    linear-gradient(rgba(140, 160, 180, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(140, 160, 180, 0.06) 1px, transparent 1px);
-  background-size: 3em 3em;
-  background-position: center;
-  -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 20%, transparent 72%);
-  mask-image: radial-gradient(circle at 50% 45%, #000 20%, transparent 72%);
+  content: none;
 }
 
 .cz-stage-mount {
@@ -500,13 +472,13 @@
   color: var(--cz-ink-dim);
   font-family: var(--cz-font-mono);
   font-size: max(10px, 0.62em);
-  letter-spacing: 0.2em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .cz-seg {
   display: inline-flex;
-  background: rgba(8, 10, 14, 0.72);
+  background: var(--cz-panel);
   border: 1px solid var(--cz-line-strong);
 }
 
@@ -519,7 +491,7 @@
   background: transparent;
   border: none;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 .cz-team-btn + .cz-team-btn {
@@ -544,7 +516,6 @@
 
 .cz-team-btn.is-active .cz-team-dot {
   opacity: 1;
-  box-shadow: 0 0 0.6em currentColor;
 }
 
 .cz-team-note {
@@ -562,7 +533,7 @@
   color: var(--cz-ink-dim);
   font-family: var(--cz-font-mono);
   font-size: 0.74em;
-  letter-spacing: 0.18em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -584,7 +555,7 @@
   color: var(--cz-ink-faint);
   font-family: var(--cz-font-mono);
   font-size: max(10px, 0.62em);
-  letter-spacing: 0.12em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -644,7 +615,7 @@
   text-overflow: ellipsis;
   font-size: 0.94em;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   line-height: 1.1;
 }
 
@@ -768,7 +739,7 @@
 .cz-finish-name {
   font-size: 0.86em;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 /* little painted balls, one per finish, in the primary paint */
@@ -872,13 +843,13 @@
   border: 1px solid var(--cz-line-strong);
   font-family: var(--cz-font-mono);
   font-size: 0.9em;
-  letter-spacing: 0.16em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .cz-tag-input::placeholder {
   color: var(--cz-ink-faint);
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
   text-transform: none;
 }
 
@@ -897,13 +868,13 @@
   font-family: var(--cz-font-mono);
   font-size: 0.9em;
   font-weight: 700;
-  letter-spacing: 0.22em;
+  letter-spacing: 0;
 }
 
 .cz-tag-plate.is-empty {
   color: var(--cz-ink-faint);
   font-weight: 400;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 /* watch toggle */
@@ -973,14 +944,14 @@
   color: var(--cz-ink-dim);
   font-size: 0.8em;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .cz-sub-count {
   font-family: var(--cz-font-mono);
   font-weight: 400;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
 }
 
 .cz-presets {
@@ -1079,7 +1050,7 @@
   background: rgba(255, 77, 94, 0.22);
   border-color: var(--cz-bad);
   font-size: 0.85em;
-  letter-spacing: 0.06em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -1095,7 +1066,7 @@
   background: transparent;
   border: 1px dashed var(--cz-line-strong);
   font-weight: 700;
-  letter-spacing: 0.1em;
+  letter-spacing: 0;
   text-transform: uppercase;
   transition: color 120ms ease, border-color 120ms ease;
 }
@@ -1147,7 +1118,7 @@
   border: 1px solid var(--cz-line-strong);
   font-size: 1em;
   font-weight: 700;
-  letter-spacing: 0.12em;
+  letter-spacing: 0;
   text-transform: uppercase;
   transition: color 120ms ease, border-color 120ms ease, background 120ms ease, transform 120ms ease, filter 120ms ease;
 }
@@ -1162,7 +1133,7 @@
   font-family: var(--cz-font-mono);
   font-size: max(10px, 0.7em);
   font-weight: 400;
-  letter-spacing: 0.16em;
+  letter-spacing: 0;
 }
 
 .cz-btn-minor:hover {
@@ -1172,26 +1143,23 @@
 .cz-btn-small {
   padding: 0.45em 0.8em;
   font-size: 0.84em;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 .cz-btn-accent {
-  color: #120600;
+  color: #fff;
   background: var(--cz-accent);
   border-color: var(--cz-accent);
 }
 
 .cz-btn-primary {
-  color: #120600;
-  background: linear-gradient(100deg, var(--cz-accent), var(--cz-accent-2));
+  color: #fff;
+  background: var(--cz-accent);
   border: none;
-  box-shadow: 0 0.6em 1.6em rgba(255, 106, 43, 0.26);
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 0.9em 100%, 0 calc(100% - 0.9em));
 }
 
 .cz-btn-primary:hover {
-  filter: brightness(1.06);
-  transform: translateY(-1px);
+  background: var(--cz-accent-2);
 }
 
 .cz-btn-primary:focus-visible {
@@ -1199,15 +1167,36 @@
   box-shadow: inset 0 0 0 2px #120600, 0 0 0 2px var(--cz-cyan);
 }
 
+.cz-screen *, .cz-screen *::before, .cz-screen *::after { letter-spacing: 0 !important; }
+.cz-screen .cz-icon-tool { display: grid; place-items: center; width: 44px; height: 44px; min-width: 44px; padding: 10px; }
+.cz-icon-tool svg { width: 20px; height: 20px; }
+.cz-actions { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--cz-line); }
+.cz-actions .cz-btn:nth-child(2) { margin-right: auto; }
+.cz-actions .cz-btn:not(.cz-icon-tool) { min-width: 120px; min-height: 44px; }
+.cz-option { border-radius: 2px; grid-template-columns: 38px minmax(0, 1fr); gap: 10px; padding: 12px; }
+.cz-option-badge { width: 38px; height: 38px; }
+.cz-option-name { padding-right: 0; font-size: 20px; overflow-wrap: anywhere; }
+.cz-option-tag { position: static; grid-column: 2; padding: 0; display: block; visibility: hidden; min-height: 11px; }
+.cz-option.is-selected .cz-option-tag { visibility: visible; }
+.cz-option-blurb { font-size: 14px; }
+.cz-channel { border-radius: 2px; }
+.cz-tag-plate { display: none; }
+.cz-tag-row { grid-template-columns: minmax(0, 1fr); }
+.cz-stage-top { top: 0; left: 0; right: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cz-screen.is-open { animation: none; }
+  .cz-screen * { transition: none; }
+}
+
 /* two columns: preview on the left, one scrolling list of controls on the right */
 @media (max-width: 1180px) {
   .cz-screen {
-    grid-template-columns: minmax(0, 1fr) minmax(20rem, 25em);
-    grid-template-rows: auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) 340px;
     grid-template-areas:
       'head head'
       'stage panels'
-      'stage actions';
+      'actions actions';
   }
 
   .cz-panels {
@@ -1230,14 +1219,15 @@
 /* one column: preview on top, controls scroll under it, actions pinned at the bottom */
 @media (max-width: 760px) {
   .cz-screen {
+    --cz-gap: 16px;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(220px, 40vh) minmax(0, 1fr) auto;
+    grid-template-rows: 64px minmax(180px, 30vh) minmax(0, 1fr) 64px;
     grid-template-areas:
       'head'
       'stage'
       'panels'
       'actions';
-    font-size: 14px;
+    padding: 0 16px;
   }
 
   .cz-head-hint,
@@ -1245,9 +1235,8 @@
     display: none;
   }
 
-  .cz-actions {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
+  .cz-col { padding-right: 0; }
+  .cz-actions .cz-btn:not(.cz-icon-tool) { flex: 1; min-width: 0; }
 }
 
 /* main menu: the button in the character tab that opens the screen */
@@ -1285,7 +1274,7 @@
 .cz-open-label {
   font-size: 1.1rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -1304,6 +1293,6 @@
   font-family: var(--font-mono, 'Space Mono', ui-monospace, monospace);
   font-size: 0.62rem;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }

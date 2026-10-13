@@ -1,4 +1,5 @@
 import './customize.css';
+import { createElement, Maximize, Paintbrush, Redo2, RotateCcw, Save, Shuffle, Undo2, type IconNode } from 'lucide';
 import {
   ARMOR_SET_INFO,
   ARMOR_SLOTS,
@@ -94,6 +95,14 @@ function button(className: string, text?: string): HTMLButtonElement {
   return node;
 }
 
+function iconButton(className: string, label: string, icon: IconNode): HTMLButtonElement {
+  const node = button(`${className} cz-icon-tool`);
+  node.title = label;
+  node.setAttribute('aria-label', label);
+  node.appendChild(createElement(icon, { 'aria-hidden': 'true' }));
+  return node;
+}
+
 function isTextField(target: EventTarget | null): boolean {
   return target instanceof HTMLTextAreaElement
     || (target instanceof HTMLInputElement && (target.type === 'text' || target.type === 'search'));
@@ -121,8 +130,8 @@ export class CustomizeScreen {
   private readonly detachSounds: () => void;
   private readonly titleId = `cz-title-${(screenCount += 1)}`;
 
-  private readonly undoButton = button('cz-tool', 'Undo');
-  private readonly redoButton = button('cz-tool', 'Redo');
+  private readonly undoButton = iconButton('cz-tool', 'Undo', Undo2);
+  private readonly redoButton = iconButton('cz-tool', 'Redo', Redo2);
 
   private readonly slotTabs = new Map<ArmorSlot, { tab: HTMLButtonElement; piece: HTMLSpanElement }>();
   private readonly optionsTitle = el('h3', 'cz-options-title');
@@ -131,7 +140,7 @@ export class CustomizeScreen {
   private readonly bodyCards = new Map<BodyId, HTMLButtonElement>();
   private readonly bodyValue = el('span');
   private armorSection: HTMLElement | null = null;
-  private readonly originalPaint = button('cz-tool cz-original', 'Original paint');
+  private readonly originalPaint = iconButton('cz-tool cz-original', 'Restore original paint', Paintbrush);
 
   private readonly stageMount = el('div', 'cz-stage-mount');
   private readonly stageStatus = el('div', 'cz-stage-status');
@@ -154,7 +163,7 @@ export class CustomizeScreen {
   private readonly presetCards: Array<{ card: HTMLButtonElement; look: CharacterLook }> = [];
   private readonly savedCount = el('span', 'cz-sub-count');
   private readonly savedList = el('div', 'cz-saved-list');
-  private readonly saveButton = button('cz-save-btn', 'Save current');
+  private readonly saveButton = iconButton('cz-save-btn', 'Save current look', Save);
   private readonly saveForm = el('form', 'cz-save-form');
   private readonly saveName = el('input', 'cz-save-name');
   private readonly saveHint = el('p', 'cz-hint cz-save-hint');
@@ -257,14 +266,13 @@ export class CustomizeScreen {
     const title = el('h2', 'cz-title', 'Customize');
     title.id = this.titleId;
     titles.append(el('span', 'cz-kicker', 'Character'), title);
-    const hint = el('p', 'cz-head-hint', 'Changes show live. Done saves them, Esc cancels.');
     const tools = el('div', 'cz-head-tools');
     this.undoButton.title = 'Undo (Ctrl+Z)';
     this.redoButton.title = 'Redo (Ctrl+Shift+Z)';
     this.undoButton.addEventListener('click', () => this.undo());
     this.redoButton.addEventListener('click', () => this.redo());
     tools.append(this.undoButton, this.redoButton);
-    head.append(titles, hint, tools);
+    head.append(titles, tools);
     return head;
   }
 
@@ -320,8 +328,7 @@ export class CustomizeScreen {
     stage.setAttribute('aria-label', 'Preview');
 
     const top = el('div', 'cz-stage-top');
-    const fullBody = button('cz-tool cz-fullbody', 'Full body');
-    fullBody.title = 'Frame the whole character (double-click the preview)';
+    const fullBody = iconButton('cz-tool cz-fullbody', 'Frame character', Maximize);
     fullBody.addEventListener('click', () => this.stage?.resetView());
 
     const team = el('div', 'cz-team');
@@ -340,15 +347,10 @@ export class CustomizeScreen {
       this.teamButtons.set(side, toggle);
     }
     row.append(el('span', 'cz-team-label', 'Preview side'), segmented);
-    team.append(row, el('span', 'cz-team-note', 'Team lights are fixed per side'));
+    team.appendChild(row);
     top.append(fullBody, team);
 
-    const hint = el('p', 'cz-stage-hint');
-    const mouseHints = ['Drag to rotate', 'Right-drag to pan', 'Scroll to zoom', 'Double-click to reset'];
-    const touchHints = ['Drag to rotate', 'Pinch to zoom', 'Full body resets the view'];
-    hint.innerHTML = mouseHints.map((text) => `<span class="cz-for-mouse">${text}</span>`).join('')
-      + touchHints.map((text) => `<span class="cz-for-touch">${text}</span>`).join('');
-    stage.append(this.stageMount, top, this.stageStatus, hint);
+    stage.append(this.stageMount, top, this.stageStatus);
     return stage;
   }
 
@@ -488,17 +490,15 @@ export class CustomizeScreen {
       if (event.key === 'Enter') this.tagInput.blur();
     });
     row.append(this.tagInput, this.tagPlate);
-    section.append(row, el('p', 'cz-hint', `Printed on your chest. Letters, numbers and dashes, up to ${MAX_TAG_LENGTH}.`));
+    this.tagInput.maxLength = MAX_TAG_LENGTH;
+    section.appendChild(row);
   }
 
   private buildWatch(column: HTMLElement): void {
     const section = el('section', 'cz-sec');
     const toggle = el('label', 'cz-toggle');
     const text = el('span', 'cz-toggle-text');
-    text.append(
-      el('span', 'cz-toggle-label', 'First-person wristwatch'),
-      el('span', 'cz-toggle-desc', 'Shows on your wrist in first person.'),
-    );
+    text.appendChild(el('span', 'cz-toggle-label', 'First-person wristwatch'));
     this.watchInput.type = 'checkbox';
     this.watchInput.addEventListener('change', () => this.edit({ ...this.look, watch: this.watchInput.checked }));
     toggle.append(text, this.watchInput);
@@ -550,11 +550,9 @@ export class CustomizeScreen {
 
   private buildActions(): HTMLElement {
     const actions = el('div', 'cz-actions');
-    const randomize = button('cz-btn cz-btn-minor', 'Randomize');
-    randomize.title = 'Roll a random look (keeps your tag)';
+    const randomize = iconButton('cz-btn cz-btn-minor', 'Randomize look', Shuffle);
     randomize.addEventListener('click', () => this.edit(applyPreset(this.look, randomLook(), true)));
-    const reset = button('cz-btn cz-btn-minor', 'Reset');
-    reset.title = 'Back to the default look for your side';
+    const reset = iconButton('cz-btn cz-btn-minor', 'Reset look', RotateCcw);
     reset.addEventListener('click', () => this.edit(defaultLook(this.team)));
     const cancel = button('cz-btn', 'Cancel');
     cancel.addEventListener('click', () => this.finish(false));
@@ -855,7 +853,8 @@ export class CustomizeScreen {
       setPressed(parts.button, channel === this.channel, 'is-active');
     }
     const hex = this.look[this.channel];
-    this.channelHint.textContent = skin ? skin.zones[this.channel] : CHANNEL_HINT[this.channel];
+    this.channelHint.title = skin ? skin.zones[this.channel] : CHANNEL_HINT[this.channel];
+    this.channelHint.textContent = CHANNEL_LABEL[this.channel];
     this.originalPaint.hidden = !skin;
     this.originalPaint.disabled = !skin || CHANNELS.every((channel) => skin.native[channel] === this.look[channel]);
     for (const swatch of this.swatchButtons) {

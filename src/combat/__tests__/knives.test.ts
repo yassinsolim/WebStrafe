@@ -31,7 +31,8 @@ describe('knife catalog', () => {
 
   it('marks the folders, the balisong and the ring knives', () => {
     const by = (pred: (k: (typeof KNIVES)[number]) => boolean) => KNIVES.filter(pred).map((k) => k.id).sort();
-    expect(by((k) => k.shape.mechanism === 'folder')).toEqual(['flip', 'stiletto', 'talon']);
+    expect(by((k) => k.shape.mechanism === 'folder')).toEqual(['flip', 'stiletto']);
+    expect(getKnife('talon').shape.mechanism).toBe('fixed');
     expect(by((k) => k.shape.mechanism === 'balisong')).toEqual(['butterfly']);
     expect(by((k) => k.shape.fingerRing === true)).toEqual(['karambit', 'talon']);
     expect(by((k) => k.shape.pair === true)).toEqual(['shadow_daggers']);

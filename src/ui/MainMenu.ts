@@ -1,3 +1,4 @@
+import { createElement, Pencil, Play, RotateCcw, ArrowUpRight } from 'lucide';
 import type { CosmeticsManifest, LoadoutSelection } from '../cosmetics/types';
 import type { CharacterLook } from '../characters/look';
 import { DEFAULT_KNIFE_ID, type KnifeId } from '../combat/knives';
@@ -58,19 +59,8 @@ const TAB_DEFS: ReadonlyArray<[TabId, string]> = [
   ['credits', 'Credits'],
 ];
 
-const PLAY_GLYPH = '<svg class="menu-play-glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 1.8L14 8 3 14.2z" fill="currentColor"/></svg>';
-
-// backdrop streaks: top %, length rem, seconds per pass, start offset, cool tint
-const STREAKS: ReadonlyArray<[number, number, number, number, boolean]> = [
-  [16, 26, 19, -3, false],
-  [31, 14, 27, -15, true],
-  [48, 34, 23, -9, false],
-  [63, 18, 31, -22, false],
-  [77, 24, 25, -5, true],
-  [88, 12, 35, -28, false],
-];
-
 export class MainMenu {
+  private detachNavOrientation: (() => void) | null = null;
   private readonly root: HTMLDivElement;
   private readonly nameInput: HTMLInputElement;
   private readonly playMapLabel: HTMLSpanElement;
@@ -105,20 +95,15 @@ export class MainMenu {
     this.root = document.createElement('div');
     this.root.className = 'main-menu';
 
-    // animated backdrop: grid, drifting glow, slow light sweep and strafe streaks
     const backdrop = document.createElement('div');
     backdrop.className = 'menu-bg';
     backdrop.setAttribute('aria-hidden', 'true');
-    const streaks = STREAKS.map(([y, width, seconds, delay, cool]) =>
-      `<b style="--y:${y}%;--w:${width}rem;--d:${seconds}s;--delay:${delay}s${cool ? ';--c:rgba(120,220,255,0.26)' : ''}"></b>`).join('');
-    backdrop.innerHTML = `<i class="menu-bg-grid"></i><i class="menu-bg-glow"></i><i class="menu-bg-streaks">${streaks}</i><i class="menu-bg-sweep"></i>`;
     this.root.appendChild(backdrop);
 
     const shell = document.createElement('div');
     shell.className = 'menu-shell';
     this.root.appendChild(shell);
 
-    // Top bar: brand, tabs, player -----------------------------------------
     const top = document.createElement('header');
     top.className = 'menu-top';
     const brand = document.createElement('div');
@@ -128,13 +113,37 @@ export class MainMenu {
     const nav = document.createElement('nav');
     nav.className = 'menu-nav';
     nav.setAttribute('role', 'tablist');
-    for (const [id, label] of TAB_DEFS) {
+    nav.setAttribute('aria-label', 'Main menu');
+    const navObserver = new ResizeObserver(() => {
+      nav.setAttribute('aria-orientation', getComputedStyle(nav).flexDirection === 'column' ? 'vertical' : 'horizontal');
+    });
+    navObserver.observe(nav);
+    this.detachNavOrientation = () => navObserver.disconnect();
+    for (const [index, [id, label]] of TAB_DEFS.entries()) {
       const tab = document.createElement('button');
       tab.type = 'button';
       tab.className = 'menu-tab';
-      tab.textContent = label;
+      tab.dataset.section = id;
+      tab.id = `menu-tab-${id}`;
+      tab.setAttribute('aria-controls', `menu-panel-${id}`);
+      const number = document.createElement('span');
+      number.className = 'menu-tab-index';
+      number.textContent = String(index + 1).padStart(2, '0');
+      number.setAttribute('aria-hidden', 'true');
+      const text = document.createElement('span');
+      text.textContent = label;
+      tab.append(number, text);
       tab.setAttribute('role', 'tab');
       tab.addEventListener('click', () => this.setActiveTab(id));
+      tab.addEventListener('keydown', event => {
+        const offsets: Record<string, number> = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1, Home: -index, End: TAB_DEFS.length - 1 - index };
+        const offset = offsets[event.key];
+        if (offset === undefined) return;
+        event.preventDefault();
+        const nextId = TAB_DEFS[(index + offset + TAB_DEFS.length) % TAB_DEFS.length][0];
+        this.setActiveTab(nextId);
+        this.tabs.get(nextId)?.focus();
+      });
       this.tabs.set(id, tab);
       nav.appendChild(tab);
     }
@@ -147,6 +156,7 @@ export class MainMenu {
     this.nameInput = document.createElement('input');
     this.nameInput.type = 'text';
     this.nameInput.className = 'menu-name-input';
+    this.nameInput.setAttribute('aria-label', 'Player name');
     this.nameInput.maxLength = 24;
     this.nameInput.placeholder = 'Choose a username';
     this.nameInput.autocomplete = 'off';
@@ -160,12 +170,11 @@ export class MainMenu {
     const editGlyph = document.createElement('span');
     editGlyph.className = 'menu-identity-edit';
     editGlyph.setAttribute('aria-hidden', 'true');
-    editGlyph.innerHTML = '<svg viewBox="0 0 16 16"><path d="M10.8 2.2l3 3-8.4 8.4H2.4v-3z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>';
+    editGlyph.appendChild(createElement(Pencil));
     identity.append(identityTag, this.nameInput, editGlyph);
-    top.append(brand, nav, identity);
-    shell.appendChild(top);
+    top.append(brand, identity);
+    shell.append(top, nav);
 
-    // Main: panels on the left, character on the right ----------------------
     const main = document.createElement('div');
     main.className = 'menu-main';
     shell.appendChild(main);
@@ -174,7 +183,7 @@ export class MainMenu {
     panels.className = 'menu-panels';
     main.appendChild(panels);
 
-    const playSection = this.makeSection('play', 'Play', 'Pick a map. Double click a card to jump straight in.');
+    const playSection = this.makeSection('play', 'Play', null);
     this.playPanel = new PlayPanel(playSection, {
       onSelect: (mapId) => {
         this.selectedMapId = mapId;
@@ -189,7 +198,7 @@ export class MainMenu {
     });
     panels.appendChild(playSection);
 
-    const loadoutSection = this.makeSection('loadout', 'Loadout', 'Your AWP, Deagle and the knife you carry.');
+    const loadoutSection = this.makeSection('loadout', 'Loadout', null);
     this.loadoutPanel = new LoadoutPanel(loadoutSection, {
       onKnifeSelected: (knifeId) => {
         this.showKnife({ ...this.knifePick, knifeId: knifeId ?? DEFAULT_KNIFE_ID });
@@ -202,7 +211,7 @@ export class MainMenu {
     });
     panels.appendChild(loadoutSection);
 
-    const characterSection = this.makeSection('character', 'Character', 'Pick your side. Other players see this model.');
+    const characterSection = this.makeSection('character', 'Your operator', null);
     this.teamGrid = document.createElement('div');
     this.teamGrid.className = 'menu-team-grid';
     characterSection.append(this.teamGrid);
@@ -210,9 +219,8 @@ export class MainMenu {
       const customize = document.createElement('button');
       customize.type = 'button';
       customize.className = 'cz-open-btn';
-      customize.innerHTML = '<span class="cz-open-label">Customize character</span>'
-        + '<span class="cz-open-go">Open</span>'
-        + '<span class="cz-open-sub">Skin, paint, emblem and tag</span>';
+      customize.innerHTML = '<span class="cz-open-label">Customize operator</span>';
+      customize.appendChild(createElement(ArrowUpRight, { 'aria-hidden': 'true' }));
       customize.addEventListener('click', () => this.callbacks.onCustomize?.());
       characterSection.appendChild(customize);
     }
@@ -243,11 +251,6 @@ export class MainMenu {
     // Character stage --------------------------------------------------------
     const stage = document.createElement('div');
     stage.className = 'menu-stage';
-    const stageGlow = document.createElement('div');
-    stageGlow.className = 'menu-stage-glow';
-    const stageRing = document.createElement('div');
-    stageRing.className = 'menu-stage-ring';
-    stageRing.innerHTML = '<i></i>';
     const stageMount = document.createElement('div');
     stageMount.className = 'menu-stage-mount';
     const caption = document.createElement('div');
@@ -257,7 +260,7 @@ export class MainMenu {
     this.stageTeam = document.createElement('div');
     this.stageTeam.className = 'menu-stage-team';
     caption.append(this.stageName, this.stageTeam);
-    stage.append(stageGlow, stageRing, stageMount, caption);
+    stage.append(stageMount, caption);
     main.appendChild(stage);
 
     // Bottom bar: key hints and the play button ------------------------------
@@ -265,22 +268,16 @@ export class MainMenu {
     footer.className = 'menu-foot';
     const help = document.createElement('p');
     help.className = 'menu-help';
-    help.innerHTML = [
-      '<kbd>WASD</kbd> move',
-      '<kbd>Space</kbd> jump',
-      '<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> weapons',
-      '<kbd>R</kbd> reload',
-      '<kbd>Tab</kbd> scores',
-      '<kbd>F3</kbd> debug',
-      '<kbd>Esc</kbd> menu',
-    ].map((item) => `<span class="menu-help-item">${item}</span>`).join('');
+    help.textContent = 'SURF / BHOP / COMBAT';
 
     const actions = document.createElement('div');
     actions.className = 'menu-actions';
     const restartButton = document.createElement('button');
     restartButton.type = 'button';
     restartButton.className = 'menu-restart-btn';
-    restartButton.textContent = 'Restart run';
+    restartButton.title = 'Restart run';
+    restartButton.setAttribute('aria-label', 'Restart run');
+    restartButton.appendChild(createElement(RotateCcw, { 'aria-hidden': 'true' }));
     restartButton.addEventListener('click', () => this.callbacks.onReloadMap());
     const playButton = document.createElement('button');
     playButton.type = 'button';
@@ -288,7 +285,7 @@ export class MainMenu {
     playButton.dataset.sfx = 'confirm';
     const playLabel = document.createElement('span');
     playLabel.className = 'menu-play-label';
-    playLabel.innerHTML = PLAY_GLYPH;
+    playLabel.appendChild(createElement(Play, { class: 'menu-play-glyph', 'aria-hidden': 'true', fill: 'currentColor' }));
     this.playWord = document.createElement('span');
     this.playWord.textContent = 'Play';
     playLabel.appendChild(this.playWord);
@@ -343,8 +340,8 @@ export class MainMenu {
 
   public setMaps(entries: MapManifestEntry[], selectedMapId: string): void {
     this.maps = entries;
-    this.selectedMapId = selectedMapId;
     this.playPanel.setMaps(entries, selectedMapId);
+    this.selectedMapId = this.playPanel.getSelected()?.id ?? '';
     this.creditsPanel.setMaps(entries);
     this.refreshPlayLabel();
   }
@@ -374,7 +371,7 @@ export class MainMenu {
     if (entries.length === 0) {
       const empty = document.createElement('li');
       empty.className = 'menu-leaderboard-empty';
-      empty.textContent = 'No runs yet. Finish the map to set the first time.';
+      empty.textContent = 'No recorded runs';
       this.leaderboardList.appendChild(empty);
       return;
     }
@@ -399,6 +396,7 @@ export class MainMenu {
 
   public dispose(): void {
     this.detachSounds();
+    this.detachNavOrientation?.();
     this.settingsPanel.dispose();
     this.loadoutPanel.dispose();
     this.preview?.dispose();
@@ -415,6 +413,8 @@ export class MainMenu {
     const section = document.createElement('section');
     section.className = 'menu-section';
     section.dataset.tab = id;
+    section.id = `menu-panel-${id}`;
+    section.setAttribute('aria-labelledby', `menu-tab-${id}`);
     section.setAttribute('role', 'tabpanel');
     const heading = document.createElement('h2');
     heading.className = 'menu-section-title';
@@ -431,13 +431,11 @@ export class MainMenu {
   }
 
   private setActiveTab(id: TabId): void {
-    const order = TAB_DEFS.map(([tabId]) => tabId);
-    // new panels slide in from the side of the tab you came from
-    this.root.style.setProperty('--menu-dir', order.indexOf(id) >= order.indexOf(this.activeTab) ? '1' : '-1');
     this.activeTab = id;
     for (const [tabId, tab] of this.tabs) {
       tab.classList.toggle('is-active', tabId === id);
       tab.setAttribute('aria-selected', String(tabId === id));
+      tab.tabIndex = tabId === id ? 0 : -1;
     }
     for (const [sectionId, section] of this.sections) {
       section.classList.toggle('is-active', sectionId === id);
@@ -517,7 +515,7 @@ export class MainMenu {
       label.textContent = TEAM_LABEL[team];
       const sub = document.createElement('span');
       sub.className = 'menu-team-sub';
-      sub.textContent = team === this.activeTeam ? 'Selected' : 'Click to wear';
+      sub.textContent = team === this.activeTeam ? 'Selected' : 'Available';
       text.append(label, sub);
       card.append(tag, text);
       card.addEventListener('click', () => this.applyTeam(team, true));

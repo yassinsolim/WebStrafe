@@ -5,6 +5,7 @@
 // env: PLAYWRIGHT_MODULE, CHROME, GPU=1 (real gpu, headed), BYPASS_FILE (vercel previews),
 //   STEP=0.0333 sweeps every clip frame by frame instead of the key frames
 import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 
 const [base, out] = process.argv.slice(2);
 if (!base) {
@@ -16,9 +17,16 @@ const gpu = !!process.env.GPU;
 const browser = await chromium.launch({
   headless: !gpu,
   executablePath: process.env.CHROME || undefined,
-  args: gpu ? ['--use-angle=metal'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+  args: [...(gpu ? ['--use-angle=metal'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader']), ...(process.env.LOCAL_IP ? [`--host-resolver-rules=MAP localhost ${process.env.LOCAL_IP}`] : [])],
 });
 const context = await browser.newContext({ viewport: { width: 960, height: 540 } });
+await context.route(/supabase\.(co|in)/, route => route.abort());
+if (process.env.KNIFE_ASSET_DIR) {
+  await context.route('**/knives/*.glb', route => route.fulfill({
+    contentType: 'model/gltf-binary',
+    body: readFileSync(path.join(process.env.KNIFE_ASSET_DIR, path.basename(new URL(route.request().url()).pathname))),
+  }));
+}
 if (process.env.BYPASS_FILE) {
   const secret = readFileSync(process.env.BYPASS_FILE, 'utf8').trim();
   const origin = new URL(base).origin;

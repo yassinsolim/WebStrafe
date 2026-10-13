@@ -92,10 +92,12 @@ interface WeaponDef {
 }
 ```
 
-Initial table: `AWP` (high damage, slow, `range: Infinity` so it never hits a
-silent damage cliff on large maps — effectively one-shot to body/head), `DEAGLE`
-(medium damage, faster, finite range with falloff), `KNIFE` (existing melee,
-1.45 m reach measured to the visible target-capsule surface).
+Current table (2026-10-09): `AWP` deals 115 body damage and remains one-shot
+against a full-health player, with infinite range. `DEAGLE` deals 50 damage
+to either hitbox throughout its effective range: two hits from full health,
+no headshot damage bonus and no distance falloff. Headshot hitmarkers and kill
+metadata are still reported. `KNIFE` keeps its existing melee damage table and
+1.45 m reach measured to the visible target-capsule surface.
 
 Weapon slots follow the conventional loadout order: `1` AWP primary, `2` Deagle
 secondary, `3` knife and `4` katana. The katana (`src/combat/katana.ts`) uses the

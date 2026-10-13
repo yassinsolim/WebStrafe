@@ -571,7 +571,18 @@ export function finishFragmentShader(src: string, finishId: string, wearStyle: K
   const defines = [`#define FINISH_WEAR_${wearStyle.toUpperCase()}`, handle ? '#define FINISH_HANDLE' : ''].join('\n');
   let out = inject(src, 'void main() {', `${defines}\n${FRAGMENT_LIB}\n${surface}`, 'before');
   out = inject(out, '#include <map_fragment>', FRAGMENT_MAIN, 'after');
-  out = inject(out, '#include <roughnessmap_fragment>', 'roughnessFactor = finRough;', 'after');
+  out = inject(out, '#include <roughnessmap_fragment>', `
+roughnessFactor = finRough;
+#ifdef USE_ROUGHNESSMAP
+  float finBakedRoughness = texture2D(roughnessMap, vRoughnessMapUv).g;
+  #ifdef FINISH_HANDLE
+    roughnessFactor += clamp(finBakedRoughness - 0.65, -0.3, 0.3) * 0.3;
+  #else
+    roughnessFactor += clamp(finBakedRoughness - 0.3, -0.2, 0.3) * 0.35;
+  #endif
+  roughnessFactor = clamp(roughnessFactor, 0.06, 0.95);
+#endif
+`, 'after');
   out = inject(out, '#include <metalnessmap_fragment>', 'metalnessFactor = finMetal;', 'after');
   // the clear coat wears through with the finish
   out = inject(out, '#include <lights_physical_fragment>', '#ifdef USE_CLEARCOAT\nmaterial.clearcoat *= 1.0 - finWorn;\n#endif', 'after');

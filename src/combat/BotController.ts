@@ -36,6 +36,7 @@ export interface BotMovementState {
   /** Horizontal velocity components, used to air-strafe along the ramp. */
   velX?: number;
   velZ?: number;
+  timeSec?: number;
 }
 
 export interface BotDecision {
@@ -59,7 +60,7 @@ export interface BotParams {
   stuckSpeed: number;
   /** Only shoot when the target is within this 3D distance. */
   engageRange: number;
-  /** Only shoot when yaw and pitch aim error are both under this (radians). */
+  /** Maximum firing error in radians; distance also caps it to a 14 cm aim window. */
   fireAngleTol: number;
   /**
    * Visible staging time before the bot begins tracking or moving. This is
@@ -78,7 +79,8 @@ export interface BotParams {
    * Angular aim inaccuracy (radians). The bot aims at a point that wanders
    * around the true target within roughly this cone, so it is not a
    * pixel-perfect aimbot: it drifts, over/under-shoots, and misses like a human.
-   * The wander is smoothed over time and scales with distance.
+  * The wander is smoothed over time and scales with distance, capped at a
+  * 20 cm standard-deviation amplitude so long shots remain useful.
    */
   aimWanderRad: number;
   /**
@@ -94,17 +96,14 @@ export interface BotParams {
 }
 
 export const DEFAULT_BOT_PARAMS: BotParams = {
-  // Deliberately dumbed-down so bots are fun, not an aimbot:
-  turnRateRadPerSec: 1.2, // slower tracking — cannot snap onto a target
+  turnRateRadPerSec: 3.2,
   stopDistance: 13,
   stuckSpeed: 0.6,
   engageRange: 110,
   fireAngleTol: 0.05, // ~3 degrees
   acquisitionGraceSec: 0.85,
   reactionDelaySec: 1.4,
-  // Correct OU variance makes this a real ~2.6° standard deviation instead of
-  // the former tick-rate-dependent fraction of the configured angle.
-  aimWanderRad: 0.045,
+  aimWanderRad: 0.0075,
   // Two deliberate Deagle taps fit in a burst, separated by enough time for
   // visible recoil recovery. The longer pause between bursts keeps the bot a
   // threat without producing a hitscan damage dump.
@@ -188,11 +187,12 @@ export function decideBotInput(
     pitchErr = desiredPitch - state.pitchRad;
   }
 
+  const fireTolerance = Math.min(params.fireAngleTol, Math.atan2(0.14, Math.max(1, dist3D)));
   const fire =
     perception.targetVisible !== false
     && dist3D <= params.engageRange
-    && Math.abs(yawErr) <= params.fireAngleTol
-    && Math.abs(pitchErr) <= params.fireAngleTol;
+    && Math.abs(yawErr) <= fireTolerance
+    && Math.abs(pitchErr) <= fireTolerance;
 
   const mode = state.mode ?? 'ground';
 
@@ -233,23 +233,22 @@ export function decideBotInput(
     // it with capped air control (only when roughly facing it, so it doesn't
     // sail the wrong way while turning around), like a player dropping in.
     const facing = Math.abs(yawErr) < Math.PI / 2;
-    // Drop into a clear firing lane instead of air-accelerating through the
-    // target. Advance only while searching around occluding geometry.
-    forwardMove = perception.targetVisible === true ? 0 : facing ? 1 : 0;
+    forwardMove = facing && horizDist > params.stopDistance ? 1 : 0;
     yawDelta = Math.max(-maxTurn, Math.min(maxTurn, yawErr));
-    pitchDelta = Math.max(-maxTurn, Math.min(maxTurn, -state.pitchRad));
+    pitchDelta = Math.max(-maxTurn, Math.min(maxTurn, pitchErr));
   } else {
     // --- Grounded: seek the target and aim at it.
     const facing = Math.abs(yawErr) < Math.PI / 2;
-    // A visible target is already a valid engagement: hold the staged lane so
-    // remote muzzle/tracer feedback remains readable instead of rushing through
-    // the player's camera. Seek only when LOS is blocked or unknown.
-    forwardMove = perception.targetVisible === true
-      ? 0
-      : horizDist > params.stopDistance && facing ? 1 : 0;
+    const visible = perception.targetVisible === true;
+    const distance = visible ? params.stopDistance : perception.targetVisible === false ? 1.5 : params.stopDistance;
+    forwardMove = facing && horizDist > distance ? 1 : 0;
+    if (visible && facing) {
+      if (horizDist < params.stopDistance * 0.55) forwardMove = -0.55;
+      sideMove = Math.sin((state.timeSec ?? 0) * 1.35) >= 0 ? 0.65 : -0.65;
+    }
     yawDelta = Math.max(-maxTurn, Math.min(maxTurn, yawErr));
     pitchDelta = Math.max(-maxTurn, Math.min(maxTurn, pitchErr));
-    jump = state.grounded && forwardMove > 0 && state.horizontalSpeed < params.stuckSpeed;
+    jump = state.grounded && (forwardMove !== 0 || sideMove !== 0) && state.horizontalSpeed < params.stuckSpeed;
   }
 
   return { forwardMove, sideMove, jump, yawDelta, pitchDelta, fire };
@@ -285,6 +284,7 @@ export class BotController {
   private fallingSec = 0;
   /** Stable target identity used to reset reaction and trigger state on switches. */
   private targetId: string | null = null;
+  private movementTimeSec = 0;
 
   constructor(
     spawn: Vector3,
@@ -293,6 +293,7 @@ export class BotController {
     private readonly random: () => number = Math.random,
   ) {
     this.params = params;
+    this.movementTimeSec = this.random() * 4;
     // bots carry the deagle (BotManager and HostSimulation arm them with it), so
     // they run at its cs2 speed, 230 u/s, like a player holding one
     this.movement.setMaxSpeedCap(weaponMaxSpeed('deagle'));
@@ -383,6 +384,7 @@ export class BotController {
 
   /** Advances the bot one fixed step toward (and aiming at) its target. */
   tick(dt: number, world: CollisionAdapter, perception: BotPerception): void {
+    this.movementTimeSec += Math.max(0, dt);
     this.tapCooldownSec = Math.max(0, this.tapCooldownSec - Math.max(0, dt));
     const nextTargetId = perception.targetFeet
       ? perception.targetId ?? '__anonymous-target__'
@@ -465,7 +467,7 @@ export class BotController {
           perception.targetFeet.y - feet.y,
           perception.targetFeet.z - feet.z,
         );
-        const amp = Math.tan(this.params.aimWanderRad) * Math.max(dist, 1);
+        const amp = Math.min(0.2, Math.tan(this.params.aimWanderRad) * Math.max(dist, 1));
         advanceBotAimWander(this.aimWander, amp, dt, this.random);
         this.perturbedTarget.add(this.aimWander);
       }
@@ -490,6 +492,7 @@ export class BotController {
         recommendedStrafe: debug.recommendedStrafe,
         velX: debug.velocity.x,
         velZ: debug.velocity.z,
+        timeSec: this.movementTimeSec,
       },
       aimPerception,
       this.params,

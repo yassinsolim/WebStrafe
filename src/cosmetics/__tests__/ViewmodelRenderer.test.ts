@@ -53,13 +53,33 @@ describe('ViewmodelRenderer firearm recoil', () => {
     expect(awpDone.motionRot.x).toBe(0);
   });
 
-  it('preserves the established firearm sway response outside 60 FPS', () => {
-    const renderer = new ViewmodelRenderer(68, 16 / 9);
-    renderer.setFirearm('deagle');
-    renderer.update(1 / 30, worldCamera, still, { x: 100, y: 0 });
+  it('sways the same for the same mouse movement at any frame rate', () => {
+    const swayAfter = (fps: number) => {
+      const renderer = new ViewmodelRenderer(68, 16 / 9);
+      renderer.setFirearm('deagle');
+      // 600 px/s to the right for half a second
+      for (let i = 0; i < fps / 2; i += 1) renderer.update(1 / fps, worldCamera, still, { x: 600 / fps, y: 0 });
+      return [renderer.motionPos.x, renderer.motionRot.y];
+    };
+    const [x30, yaw30] = swayAfter(30);
+    const [x144, yaw144] = swayAfter(144);
+    expect(x30).toBeLessThan(-0.001);
+    expect(x144).toBeCloseTo(x30, 6);
+    expect(yaw144).toBeCloseTo(yaw30, 6);
+    // the settled sway matches the old one-frame-at-60 gain
+    expect(x30).toBeGreaterThan(-600 / 60 * 0.00022 * 0.82 - 1e-9);
+  });
 
-    expect(renderer.motionPos.x).toBeCloseTo(-100 * 0.00022 * 0.82 * 0.14, 12);
-    expect(renderer.motionRot.y).toBeCloseTo(-100 * 0.0002 * 0.78 * 0.12, 12);
+  it('stacks a refire on the kick still recovering instead of snapping it back', () => {
+    const renderer = recoilAt('deagle', 0.27);
+    const before = renderer.motionPos.z;
+    expect(before).toBeGreaterThan(0.01);
+    renderer.addFireKick('deagle');
+    renderer.update(1 / 240, worldCamera, still, noLook);
+    expect(renderer.motionPos.z).toBeGreaterThan(before * 0.98);
+    for (let i = 0; i < 20; i += 1) renderer.update(1 / 240, worldCamera, still, noLook);
+    expect(renderer.motionPos.z).toBeGreaterThan(before);
+    expect(renderer.motionPos.z).toBeLessThanOrEqual(1.35 * FIREARM_RECOIL_PROFILES.deagle.back + 1e-9);
   });
 
   it('clears recoil on weapon transfer and explicit combat cleanup', () => {
@@ -150,17 +170,42 @@ describe('ViewmodelRenderer knife movement', () => {
     const renderer = new ViewmodelRenderer(68, 16 / 9);
     renderer.setIntegratedMode(true);
     renderer.setMotionScale(0.08);
-    renderer.update(1 / 60, worldCamera, new Vector3(0, 8, 0), noLook);
+    renderer.update(1 / 60, worldCamera, new Vector3(0, 8, 0), noLook, false);
     expect(renderer.motionPos.y).toBeGreaterThan(0);
 
-    renderer.update(1 / 60, worldCamera, new Vector3(0, -10, 0), noLook);
-    renderer.update(1 / 60, worldCamera, still, noLook);
-    expect(renderer.motionPos.y).toBeLessThan(-0.007);
-    expect(renderer.motionRot.x).toBeGreaterThan(0.02);
+    renderer.update(1 / 60, worldCamera, new Vector3(0, -10, 0), noLook, false);
+    // touching down: the dip builds over a few frames instead of popping in one
+    renderer.update(1 / 60, worldCamera, still, noLook, true);
+    const first = renderer.motionPos.y;
+    let deepest = first;
+    let pitch = 0;
+    for (let i = 0; i < 12; i += 1) {
+      renderer.update(1 / 60, worldCamera, still, noLook, true);
+      deepest = Math.min(deepest, renderer.motionPos.y);
+      pitch = Math.max(pitch, renderer.motionRot.x);
+    }
+    expect(first).toBeGreaterThan(deepest * 0.75);
+    expect(deepest).toBeLessThan(-0.01);
+    expect(deepest).toBeGreaterThan(-0.05);
+    expect(pitch).toBeGreaterThan(0.02);
 
-    renderer.update(1, worldCamera, still, noLook);
+    renderer.update(1, worldCamera, still, noLook, true);
     expect(renderer.motionPos.y).toBe(0);
     expect(renderer.motionRot.x).toBe(0);
+  });
+
+  it('only bobs with feet on the ground', () => {
+    const travel = (grounded: boolean) => {
+      const renderer = new ViewmodelRenderer(68, 16 / 9);
+      let most = 0;
+      for (let i = 0; i < 120; i += 1) {
+        renderer.update(1 / 60, worldCamera, new Vector3(7, 0, 0), noLook, grounded);
+        if (i > 60) most = Math.max(most, Math.abs(renderer.motionRot.z));
+      }
+      return most;
+    };
+    expect(travel(true)).toBeGreaterThan(0.01);
+    expect(travel(false)).toBeLessThan(1e-4);
   });
 
   it('clears movement, landing, inspect, and firearm impulses on lifecycle reset', () => {

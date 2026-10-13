@@ -32,6 +32,6 @@ export class PvpBadge {
     this.root.classList.toggle('is-on', pvp);
     this.root.classList.toggle('is-off', !pvp);
     this.label.textContent = pvp ? 'PvP on' : 'Peaceful';
-    this.hint.textContent = locked ? 'combat map' : pvp ? 'P to surf in peace' : 'P to fight';
+    this.hint.textContent = locked ? 'Locked' : '';
   }
 }

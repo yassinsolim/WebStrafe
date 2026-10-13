@@ -1,3 +1,4 @@
+import { createElement, Shuffle } from 'lucide';
 import { DEFAULT_KNIFE_ID, getKnife, type KnifeId } from '../../combat/knives';
 import {
   clampKnifeWear,
@@ -70,10 +71,7 @@ export class FinishPicker {
     this.captionMeta = document.createElement('span');
     this.captionMeta.className = 'finish-inspect-meta';
     caption.append(this.captionKnife, this.captionName, this.captionMeta);
-    const hint = document.createElement('span');
-    hint.className = 'finish-inspect-hint';
-    hint.textContent = 'Drag to rotate';
-    inspect.append(this.preview.canvas, caption, hint);
+    inspect.append(this.preview.canvas, caption);
 
     // swatches
     const grid = document.createElement('div');
@@ -133,7 +131,9 @@ export class FinishPicker {
     this.randomButton = document.createElement('button');
     this.randomButton.type = 'button';
     this.randomButton.className = 'menu-restart-btn finish-random';
-    this.randomButton.textContent = 'Random';
+    this.randomButton.title = 'Randomize pattern';
+    this.randomButton.setAttribute('aria-label', 'Randomize pattern');
+    this.randomButton.appendChild(createElement(Shuffle, { 'aria-hidden': 'true' }));
     this.randomButton.addEventListener('click', () => {
       this.commit({ seed: Math.floor(Math.random() * (PATTERN_SEED_MAX + 1)) });
     });

@@ -22,7 +22,7 @@ import { finishFragmentShader, finishVertexShader } from './shaders';
 /** wear is quantized to this step for material sharing, finer than any visible change */
 export const FINISH_WEAR_STEP = 0.005;
 const IDLE_LIMIT = 48;
-const PROGRAM_VERSION = 2;
+const PROGRAM_VERSION = 3;
 
 interface Entry {
   key: string;
@@ -201,7 +201,7 @@ export function acquireSurfaceMaterial(
   const step = wearKey(wear);
   // the model's baked normal and ao maps (grind lines, jimping, saw teeth) stay under the finish
   const src = original instanceof MeshStandardMaterial ? original : null;
-  const detail = src ? `${src.normalMap?.uuid ?? '-'}|${src.aoMap?.uuid ?? '-'}` : '-';
+  const detail = src ? `${src.normalMap?.uuid ?? '-'}|${src.aoMap?.uuid ?? '-'}|${src.roughnessMap?.uuid ?? '-'}` : '-';
   const key = `${resolved.id}|${part}|w${step}|s${seed}|${detail}`;
   return acquire(key, () => {
     const material = new MeshPhysicalMaterial({ name: `knife_finish_${part}`, color: 0xffffff, metalness: 1, roughness: 0.3 });
@@ -219,6 +219,7 @@ export function acquireSurfaceMaterial(
       material.aoMap = src.aoMap;
       material.aoMapIntensity = src.aoMapIntensity;
     }
+    if (src?.roughnessMap) material.roughnessMap = src.roughnessMap;
     // matte paint would pick up too much of the bright studio environment
     if (part === 'blade' && resolved.finish.wearStyle === 'paint') material.envMapIntensity = 0.6;
     const polish = part === 'edge' ? EDGE_POLISH[resolved.finish.wearStyle] : 0;
@@ -271,7 +272,6 @@ export function acquireHandleMaterial(resolved: ResolvedKnifeFinish, wear: numbe
         uniforms.finWear.value.z = material.metalness;
         material.name = 'knife_finish_handle';
         material.color.setHex(0xffffff);
-        material.roughnessMap = null;
         installShader(material, resolved.finish, 'handle', uniforms);
         return material;
       });

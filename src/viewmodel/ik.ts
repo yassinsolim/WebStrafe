@@ -1,4 +1,5 @@
 import { Matrix4, Quaternion, Vector3 } from 'three';
+import { smoothstep, springStep, type SpringState } from './motion';
 
 const tmpDir = new Vector3();
 const tmpPole = new Vector3();
@@ -11,6 +12,69 @@ const wristTurn = new Quaternion();
 const wristInverse = new Quaternion();
 const wristDirection = new Vector3();
 const wristLimited = new Vector3();
+// a wrist asked to bend past 70 degrees is read as a 70 degree bend the same way, easing back to straight as it folds right back
+const FOLD_SLOPE = Math.tan(20 * Math.PI / 180);
+const FOLD_EASE = 0.35;
+// the last 30% of a wrist limit slows the hand into it instead of stopping it dead (a fast swing would jolt)
+const LIMIT_KNEE = 0.3;
+// the elbow's wrist fix fades in over this many radians past the comfortable bend
+const POLE_KNEE = 0.12;
+
+function softLimit(x: number, lo: number, hi: number): number {
+  const kneeHi = hi * LIMIT_KNEE;
+  const kneeLo = -lo * LIMIT_KNEE;
+  if (x > hi - kneeHi) return hi - kneeHi + kneeHi * Math.tanh((x - hi + kneeHi) / kneeHi);
+  if (x < lo + kneeLo) return lo + kneeLo - kneeLo * Math.tanh((lo + kneeLo - x) / kneeLo);
+  return x;
+}
+
+/** max(0, d) with the corner rounded off over +-knee */
+function softExcess(d: number, knee: number): number {
+  if (d <= -knee) return 0;
+  if (d >= knee) return d;
+  return (d + knee) ** 2 / (4 * knee);
+}
+
+/**
+ * per arm: which way the elbow points round the shoulder to wrist line follows
+ * the solved way on a spring, because the solved way can swing half a turn in
+ * a frame (an elbow hint passing over the arm line, the hand pointing along
+ * it). `dt` is the time since the last solve; `snap` takes the solved way at
+ * once (scrubbing, a reappearing arm)
+ */
+export interface SwivelFilter {
+  dir: Vector3;
+  v: number;
+  dt: number;
+  snap: boolean;
+}
+
+export function createSwivelFilter(): SwivelFilter {
+  return { dir: new Vector3(), v: 0, dt: 0, snap: true };
+}
+
+const SWIVEL_HALFLIFE = 0.035;
+const swivelShown = new Vector3();
+const swivelState: SpringState = { x: 0, v: 0 };
+
+/** turns tmpPole (unit, square to tmpDir) to where the filter shows the elbow */
+function filterSwivel(filter: SwivelFilter | undefined): void {
+  if (!filter) return;
+  swivelShown.copy(filter.dir).addScaledVector(tmpDir, -filter.dir.dot(tmpDir));
+  if (filter.snap || swivelShown.lengthSq() < 1e-8) {
+    filter.v = 0;
+    filter.snap = false;
+  } else {
+    // last frame's elbow carried onto this frame's arm line, then sprung toward the solved one
+    swivelShown.normalize();
+    swivelState.x = signedAngleAbout(tmpPole, swivelShown, tmpDir);
+    swivelState.v = filter.v;
+    if (filter.dt > 0) springStep(swivelState, 0, SWIVEL_HALFLIFE, filter.dt);
+    filter.v = swivelState.v;
+    tmpPole.applyQuaternion(wristTurn.setFromAxisAngle(tmpDir, swivelState.x));
+  }
+  filter.dir.copy(tmpPole);
+}
 
 /**
  * analytic two bone ik. writes the elbow position into `outElbow` and the
@@ -28,6 +92,7 @@ export function solveTwoBone(
   outWrist: Vector3,
   handDirection?: Vector3,
   preferredWristBendDeg = 35,
+  swivel?: SwivelFilter,
 ): boolean {
   tmpDir.subVectors(target, root);
   const rawDist = tmpDir.length();
@@ -62,10 +127,13 @@ export function solveTwoBone(
       const along = (dist - lenA * cosA) * handDirection.dot(tmpDir) / lenB;
       const allowed = Math.acos(Math.min(1, Math.max(-1, (Math.cos(preferredWristBendDeg * Math.PI / 180) - along) / reach)));
       const turn = signedAngleAbout(tmpPole, wristPole, tmpDir);
-      const excess = Math.max(0, Math.abs(turn) - allowed);
-      tmpPole.applyQuaternion(wristTurn.setFromAxisAngle(tmpDir, Math.sign(turn) * excess));
+      // straight across either way round is as good, so aim right at it there instead of flipping sides
+      const keep = allowed * smoothstep(Math.PI, 0.75 * Math.PI, Math.abs(turn));
+      const excess = softExcess(Math.abs(turn) - keep, POLE_KNEE) * smoothstep(0, 0.15, lateral);
+      if (excess !== 0) tmpPole.applyQuaternion(wristTurn.setFromAxisAngle(tmpDir, Math.sign(turn) * excess));
     }
   }
+  filterSwivel(swivel);
   outElbow.copy(root).addScaledVector(tmpDir, lenA * cosA).addScaledVector(tmpPole, lenA * sinA);
   outWrist.copy(root).addScaledVector(tmpDir, dist);
   return rawDist <= lenA + lenB && rawDist >= minDist;
@@ -73,12 +141,14 @@ export function solveTwoBone(
 
 export function constrainWristRotation(forearmDirection: Vector3, handRotation: Quaternion, out: Quaternion, relaxed = false): Quaternion {
   wristDirection.copy(forearmDirection).normalize().applyQuaternion(wristInverse.copy(handRotation).invert());
-  const flex = Math.atan2(wristDirection.z, wristDirection.y);
-  const deviation = Math.atan2(wristDirection.x, wristDirection.y);
-  const limitedFlex = Math.min((relaxed ? 20 : 40) * Math.PI / 180, Math.max((relaxed ? -20 : -45) * Math.PI / 180, flex));
+  // atan2 against a backwards y wraps from +180 to -180, which flipped the hand from one limit to the other
+  const ahead = Math.max(wristDirection.y, Math.hypot(wristDirection.x, wristDirection.z) * FOLD_SLOPE + Math.max(0, -wristDirection.y) * FOLD_EASE, 1e-6);
+  const flex = Math.atan2(wristDirection.z, ahead);
+  const deviation = Math.atan2(wristDirection.x, ahead);
+  const limitedFlex = softLimit(flex, (relaxed ? -20 : -45) * Math.PI / 180, (relaxed ? 20 : 40) * Math.PI / 180);
   const sideways = (relaxed ? 15 : 25) * Math.PI / 180;
-  const limitedDeviation = Math.min(sideways, Math.max(-sideways, deviation));
-  if (Math.abs(flex - limitedFlex) < 1e-6 && Math.abs(deviation - limitedDeviation) < 1e-6) return out.copy(handRotation);
+  const limitedDeviation = softLimit(deviation, -sideways, sideways);
+  if (ahead === wristDirection.y && Math.abs(flex - limitedFlex) < 1e-6 && Math.abs(deviation - limitedDeviation) < 1e-6) return out.copy(handRotation);
   wristLimited.set(Math.tan(limitedDeviation), 1, Math.tan(limitedFlex)).normalize();
   wristTurn.setFromUnitVectors(wristLimited, wristDirection);
   return out.copy(handRotation).multiply(wristTurn).normalize();

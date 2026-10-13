@@ -182,14 +182,28 @@ describe('CombatArena.handleFire', () => {
   });
 
 
+  it('requires two Deagle headshots against a full-health player', () => {
+    const arena = twoPlayers();
+    const first = arena.handleFire('shooter', eye, aimAtTarget, 1000);
+    expect(first.hit).toMatchObject({ damage: 50, killed: false, hitbox: 'head' });
+    expect(first.death).toBeUndefined();
+    expect(arena.getHealth('target')).toBe(50);
+    expect(arena.isAlive('target')).toBe(true);
+
+    const second = arena.handleFire('shooter', eye, aimAtTarget, 1000 + deagle.fireIntervalMs);
+    expect(second.hit).toMatchObject({ damage: 50, killed: true, hitbox: 'head' });
+    expect(second.death).toMatchObject({ victimId: 'target', headshot: true });
+    expect(arena.getHealth('target')).toBe(0);
+  });
+
   it('marks a body-shot kill without headshot metadata', () => {
     const a = twoPlayers();
     const bodyAim: [number, number, number] = [0, -0.06, -1];
     const first = a.handleFire('shooter', eye, bodyAim, 1000);
-    expect(first.hit).toMatchObject({ killed: false, hitbox: 'body' });
+    expect(first.hit).toMatchObject({ damage: 50, killed: false, hitbox: 'body' });
 
     const second = a.handleFire('shooter', eye, bodyAim, 1000 + deagle.fireIntervalMs);
-    expect(second.hit).toMatchObject({ killed: true, hitbox: 'body' });
+    expect(second.hit).toMatchObject({ damage: 50, killed: true, hitbox: 'body' });
     expect(second.death).toMatchObject({ victimId: 'target', headshot: false });
   });
 

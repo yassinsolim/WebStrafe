@@ -15,7 +15,6 @@ import {
   type WebGLRenderTarget,
 } from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { TEAM_LIGHT } from '../../characters/catalog';
 import { createCharacter, type CharacterHandle } from '../../characters/CharacterFactory';
 import { looksEqual, type CharacterLook } from '../../characters/look';
 import type { PlayerModel } from '../../network/types';
@@ -59,7 +58,6 @@ export class CustomizeStage {
   private readonly characterGroup = new Group();
   private readonly envTarget: WebGLRenderTarget;
   private readonly floor: Mesh<CircleGeometry, MeshBasicMaterial>;
-  private readonly ring: Mesh<CircleGeometry, MeshBasicMaterial>;
   private readonly resizeObserver: ResizeObserver;
 
   private handle: CharacterHandle | null = null;
@@ -116,8 +114,7 @@ export class CustomizeStage {
     this.scene.add(this.lightRig, this.characterGroup);
     this.setupLights();
     this.floor = makeFloor();
-    this.ring = makeRing();
-    this.scene.add(this.floor, this.ring);
+    this.scene.add(this.floor);
 
     this.goal = focusView('full', 1, FOV);
     this.view = { ...this.goal };
@@ -139,7 +136,6 @@ export class CustomizeStage {
   setCharacter(look: CharacterLook, team: PlayerModel): void {
     this.wantLook = { ...look };
     this.wantTeam = team;
-    this.ring.material.color.set(TEAM_LIGHT[team]);
     if (!this.handle && !this.loading && !this.loadFailed) {
       this.load();
     }
@@ -215,11 +211,9 @@ export class CustomizeStage {
       this.handle.dispose();
       this.handle = null;
     }
-    for (const mesh of [this.floor, this.ring]) {
-      mesh.material.map?.dispose();
-      mesh.material.dispose();
-      mesh.geometry.dispose();
-    }
+    this.floor.material.map?.dispose();
+    this.floor.material.dispose();
+    this.floor.geometry.dispose();
     this.scene.environment = null;
     this.envTarget.dispose();
     this.renderer.dispose();
@@ -483,30 +477,15 @@ function flatDisc(radius: number, map: CanvasTexture, y: number): Mesh<CircleGeo
   return mesh;
 }
 
-/** a faint lit floor with a darker contact shadow in the middle */
 function makeFloor(): Mesh<CircleGeometry, MeshBasicMaterial> {
-  const floor = flatDisc(1.6, radialTexture([
+  const floor = flatDisc(1.2, radialTexture([
     [0, 'rgba(0, 0, 0, 0.8)'],
     [0.12, 'rgba(0, 0, 0, 0.62)'],
-    [0.24, 'rgba(14, 16, 20, 0.42)'],
-    [0.42, 'rgba(92, 106, 124, 0.2)'],
-    [0.7, 'rgba(92, 106, 124, 0.08)'],
-    [1, 'rgba(92, 106, 124, 0)'],
+    [0.24, 'rgba(0, 0, 0, 0.42)'],
+    [0.42, 'rgba(0, 0, 0, 0.2)'],
+    [0.7, 'rgba(0, 0, 0, 0.08)'],
+    [1, 'rgba(0, 0, 0, 0)'],
   ]), 0.002);
   floor.renderOrder = -2;
   return floor;
-}
-
-/** thin glowing ring in the team light colour, tinted through material.color */
-function makeRing(): Mesh<CircleGeometry, MeshBasicMaterial> {
-  const ring = flatDisc(0.78, radialTexture([
-    [0, 'rgba(255, 255, 255, 0)'],
-    [0.8, 'rgba(255, 255, 255, 0)'],
-    [0.9, 'rgba(255, 255, 255, 0.16)'],
-    [0.935, 'rgba(255, 255, 255, 0.75)'],
-    [0.96, 'rgba(255, 255, 255, 0.16)'],
-    [1, 'rgba(255, 255, 255, 0)'],
-  ]), 0.004);
-  ring.material.opacity = 0.7;
-  return ring;
 }

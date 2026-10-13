@@ -166,13 +166,8 @@ export class CombatHud {
       this.slotRows.set(id, { row, name });
     });
 
-    // player-facing range drill: normal controls and real world geometry only
     this.practiceGuide = div('combat-practice-guide');
     this.practiceGuide.hidden = true;
-    this.practiceGuide.innerHTML = [
-      '<strong>Firearm range</strong><span class="hud-guide-keys"><kbd>1</kbd> AWP <kbd>2</kbd> Deagle <kbd>3</kbd> Knife <kbd>R</kbd> reload <kbd>Tab</kbd> scores <kbd>Esc</kbd> menu</span>',
-      '<span class="hud-guide-note">Centre bot is the body target, the gold head counts as a headshot. Orange cover blocks shots, the tan panel and floor show impacts.</span>',
-    ].join('');
     this.audioStatus = document.createElement('span');
     this.audioStatus.className = 'combat-audio-status starting';
     this.audioStatus.textContent = 'AUDIO STARTING';

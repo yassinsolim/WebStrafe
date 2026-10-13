@@ -1,6 +1,7 @@
 import { Mesh, Object3D, Quaternion, SkinnedMesh, Vector3 } from 'three';
 import { sharedGltfLoader } from '../assets/gltfLoader';
-import { constrainWristRotation, frameFromYZ, signedAngleAbout, solveTwoBone } from './ik';
+import { constrainWristRotation, createSwivelFilter, frameFromYZ, signedAngleAbout, solveTwoBone, type SwivelFilter } from './ik';
+import { createSpring, quaternionToRotationVector, rotationVectorToQuaternion, springStep, type SpringState } from './motion';
 import type { HandPose } from './handPoses';
 
 export type Side = 'l' | 'r';
@@ -22,6 +23,9 @@ const CURL_AXIS = new Vector3(-1, 0, 0);
 const SPREAD_AXIS_R = new Vector3(0, 0, 1);
 const SPREAD_AXIS_L = new Vector3(0, 0, -1);
 const DEG = Math.PI / 180;
+// the wrist limit's correction follows on a spring this fast, so a hand asked
+// far past the limit rounds it instead of whipping along the edge
+const WRIST_HALFLIFE = 0.03;
 
 interface ArmBones {
   upperarm: Object3D;
@@ -31,6 +35,12 @@ interface ArmBones {
   digits: Record<Digit, [Object3D, Object3D, Object3D]>;
   digitRest: Record<Digit, [Quaternion, Quaternion, Quaternion]>;
   visible: boolean;
+  swivel: SwivelFilter;
+  /** the wrist limit's correction shown (hand frame rotation vector, one spring per axis) */
+  wrist: [SpringState, SpringState, SpringState];
+  /** time since the last solve, and whether the next one puts everything straight on */
+  step: number;
+  snap: boolean;
 }
 
 const vS = new Vector3();
@@ -50,6 +60,8 @@ const qH = new Quaternion();
 const qParent = new Quaternion();
 const qDelta = new Quaternion();
 const vTmp = new Vector3();
+const vCorr = new Vector3();
+const qCorr = new Quaternion();
 
 export type DigitBones = Record<Digit, [Object3D, Object3D, Object3D]>;
 export type DigitRest = Record<Digit, [Quaternion, Quaternion, Quaternion]>;
@@ -120,8 +132,18 @@ export class ArmsRig {
       return;
     }
     arm.visible = visible;
+    // a hidden arm's elbow and wrist went stale
+    if (visible) arm.snap = true;
     // zero scale on the upper arm collapses every vertex skinned to that chain
     arm.upperarm.scale.setScalar(visible ? 1 : 1e-4);
+  }
+
+  /** time since the last solve, for the elbows and wrists; `snap` puts them straight on (scrubbing) */
+  public setStep(dt: number, snap = false): void {
+    for (const arm of [this.arms.l, this.arms.r]) {
+      arm.step = dt;
+      if (snap) arm.snap = true;
+    }
   }
 
   public isArmVisible(side: Side): boolean {
@@ -143,8 +165,10 @@ export class ArmsRig {
     if (lenA < 1e-6 || lenB < 1e-6) {
       return;
     }
+    arm.swivel.dt = arm.step;
+    arm.swivel.snap = arm.snap;
     solveTwoBone(vS, wrist, pole, lenA, lenB, vE, vW,
-      naturalWrist ? vHandY.set(0, 1, 0).applyQuaternion(handRot) : undefined, naturalWrist === 'relaxed' ? 20 : 35);
+      naturalWrist ? vHandY.set(0, 1, 0).applyQuaternion(handRot) : undefined, naturalWrist === 'relaxed' ? 20 : 35, arm.swivel);
 
     vYu.subVectors(vE, vS).normalize();
     vYf.subVectors(vW, vE).normalize();
@@ -159,7 +183,9 @@ export class ArmsRig {
     vZf.crossVectors(vX, vYf);
     frameFromYZ(vYf, vZf, qF);
 
-    const hand = naturalWrist ? constrainWristRotation(vYf, handRot, qH, naturalWrist === 'relaxed') : handRot;
+    const hand = naturalWrist ? this.followWrist(arm, handRot, constrainWristRotation(vYf, handRot, qH, naturalWrist === 'relaxed')) : handRot;
+    arm.step = 0;
+    arm.snap = false;
     // roll between the forearm frame and the target hand, measured about the forearm axis
     vHandZ.set(0, 0, 1).applyQuaternion(hand);
     vZf.set(0, 0, 1).applyQuaternion(qF);
@@ -176,6 +202,24 @@ export class ArmsRig {
   public applyHandPose(side: Side, pose: HandPose, spread?: DigitSpread): void {
     const arm = this.arms[side];
     applyDigitPose(arm.digits, arm.digitRest, side, pose, spread);
+  }
+
+  /** the requested hand with the limit's correction as shown (writes into `limited`) */
+  private followWrist(arm: ArmBones, request: Quaternion, limited: Quaternion): Quaternion {
+    qCorr.copy(request).invert().multiply(limited);
+    quaternionToRotationVector(qCorr, vCorr);
+    const goal = [vCorr.x, vCorr.y, vCorr.z];
+    for (let i = 0; i < 3; i += 1) {
+      const spring = arm.wrist[i];
+      if (arm.snap) {
+        spring.x = goal[i];
+        spring.v = 0;
+      } else {
+        springStep(spring, goal[i], WRIST_HALFLIFE, arm.step);
+      }
+    }
+    vCorr.set(arm.wrist[0].x, arm.wrist[1].x, arm.wrist[2].x);
+    return limited.copy(request).multiply(rotationVectorToQuaternion(vCorr, qCorr)).normalize();
   }
 
   /** watch hands show `date` local time; the second hand ticks */
@@ -253,6 +297,10 @@ export class ArmsRig {
       digits,
       digitRest,
       visible: true,
+      swivel: createSwivelFilter(),
+      wrist: [createSpring(), createSpring(), createSpring()],
+      step: 0,
+      snap: true,
     };
   }
 }

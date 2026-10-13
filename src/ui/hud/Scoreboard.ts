@@ -60,7 +60,7 @@ export class Scoreboard {
     this.footerPing = document.createElement('span');
     const note = document.createElement('span');
     note.className = 'hud-sb-note';
-    note.textContent = 'Scores count from when you joined';
+    note.textContent = 'This session';
     footer.append(this.footerPing, note);
     this.root.append(header, table, footer);
     parent.appendChild(this.root);

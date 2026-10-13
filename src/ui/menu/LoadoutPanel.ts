@@ -39,12 +39,12 @@ export class LoadoutPanel {
       },
     });
 
-    const hint = document.createElement('p');
-    hint.className = 'menu-section-hint';
-    hint.textContent = 'Knife: every type shares the same damage, pick the one you like holding.';
+    const heading = document.createElement('h3');
+    heading.className = 'set-group-title';
+    heading.textContent = 'Knives';
     this.grid = document.createElement('div');
     this.grid.className = 'knife-grid';
-    section.append(slots, this.finishPicker.element, hint, this.grid);
+    section.append(slots, this.finishPicker.element, heading, this.grid);
     this.render();
   }
 

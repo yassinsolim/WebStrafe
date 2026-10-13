@@ -7,6 +7,7 @@ import {
   Mesh,
   MeshStandardMaterial,
   ShaderLib,
+  Texture,
   UniformsUtils,
   Vector3,
 } from 'three';
@@ -68,6 +69,27 @@ describe('knife finish parts', () => {
 });
 
 describe('applyKnifeFinish', () => {
+  it('retains baked roughness detail without sharing different surface maps', () => {
+    const first = buildProceduralKnife(getKnife('karambit'));
+    const second = buildProceduralKnife(getKnife('karambit'));
+    const firstSource = slotsNamed(first, 'knife_blade')[0] as MeshStandardMaterial;
+    const secondSource = slotsNamed(second, 'knife_blade')[0] as MeshStandardMaterial;
+    firstSource.roughnessMap = new Texture();
+    secondSource.roughnessMap = new Texture();
+    const selection = { finishId: 'doppler_phase2', wear: 0.02, seed: 1 };
+    applyKnifeFinish(first, selection);
+    applyKnifeFinish(second, selection);
+    const firstFinish = ((first.getObjectByName('blade') as Mesh).material as MeshStandardMaterial[])[0];
+    const secondFinish = ((second.getObjectByName('blade') as Mesh).material as MeshStandardMaterial[])[0];
+    expect(firstFinish.roughnessMap).toBe(firstSource.roughnessMap);
+    expect(secondFinish.roughnessMap).toBe(secondSource.roughnessMap);
+    expect(firstFinish).not.toBe(secondFinish);
+    clearKnifeFinish(first);
+    expect(slotsNamed(first, 'knife_blade')[0]).toBe(firstSource);
+    disposeProceduralKnife(first);
+    disposeProceduralKnife(second);
+  });
+
   it('swaps blade, edge and metal for a doppler and restores the exact originals', () => {
     const knife = buildProceduralKnife(getKnife('karambit'));
     const before = materialsOf(knife);
@@ -106,6 +128,7 @@ describe('applyKnifeFinish', () => {
     applyKnifeFinish(knife, { finishId: 'boreal_forest', wear: 0.2, seed: 3 });
     const camo = findHandle(knife);
     expect(camo.userData.knifeFinishUniforms).toBeDefined();
+    expect(camo.roughnessMap).toBe(handle.roughnessMap);
     expect(camo.customProgramCacheKey()).toContain('boreal_forest:handle');
 
     applyKnifeFinish(knife, { finishId: 'tiger_tooth', wear: 0.01, seed: 3 });

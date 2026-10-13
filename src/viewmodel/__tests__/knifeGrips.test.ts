@@ -1,9 +1,41 @@
-import { Vector3 } from 'three';
+import { Bone, BoxGeometry, Mesh, MeshBasicMaterial, PlaneGeometry, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { getKnife, KNIVES } from '../../combat/knives';
 import { alignRingGrip, gripKindFor, knifeGripSpec } from '../knifeGrips';
+import { checkGrip } from '../gripCheck';
+import type { DigitBones } from '../ArmsRig';
 
 describe('knife grips', () => {
+  function digitsAt(position: Vector3): DigitBones {
+    const bones: [Bone, Bone, Bone] = [new Bone(), new Bone(), new Bone()];
+    bones.forEach((bone, index) => {
+      bone.position.copy(position).add(new Vector3(0, index * 0.002, 0));
+    });
+    return { index: bones, middle: bones, ring: bones, pinky: bones, thumb: bones };
+  }
+
+  it('does not treat points outside a material surface bounds as inside the knife', () => {
+    const material = new MeshBasicMaterial({ name: 'knife_handle' });
+    const surface = new Mesh(new PlaneGeometry(2, 2), material);
+    surface.position.set(1, 0, 0);
+    surface.rotation.y = 0.6;
+    surface.updateMatrixWorld(true);
+    const position = new Vector3(0, 0, -0.01).applyMatrix4(surface.matrixWorld);
+    const report = checkGrip(surface, digitsAt(position), null);
+    expect(report.digits.every(digit => digit.inside === 0)).toBe(true);
+    surface.geometry.dispose();
+    material.dispose();
+  });
+
+  it('still detects finger samples inside a solid knife part', () => {
+    const material = new MeshBasicMaterial({ name: 'knife_handle' });
+    const solid = new Mesh(new BoxGeometry(0.06, 0.06, 0.06), material);
+    const report = checkGrip(solid, digitsAt(new Vector3()), null);
+    expect(report.digits.every(digit => digit.inside > 0)).toBe(true);
+    solid.geometry.dispose();
+    material.dispose();
+  });
+
   it('picks the grip style each knife is really held with', () => {
     expect(gripKindFor(getKnife('karambit'))).toBe('reverse_ring');
     expect(gripKindFor(getKnife('talon'))).toBe('reverse_ring');

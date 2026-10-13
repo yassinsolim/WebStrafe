@@ -1,7 +1,8 @@
 import { Matrix4, Quaternion, Vector3 } from 'three';
 import type { KnifeId } from '../combat/knives';
+import { seqWeights, type SeqKey, type SeqWeights } from './clips';
 import { frameFromYZ } from './ik';
-import { KNIFE_ATTACK_FITS } from './knifeAttackFits';
+import { KNIFE_ATTACK_FITS, type FittedAttackName } from './knifeAttackFits';
 import type { KnifeGripKind, KnifeGripSpec } from './knifeGrips';
 
 /**
@@ -199,12 +200,105 @@ export function fittedPoseName(attack: string, i: number, left = false): string 
 const fittedKey = (k: readonly number[]): ItemBase =>
   knifeKey(v(k[1], k[2], k[3]), v(k[4], k[5], k[6]), v(k[7], k[8], k[9]), v(k[10], k[11], k[12]));
 
+// the capture's keys wobble (and have odd gaps and held frames), so they are
+// played back resampled every frame, smoothed over about a frame and a half
+// either side and keyed every other frame: the cut keeps its speed, the wobble goes
+const FIT_SAMPLE_S = 1 / 60;
+const FIT_KEY_EVERY = 2;
+const FIT_SMOOTH_S = 0.025;
+
+export interface FittedTrack {
+  /** seconds, the capture's first frame at 0 */
+  times: number[];
+  poses: ItemBase[];
+}
+
+const fittedTracks = new Map<string, FittedTrack | null>();
+
+/** a fitted attack's keys (or a pair's left knife's) as smoothed poses, null when the knife has none */
+export function fittedAttackTrack(id: KnifeId, attack: FittedAttackName, left = false): FittedTrack | null {
+  const cacheKey = `${id}:${attack}:${left ? 'L' : 'R'}`;
+  if (!fittedTracks.has(cacheKey)) {
+    const fit = KNIFE_ATTACK_FITS[id]?.[attack];
+    const keys = left ? fit?.keysL : fit?.keys;
+    fittedTracks.set(cacheKey, keys && keys.length > 1 ? smoothFittedKeys(keys) : null);
+  }
+  return fittedTracks.get(cacheKey) ?? null;
+}
+
+function alignedSum(poses: readonly ItemBase[], indices: readonly number[], weights: readonly number[], out: ItemBase): ItemBase {
+  const ref = poses[indices[0]].rotation;
+  out.position.set(0, 0, 0);
+  out.pole!.set(0, 0, 0);
+  out.rotation.set(0, 0, 0, 0);
+  let total = 0;
+  for (let s = 0; s < indices.length; s += 1) {
+    const weight = weights[s];
+    if (weight === 0) continue;
+    const pose = poses[indices[s]];
+    out.position.addScaledVector(pose.position, weight);
+    out.pole!.addScaledVector(pose.pole!, weight);
+    const q = pose.rotation;
+    const w = q.dot(ref) < 0 ? -weight : weight;
+    out.rotation.set(out.rotation.x + q.x * w, out.rotation.y + q.y * w, out.rotation.z + q.z * w, out.rotation.w + q.w * w);
+    total += weight;
+  }
+  out.position.divideScalar(total);
+  out.pole!.divideScalar(total);
+  out.rotation.normalize();
+  return out;
+}
+
+function smoothFittedKeys(keys: readonly (readonly number[])[]): FittedTrack {
+  const start = keys[0][0];
+  const raw = keys.map(fittedKey);
+  const seq: SeqKey[] = keys.map((k, i) => [k[0] - start, String(i), 'linear']);
+  const end = seq[seq.length - 1][0];
+  const count = Math.max(2, Math.round(end / FIT_SAMPLE_S) + 1);
+  const step = end / (count - 1);
+  const at: SeqWeights = { keys: [0, 0, 0, 0], weights: [0, 0, 0, 0] };
+  const dense: ItemBase[] = [];
+  for (let j = 0; j < count; j += 1) {
+    seqWeights(seq, j * step, at);
+    // rotations line up on the segment's start key
+    const order = [at.keys[1], at.keys[0], at.keys[2], at.keys[3]];
+    const weights = [at.weights[1], at.weights[0], at.weights[2], at.weights[3]];
+    const pose = alignedSum(raw, order, weights, { position: new Vector3(), rotation: new Quaternion(), pole: new Vector3() });
+    if (dense.length && pose.rotation.dot(dense[dense.length - 1].rotation) < 0) {
+      pose.rotation.set(-pose.rotation.x, -pose.rotation.y, -pose.rotation.z, -pose.rotation.w);
+    }
+    dense.push(pose);
+  }
+  const reach = Math.ceil((3 * FIT_SMOOTH_S) / step);
+  const out: FittedTrack = { times: [], poses: [] };
+  const keep = (j: number) => j % FIT_KEY_EVERY === 0 || j === count - 1;
+  for (let j = 0; j < count; j += 1) {
+    if (!keep(j)) continue;
+    const indices: number[] = [j];
+    const weights: number[] = [1];
+    for (let d = 1; d <= reach; d += 1) {
+      const weight = Math.exp(-((d * step) ** 2) / (2 * FIT_SMOOTH_S * FIT_SMOOTH_S));
+      if (j - d >= 0) {
+        indices.push(j - d);
+        weights.push(weight);
+      }
+      if (j + d < count) {
+        indices.push(j + d);
+        weights.push(weight);
+      }
+    }
+    out.times.push(j * step);
+    out.poses.push(alignedSum(dense, indices, weights, { position: new Vector3(), rotation: new Quaternion(), pole: new Vector3() }));
+  }
+  return out;
+}
+
 /** a knife's frame fitted attack keys (knifeAttackFits.ts) as named poses */
 export function fittedAttackPoses(id: KnifeId): Record<string, ItemBase> {
   const out: Record<string, ItemBase> = {};
-  for (const [name, fit] of Object.entries(KNIFE_ATTACK_FITS[id] ?? {})) {
-    fit.keys.forEach((k, i) => { out[fittedPoseName(name, i)] = fittedKey(k); });
-    fit.keysL?.forEach((k, i) => { out[fittedPoseName(name, i, true)] = fittedKey(k); });
+  for (const name of Object.keys(KNIFE_ATTACK_FITS[id] ?? {}) as FittedAttackName[]) {
+    fittedAttackTrack(id, name)?.poses.forEach((pose, i) => { out[fittedPoseName(name, i)] = pose; });
+    fittedAttackTrack(id, name, true)?.poses.forEach((pose, i) => { out[fittedPoseName(name, i, true)] = pose; });
   }
   return out;
 }

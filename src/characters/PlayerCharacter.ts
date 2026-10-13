@@ -1,5 +1,5 @@
 import type { Scene, Vector3 } from 'three';
-import type { PlayerModel } from '../network/types';
+import type { AttackKind, PlayerModel } from '../network/types';
 import type { MainMenu } from '../ui/MainMenu';
 import { CustomizeScreen } from '../ui/customize/CustomizeScreen';
 import { loadCharacterLibrary } from './CharacterFactory';
@@ -84,8 +84,13 @@ export class PlayerCharacter {
   }
 
   /** per frame: the avatar only shows when the camera is out of your head */
-  update(dt: number, nowSec: number, feet: Vector3, yawRad: number, thirdPerson: boolean): void {
-    this.avatar.update(dt, nowSec, feet, yawRad, thirdPerson);
+  update(dt: number, nowSec: number, feet: Vector3, yawRad: number, thirdPerson: boolean, pitchRad = 0, grounded?: boolean): void {
+    this.avatar.update(dt, nowSec, feet, yawRad, thirdPerson, pitchRad, grounded);
+  }
+
+  /** the avatar swings the knife too (seen from the third person camera) */
+  triggerAttack(kind: AttackKind): void {
+    this.avatar.triggerAttack(kind);
   }
 
   dispose(): void {

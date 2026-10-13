@@ -1,7 +1,7 @@
 import type { KnifeDef, KnifeId } from '../combat/knives';
 import type { Clip, Key, SeqKey } from './clips';
 import { KNIFE_ATTACK_FITS, type FittedAttackName } from './knifeAttackFits';
-import { fittedPoseName } from './knifePoses';
+import { fittedAttackTrack, fittedPoseName, type FittedTrack } from './knifePoses';
 
 /**
  * first person knife clips, after cs2's. the hand and knife travel through
@@ -83,7 +83,7 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
     tracks: {
       tossY: [[0, 0], [0.13, 0], [0.25, 0.07, 'out'], [0.4, 0, 'in']],
       spinZ: [[0, 0], [0.14, 0], [0.4, 360, 'inOut']],
-      gripOpen: [[0, 0], [0.11, 0], [0.15, 1], [0.38, 1], [0.44, 0, 'out']],
+      gripOpen: [[0, 0], [0.02, 0], [0.15, 1], [0.38, 1], [0.5, 0, 'out']],
       py: [[0, 0], [0.4, 0], [0.45, -0.012, 'out'], [0.62, 0, 'inOut']],
     },
     events: [[0.05, 'sound:knife_draw'], [0.14, 'sound:knife_toss'], [0.41, 'sound:knife_catch']],
@@ -120,7 +120,7 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
     tracks: {
       spinZ: [[0, 0], [0.12, 0], [0.38, 360, 'inOut']],
       tossY: [[0, 0], [0.1, 0], [0.16, 0.03, 'out'], [0.33, 0.03], [0.39, 0, 'in']],
-      gripOpen: [[0, 0], [0.1, 0], [0.14, 0.85], [0.36, 0.85], [0.42, 0, 'out']],
+      gripOpen: [[0, 0], [0.02, 0], [0.14, 0.85], [0.36, 0.85], [0.48, 0, 'out']],
       rz: [[0, 0], [0.4, 0], [0.47, -6, 'out'], [0.66, 0, 'inOut']],
     },
     events: [[0.05, 'sound:knife_draw'], [0.2, 'sound:knife_spin'], [0.4, 'sound:knife_catch']],
@@ -150,13 +150,13 @@ const DRAWS: Readonly<Record<KnifeDrawStyle, Clip>> = {
   },
   skeleton_spin: {
     // index slips into the ring, the knife twirls round it, then the hand takes the handle
-    duration: 1.05,
-    seq: [[0, 'low'], [0.22, 'ringRaise', 'out'], [0.72, 'ringRaise'], [0.84, 'idle', 'inOut']],
+    duration: 1.15,
+    seq: [[0, 'low'], [0.22, 'ringRaise', 'out'], [0.72, 'ringRaise'], [0.92, 'idle', 'inOut']],
     tracks: {
-      // the hand swaps from the ring to the handle quickly, in step with the pose
-      ringHold: [[0, 1], [0.72, 1], [0.84, 0, 'inOut']],
+      // the hand swaps from the ring to the handle in step with the pose
+      ringHold: [[0, 1], [0.72, 1], [0.92, 0, 'inOut']],
       spinZ: [[0, 0], [0.08, 0], [0.7, 720, 'out']],
-      gripOpen: [[0, 0.95], [0.84, 0.95], [0.94, 0, 'out']],
+      gripOpen: [[0, 0.95], [0.9, 0.95], [1.04, 0, 'out']],
     },
     events: [[0.08, 'sound:knife_draw'], [0.3, 'sound:knife_spin']],
   },
@@ -244,21 +244,21 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
       ry: [[0, 0], [0.7, 0], [1.3, -8, 'inOut'], [1.7, 0, 'inOut']],
       spinZ: [[0, 0], [0.12, 0], [0.62, 360, 'inOut'], [3.0, 360], [3.55, 720, 'inOut']],
       // the fingers let go while it spins, the index stays hooked in the ring
-      gripOpen: [[0, 0], [0.1, 0], [0.18, 0.95], [0.56, 0.95], [0.68, 0], [2.96, 0], [3.04, 0.95], [3.5, 0.95], [3.62, 0]],
+      gripOpen: [[0, 0], [0.05, 0], [0.19, 0.95], [0.56, 0.95], [0.7, 0], [2.93, 0], [3.07, 0.95], [3.5, 0.95], [3.64, 0]],
     },
     events: [[0.3, 'sound:knife_spin'], [3.2, 'sound:knife_spin']],
   },
   skeleton_ring: {
     // look at it, then hook the index through the ring and spin it on the finger
     duration: 4.4,
-    // the hand swaps between the handle and the ring quickly, in step with the pose
-    seq: [[0, 'idle'], [0.45, 'show', 'out'], [1.3, 'show'], [1.42, 'ringRaise', 'inOut'], [3.0, 'ringRaise'], [3.12, 'raise', 'inOut'], [3.7, 'idle', 'inOut']],
+    // the hand swaps between the handle and the ring in step with the pose
+    seq: [[0, 'idle'], [0.45, 'show', 'out'], [1.3, 'show'], [1.5, 'ringRaise', 'inOut'], [3.0, 'ringRaise'], [3.2, 'raise', 'inOut'], [3.75, 'idle', 'inOut']],
     tracks: {
       rz: [[0, 0], [0.45, -5, 'out'], [1.0, 5, 'inOut'], [1.3, 0, 'inOut']],
-      ringHold: [[0, 0], [1.3, 0], [1.42, 1, 'inOut'], [3.0, 1], [3.12, 0, 'inOut']],
+      ringHold: [[0, 0], [1.3, 0], [1.5, 1, 'inOut'], [3.0, 1], [3.2, 0, 'inOut']],
       // let go before the hand moves to the ring, close only once it is back on the handle
-      gripOpen: [[0, 0], [1.22, 0], [1.3, 0.95], [3.12, 0.95], [3.22, 0]],
-      spinZ: [[0, 0], [1.5, 0], [2.15, 360, 'inOut'], [2.85, 720, 'inOut']],
+      gripOpen: [[0, 0], [1.16, 0], [1.3, 0.95], [3.2, 0.95], [3.34, 0]],
+      spinZ: [[0, 0], [1.55, 0], [2.18, 360, 'inOut'], [2.85, 720, 'inOut']],
     },
     events: [[1.85, 'sound:knife_spin'], [2.55, 'sound:knife_spin']],
   },
@@ -274,7 +274,7 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
       // spins and rolls only once it has left the fingers and lands the right way round
       spinZ: [[0, 0], [1.78, 0], [2.3, 360, 'inOut']],
       rollX: [[0, 0], [1.78, 0], [2.3, 360, 'inOut']],
-      gripOpen: [[0, 0], [1.68, 0], [1.75, 1], [2.3, 1], [2.38, 0]],
+      gripOpen: [[0, 0], [1.6, 0], [1.75, 1], [2.3, 1], [2.43, 0]],
       rz: [[0, 0], [0.45, -5, 'out'], [1.0, 6, 'inOut'], [1.35, 0, 'inOut']],
     },
     events: [[1.73, 'sound:knife_toss'], [2.33, 'sound:knife_catch']],
@@ -289,7 +289,7 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
       ry: [[0, 0], [0.45, 6, 'out'], [1.1, -6, 'inOut'], [1.5, 0, 'inOut']],
       spinZ: [[0, 0], [2.8, 0], [3.42, 720, 'inOut']],
       tossY: [[0, 0], [2.72, 0], [2.82, 0.035, 'out'], [3.42, 0.035], [3.5, 0, 'in']],
-      gripOpen: [[0, 0], [2.66, 0], [2.76, 0.9], [3.46, 0.9], [3.56, 0, 'out']],
+      gripOpen: [[0, 0], [2.66, 0], [2.76, 0.9], [3.45, 0.9], [3.555, 0, 'out']],
     },
     events: [[2.95, 'sound:knife_spin'], [3.25, 'sound:knife_spin'], [3.52, 'sound:knife_catch']],
   },
@@ -300,7 +300,7 @@ const INSPECTS: Readonly<Record<KnifeInspectStyle, Clip>> = {
     tracks: {
       tossY: [[0, 0], [3.05, 0], [3.3, 0.09, 'out'], [3.55, 0.01, 'in'], [3.6, 0]],
       spinZ: [[0, 0], [3.1, 0], [3.55, 360, 'inOut']],
-      gripOpen: [[0, 0], [3.0, 0], [3.08, 1], [3.55, 1], [3.64, 0]],
+      gripOpen: [[0, 0], [2.94, 0], [3.08, 1], [3.55, 1], [3.68, 0]],
       py: [[0, 0], [3.55, 0], [3.62, -0.012, 'out'], [3.85, 0, 'inOut']],
       rz: [[0, 0], [0.55, -4, 'out'], [1.2, 6, 'inOut'], [1.7, 0, 'inOut']],
     },
@@ -326,7 +326,7 @@ const RARE_INSPECTS: Partial<Record<KnifeInspectStyle, Clip>> = {
     seq: [[0, 'idle'], [0.6, 'show', 'inOut'], [3.3, 'show'], [3.9, 'idle', 'inOut']],
     tracks: {
       spinZ: [[0, 0], [0.12, 0], [0.6, 360, 'inOut'], [1.1, 720, 'inOut'], [1.6, 1080, 'inOut'], [2.1, 1440, 'inOut'], [2.6, 1800, 'inOut'], [3.3, 2160, 'inOut']],
-      gripOpen: [[0, 0], [0.1, 0], [0.18, 0.95], [3.2, 0.95], [3.35, 0]],
+      gripOpen: [[0, 0], [0.05, 0], [0.19, 0.95], [3.2, 0.95], [3.36, 0]],
       rz: [[0, 0], [0.6, 0], [1.6, 8, 'inOut'], [2.6, -8, 'inOut'], [3.3, 0, 'inOut']],
     },
     events: [[0.3, 'sound:knife_spin'], [0.85, 'sound:knife_spin'], [1.35, 'sound:knife_spin'], [1.85, 'sound:knife_spin'], [2.35, 'sound:knife_spin'], [2.9, 'sound:knife_spin']],
@@ -452,8 +452,10 @@ export function knifeClip(def: KnifeDef, name: KnifeClipName, variant = 0): Clip
   return withLeftFist(def.shape.pair ? DAGGER_ATTACKS[name] : ATTACKS[name], 'attack');
 }
 
-// like cs2 the free fist rises into view with the draw, and drops out of view
-// for an inspect or an attack until the knife is back at rest
+// like cs2 the free fist rises into view with the draw, and stays out of view
+// for an inspect or an attack until the knife is back at rest. the fist follows
+// this on a spring, so a clip that starts with it down just takes it down (and
+// keeps it down when it already is, like slash after slash)
 const withLeft = new Map<Clip, Clip>();
 function withLeftFist(clip: Clip, kind: 'draw' | 'inspect' | 'attack'): Clip {
   let out = withLeft.get(clip);
@@ -462,8 +464,8 @@ function withLeftFist(clip: Clip, kind: 'draw' | 'inspect' | 'attack'): Clip {
     const leftDrop: Key[] = kind === 'draw'
       ? [[0, 1], [0.2, 1], [0.5, 0, 'out']]
       : kind === 'inspect'
-        ? [[0, 0], [0.2, 1, 'in'], [end - 0.4, 1], [end - 0.05, 0, 'out']]
-        : [[0, 0], [0.03, 1, 'linear'], [end - 0.3, 1], [end, 0, 'out']];
+        ? [[0, 1], [end - 0.45, 1], [end - 0.05, 0, 'inOut']]
+        : [[0, 1], [end - 0.35, 1], [end, 0, 'inOut']];
     const events = kind === 'inspect' ? [...(clip.events ?? [])] : undefined;
     events?.push([0.12, 'sound:knife_cloth'], [end - 0.4, 'sound:knife_cloth']);
     out = {
@@ -476,24 +478,59 @@ function withLeftFist(clip: Clip, kind: 'draw' | 'inspect' | 'attack'): Clip {
   return out;
 }
 
+// a fitted attack eases from its last captured frame into the idle over this
+// long, and the free fist comes back up over FIST_RETURN_S, starting a little
+// before cs2 has it back in view
+const FIT_SETTLE_S = 0.18;
+const FIST_RETURN_LEAD_S = 0.1;
+const FIST_RETURN_S = 0.25;
+
+/**
+ * the free fist in a fitted attack: down from the start and back up around when
+ * cs2 brings it back. the capture's one frame blips (the fist peeking in for a
+ * frame) are left out
+ */
+function fittedLeftDrop(left: readonly (readonly [number, number])[], shift: number): Key[] {
+  let back = left[left.length - 1][0];
+  for (let i = left.length - 1; i > 0; i -= 1) {
+    if (left[i - 1][1] >= 0.5 && left[i][1] < 0.5) {
+      back = (left[i - 1][0] + left[i][0]) / 2;
+      break;
+    }
+  }
+  const up = Math.max(0.05, back - shift - FIST_RETURN_LEAD_S);
+  return [[0, 1], [up, 1], [up + FIST_RETURN_S, 0, 'inOut']];
+}
+
 const fittedClips = new Map<string, Clip | null>();
-/** an attack fitted frame by frame to cs2's (knifeAttackFits.ts), if the knife has one */
+/**
+ * an attack fitted frame by frame to cs2's (knifeAttackFits.ts), if the knife
+ * has one. it starts on the capture's first frame already moving; the switch
+ * into it (ViewmodelSystem) carries the hand there from wherever it was
+ */
 function fittedAttack(id: KnifeId, name: FittedAttackName): Clip | null {
   const cacheKey = `${id}:${name}`;
   if (!fittedClips.has(cacheKey)) {
     const fit = KNIFE_ATTACK_FITS[id]?.[name];
-    const walk = (keys: readonly (readonly number[])[], left: boolean): SeqKey[] => [
-      [0, 'idle'],
-      ...keys.map((k, i): SeqKey => [k[0], fittedPoseName(name, i, left), 'linear']),
-      [fit!.duration, 'idle', 'linear'],
-    ];
-    fittedClips.set(cacheKey, fit ? {
-      duration: fit.duration,
-      seq: walk(fit.keys, false),
-      seqL: fit.keysL ? walk(fit.keysL, true) : undefined,
-      seqSpline: true,
-      tracks: fit.left ? { leftDrop: fit.left.map(([t, value]): Key => [t, value, 'linear']) } : {},
-    } : null);
+    const right = fittedAttackTrack(id, name);
+    if (!fit || !right) {
+      fittedClips.set(cacheKey, null);
+    } else {
+      const left = fittedAttackTrack(id, name, true);
+      const settled = (track: FittedTrack) => track.times[track.times.length - 1] + FIT_SETTLE_S;
+      const walk = (track: FittedTrack, isLeft: boolean): SeqKey[] => [
+        ...track.times.map((t, i): SeqKey => [t, fittedPoseName(name, i, isLeft), 'linear']),
+        [settled(track), 'idle', 'inOut'],
+      ];
+      const leftDrop = fit.left ? fittedLeftDrop(fit.left, fit.keys[0][0]) : null;
+      const duration = Math.max(settled(right), left ? settled(left) : 0, leftDrop ? leftDrop[leftDrop.length - 1][0] : 0);
+      fittedClips.set(cacheKey, {
+        duration,
+        seq: walk(right, false),
+        seqL: left ? walk(left, true) : undefined,
+        tracks: leftDrop ? { leftDrop } : {},
+      });
+    }
   }
   return fittedClips.get(cacheKey) ?? null;
 }

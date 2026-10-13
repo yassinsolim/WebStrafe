@@ -32,7 +32,7 @@ describe('weapon stats', () => {
     const awp = Object.fromEntries(firearmStats(WEAPONS.awp).map((line) => [line.label, line.value]));
     expect(awp).toMatchObject({ Damage: '115', Headshot: '172', Magazine: '10', 'Fire rate': '40 rpm' });
     const deagle = Object.fromEntries(firearmStats(WEAPONS.deagle).map((line) => [line.label, line.value]));
-    expect(deagle).toMatchObject({ Damage: '63', Headshot: '126', Magazine: '7', 'Fire rate': '267 rpm' });
+    expect(deagle).toMatchObject({ Damage: '50', Headshot: '50', Magazine: '7', 'Fire rate': '267 rpm' });
     for (const line of firearmStats(WEAPONS.deagle)) {
       expect(line.fraction).toBeGreaterThan(0);
       expect(line.fraction).toBeLessThanOrEqual(1);
