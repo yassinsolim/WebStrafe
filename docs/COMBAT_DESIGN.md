@@ -92,10 +92,12 @@ interface WeaponDef {
 }
 ```
 
-Initial table: `AWP` (high damage, slow, `range: Infinity` so it never hits a
-silent damage cliff on large maps — effectively one-shot to body/head), `DEAGLE`
-(medium damage, faster, finite range with falloff), `KNIFE` (existing melee,
-1.45 m reach measured to the visible target-capsule surface).
+Current table (2026-10-09): `AWP` deals 115 body damage and remains one-shot
+against a full-health player, with infinite range. `DEAGLE` deals 50 damage
+to either hitbox throughout its effective range: two hits from full health,
+no headshot damage bonus and no distance falloff. Headshot hitmarkers and kill
+metadata are still reported. `KNIFE` keeps its existing melee damage table and
+1.45 m reach measured to the visible target-capsule surface.
 
 Weapon slots follow the conventional loadout order: `1` AWP primary, `2` Deagle
 secondary, `3` knife and `4` katana. The katana (`src/combat/katana.ts`) uses the
@@ -282,7 +284,19 @@ A slash from behind does 90, which does not kill from full health, same as CS.
   against the remotes as drawn, so the longer cooldown after a hit lines up
   with the server.
 
-### Spread (`src/combat/Inaccuracy.ts`)
+### Player accuracy (`src/combat/CombatAim.ts`)
+
+As of 2026-10-07, player firearms have zero random spread. Deagle and AWP
+shots follow view angles plus the current recoil offset, whether standing,
+running, taking off, airborne, landing or repeatedly firing. AWP no-scopes
+are equally free of random spread. The crosshair's spread radius stays zero.
+Recoil, scope zoom and bolt behavior, damage and fire intervals are unchanged.
+Bots retain their own aiming error and reaction rules.
+
+### Reference spread model (`src/combat/Inaccuracy.ts`)
+
+The earlier CS-style model is retained as reference data and tests, but is not
+used by the player firing path. Its behavior and values are documented below.
 
 The cone is spread + inaccuracy. Inaccuracy is a penalty plus a movement term
 plus an air term:

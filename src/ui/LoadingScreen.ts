@@ -1,6 +1,5 @@
 import { wordmarkMarkup } from './brand';
-import { tipsFor } from './loadingTips';
-import { MAP_TYPE_LABEL, mapPalette, mapTypeFromId } from './menu/menuInfo';
+import { MAP_TYPE_LABEL, mapTypeFromId } from './menu/menuInfo';
 
 export interface LoadingMapInfo {
   id: string;
@@ -9,36 +8,22 @@ export interface LoadingMapInfo {
   thumbnailPath?: string;
 }
 
-const TIP_MS = 5200;
-const TIP_SWAP_MS = 240;
 const HIDE_MS = 360;
 
-/**
- * Map themed loading screen: the map's art blurred behind everything, its
- * name, mode and palette, a progress bar and a rotating gameplay tip. The
- * title, progress and detail elements are the ones GameApp's loading helpers
- * (and its error path) write to, so they keep their old roles.
- */
 export class LoadingScreen {
   readonly root: HTMLDivElement;
   readonly title: HTMLDivElement;
   readonly progress: HTMLDivElement;
   readonly detail: HTMLPreElement;
   private readonly backdrop: HTMLDivElement;
-  private readonly thumb: HTMLDivElement;
   private readonly mode: HTMLSpanElement;
   private readonly author: HTMLSpanElement;
   private readonly stage: HTMLSpanElement;
   private readonly bar: HTMLDivElement;
   private readonly barFill: HTMLDivElement;
-  private readonly tip: HTMLSpanElement;
-  private tips: string[] = [];
-  private tipIndex = 0;
-  private tipTimer: ReturnType<typeof setInterval> | null = null;
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
   private lastFill = '';
   private lastStage = '';
-  private shownCount = 0;
 
   constructor(parent: HTMLElement) {
     this.root = div('loading-overlay');
@@ -52,7 +37,6 @@ export class LoadingScreen {
     brand.innerHTML = wordmarkMarkup('ws-wordmark loading-wordmark');
 
     const panel = div('loading-panel');
-    this.thumb = div('loading-thumb');
     const info = div('loading-info');
     const meta = div('loading-meta');
     this.mode = document.createElement('span');
@@ -62,7 +46,7 @@ export class LoadingScreen {
     meta.append(this.mode, this.author);
     this.title = div('loading-title');
     info.append(meta, this.title);
-    panel.append(this.thumb, info);
+    panel.appendChild(info);
 
     const foot = div('loading-foot');
     const status = div('loading-status');
@@ -73,13 +57,7 @@ export class LoadingScreen {
     this.bar = div('loading-bar');
     this.barFill = div('loading-bar-fill');
     this.bar.appendChild(this.barFill);
-    const tipLine = div('loading-tip');
-    const tipTag = document.createElement('b');
-    tipTag.textContent = 'Tip';
-    this.tip = document.createElement('span');
-    this.tip.className = 'loading-tip-text';
-    tipLine.append(tipTag, this.tip);
-    foot.append(tipLine, status, this.bar);
+    foot.append(status, this.bar);
 
     this.detail = document.createElement('pre');
     this.detail.className = 'loading-detail';
@@ -95,15 +73,10 @@ export class LoadingScreen {
   show(map: LoadingMapInfo, options: { combat: boolean }): void {
     this.cancelHide();
     const type = mapTypeFromId(map.id);
-    const palette = mapPalette(map.id);
     this.root.classList.remove('loading-overlay-error', 'is-leaving');
-    this.root.style.setProperty('--load-accent', palette.accent);
-    this.root.style.setProperty('--load-glow', palette.glow);
     this.root.dataset.type = type;
     const art = map.thumbnailPath ? `url("${map.thumbnailPath}")` : 'none';
     this.backdrop.style.backgroundImage = art;
-    this.thumb.style.backgroundImage = art;
-    this.thumb.classList.toggle('is-empty', !map.thumbnailPath);
     this.mode.textContent = options.combat ? `${MAP_TYPE_LABEL[type]} · Free for all` : MAP_TYPE_LABEL[type];
     this.author.textContent = map.author ? `by ${map.author}` : '';
     this.title.textContent = map.name;
@@ -113,16 +86,6 @@ export class LoadingScreen {
     this.lastStage = '';
     this.setProgress(0, 'Loading map');
     this.root.style.display = 'grid';
-
-    this.shownCount += 1;
-    this.tips = tipsFor(type, options.combat, this.shownCount + Math.floor(Date.now() / 60000));
-    this.tipIndex = 0;
-    this.tip.textContent = this.tips[0] ?? '';
-    this.tip.classList.remove('is-swapping');
-    this.stopTips();
-    if (this.tips.length > 1) {
-      this.tipTimer = setInterval(() => this.nextTip(), TIP_MS);
-    }
   }
 
   /** percent 0..100, null while the size is unknown; stage is the loader's latest step */
@@ -149,7 +112,6 @@ export class LoadingScreen {
   }
 
   hide(): void {
-    this.stopTips();
     if (!this.isVisible() || this.hideTimer !== null) {
       return;
     }
@@ -172,24 +134,6 @@ export class LoadingScreen {
     }
   }
 
-  private nextTip(): void {
-    if (!this.isVisible() || this.tips.length < 2) {
-      return;
-    }
-    this.tip.classList.add('is-swapping');
-    setTimeout(() => {
-      this.tipIndex = (this.tipIndex + 1) % this.tips.length;
-      this.tip.textContent = this.tips[this.tipIndex];
-      this.tip.classList.remove('is-swapping');
-    }, TIP_SWAP_MS);
-  }
-
-  private stopTips(): void {
-    if (this.tipTimer !== null) {
-      clearInterval(this.tipTimer);
-      this.tipTimer = null;
-    }
-  }
 }
 
 function div(className: string): HTMLDivElement {

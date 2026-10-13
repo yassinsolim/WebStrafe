@@ -26,12 +26,14 @@ import {
 import type { CharacterLibrary } from '../characters/library';
 import { armorToLook, decodeLook as decodeWire, defaultLook, encodeLook, lookForBot, type CharacterLook } from '../characters/look';
 import {
+  applyBodyMotion,
   applyKnifeIdlePose,
   attachKnifeModel,
   loadKnifeMesh,
   type ArmRig,
 } from './playerRig';
 import { remoteKnifeKey, setRemoteKatana, setRemoteKnife } from './remoteKnife';
+import { BodyMotionState } from './thirdPersonMotion';
 
 interface RemotePlayerActor {
   id: string;
@@ -45,8 +47,10 @@ interface RemotePlayerActor {
   targetYaw: number;
   displayYaw: number;
   rig: ArmRig | null;
-  swingTimer: number;
-  swingKind: AttackKind;
+  /** stride, leans, aim and attacks (thirdPersonMotion.ts) */
+  motion: BodyMotionState;
+  /** where the player looks up or down, radians, as last sampled */
+  displayPitch: number;
   idlePhase: number;
   buffer: InterpolationBuffer;
   /** timeline key: entity id plus its authority clock */
@@ -70,7 +74,6 @@ const MAX_CORRECTION_M = 3;
 
 
 const MODEL_YAW_OFFSET = Math.PI;
-const SWING_DURATION_SEC = 0.28;
 /** only used for rows without timestamps (older servers/peers) */
 export const REMOTE_POSITION_SMOOTHING_RATE = 14;
 
@@ -108,19 +111,21 @@ export class RemotePlayersRenderer {
    * behind a loading screen, so the first player who shows up doesn't cost a
    * visible stall. no-op until load() finished.
    */
-  public async warmUp(renderer: WebGLRenderer, scene: Scene, camera: Camera): Promise<void> {
+  public async warmUp(renderer: WebGLRenderer, scene: Scene, camera: Camera, retain?: (scene: Scene, camera: Camera) => Promise<void>): Promise<void> {
     if (!this.loaded || !this.library) return;
-    // the probe wears the knife and decals too, their materials compile here as well
-    const probe = createCharacterSync(this.library, { ...defaultLook('terrorist'), tag: 'WARM' }, 'terrorist', { pose: 'none', lod: 0 });
-    if (probe.rig) attachKnifeModel(probe.rig.rightWeaponHand, this.knifeTemplate);
-    probe.root.position.set(0, -1000, 0);
-    scene.add(probe.root);
-    try {
-      await renderer.compileAsync(scene, camera);
-    } catch {
-      // older drivers without parallel compile just compile on first draw
-    } finally {
-      probe.dispose();
+    for (const skin of ['kit', ...this.library.skins.keys()] as const) {
+      const probe = createCharacterSync(this.library, { ...defaultLook('terrorist'), skin, tag: 'WARM' }, 'terrorist', { pose: 'none', lod: 0 });
+      if (probe.rig) attachKnifeModel(probe.rig.rightWeaponHand, this.knifeTemplate);
+      probe.root.position.set(0, -1000, 0);
+      scene.add(probe.root);
+      try {
+        if (retain) await retain(scene, camera);
+        else await renderer.compileAsync(scene, camera);
+      } catch {
+        // older drivers without parallel compile just compile on first draw
+      } finally {
+        probe.dispose();
+      }
     }
   }
 
@@ -149,6 +154,7 @@ export class RemotePlayersRenderer {
           .set(sampled.position[0], sampled.position[1], sampled.position[2])
           .add(actor.correction);
         actor.displayYaw = sampled.yaw;
+        actor.displayPitch = sampled.pitch;
         actor.renderedSourceT = sampled.sourceT;
       } else {
         actor.displayPosition.lerp(actor.targetPosition, smoothing);
@@ -158,18 +164,16 @@ export class RemotePlayersRenderer {
       actor.group.position.copy(actor.displayPosition);
       actor.group.rotation.set(0, actor.displayYaw + MODEL_YAW_OFFSET, 0);
 
-      if (actor.swingTimer > 0) {
-        actor.swingTimer = Math.max(0, actor.swingTimer - dt);
+      if (dt > 0) {
+        tmpVelocity.subVectors(actor.displayPosition, actor.lastShown).divideScalar(dt);
+        // a teleport or respawn is not motion
+        if (tmpVelocity.lengthSq() > 40 * 40) tmpVelocity.set(0, 0, 0);
+        actor.shownVelocity.lerp(tmpVelocity, 1 - Math.exp(-dt * 8));
       }
+      actor.lastShown.copy(actor.displayPosition);
+      actor.motion.step(dt, actor.shownVelocity, actor.displayYaw, actor.displayPitch);
       this.applyRigPose(actor, nowSec);
       if (actor.character) {
-        if (dt > 0) {
-          tmpVelocity.subVectors(actor.displayPosition, actor.lastShown).divideScalar(dt);
-          // a teleport or respawn is not motion
-          if (tmpVelocity.lengthSq() > 40 * 40) tmpVelocity.set(0, 0, 0);
-          actor.shownVelocity.lerp(tmpVelocity, 1 - Math.exp(-dt * 8));
-        }
-        actor.lastShown.copy(actor.displayPosition);
         (actor.character as { setVelocity?: (v: Vector3) => void }).setVelocity?.(actor.shownVelocity);
         actor.character.update(dt, nowSec);
       }
@@ -184,7 +188,7 @@ export class RemotePlayersRenderer {
     const visibleIds = new Set<string>();
 
     for (const player of players) {
-      if (localId && player.id === localId) {
+      if ((localId && player.id === localId) || player.alive === false) {
         continue;
       }
       visibleIds.add(player.id);
@@ -217,6 +221,7 @@ export class RemotePlayersRenderer {
 
       actor.targetPosition.set(player.position[0], player.position[1], player.position[2]);
       actor.targetYaw = player.yaw;
+      if (typeof player.pitch === 'number' && Number.isFinite(player.pitch)) actor.displayPitch = player.pitch;
       if (typeof player.t === 'number' && Number.isFinite(player.t)) {
         const clockKey = `${player.clock ?? 'server'}|${player.id}`;
         if (actor.clockKey !== clockKey) {
@@ -284,12 +289,7 @@ export class RemotePlayersRenderer {
   }
 
   public triggerAttack(playerId: string, kind: AttackKind): void {
-    const actor = this.actors.get(playerId);
-    if (!actor) {
-      return;
-    }
-    actor.swingKind = kind;
-    actor.swingTimer = SWING_DURATION_SEC;
+    this.actors.get(playerId)?.motion.triggerAttack(kind);
   }
 
   public getPlayerModel(playerId: string): PlayerModel | null {
@@ -331,8 +331,8 @@ export class RemotePlayersRenderer {
       targetYaw: yaw,
       displayYaw: yaw,
       rig: null,
-      swingTimer: 0,
-      swingKind: 'primary',
+      motion: new BodyMotionState(hashToPhase(id)),
+      displayPitch: 0,
       idlePhase: hashToPhase(id),
       buffer: new InterpolationBuffer(),
       clockKey: null,
@@ -398,15 +398,8 @@ export class RemotePlayersRenderer {
     composeOptional(rig.spineUpper, breath * 0.5, 0, 0);
     composeOptional(rig.head, breath * 0.25, Math.sin(nowSec * 1.6 + actor.idlePhase) * 0.03, 0);
 
-    // Attack swing layered on top of the idle grip on the knife (right) arm.
-    const swingAlpha = actor.swingTimer > 0 ? 1 - actor.swingTimer / SWING_DURATION_SEC : 0;
-    const swingCurve = swingAlpha > 0 ? Math.sin(Math.PI * MathUtils.clamp(swingAlpha, 0, 1)) : 0;
-    if (swingCurve > 0) {
-      const dir = actor.swingKind === 'secondary' ? -1 : 1;
-      composeLocal(rig.rightUpper, -0.34 * swingCurve, 0.2 * swingCurve * dir, 0.06 * swingCurve);
-      composeLocal(rig.rightLower, -0.42 * swingCurve, 0.16 * swingCurve * dir, 0);
-      composeLocal(rig.rightHand, 0.12 * swingCurve, -0.16 * swingCurve, 0.24 * swingCurve * dir);
-    }
+    // the stride, leans, aim pitch and the knife arm's attack on top
+    applyBodyMotion(rig, actor.motion.out);
   }
 
   private resetRigToBase(rig: ArmRig): void {

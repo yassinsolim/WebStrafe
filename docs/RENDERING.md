@@ -8,7 +8,7 @@ preset turns on, and which three.js techniques it borrows.
 `src/render/RenderPipeline.ts` owns the frame:
 
 1. The world renders into a half float (HDR) target, with 4x MSAA on High.
-2. On High, SSAO (`Ssao.ts`) runs at half resolution on the world depth: Alchemy
+2. On High and Ultra, SSAO (`Ssao.ts`) runs at half resolution on the world depth: Alchemy
    style AO over a Vogel spiral, then a depth aware blur in two passes.
 3. The viewmodel renders into the same target after a depth clear, with its own
    camera and field of view.
@@ -25,14 +25,33 @@ map's `meta.json` show on screen as authored. The tone map is Khronos PBR
 Neutral with the toe at half strength (`TONE_TOE`). The full toe pulled the
 lowest channel of dark colours to zero, which made warm shadows muddy.
 
+The covered world is not rendered while the menu is open. The separate lobby
+character preview keeps full resolution, caps animation at 60 fps and skips
+hidden-document draws. Its ground and foot shadows are presentation geometry,
+not additional real-time shadow-map passes.
+
+### AO regression (2026-10-09)
+
+Half-resolution AO must reconstruct positions at the centers of the actual
+full-resolution depth texels. Using the unsnapped UV with nearest-filtered
+depth produces false normals and horizontal/vertical dark bands on flat
+surfaces. Out-of-image and empty-sky taps are rejected; image borders use valid
+one-sided derivatives. AO remains enabled on High and Ultra.
+
+`tools/qa/ssao-check.mjs <local-dev-url> [output-directory]` tests the real GPU
+passes: empty floors and walls must remain unoccluded, while a box against the
+floor must retain contact shading. Supply `PLAYWRIGHT_MODULE` and `CHROME` when
+using a local browser install. On this Mac, `LOCAL_IP` can map the localhost
+hostname to the LAN interface while preserving localhost's origin policy.
+
 ## Presets
 
-`src/render/quality.ts`. Auto starts desktop class GPUs on High (Apple M
-Pro/Max/Ultra and M3 on, GeForce GTX 10 series on and RTX, Radeon RX, Arc A and B
-cards), every other real GPU on Balanced (the `medium` id), and software GL,
-phone GPUs and old Intel HD/UHD graphics on Low. If auto's High pick makes
-adaptive resolution drop two steps, auto settles on Balanced for the session.
-Ultra is opt-in. Adaptive resolution (`src/app/AdaptiveResolution.ts`) stays on
+`src/render/quality.ts`. Auto starts on Balanced (the `medium` id), with known
+software renderers, phone GPUs and old Intel HD/UHD graphics starting on Low.
+At adaptive scale 0.71 or lower, Auto can step down to Low; explicit quality
+changes reset that fallback. High and Ultra are opt-in. Lower-quality shader
+variants are warmed behind loading to reduce the fallback hitch.
+Adaptive resolution (`src/app/AdaptiveResolution.ts`) stays on
 for every preset and steps the render scale down whenever a one second window
 drops below 55 fps.
 

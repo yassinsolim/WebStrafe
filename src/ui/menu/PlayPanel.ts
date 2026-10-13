@@ -1,125 +1,124 @@
+import { Check, Map as MapIcon, createElement } from 'lucide';
 import type { MapManifestEntry } from '../../world/types';
-import { MAP_TYPE_BLURB, MAP_TYPE_LABEL, mapHue, mapTypeFromId, type MapType } from './menuInfo';
+import { MAP_TYPE_LABEL, mapTypeFromId } from './menuInfo';
 
 export interface PlayPanelCallbacks {
   onSelect(mapId: string): void;
   onPlay(mapId: string): void;
 }
 
-export interface BestRun {
-  name: string;
-  /** already formatted, e.g. 1:02.113 */
-  time: string;
-}
+export interface BestRun { name: string; time: string }
+type MapFilter = 'all' | 'surf' | 'bhop' | 'combat';
+const FILTERS: readonly [MapFilter, string][] = [['all', 'All'], ['surf', 'Surf'], ['bhop', 'Bhop'], ['combat', 'Combat']];
 
-/** simple line art per map type for cards without a thumbnail */
-const PLACEHOLDER_ART: Record<MapType, string> = {
-  surf: '<path d="M0 70 L38 22 L52 22 L30 70 Z M44 70 L86 16 L100 16 L100 30 L70 70 Z" /><path class="menu-map-art-line" d="M0 78 H160" />',
-  bhop: '<path d="M8 62 h22 v8 h-22z M42 50 h22 v8 h-22z M76 38 h22 v8 h-22z M110 26 h22 v8 h-22z" /><path class="menu-map-art-line" d="M19 60 Q36 30 53 48 Q70 18 87 36 Q104 6 121 24" />',
-  aim: '<circle cx="80" cy="44" r="22" class="menu-map-art-line" /><circle cx="80" cy="44" r="9" class="menu-map-art-line" /><path class="menu-map-art-line" d="M80 14 v14 M80 60 v14 M50 44 h14 M96 44 h14" />',
-  training: '<path class="menu-map-art-line" d="M70 14 L20 80 M90 14 L140 80 M80 14 V80 M76 30 h8 M74 46 h12 M72 62 h16" />',
-  practice: '<path class="menu-map-art-line" d="M0 60 H160 M0 72 H160 M20 50 L0 80 M60 50 L50 80 M100 50 L110 80 M140 50 L160 80" /><rect x="70" y="18" width="20" height="30" rx="3" /><circle cx="80" cy="12" r="6" />',
-};
-
-const CHECK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.4l3.2 3.2L13 4.8" fill="none" stroke="currentColor" stroke-width="2.2"/></svg>';
-
-/** map cards: thumbnail or generated art, type badge, name, author, licence */
 export class PlayPanel {
   private readonly grid: HTMLDivElement;
   private readonly detail: HTMLDivElement;
+  private readonly filters: HTMLDivElement;
+  private filter: MapFilter = 'all';
   private maps: MapManifestEntry[] = [];
   private selectedId = '';
   private best: { mapId: string; run: BestRun | null } | null = null;
 
   constructor(section: HTMLElement, private readonly callbacks: PlayPanelCallbacks) {
+    this.filters = document.createElement('div');
+    this.filters.className = 'menu-map-filters';
+    this.filters.setAttribute('role', 'group');
+    this.filters.setAttribute('aria-label', 'Game mode');
     this.grid = document.createElement('div');
     this.grid.className = 'menu-map-grid';
+    this.grid.setAttribute('aria-label', 'Maps');
     this.detail = document.createElement('div');
     this.detail.className = 'menu-map-detail';
-    section.append(this.grid, this.detail);
+    section.append(this.detail, this.filters, this.grid);
   }
 
   setMaps(entries: MapManifestEntry[], selectedId: string): void {
     this.maps = entries;
-    this.selectedId = selectedId;
+    this.selectedId = entries.some(map => map.id === selectedId) ? selectedId : entries[0]?.id ?? '';
+    const selected = this.getSelected();
+    if (selected && !this.matches(selected)) this.filter = 'all';
     this.render();
   }
 
-  getSelected(): MapManifestEntry | undefined {
-    return this.maps.find((map) => map.id === this.selectedId);
-  }
+  getSelected(): MapManifestEntry | undefined { return this.maps.find(map => map.id === this.selectedId); }
 
-  /** top leaderboard run for a map, shown in the detail card of timed maps */
   setBestRun(mapId: string, run: BestRun | null): void {
     this.best = { mapId, run };
     this.renderDetail();
   }
 
+  private matches(map: MapManifestEntry, filter = this.filter): boolean {
+    const type = mapTypeFromId(map.id);
+    return filter === 'all' || (filter === 'combat' ? type === 'aim' || type === 'practice' || type === 'training' : type === filter);
+  }
+
   private render(): void {
-    this.grid.replaceChildren(...this.maps.map((map, index) => this.card(map, index)));
+    this.filters.replaceChildren(...FILTERS.map(([filter, name]) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = name;
+      button.className = 'menu-map-filter';
+      button.classList.toggle('is-active', this.filter === filter);
+      button.setAttribute('aria-pressed', String(this.filter === filter));
+      button.disabled = !this.maps.some(map => this.matches(map, filter));
+      button.addEventListener('click', () => {
+        this.filter = filter;
+        const visible = this.maps.filter(map => this.matches(map));
+        if (visible.length && !visible.some(map => map.id === this.selectedId)) {
+          this.selectedId = visible[0].id;
+          this.callbacks.onSelect(this.selectedId);
+        }
+        this.render();
+      });
+      return button;
+    }));
+    this.grid.replaceChildren(...this.maps.filter(map => this.matches(map)).map(map => this.card(map)));
     this.renderDetail();
   }
 
-  private card(map: MapManifestEntry, index: number): HTMLButtonElement {
-    const type = mapTypeFromId(map.id);
+  private thumbnail(map: MapManifestEntry, className: string): HTMLElement {
+    const frame = document.createElement('span');
+    frame.className = className;
+    frame.dataset.type = mapTypeFromId(map.id);
+    if (map.thumbnailPath) {
+      const image = document.createElement('img');
+      image.src = map.thumbnailPath;
+      image.alt = '';
+      image.decoding = 'async';
+      image.addEventListener('error', () => frame.replaceChildren(createElement(MapIcon, { 'aria-hidden': 'true' })), { once: true });
+      frame.appendChild(image);
+    } else frame.appendChild(createElement(MapIcon, { 'aria-hidden': 'true' }));
+    return frame;
+  }
+
+  private card(map: MapManifestEntry): HTMLButtonElement {
     const card = document.createElement('button');
     card.type = 'button';
-    card.className = 'menu-map-card menu-card';
+    card.className = 'menu-map-card';
     card.dataset.mapId = map.id;
-    card.style.setProperty('--i', String(index));
     card.classList.toggle('is-selected', map.id === this.selectedId);
-
-    const thumb = document.createElement('span');
-    thumb.className = 'menu-map-thumb';
-    thumb.dataset.type = type;
-    thumb.style.setProperty('--map-hue', String(mapHue(map.id)));
-    if (map.thumbnailPath) {
-      const img = document.createElement('img');
-      img.src = map.thumbnailPath;
-      img.alt = '';
-      img.loading = 'lazy';
-      img.decoding = 'async';
-      img.addEventListener('error', () => {
-        img.remove();
-        thumb.insertAdjacentHTML('afterbegin', artMarkup(type));
-      });
-      thumb.appendChild(img);
-    } else {
-      thumb.innerHTML = artMarkup(type);
-    }
-    const badge = document.createElement('span');
-    badge.className = 'menu-map-badge';
-    badge.dataset.type = type;
-    badge.textContent = MAP_TYPE_LABEL[type];
-    const check = document.createElement('span');
-    check.className = 'menu-map-check';
-    check.innerHTML = CHECK;
+    card.setAttribute('aria-pressed', String(map.id === this.selectedId));
+    const body = document.createElement('span');
+    body.className = 'menu-map-body';
     const name = document.createElement('span');
     name.className = 'menu-map-name';
     name.textContent = map.name;
-    thumb.append(badge, check, name);
-
-    const body = document.createElement('span');
-    body.className = 'menu-map-body';
-    const author = document.createElement('span');
-    author.className = 'menu-map-author';
-    author.textContent = `by ${map.author}`;
-    const license = document.createElement('span');
-    license.className = 'menu-map-license';
-    license.textContent = map.license;
-    body.append(author, license);
-    card.append(thumb, body);
-
+    const mode = document.createElement('span');
+    mode.className = 'menu-map-mode';
+    mode.textContent = MAP_TYPE_LABEL[mapTypeFromId(map.id)];
+    body.append(name, mode);
+    card.append(this.thumbnail(map, 'menu-map-thumb'), body, createElement(Check, { class: 'menu-map-check', 'aria-hidden': 'true' }));
     card.addEventListener('click', () => {
-      if (this.selectedId === map.id) {
-        return;
-      }
+      if (this.selectedId === map.id) return;
       this.selectedId = map.id;
+      this.callbacks.onSelect(map.id);
       for (const other of this.grid.querySelectorAll<HTMLElement>('.menu-map-card')) {
-        other.classList.toggle('is-selected', other.dataset.mapId === map.id);
+        const selected = other.dataset.mapId === map.id;
+        other.classList.toggle('is-selected', selected);
+        other.setAttribute('aria-pressed', String(selected));
       }
       this.renderDetail();
-      this.callbacks.onSelect(map.id);
     });
     card.addEventListener('dblclick', () => this.callbacks.onPlay(map.id));
     return card;
@@ -128,52 +127,31 @@ export class PlayPanel {
   private renderDetail(): void {
     const selected = this.getSelected();
     this.detail.replaceChildren();
-    if (!selected) {
-      this.detail.textContent = 'No map selected';
-      return;
-    }
-    const type = mapTypeFromId(selected.id);
-    const head = document.createElement('div');
-    head.className = 'menu-map-detail-head';
-    const badge = document.createElement('span');
-    badge.className = 'menu-map-badge';
-    badge.dataset.type = type;
-    badge.textContent = MAP_TYPE_LABEL[type];
-    const name = document.createElement('span');
+    if (!selected) { this.detail.textContent = 'No maps available'; return; }
+    const heading = document.createElement('div');
+    heading.className = 'menu-map-detail-head';
+    const mode = document.createElement('span');
+    mode.className = 'menu-map-badge';
+    mode.dataset.type = mapTypeFromId(selected.id);
+    mode.textContent = MAP_TYPE_LABEL[mapTypeFromId(selected.id)];
+    const name = document.createElement('h3');
     name.className = 'menu-map-detail-name';
     name.textContent = selected.name;
-    head.append(badge, name);
-    const blurb = document.createElement('p');
-    blurb.className = 'menu-map-detail-blurb';
-    blurb.textContent = MAP_TYPE_BLURB[type];
-    const parts = [`by ${selected.author}`, selected.license];
-    if (selected.source && selected.source !== selected.name && !selected.source.startsWith(selected.name)) {
-      parts.push(selected.source);
-    }
+    heading.append(mode, name);
     const info = document.createElement('div');
     info.className = 'menu-map-info';
-    info.textContent = parts.join(' · ');
-    this.detail.append(head, blurb);
+    info.textContent = `${selected.author} / ${selected.license}`;
+    this.detail.append(this.thumbnail(selected, 'menu-map-feature'), heading, info);
+    const type = mapTypeFromId(selected.id);
     if ((type === 'surf' || type === 'bhop') && this.best?.mapId === selected.id) {
       const best = document.createElement('div');
       best.className = 'menu-map-best';
       const label = document.createElement('span');
-      label.textContent = 'Best run';
+      label.textContent = 'Map record';
       const value = document.createElement('b');
-      value.textContent = this.best.run ? this.best.run.time : 'No runs yet';
+      value.textContent = this.best.run?.time ?? '--:--.---';
       best.append(label, value);
-      if (this.best.run) {
-        const who = document.createElement('span');
-        who.className = 'menu-map-best-name';
-        who.textContent = this.best.run.name;
-        best.appendChild(who);
-      }
       this.detail.appendChild(best);
     }
-    this.detail.appendChild(info);
   }
-}
-
-function artMarkup(type: MapType): string {
-  return `<svg class="menu-map-art" viewBox="0 0 160 90" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${PLACEHOLDER_ART[type]}</svg>`;
 }

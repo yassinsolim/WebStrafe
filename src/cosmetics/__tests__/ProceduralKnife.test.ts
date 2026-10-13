@@ -3,7 +3,7 @@ import { Box3, BufferGeometry, Group, type Material, Mesh, MeshStandardMaterial,
 import { getKnife, KNIVES, type KnifeDef } from '../../combat/knives';
 import { buildProceduralKnife, disposeProceduralKnife, isSharedKnifeTexture, KNIFE_NODES } from '../ProceduralKnife';
 
-const FOLDERS = ['flip', 'talon', 'stiletto'];
+const FOLDERS = ['flip', 'stiletto'];
 const RING_KNIVES = ['karambit', 'talon'];
 
 function meshes(root: Object3D): Mesh[] {
@@ -55,6 +55,15 @@ describe('procedural knife sockets', () => {
 });
 
 describe('articulated knives', () => {
+  it('keeps the Talon blade fixed while retaining its finger ring', () => {
+    const definition = getKnife('talon');
+    expect(definition.shape.mechanism).toBe('fixed');
+    const knife = buildProceduralKnife(definition);
+    expect(knife.getObjectByName(KNIFE_NODES.bladePivot)).toBeUndefined();
+    expect(knife.getObjectByName(KNIFE_NODES.ring)).toBeDefined();
+    disposeProceduralKnife(knife);
+  });
+
   it('folders carry the blade and tip on blade_pivot and fold it into the handle', () => {
     for (const id of FOLDERS) {
       const def = getKnife(id);
@@ -76,9 +85,7 @@ describe('articulated knives', () => {
       const folded = new Box3().setFromObject(pivot!);
       const tip = worldPos(knife, KNIFE_NODES.tip);
       expect(tip.x, id).toBeLessThan(pin.x - def.shape.bladeLength * 0.9);
-      // closed edge stays under the backspacer. the talon's hooked tip points
-      // up once mirrored about the pin, so it only has to end up behind it
-      if (def.shape.profile !== 'hawkbill') expect(folded.max.y, id).toBeLessThan(handleBox.max.y + 0.0005);
+      expect(folded.max.y, id).toBeLessThan(handleBox.max.y + 0.0005);
       expect(worldPos(knife, KNIFE_NODES.pivot).distanceTo(pin), id).toBeLessThan(1e-9);
       disposeProceduralKnife(knife);
     }

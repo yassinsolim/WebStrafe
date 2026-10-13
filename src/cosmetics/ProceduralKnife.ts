@@ -282,6 +282,7 @@ function addHandle(ctx: BuildContext, mechanism: string): Vector3 {
   const s = ctx.s;
   if (mechanism === 'balisong') return balisongHandles(ctx);
   if (mechanism === 'folder') return folderHandle(ctx);
+  if (s.fingerRing) return ringHandle(ctx);
   switch (s.handle) {
     case 'cord':
       return cordHandle(ctx);

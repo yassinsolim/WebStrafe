@@ -1,4 +1,4 @@
-import { DoubleSide, Matrix4, Mesh, Quaternion, Ray, Vector3, type Material, type Object3D } from 'three';
+import { DoubleSide, Matrix4, Mesh, Quaternion, Ray, Vector3, type Box3, type Material, type Object3D } from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 import type { DigitBones } from './ArmsRig';
 
@@ -35,6 +35,7 @@ export const FINGER_RADIUS_M = 0.0075;
 interface Surface {
   mesh: Mesh;
   bvh: MeshBVH;
+  bounds: Box3;
   blade: boolean;
 }
 
@@ -53,7 +54,8 @@ function surfacesOf(knife: Object3D): Surface[] {
     if (!mesh.userData.knifeMaterial) mesh.userData.knifeMaterial = materialName(mesh);
     const geo = mesh.geometry as Mesh['geometry'] & { gripBvh?: MeshBVH };
     geo.gripBvh ??= new MeshBVH(geo);
-    out.push({ mesh, bvh: geo.gripBvh, blade: BLADE.has(mesh.userData.knifeMaterial) });
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    out.push({ mesh, bvh: geo.gripBvh, bounds: geo.boundingBox!, blade: BLADE.has(mesh.userData.knifeMaterial) });
   });
   return out;
 }
@@ -80,6 +82,7 @@ function inside(surfaces: Surface[], p: Vector3): boolean {
   for (const s of surfaces) {
     inv.copy(s.mesh.matrixWorld).invert();
     local.copy(p).applyMatrix4(inv);
+    if (!s.bounds.containsPoint(local)) continue;
     let odd = 0;
     for (const d of dirs) {
       const dir = d.clone().transformDirection(inv);

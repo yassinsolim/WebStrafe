@@ -14,7 +14,9 @@ import { optimizeGlb } from '../../assets/optimize-glb';
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const rawDir = process.argv[2] ?? path.join(repo, '.blender-tmp', 'knives');
 const only = process.argv.slice(3);
-const outDir = path.join(repo, 'public', 'knives');
+const outDir = process.env.KNIFE_OUTPUT_DIR
+  ? path.resolve(repo, process.env.KNIFE_OUTPUT_DIR)
+  : path.join(repo, 'public', 'knives');
 
 await mkdir(outDir, { recursive: true });
 for (const knife of KNIVES) {

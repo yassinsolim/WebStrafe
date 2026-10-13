@@ -60,6 +60,26 @@ server/index.ts
 - Bots take damage, die, and respawn through the arena like any player.
 - Simple fairness knobs: fire cadence, aim error, reaction delay.
 
+## Current Combat Behavior (2026-10-09)
+
+- Dead authoritative snapshot rows are not rendered or offered as displayed
+  targets. Respawning creates a fresh displayed pose at the spawn point rather
+  than interpolating from the old standing body. This removes the dead model;
+  it does not add a ragdoll or corpse animation.
+- A visible target no longer freezes the bot in place. After acquisition it
+  advances to engagement distance, alternates lateral strafes, and backs away
+  when the target is too close. Airborne bots continue tracking target height.
+- Tracking is capped at 3.2 radians per second. Aim wander uses a 0.0075-radian
+  base and caps its world-space amplitude at 0.20 m. Firing also requires
+  alignment within a 0.14 m window at the target's distance, rather than
+  accepting a fixed angle that misses by metres at range.
+- The acquisition hold, reaction delay, first warning shot, line-of-sight
+  checks, PvP eligibility, tap cadence and burst cooldown remain. Bots do not
+  acquire hidden live positions or shoot through geometry.
+- Seeded flat-ground tests cover moving targets at 15, 40 and 80 m, require
+  more than 2 m of lateral movement, and require over 60% hits after the three
+  scripted opening rounds. Actual hit rate still depends on movement and cover.
+
 ## Non-goals / honest limitations
 
 - **Pro-level air-strafe AI is out of scope.** These bots use real collision and
@@ -77,3 +97,19 @@ server/index.ts
   intent) and a WS harness that connects a fake client and asserts bots appear
   in snapshots, move on geometry, and deal/take damage — the same style as the
   combat E2E harnesses.
+
+The live browser regression uses an isolated local WebSocket backend with
+`ENABLE_BOTS=true`, `BOTS_PER_MAP=1`, and a client forced to
+`VITE_MULTIPLAYER_TRANSPORT=ws`. When testing through a LAN URL, set the
+backend's `WEBSTRAFE_ALLOWED_ORIGINS` to that exact client origin; localhost
+is allowed by default, LAN origins are not.
+
+```sh
+CHROME=<test-chromium> PLAYWRIGHT_MODULE=<playwright-index.mjs> \
+  node tools/qa/bot-combat-check.mjs http://<lan-ip>:<vite-port> <output-directory>
+```
+
+It waits for natural bot movement and damage, kills the bot through the
+player's normal firing path, verifies the dead server row removes the rendered
+actor, then verifies the actor returns on respawn. It captures alive/dead/
+respawn screenshots and a JSON report. Cloud multiplayer is not used.

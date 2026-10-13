@@ -234,77 +234,248 @@ function slice(v: VoiceContext, peak: number, p: number): void {
   noise(v, { at: 0.004, attack: 0.004, decay: 0.36, peak: peak * 0.3, filters: [{ type: 'highpass', freq: 2600 * p }], send: 0.05 });
 }
 
-/** the body taking it: meaty mids and a low thump that land a beat after the crack */
-function meat(v: VoiceContext, spec: { at: number; peak: number; low: number; fall: number; p: number }): void {
-  const { at, peak, low, fall, p } = spec;
+// cs2's hits (measured off its 2026 knife set): every hit is a thick
+// broadband thwack, flat from ~40 hz to ~12 khz for ~150 ms, with the lows as
+// loud as the highs and a second bright slice burst ~40 ms in. it is gone by
+// ~260 ms. a wall hit opens on a hard crack and its heavy low thud lands
+// ~60 ms later; a backstab gets a high hiss ~0.4 s on as the blade comes out
+
+/** the body taking it: a thick broadband thwack with heavy lows */
+function thwack(v: VoiceContext, spec: { peak: number; low: number; fall: number; p: number }): void {
+  const { peak, low, fall, p } = spec;
+  // decays are the time to silence, so a fall of 0.36 s is ~20 db down after 90 ms
   noise(v, {
     color: 'pink',
-    at,
-    attack: 0.008,
+    attack: 0.003,
+    hold: 0.02,
     decay: fall,
     peak,
     filters: [
-      { type: 'highpass', freq: 220 * p },
-      { type: 'lowpass', freq: 1700 * p },
+      { type: 'highpass', freq: 50 },
+      { type: 'lowpass', freq: 7000 * p, q: 0.5 },
     ],
-    send: 0.06,
+    send: 0.05,
   });
-  noise(v, { color: 'brown', at: at + 0.006, attack: 0.01, decay: fall * 1.3, peak: low, filters: [{ type: 'lowpass', freq: 200 * p }] });
-  // a very short drop gives the thump its punch without ringing on
-  tone(v, { at: at + 0.004, freq: 105 * p, to: 62 * p, glide: 0.035, attack: 0.002, decay: 0.05, peak: low * 0.4 });
+  noise(v, { color: 'brown', attack: 0.012, hold: 0.07, decay: fall * 1.3, peak: low, filters: [{ type: 'lowpass', freq: 220 * p }] });
+  tone(v, { at: 0.006, freq: 92 * p, to: 50 * p, glide: 0.08, attack: 0.004, decay: fall * 0.6, peak: low * 0.35 });
+  // the edge going through, a beat behind the impact
+  noise(v, {
+    color: 'pink',
+    at: 0.05,
+    attack: 0.015,
+    hold: 0.04,
+    decay: fall,
+    peak: peak * 1.1,
+    filters: [{ type: 'bandpass', freq: 2100 * p, q: 0.55 }],
+  });
 }
 
 function knifeHitFlesh(v: VoiceContext): void {
   const p = v.pitch;
   // some hits come out brighter, some meatier, like cs's set of four
-  const body = 0.75 + v.rand() * 0.5;
-  slice(v, 0.42, p);
-  meat(v, { at: 0.03, peak: 0.3 * body, low: 0.5 * body, fall: 0.3, p });
+  const body = 0.8 + v.rand() * 0.4;
+  slice(v, 0.2, p);
+  thwack(v, { peak: 0.4, low: 0.75 * body, fall: 0.36, p });
 }
 
 function knifeHitWall(v: VoiceContext): void {
   const p = v.pitch;
-  // hard "tschk": crack, gritty scrape, a tiny steel tick and a dull knock, all short
-  noise(v, { attack: 0.0004, decay: 0.016, peak: 0.44, filters: [{ type: 'highpass', freq: 2400 * p }] });
+  // hard crack and ~60 ms of bright grit, then the dull heavy thud of the blow
+  noise(v, { attack: 0.0004, decay: 0.04, peak: 0.45, filters: [{ type: 'highpass', freq: 5000 * p }] });
   noise(v, {
-    at: 0.002,
-    attack: 0.002,
-    decay: 0.13,
-    peak: 0.17,
+    attack: 0.004,
+    hold: 0.04,
+    decay: 0.12,
+    peak: 0.34,
     filters: [
-      { type: 'highpass', freq: 1800 * p },
-      { type: 'lowpass', freq: 8000 * p },
+      { type: 'highpass', freq: 2000 * p },
+      { type: 'lowpass', freq: 13000 },
     ],
     send: 0.1,
+  });
+  // the blow landing: a broadband knock and the heavy thud under it
+  noise(v, { color: 'pink', at: 0.055, attack: 0.004, decay: 0.12, peak: 0.34, filters: [{ type: 'highpass', freq: 60 }] });
+  noise(v, { color: 'brown', at: 0.05, attack: 0.02, hold: 0.1, decay: 0.45, peak: 0.85, filters: [{ type: 'lowpass', freq: 180 * p }] });
+  tone(v, { at: 0.06, freq: 76 * p, to: 44 * p, glide: 0.14, attack: 0.008, decay: 0.3, peak: 0.24 });
+  // grit trickling down after, with a little burst as the chips land
+  noise(v, { color: 'pink', at: 0.115, attack: 0.008, decay: 0.12, peak: 0.12, filters: [{ type: 'bandpass', freq: 1400 * p, q: 0.6 }] });
+  noise(v, {
+    color: 'pink',
+    at: 0.08,
+    attack: 0.02,
+    decay: 0.4,
+    peak: 0.06,
+    filters: [
+      { type: 'highpass', freq: 400 * p },
+      { type: 'lowpass', freq: 7000 * p },
+    ],
   });
   partials(v, {
     base: 2900 * p,
     ratios: [1, 1.43, 2.71],
-    gains: [0.05, 0.035, 0.025],
-    decays: [0.08, 0.06, 0.045],
+    gains: [0.03, 0.02, 0.015],
+    decays: [0.07, 0.05, 0.04],
     attack: 0.0008,
     jitter: 0.03,
-    send: 0.08,
   });
-  noise(v, { color: 'pink', attack: 0.001, decay: 0.06, peak: 0.16, filters: [{ type: 'lowpass', freq: 600 * p }] });
 }
 
 function backstab(v: VoiceContext): void {
   const p = v.pitch;
-  // the flesh hit, heavier: a harder crack, more body, and a second rip as the blade drags out
-  slice(v, 0.46, p * 0.95);
-  meat(v, { at: 0.028, peak: 0.42, low: 0.75, fall: 0.3, p: p * 0.9 });
+  // the blade going in, shoved home ~0.18 s later, then the long hiss of it
+  // drawn back out ~0.4 s on
+  slice(v, 0.3, p * 0.95);
+  thwack(v, { peak: 0.44, low: 0.75, fall: 0.5, p: p * 0.9 });
+  noise(v, { at: 0.085, attack: 0.01, decay: 0.12, peak: 0.24, filters: [{ type: 'bandpass', freq: 4800 * p, q: 0.8 }] });
+  noise(v, { color: 'pink', at: 0.18, attack: 0.008, decay: 0.2, peak: 0.36, filters: [{ type: 'highpass', freq: 50 }] });
+  noise(v, { color: 'brown', at: 0.18, attack: 0.01, hold: 0.03, decay: 0.2, peak: 0.6, filters: [{ type: 'lowpass', freq: 200 * p }] });
+  noise(v, {
+    at: 0.39,
+    attack: 0.03,
+    hold: 0.08,
+    decay: 0.3,
+    peak: 0.26,
+    filters: [
+      { type: 'highpass', freq: 1300 * p },
+      { type: 'lowpass', freq: 14000 },
+    ],
+    pan: [0.15, -0.15],
+  });
+}
+
+// cs2's knife handling, quiet next to the hits (15-25 db down) and bright:
+// - the deploy of a fixed blade is a ~0.14 s rising steel "shing" (3-13 khz)
+//   that rings at about 4.1, 5.2, 6.0 and 6.6 khz and is gone by ~0.25 s
+// - ring knives come out quicker and brighter (4.3, 6.9, 9.4 khz rings)
+// - folders just click out of the pocket (2.1 and 4.1 khz), the blade locking
+//   open is its own sharp snap
+// - balisong handles clack: 25-45 ms ticks ringing near 3.3, 6, 7.4 and 13 khz
+// - flips and tosses are short bright swishes (~0.12 s, centred near 8 khz)
+
+/** steel sliding free and ringing out */
+function shing(v: VoiceContext, spec: { rise: number; fall: number; peak: number; p: number; rings: readonly number[]; ring: number }): void {
+  const { rise, fall, peak, p } = spec;
+  noise(v, {
+    attack: rise,
+    decay: fall,
+    peak,
+    filters: [
+      { type: 'highpass', freq: 1500 * p },
+      { type: 'lowpass', freq: 4500 * p, points: [[0, 4500 * p], [rise, 8500 * p]], q: 0.6 },
+    ],
+    send: 0.06,
+  });
+  // the hand and the sheath, soft and long, under the steel
   noise(v, {
     color: 'pink',
-    at: 0.085,
-    attack: 0.012,
-    decay: 0.16,
-    peak: 0.16,
+    attack: rise * 0.6,
+    hold: rise,
+    decay: 0.45,
+    peak: peak * 0.16,
     filters: [
-      { type: 'highpass', freq: 700 * p },
-      { type: 'lowpass', freq: 4200 * p },
+      { type: 'highpass', freq: 200 },
+      { type: 'lowpass', freq: 8000 * p },
     ],
   });
+  const base = spec.rings[0];
+  partials(v, {
+    at: rise * 0.75,
+    base: base * p,
+    ratios: spec.rings.map((hz) => hz / base),
+    gains: spec.rings.map((_, i) => spec.ring / (1 + i * 0.35)),
+    decays: spec.rings.map((_, i) => 0.16 - i * 0.02),
+    attack: 0.004,
+    jitter: 0.01,
+    send: 0.12,
+  });
+}
+
+/** a bright metal tick with a short inharmonic ring */
+function tick(v: VoiceContext, spec: { at?: number; freq: number; peak: number; rings: readonly number[]; ring: number; decay?: number }): void {
+  const p = v.pitch;
+  const at = spec.at ?? 0;
+  click(v, { at, freq: spec.freq * p, q: 1.6, peak: spec.peak, decay: spec.decay ?? 0.014 });
+  noise(v, { at, attack: 0.0003, decay: 0.006, peak: spec.peak * 0.6, filters: [{ type: 'highpass', freq: 6000 * p }] });
+  const base = spec.rings[0];
+  partials(v, {
+    at,
+    base: base * p,
+    ratios: spec.rings.map((hz) => hz / base),
+    gains: spec.rings.map((_, i) => spec.ring / (1 + i * 0.5)),
+    decays: spec.rings.map((_, i) => 0.09 - i * 0.012),
+    jitter: 0.015,
+  });
+  // the knock carrying on a moment
+  noise(v, { at, attack: 0.002, decay: 0.07, peak: spec.peak * 0.12, filters: [{ type: 'bandpass', freq: 6400 * p, q: 0.9 }] });
+}
+
+/**
+ * pulling the knife, by how it comes out. variant: 0 fixed blade, 1 folder,
+ * 2 balisong, 3 ring knife, 4 push daggers
+ */
+function knifeDeploy(v: VoiceContext): void {
+  const p = v.pitch;
+  switch (v.variant) {
+    case 1:
+      // out of the pocket, closed
+      noise(v, { color: 'pink', attack: 0.03, decay: 0.08, peak: 0.12, filters: [{ type: 'bandpass', freq: 1400 * p, q: 0.8 }] });
+      tick(v, { at: 0.06, freq: 4100, peak: 0.22, rings: [2090, 4120], ring: 0.05 });
+      break;
+    case 2:
+      // a light tick, then the latch letting go
+      tick(v, { freq: 9000, peak: 0.1, rings: [5300], ring: 0.015 });
+      tick(v, { at: 0.09, freq: 4200, peak: 0.2, rings: [2790, 4180, 4600, 6570], ring: 0.04 });
+      break;
+    case 3:
+      // a quick bright pull, then the steel shimmering on
+      noise(v, { color: 'pink', attack: 0.015, decay: 0.06, peak: 0.14, filters: [{ type: 'bandpass', freq: 2200 * p, q: 0.7 }] });
+      shing(v, { rise: 0.03, fall: 0.06, peak: 0.16, p: p * 1.1, rings: [4250, 6880, 9430], ring: 0.03 });
+      noise(v, { at: 0.03, attack: 0.01, decay: 0.3, peak: 0.07, filters: [{ type: 'bandpass', freq: 7000 * p, q: 0.8 }] });
+      break;
+    case 4:
+      // two short blades, one a hair behind the other
+      shing(v, { rise: 0.05, fall: 0.08, peak: 0.16, p: p * 1.08, rings: [4800, 6400], ring: 0.025 });
+      noise(v, { at: 0.07, attack: 0.04, decay: 0.07, peak: 0.12, filters: [{ type: 'highpass', freq: 3400 * p }] });
+      break;
+    default:
+      shing(v, { rise: 0.13, fall: 0.07, peak: 0.19, p, rings: [4135, 5215, 6030, 6610, 15440], ring: 0.032 });
+      break;
+  }
+}
+
+/** a folding blade snapping into its lock (variant 0) or balisong handles clacking shut (variant 1) */
+function knifeOpen(v: VoiceContext): void {
+  if (v.variant === 1) {
+    tick(v, { freq: 8500, peak: 0.3, rings: [3330, 6040, 7420, 13160], ring: 0.05, decay: 0.02 });
+    return;
+  }
+  const p = v.pitch;
+  tick(v, { freq: 6400, peak: 0.2, rings: [2090, 4120, 7620], ring: 0.035, decay: 0.022 });
+  noise(v, { at: 0.004, attack: 0.004, decay: 0.05, peak: 0.06, filters: [{ type: 'bandpass', freq: 1800 * p, q: 0.9 }] });
+}
+
+/** the knife flicked round or tossed: a short bright swish */
+function knifeFlick(v: VoiceContext): void {
+  const p = v.pitch;
+  const dir = v.rand() < 0.5 ? -1 : 1;
+  noise(v, {
+    attack: 0.06,
+    decay: 0.24,
+    peak: 0.2,
+    filters: [
+      { type: 'highpass', freq: 1400 * p },
+      { type: 'bandpass', freq: 4500 * p, points: [[0, 4500 * p], [0.06, 8000 * p], [0.18, 5000 * p]], q: 0.6 },
+    ],
+    pan: [-0.2 * dir, 0.2 * dir],
+  });
+}
+
+/** the handle landing back in the glove: a soft pat and a small ring */
+function knifeCatch(v: VoiceContext): void {
+  const p = v.pitch;
+  noise(v, { color: 'pink', attack: 0.001, decay: 0.045, peak: 0.2, filters: [{ type: 'bandpass', freq: 2600 * p, q: 0.9 }] });
+  noise(v, { color: 'brown', attack: 0.002, decay: 0.04, peak: 0.12, filters: [{ type: 'lowpass', freq: 400 * p }] });
+  partials(v, { base: 4365 * p, ratios: [1, 1.52], gains: [0.03, 0.015], decays: [0.06, 0.04], jitter: 0.01 });
 }
 
 /** metal on metal contact: tick + short ring + optional low thunk */
@@ -492,9 +663,13 @@ export const SFX = {
   land: { bus: 'effects', gain: 0.6, pitchSpread: 0.05, gainSpread: 0.08, maxVoices: 3, minIntervalMs: 80, build: land },
   knifeSwing: { bus: 'effects', gain: 0.55, pitchSpread: 0.08, maxVoices: 3, refDistance: 3, rolloff: 1, build: knifeSwing },
   knifeStab: { bus: 'effects', gain: 0.7, pitchSpread: 0.07, maxVoices: 2, refDistance: 3, rolloff: 1, build: knifeStab },
-  knifeHitFlesh: { bus: 'effects', gain: 0.65, pitchSpread: 0.08, maxVoices: 3, refDistance: 4, rolloff: 1, build: knifeHitFlesh },
+  knifeHitFlesh: { bus: 'effects', gain: 0.95, pitchSpread: 0.08, maxVoices: 3, refDistance: 4, rolloff: 1, build: knifeHitFlesh },
   knifeHitWall: { bus: 'effects', gain: 1.15, pitchSpread: 0.08, maxVoices: 3, refDistance: 4, rolloff: 1, build: knifeHitWall },
-  backstab: { bus: 'effects', gain: 0.75, pitchSpread: 0.05, maxVoices: 2, refDistance: 5, rolloff: 1, build: backstab },
+  backstab: { bus: 'effects', gain: 0.6, pitchSpread: 0.05, maxVoices: 2, refDistance: 5, rolloff: 1, build: backstab },
+  knifeDeploy: { bus: 'effects', gain: 0.6, pitchSpread: 0.03, maxVoices: 2, minIntervalMs: 60, build: knifeDeploy },
+  knifeOpen: { bus: 'effects', gain: 1.1, pitchSpread: 0.04, maxVoices: 3, minIntervalMs: 30, build: knifeOpen },
+  knifeFlick: { bus: 'effects', gain: 0.6, pitchSpread: 0.06, maxVoices: 3, minIntervalMs: 40, build: knifeFlick },
+  knifeCatch: { bus: 'effects', gain: 0.35, pitchSpread: 0.05, maxVoices: 2, minIntervalMs: 40, build: knifeCatch },
   katanaSwing: { bus: 'effects', gain: 0.85, pitchSpread: 0.06, maxVoices: 3, refDistance: 3.5, rolloff: 1, build: katanaSwing },
   katanaDraw: { bus: 'effects', gain: 0.6, pitchSpread: 0.03, maxVoices: 1, minIntervalMs: 200, build: katanaDraw },
   katanaHit: { bus: 'effects', gain: 0.85, pitchSpread: 0.06, maxVoices: 3, refDistance: 4, rolloff: 1, build: katanaHit },

@@ -1,6 +1,7 @@
 import { Group, type Object3D, Vector3 } from 'three';
-import type { PlayerModel } from '../network/types';
-import { attachKnifeModel, loadKnifeMesh } from '../multiplayer/playerRig';
+import type { AttackKind, PlayerModel } from '../network/types';
+import { applyBodyMotion, attachKnifeModel, loadKnifeMesh } from '../multiplayer/playerRig';
+import { BodyMotionState } from '../multiplayer/thirdPersonMotion';
 import { createCharacter, type CharacterHandle } from './CharacterFactory';
 import type { CharacterLook } from './look';
 
@@ -21,6 +22,7 @@ export class LocalAvatar {
   private knife: Object3D | null = null;
   private readonly lastFeet = new Vector3();
   private readonly velocity = new Vector3();
+  private readonly motion = new BodyMotionState();
 
   constructor(look: CharacterLook, team: PlayerModel) {
     this.look = look;
@@ -35,7 +37,11 @@ export class LocalAvatar {
     this.character?.setLook(look, team);
   }
 
-  update(dt: number, nowSec: number, feet: Vector3, yaw: number, visible: boolean): void {
+  triggerAttack(kind: AttackKind): void {
+    this.motion.triggerAttack(kind);
+  }
+
+  update(dt: number, nowSec: number, feet: Vector3, yaw: number, visible: boolean, pitch = 0, grounded?: boolean): void {
     this.root.visible = visible;
     if (!visible) {
       this.lastFeet.copy(feet);
@@ -54,6 +60,9 @@ export class LocalAvatar {
     this.root.rotation.set(0, yaw + MODEL_YAW_OFFSET, 0);
     (this.character as { setVelocity?: (v: Vector3) => void }).setVelocity?.(this.velocity);
     this.character.update(dt, nowSec);
+    // the stance is posed in update; the stride, aim and swings go on top
+    this.motion.step(dt, this.velocity, yaw, pitch, grounded);
+    if (this.character.rig) applyBodyMotion(this.character.rig, this.motion.out);
   }
 
   dispose(): void {

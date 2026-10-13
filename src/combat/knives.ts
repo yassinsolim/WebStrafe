@@ -82,15 +82,13 @@ const STEEL = 0xc9ced6;
 const DARK_STEEL = 0x70767f;
 const BLACK = 0x1d1f22;
 const OLIVE = 0x4a5139;
-const TAN = 0x9c7a52;
 const WOOD = 0x6b4226;
-const ORANGE = 0xff6a2b;
 
 /** the loadout order: the most wanted first */
 export const KNIVES: readonly KnifeDef[] = [
   {
     id: 'karambit', name: 'Karambit', referenceType: 'Karambit',
-    shape: { profile: 'hawkbill', bladeLength: 0.085, bladeHeight: 0.03, bladeThickness: 0.004, guard: 'none', handle: 'ring', handleLength: 0.095, bladeColor: STEEL, handleColor: BLACK, accentColor: STEEL, fingerRing: true, grind: 'hollow' },
+    shape: { profile: 'hawkbill', bladeLength: 0.098, bladeHeight: 0.032, bladeThickness: 0.0042, guard: 'none', handle: 'ring', handleLength: 0.095, bladeColor: STEEL, handleColor: BLACK, accentColor: STEEL, fingerRing: true, grind: 'hollow' },
     timing: { drawMs: 1000, inspectMs: 4400 },
   },
   {
@@ -100,52 +98,52 @@ export const KNIVES: readonly KnifeDef[] = [
   },
   {
     id: 'm9_bayonet', name: 'M9 Bayonet', referenceType: 'M9 Bayonet',
-    shape: { profile: 'clip', bladeLength: 0.18, bladeHeight: 0.036, bladeThickness: 0.006, serratedSpine: true, guard: 'ring', handle: 'grip', handleLength: 0.125, bladeColor: STEEL, handleColor: OLIVE, accentColor: DARK_STEEL, grind: 'sabre' },
+    shape: { profile: 'clip', bladeLength: 0.19, bladeHeight: 0.042, bladeThickness: 0.006, serratedSpine: true, guard: 'ring', handle: 'grip', handleLength: 0.125, bladeColor: STEEL, handleColor: OLIVE, accentColor: DARK_STEEL, grind: 'flat' },
     timing: { drawMs: 1000, inspectMs: 4400 },
   },
   {
     id: 'talon', name: 'Talon Knife', referenceType: 'Talon Knife',
-    shape: { profile: 'hawkbill', bladeLength: 0.1, bladeHeight: 0.028, bladeThickness: 0.004, guard: 'bolster', handle: 'scales', handleLength: 0.11, bladeColor: STEEL, handleColor: 0x2f3a4a, accentColor: STEEL, mechanism: 'folder', fingerRing: true, grind: 'hollow' },
+    shape: { profile: 'hawkbill', bladeLength: 0.097, bladeHeight: 0.034, bladeThickness: 0.0038, guard: 'none', handle: 'scales', handleLength: 0.11, bladeColor: STEEL, handleColor: 0xe6dcc3, accentColor: 0xc49a4a, mechanism: 'fixed', fingerRing: true, grind: 'hollow' },
     timing: { drawMs: 1000, inspectMs: 4000 },
   },
   {
     id: 'skeleton', name: 'Skeleton Knife', referenceType: 'Skeleton Knife',
-    shape: { profile: 'drop', bladeLength: 0.11, bladeHeight: 0.03, bladeThickness: 0.005, guard: 'none', handle: 'skeleton', handleLength: 0.11, bladeColor: STEEL, handleColor: DARK_STEEL, accentColor: ORANGE, grind: 'hollow' },
+    shape: { profile: 'spear', bladeLength: 0.14, bladeHeight: 0.028, bladeThickness: 0.0042, guard: 'none', handle: 'skeleton', handleLength: 0.11, bladeColor: STEEL, handleColor: BLACK, accentColor: DARK_STEEL, grind: 'flat' },
     timing: { drawMs: 1000, inspectMs: 3600 },
   },
   {
     id: 'bayonet', name: 'Bayonet', referenceType: 'Bayonet',
-    shape: { profile: 'spear', bladeLength: 0.2, bladeHeight: 0.032, bladeThickness: 0.006, fuller: true, guard: 'cross', handle: 'grip', handleLength: 0.12, bladeColor: STEEL, handleColor: BLACK, accentColor: DARK_STEEL, grind: 'sabre' },
+    shape: { profile: 'spear', bladeLength: 0.2, bladeHeight: 0.032, bladeThickness: 0.005, fuller: true, guard: 'cross', handle: 'grip', handleLength: 0.12, bladeColor: STEEL, handleColor: OLIVE, accentColor: DARK_STEEL, grind: 'flat' },
     timing: { drawMs: 1000, inspectMs: 4200 },
   },
   {
     id: 'flip', name: 'Flip Knife', referenceType: 'Flip Knife',
-    shape: { profile: 'drop', bladeLength: 0.1, bladeHeight: 0.028, bladeThickness: 0.004, guard: 'bolster', handle: 'scales', handleLength: 0.11, bladeColor: STEEL, handleColor: BLACK, accentColor: STEEL, mechanism: 'folder', grind: 'hollow' },
+    shape: { profile: 'recurve', bladeLength: 0.1, bladeHeight: 0.029, bladeThickness: 0.0033, guard: 'bolster', handle: 'scales', handleLength: 0.126, bladeColor: STEEL, handleColor: OLIVE, accentColor: STEEL, mechanism: 'folder', grind: 'hollow' },
     timing: { drawMs: 1000, inspectMs: 3600 },
   },
   {
     id: 'stiletto', name: 'Stiletto Knife', referenceType: 'Stiletto Knife',
-    shape: { profile: 'needle', bladeLength: 0.12, bladeHeight: 0.018, bladeThickness: 0.004, guard: 'cross', handle: 'scales', handleLength: 0.12, bladeColor: STEEL, handleColor: BLACK, accentColor: STEEL, mechanism: 'folder', grind: 'flat' },
+    shape: { profile: 'needle', bladeLength: 0.125, bladeHeight: 0.012, bladeThickness: 0.0028, guard: 'cross', handle: 'scales', handleLength: 0.15, bladeColor: STEEL, handleColor: WOOD, accentColor: 0xa2aa88, mechanism: 'folder', grind: 'flat' },
     timing: { drawMs: 1000, inspectMs: 3600 },
   },
   {
     id: 'huntsman', name: 'Huntsman Knife', referenceType: 'Huntsman Knife',
-    shape: { profile: 'clip', bladeLength: 0.16, bladeHeight: 0.038, bladeThickness: 0.006, serratedSpine: true, guard: 'cross', handle: 'grip', handleLength: 0.12, bladeColor: STEEL, handleColor: TAN, accentColor: DARK_STEEL, grind: 'flat' },
+    shape: { profile: 'tanto', bladeLength: 0.155, bladeHeight: 0.042, bladeThickness: 0.0052, serratedSpine: true, guard: 'cross', handle: 'scales', handleLength: 0.127, bladeColor: STEEL, handleColor: BLACK, accentColor: DARK_STEEL, grind: 'flat' },
     timing: { drawMs: 1000, inspectMs: 4000 },
   },
   {
     id: 'bowie', name: 'Bowie Knife', referenceType: 'Bowie Knife',
-    shape: { profile: 'clip', bladeLength: 0.21, bladeHeight: 0.045, bladeThickness: 0.007, guard: 'cross', handle: 'wood', handleLength: 0.12, bladeColor: STEEL, handleColor: WOOD, accentColor: 0xb08d57, grind: 'flat' },
+    shape: { profile: 'clip', bladeLength: 0.21, bladeHeight: 0.047, bladeThickness: 0.0052, guard: 'cross', handle: 'scales', handleLength: 0.125, bladeColor: STEEL, handleColor: OLIVE, accentColor: STEEL, grind: 'flat' },
     timing: { drawMs: 1000, inspectMs: 4000 },
   },
   {
     id: 'gut', name: 'Gut Knife', referenceType: 'Gut Knife',
-    shape: { profile: 'gut', bladeLength: 0.105, bladeHeight: 0.034, bladeThickness: 0.005, guard: 'none', handle: 'grip', handleLength: 0.1, bladeColor: STEEL, handleColor: BLACK, accentColor: DARK_STEEL, grind: 'flat' },
+    shape: { profile: 'gut', bladeLength: 0.12, bladeHeight: 0.05, bladeThickness: 0.0045, guard: 'none', handle: 'wood', handleLength: 0.12, bladeColor: STEEL, handleColor: WOOD, accentColor: DARK_STEEL, grind: 'flat' },
     timing: { drawMs: 1000, inspectMs: 3400 },
   },
   {
     id: 'shadow_daggers', name: 'Shadow Daggers', referenceType: 'Shadow Daggers',
-    shape: { profile: 'spear', bladeLength: 0.075, bladeHeight: 0.03, bladeThickness: 0.004, guard: 'none', handle: 'tee', handleLength: 0.09, bladeColor: DARK_STEEL, handleColor: BLACK, accentColor: STEEL, pair: true, grind: 'flat' },
+    shape: { profile: 'spear', bladeLength: 0.078, bladeHeight: 0.042, bladeThickness: 0.0046, guard: 'none', handle: 'tee', handleLength: 0.086, bladeColor: DARK_STEEL, handleColor: DARK_STEEL, accentColor: STEEL, pair: true, grind: 'flat' },
     timing: { drawMs: 1000, inspectMs: 3400 },
   },
 ];

@@ -12,11 +12,14 @@ import {
   MeshBasicMaterial,
   Object3D,
   PerspectiveCamera,
+  PlaneGeometry,
   PMREMGenerator,
   PointLight,
   Scene,
   SRGBColorSpace,
+  Vector2,
   Vector3,
+  WebGLRenderTarget,
   WebGLRenderer,
 } from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
@@ -28,10 +31,11 @@ import { buildProceduralKnife, disposeProceduralKnife, KNIFE_NODES } from '../co
 import { disposeKnifeModel, isKnifeModel, loadKnifeModel } from '../cosmetics/knifeAssets';
 import { applyKnifeFinish } from '../cosmetics/finishes/applyFinish';
 import { defaultKnifeSelection, type KnifeLoadoutSelection } from '../cosmetics/finishes/selection';
-import { gripKindFor } from '../viewmodel/knifeGrips';
+import { gripKindFor, type KnifeGripKind } from '../viewmodel/knifeGrips';
 
 const TAU = Math.PI * 2;
 const FRAME_PADDING = 1.18;
+const PREVIEW_FRAME_MS = 1000 / 60;
 
 /** Slow normalized breathing cycle for the preview skeleton. */
 export function previewBreath(elapsedMs: number, periodMs = 4400): number {
@@ -69,6 +73,11 @@ export class CharacterPreview {
   private readonly scene = new Scene();
   private readonly camera: PerspectiveCamera;
   private readonly pivot = new Group();
+  private readonly ground = new Group();
+  private readonly groundViewport = new Vector2(1, 1);
+  private readonly contactShadows = new Map<'left' | 'right', Mesh<CircleGeometry, MeshBasicMaterial>>();
+  private readonly contactPosition = new Vector3();
+  private readonly environmentTarget: WebGLRenderTarget;
   private character: CharacterHandle | null = null;
   private look: CharacterLook = defaultLook('terrorist');
   private team: PlayerModel = 'terrorist';
@@ -99,8 +108,11 @@ export class CharacterPreview {
     this.camera.lookAt(0, 1.0, 0);
 
     const pmrem = new PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    const room = new RoomEnvironment();
+    this.environmentTarget = pmrem.fromScene(room, 0.04);
+    this.scene.environment = this.environmentTarget.texture;
     this.scene.environmentIntensity = 0.5;
+    room.dispose();
     pmrem.dispose();
 
     this.scene.add(this.pivot);
@@ -133,21 +145,64 @@ export class CharacterPreview {
   }
 
   private setupFloor(): void {
+    const surface = document.createElement('canvas');
+    surface.width = surface.height = 128;
+    const surfaceContext = surface.getContext('2d');
+    if (!surfaceContext) return;
+    const depthFade = surfaceContext.createLinearGradient(0, 0, 0, 128);
+    depthFade.addColorStop(0, 'rgba(255,255,255,0)');
+    depthFade.addColorStop(0.35, 'white');
+    depthFade.addColorStop(0.7, 'white');
+    depthFade.addColorStop(1, 'rgba(255,255,255,0)');
+    surfaceContext.fillStyle = depthFade;
+    surfaceContext.fillRect(0, 0, 128, 128);
+    surfaceContext.globalCompositeOperation = 'destination-in';
+    const sideFade = surfaceContext.createLinearGradient(0, 0, 128, 0);
+    sideFade.addColorStop(0, 'rgba(255,255,255,0)');
+    sideFade.addColorStop(0.3, 'white');
+    sideFade.addColorStop(0.7, 'white');
+    sideFade.addColorStop(1, 'rgba(255,255,255,0)');
+    surfaceContext.fillStyle = sideFade;
+    surfaceContext.fillRect(0, 0, 128, 128);
+    const floor = new Mesh(new PlaneGeometry(12, 10), new MeshBasicMaterial({
+      color: 0x343d34, map: new CanvasTexture(surface), transparent: true, opacity: 0.8, depthWrite: false, toneMapped: false,
+    }));
+    floor.material.onBeforeCompile = shader => {
+      shader.uniforms.groundViewport = { value: this.groundViewport };
+      shader.fragmentShader = `uniform vec2 groundViewport;\n${shader.fragmentShader}`.replace('#include <opaque_fragment>', `
+        vec2 groundUv = gl_FragCoord.xy / groundViewport;
+        vec2 groundEdge = smoothstep(vec2(0.0), vec2(0.1), min(groundUv, vec2(1.0) - groundUv));
+        diffuseColor.a *= groundEdge.x * groundEdge.y;
+        #include <opaque_fragment>
+      `);
+    };
+    floor.material.customProgramCacheKey = () => 'preview-ground-edge-fade';
+    floor.name = 'PreviewGround';
+    floor.renderOrder = -2;
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.002;
+    this.ground.add(floor);
+    this.scene.add(this.ground);
     // a soft contact shadow under the feet
     const canvas = document.createElement('canvas');
     canvas.width = canvas.height = 128;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 64);
-    g.addColorStop(0, 'rgba(0,0,0,0.55)');
+    g.addColorStop(0, 'rgba(0,0,0,0.85)');
     g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 128, 128);
-    const mat = new MeshBasicMaterial({ map: new CanvasTexture(canvas), transparent: true, depthWrite: false });
-    const shadow = new Mesh(new CircleGeometry(0.55, 32), mat);
-    shadow.rotation.x = -Math.PI / 2;
-    shadow.position.y = 0.002;
-    this.scene.add(shadow);
+    for (const side of ['left', 'right'] as const) {
+      const material = new MeshBasicMaterial({ map: new CanvasTexture(canvas), transparent: true, depthWrite: false, toneMapped: false });
+      const shadow = new Mesh(new CircleGeometry(0.21, 32), material);
+      shadow.rotation.x = -Math.PI / 2;
+      shadow.renderOrder = -1;
+      shadow.scale.set(0.65, 1, 1);
+      shadow.position.y = 0.002;
+      this.contactShadows.set(side, shadow);
+      this.ground.add(shadow);
+    }
   }
 
   /** Shows the team's side (keeps the current look). */
@@ -209,7 +264,7 @@ export class CharacterPreview {
       this.knife.removeFromParent();
       disposeHeldKnife(this.knife);
     }
-    this.knife = holdKnife(model, gripKindFor(getKnife(pick.knifeId)) === 'reverse_ring');
+    this.knife = holdKnife(model, gripKindFor(getKnife(pick.knifeId)));
     hand.add(this.knife);
   }
 
@@ -235,10 +290,23 @@ export class CharacterPreview {
         return;
       }
       const now = performance.now();
+      if (document.hidden || (this.clock === null && now - this.lastFrame < PREVIEW_FRAME_MS - 0.5)) {
+        if (document.hidden) this.lastFrame = now;
+        this.rafHandle = requestAnimationFrame(loop);
+        return;
+      }
       const dt = Math.min(0.05, (now - this.lastFrame) / 1000);
       this.lastFrame = now;
       this.pivot.rotation.y = this.baseYaw;
       this.character?.update(dt, this.clock ?? (now - this.startTime) / 1000);
+      for (const [side, shadow] of this.contactShadows) {
+        const foot = this.character?.rig?.legs?.[side]?.foot;
+        shadow.visible = !!foot;
+        if (foot) {
+          foot.getWorldPosition(this.contactPosition);
+          shadow.position.set(this.contactPosition.x, 0.002, this.contactPosition.z);
+        }
+      }
       this.renderer.render(this.scene, this.camera);
       this.rafHandle = requestAnimationFrame(loop);
     };
@@ -260,7 +328,17 @@ export class CharacterPreview {
     this.knife = null;
     this.character?.dispose();
     this.character = null;
-    this.scene.environment?.dispose();
+    this.ground.traverse(node => {
+      if (!(node instanceof Mesh)) return;
+      node.geometry.dispose();
+      const materials = Array.isArray(node.material) ? node.material : [node.material];
+      for (const material of materials) {
+        if (material instanceof MeshBasicMaterial) material.map?.dispose();
+        material.dispose();
+      }
+    });
+    this.scene.environment = null;
+    this.environmentTarget.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
@@ -269,17 +347,23 @@ export class CharacterPreview {
     const width = Math.max(1, this.container.clientWidth);
     const height = Math.max(1, this.container.clientHeight);
     this.renderer.setSize(width, height, false);
+    this.renderer.getDrawingBufferSize(this.groundViewport);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.frameCharacter();
   }
 
   private frameCharacter(): void {
+    if (this.character) {
+      this.character.update(0, this.clock ?? 0);
+      const bounds = new Box3().setFromObject(this.character.root, true);
+      if (!bounds.isEmpty()) this.pivot.position.y -= bounds.min.y;
+    }
     const size = STAGE_BOUNDS.getSize(new Vector3());
     const center = STAGE_BOUNDS.getCenter(new Vector3());
     const distance = previewCameraDistance(size.x, size.y, size.z, this.camera.aspect, this.camera.fov);
     const targetY = center.y - size.y * 0.025;
-    this.camera.position.set(center.x, targetY + 0.08, center.z + distance);
+    this.camera.position.set(center.x, targetY + 0.42, center.z + distance);
     this.camera.lookAt(center.x, targetY, center.z);
   }
 }
@@ -290,10 +374,11 @@ export const PREVIEW_BG = new Color(0x0a0c12);
  * wraps a knife for the hand the way the remote players' knives are: grip
  * socket at the origin, blade along the hand bone's pointing axis, under a
  * holder named like theirs so the menu idle seats and twirls it. ring knives
- * (`reverse`) are turned end for end so the claw comes out under the little
- * finger and the ring sits at the index, and they twirl round the ring
+ * are turned end for end so the claw comes out under the little finger and
+ * the ring sits at the index, and they twirl round the ring
  */
-function holdKnife(model: Object3D, reverse = false): Object3D {
+function holdKnife(model: Object3D, kind: KnifeGripKind): Object3D {
+  const reverse = kind === 'reverse_ring';
   model.updateMatrixWorld(true);
   const grip = model.getObjectByName(KNIFE_NODES.grip);
   if (grip) model.position.sub(grip.getWorldPosition(new Vector3()));
@@ -320,7 +405,7 @@ function holdKnife(model: Object3D, reverse = false): Object3D {
   }
   const holder = new Group();
   holder.name = 'RemoteKnifeModel';
-  holder.userData.reverseGrip = reverse;
+  holder.userData.grip = kind;
   holder.position.set(0.039, -0.0034, 0.0602);
   holder.rotation.set(1.18, -0.58, -0.5);
   holder.add(wrapper);

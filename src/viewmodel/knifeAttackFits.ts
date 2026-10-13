@@ -5,7 +5,8 @@ import type { KnifeId } from '../combat/knives';
  * camera: every visible frame of each slash and stab was cut out against the
  * background and the knife and arm posed until their outline matched it
  * (blade included, inside a natural wrist), tracked frame to frame, smoothed
- * and keyed every 2 frames for a time spline (clip.seqSpline). out of view
+ * and keyed every 2 frames. they play back resampled and smoothed again on a
+ * time spline (knifePoses fittedAttackTrack). out of view
  * the knife is parked under the screen until it comes back up.
  */
 

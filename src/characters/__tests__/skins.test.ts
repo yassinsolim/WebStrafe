@@ -1,10 +1,13 @@
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Matrix4, Vector3 } from 'three';
+import { Group, Matrix4, Vector3, type Bone } from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { beforeAll, describe, expect, it } from 'vitest';
+import type { KnifeId } from '../../combat/knives';
+import { applyKnifeIdlePose, attachKnifeModel } from '../../multiplayer/playerRig';
+import { setRemoteKnife } from '../../multiplayer/remoteKnife';
 import { ArmorCharacter } from '../ArmorCharacter';
 import { SKIN_INFO, SKINS, type SkinId } from '../catalog';
 import { CharacterLibrary, LOD_LEVELS } from '../library';
@@ -139,5 +142,101 @@ describe.each([...SKINS])('skin %s', (id) => {
     const files = [`${id}.glb`, `${id}_arms.glb`, ...['color', 'normal', 'data', 'mask'].map((t) => `${id}_${t}.webp`)];
     const total = files.reduce((sum, f) => sum + statSync(path.join(DIR, f)).size, 0);
     expect(total).toBeLessThan(3 * MB);
+  });
+});
+
+// the third person knife hold on every body: the fingers wrap the handle
+describe.each(['kit', ...SKINS] as const)('knife in the fist, %s', (body) => {
+  const point = (bone: Bone) => bone.getWorldPosition(new Vector3());
+  const fromLine = (p: Vector3, origin: Vector3, dir: Vector3) => {
+    const d = p.clone().sub(origin);
+    return d.addScaledVector(dir, -d.dot(dir)).length();
+  };
+  const hold = (knife: KnifeId) => {
+    const character = new ArmorCharacter(library, { ...defaultLook(), skin: body }, 'terrorist', { pose: 'none', lod: 0 });
+    const rig = character.rig!;
+    setRemoteKnife(rig.rightWeaponHand, { id: knife });
+    applyKnifeIdlePose(rig);
+    character.root.updateMatrixWorld(true);
+    const held = rig.rightWeaponHand.getObjectByName('RemoteKnifeModel')!;
+    const grip = held.getObjectByName('socket_grip')!;
+    const frame = grip.parent!.matrixWorld;
+    return {
+      rig,
+      grip: point(grip as Bone),
+      blade: new Vector3().setFromMatrixColumn(frame, 0).normalize(),
+      spine: new Vector3().setFromMatrixColumn(frame, 1).normalize(),
+      knuckles: [0, 3, 6, 9].reduce((sum, i) => sum.add(point(rig.rightFingers[i])), new Vector3()).divideScalar(4),
+      across: point(rig.rightFingers[0]).sub(point(rig.rightFingers[9])).normalize(),
+      dispose: () => character.dispose(),
+    };
+  };
+
+  it.each(['bayonet', 'butterfly', 'karambit'] as const)('%s: handle down the fist, fingers round it', (knife) => {
+    const h = hold(knife);
+    expect(h.rig.mpfbHands).toBe(true);
+    for (let f = 0; f < 4; f += 1) {
+      for (const j of [1, 2]) {
+        // round the handle, not through it or off it
+        const d = fromLine(point(h.rig.rightFingers[f * 3 + j]), h.grip, h.blade);
+        expect(d, `finger ${f} joint ${j}`).toBeGreaterThan(0.008);
+        expect(d, `finger ${f} joint ${j}`).toBeLessThan(0.04);
+      }
+    }
+    // the blade out of the thumb side, the claw under the little finger
+    const out = h.blade.dot(h.across);
+    if (knife === 'karambit') expect(out).toBeLessThan(-0.8);
+    else expect(out).toBeGreaterThan(0.8);
+    // the edge toward the knuckles
+    expect(h.spine.dot(h.knuckles.clone().sub(h.grip))).toBeLessThan(0);
+    h.dispose();
+  });
+
+  it('push dagger: bar across the palm, blade out between the fingers', () => {
+    const h = hold('shadow_daggers');
+    expect(Math.abs(h.spine.dot(h.across))).toBeGreaterThan(0.9);
+    const wrist = point(h.rig.rightHand);
+    expect(h.blade.dot(h.knuckles.clone().sub(wrist).normalize())).toBeGreaterThan(0.8);
+    h.dispose();
+  });
+
+  it('katana: the right hand just under the guard', () => {
+    const character = new ArmorCharacter(library, { ...defaultLook(), skin: body }, 'terrorist', { pose: 'none', lod: 0 });
+    const rig = character.rig!;
+    // the katana model's sockets, wrapped the way remoteKatanaTemplate does
+    const model = new Group();
+    const socket = (name: string, x: number) => {
+      const node = new Group();
+      node.name = name;
+      node.position.x = x;
+      model.add(node);
+    };
+    socket('socket_grip_r', 0);
+    socket('socket_guard', 0.06);
+    const wrapper = new Group();
+    wrapper.rotation.z = Math.PI / 2;
+    wrapper.add(model);
+    const holder = new Group();
+    holder.add(wrapper);
+    attachKnifeModel(rig.rightWeaponHand, holder);
+    applyKnifeIdlePose(rig);
+    character.root.updateMatrixWorld(true);
+    // attachKnifeModel holds a clone
+    const held = rig.rightWeaponHand.getObjectByName('RemoteKnifeModel')!;
+    const grip = held.getObjectByName('socket_grip_r')!;
+    const guard = held.getObjectByName('socket_guard')!;
+    const blade = new Vector3().setFromMatrixColumn(grip.parent!.matrixWorld, 0).normalize();
+    const g = point(grip as unknown as Bone);
+    for (let f = 0; f < 4; f += 1) {
+      const d = fromLine(point(rig.rightFingers[f * 3 + 1]), g, blade);
+      expect(d, `finger ${f}`).toBeGreaterThan(0.008);
+      expect(d, `finger ${f}`).toBeLessThan(0.04);
+    }
+    // the guard sits a little past the index finger, toward the blade
+    const index = point(rig.rightFingers[0]);
+    const pastIndex = point(guard as unknown as Bone).sub(index).dot(blade);
+    expect(pastIndex).toBeGreaterThan(-0.01);
+    expect(pastIndex).toBeLessThan(0.04);
+    character.dispose();
   });
 });

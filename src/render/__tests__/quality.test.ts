@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { QUALITY_PRESETS, applyOverrides, detectQuality, resolveQuality } from '../quality';
+import { QUALITY_PRESETS, applyOverrides, autoFallbackQuality, detectQuality, resolveQuality } from '../quality';
 import { defaultGraphics } from '../../ui/SettingsStore';
 
 describe('quality presets', () => {
-  it('auto starts desktop class gpus on high', () => {
+  it('starts desktop auto on balanced without assuming a gpu name guarantees headroom', () => {
     for (const gpu of [
       'ANGLE (Apple, ANGLE Metal Renderer: Apple M5, Unspecified Version)',
       'ANGLE (Apple, ANGLE Metal Renderer: Apple M1 Pro, Unspecified Version)',
@@ -12,7 +12,8 @@ describe('quality presets', () => {
       'ANGLE (AMD, AMD Radeon RX 7800 XT Direct3D11 vs_5_0 ps_5_0, D3D11)',
       'ANGLE (Intel, Intel(R) Arc(TM) A770 Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)',
     ]) {
-      expect(detectQuality(gpu), gpu).toBe('high');
+      expect(detectQuality(gpu), gpu).toBe('medium');
+      expect(resolveQuality('auto', gpu)).toMatchObject({ msaa: 0, ao: false, maxPixelRatio: 1.25 });
     }
   });
 
@@ -43,10 +44,19 @@ describe('quality presets', () => {
     }
   });
 
-  it('an explicit setting wins over detection, and auto never picks ultra', () => {
+  it('keeps high and ultra available as explicit choices', () => {
     expect(resolveQuality('high', 'Mali-G78').level).toBe('high');
     expect(resolveQuality('ultra', 'Mali-G78').level).toBe('ultra');
-    expect(resolveQuality('auto', 'Apple M5').level).toBe('high');
+    expect(resolveQuality('auto', 'Apple M5').level).toBe('medium');
+    expect(resolveQuality('high', 'Apple M5')).toMatchObject({ msaa: 4, ao: true, maxPixelRatio: 2 });
+  });
+
+  it('reduces auto effects after two resolution drops, including balanced to low', () => {
+    expect(autoFallbackQuality('high', 1)).toBeNull();
+    expect(autoFallbackQuality('medium', 0.85)).toBeNull();
+    expect(autoFallbackQuality('high', 0.7)).toBe('medium');
+    expect(autoFallbackQuality('medium', 0.7)).toBe('low');
+    expect(autoFallbackQuality('low', 0.5)).toBeNull();
   });
 
   it('every cost only grows from low to ultra', () => {

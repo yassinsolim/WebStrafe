@@ -39,8 +39,9 @@ uniform float fadeEnd;
 varying vec2 vUv;
 
 vec3 viewPos(vec2 uv) {
-  float d = texture2D(tDepth, uv).x;
-  vec4 v = invProjection * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+  vec2 pixelUv = clamp((floor(uv / depthTexel) + 0.5) * depthTexel, depthTexel * 0.5, vec2(1.0) - depthTexel * 0.5);
+  float d = texture2D(tDepth, pixelUv).x;
+  vec4 v = invProjection * vec4(pixelUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
   return v.xyz / v.w;
 }
 
@@ -55,12 +56,18 @@ void main() {
     return;
   }
   vec3 p = viewPos(vUv);
-  vec3 pr = viewPos(vUv + vec2(depthTexel.x, 0.0));
-  vec3 pl = viewPos(vUv - vec2(depthTexel.x, 0.0));
-  vec3 pu = viewPos(vUv + vec2(0.0, depthTexel.y));
-  vec3 pd = viewPos(vUv - vec2(0.0, depthTexel.y));
+  vec3 pr = viewPos(vUv + vec2(depthTexel.x * 2.0, 0.0));
+  vec3 pl = viewPos(vUv - vec2(depthTexel.x * 2.0, 0.0));
+  vec3 pu = viewPos(vUv + vec2(0.0, depthTexel.y * 2.0));
+  vec3 pd = viewPos(vUv - vec2(0.0, depthTexel.y * 2.0));
   vec3 dx = abs(pr.z - p.z) < abs(p.z - pl.z) ? pr - p : p - pl;
   vec3 dy = abs(pu.z - p.z) < abs(p.z - pd.z) ? pu - p : p - pd;
+  if (vUv.x <= depthTexel.x * 2.0) dx = pr - p;
+  else if (vUv.x >= 1.0 - depthTexel.x * 2.0) dx = p - pl;
+  if (vUv.y <= depthTexel.y * 2.0) dy = pu - p;
+  else if (vUv.y >= 1.0 - depthTexel.y * 2.0) dy = p - pd;
+  if (dot(dx, dx) < 1e-12) dx = pr - pl;
+  if (dot(dy, dy) < 1e-12) dy = pu - pd;
   vec3 n = normalize(cross(dx, dy));
 
   float dist = -p.z;
@@ -78,7 +85,10 @@ void main() {
     float a = fi * 2.3999632 + spin;
     float l = sqrt(fi / float(SAMPLES));
     vec2 offset = vec2(cos(a), sin(a)) * l * uvRadius;
-    vec3 q = viewPos(vUv + offset);
+    vec2 sampleUv = vUv + offset;
+    if (any(lessThan(sampleUv, depthTexel * 0.5)) || any(greaterThan(sampleUv, vec2(1.0) - depthTexel * 0.5))) continue;
+    if (texture2D(tDepth, sampleUv).x >= 0.99999) continue;
+    vec3 q = viewPos(sampleUv);
     vec3 v = q - p;
     float vv = dot(v, v);
     float falloff = max(0.0, 1.0 - vv / r2);
@@ -208,7 +218,7 @@ export class Ssao {
     ao.tDepth.value = depth;
     // uv radius per metre at distance 1: 0.5 * projection scale
     (ao.projScale.value as Vector4).set(p[0] * 0.5, p[5] * 0.5, w, h);
-    (ao.depthTexel.value as Vector2).set(2 / fullWidth, 2 / fullHeight);
+    (ao.depthTexel.value as Vector2).set(1 / fullWidth, 1 / fullHeight);
     ao.radius.value = this.radius;
     ao.intensity.value = this.intensity;
     this.quad.material = this.aoMaterial;

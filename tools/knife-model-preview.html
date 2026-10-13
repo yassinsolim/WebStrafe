@@ -2,10 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>WebStrafe knife model preview (dev only)</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <style>
       html, body { margin: 0; background: #20242b; }
-      canvas { display: block; }
+      canvas { display: block; width: 100%; height: auto; }
     </style>
   </head>
   <body>
@@ -30,7 +32,7 @@
       const fold = Number(params.get('fold') ?? 0);
 
       const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-      renderer.setSize(width, height);
+      renderer.setSize(width, height, false);
       renderer.setClearColor(new Color(params.get('bg') ?? '#262b33'));
       renderer.outputColorSpace = SRGBColorSpace;
       renderer.toneMapping = ACESFilmicToneMapping;
@@ -46,7 +48,8 @@
       fill.position.set(-0.6, 0.2, -0.4);
       scene.add(fill);
 
-      const gltf = await sharedGltfLoader().loadAsync(`/knives/${id}${lod}.glb`);
+      const modelPath = params.get('model') ?? `/knives/${id}${lod}.glb`;
+      const gltf = await sharedGltfLoader().loadAsync(modelPath);
       const knife = gltf.scene;
       const holder = new Group();
       holder.add(knife);
@@ -78,6 +81,7 @@
       camera.lookAt(target);
       renderer.compile(scene, camera);
       renderer.render(scene, camera);
+      window.__knifeModelPreview = { renderer, scene, camera, knife, holder };
       window.__shotReady = true;
       document.title = 'ready';
     </script>

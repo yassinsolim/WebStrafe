@@ -1,3 +1,4 @@
+import { Copy, createElement } from 'lucide';
 import {
   CROSSHAIR_STYLES,
   GRAPHICS_OPTIONS,
@@ -62,7 +63,7 @@ const CROSSHAIR_LABEL: Record<CrosshairStyle, string> = {
 };
 
 const QUALITY_INFO: Record<GraphicsQuality, { label: string; description: string }> = {
-  auto: { label: 'Auto', description: 'High on strong GPUs, Balanced on most, Low on weak ones' },
+  auto: { label: 'Auto', description: 'Balanced or Low, with performance-based fallback' },
   low: { label: 'Low', description: 'Fastest. Baked light, FXAA, no bloom or shadows' },
   medium: { label: 'Balanced', description: 'Sun shadows, bloom, detailed surfaces, FXAA' },
   high: { label: 'High', description: '4x MSAA (FXAA on Retina), ambient occlusion, sharper shadows' },
@@ -173,16 +174,29 @@ export class SettingsPanel {
     nav.setAttribute('role', 'tablist');
     nav.setAttribute('aria-label', 'Settings sections');
     const pagesEl = el('div', 'set-pages');
-    for (const [id, label] of SETTINGS_SECTIONS) {
+    for (const [index, [id, label]] of SETTINGS_SECTIONS.entries()) {
       const button = el('button', 'set-nav-btn') as HTMLButtonElement;
       button.type = 'button';
       button.textContent = label;
+      button.id = `settings-tab-${id}`;
+      button.setAttribute('aria-controls', `settings-panel-${id}`);
       button.setAttribute('role', 'tab');
       button.addEventListener('click', () => this.setSection(id));
+      button.addEventListener('keydown', event => {
+        const offsets: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, Home: -index, End: SETTINGS_SECTIONS.length - 1 - index };
+        const offset = offsets[event.key];
+        if (offset === undefined) return;
+        event.preventDefault();
+        const nextId = SETTINGS_SECTIONS[(index + offset + SETTINGS_SECTIONS.length) % SETTINGS_SECTIONS.length][0];
+        this.setSection(nextId);
+        this.navButtons.get(nextId)?.focus();
+      });
       nav.appendChild(button);
       this.navButtons.set(id, button);
       const page = el('div', 'set-page');
       page.dataset.section = id;
+      page.id = `settings-panel-${id}`;
+      page.setAttribute('aria-labelledby', `settings-tab-${id}`);
       page.setAttribute('role', 'tabpanel');
       pagesEl.appendChild(page);
       this.pages.set(id, page);
@@ -198,7 +212,7 @@ export class SettingsPanel {
     this.range(fov, 'worldFov', 'World FOV', L.worldFov, {
       digits: 0,
       suffix: '°',
-      hint: (v) => `${Math.round(horizontalFov(v))}° wide on this screen`,
+      hint: (v) => `${Math.round(horizontalFov(v))}° horizontal`,
     });
     this.range(fov, 'viewmodelFov', 'Viewmodel FOV', L.viewmodelFov, { digits: 0, suffix: '°' });
     this.range(fov, 'viewmodelScale', 'Viewmodel scale', L.viewmodelScale, { digits: 2 });
@@ -218,9 +232,8 @@ export class SettingsPanel {
       button.innerHTML = `<span class="set-quality-bars" aria-hidden="true">${qualityBars(quality)}</span>`;
       const name = el('span', 'set-quality-name');
       name.textContent = info.label;
-      const desc = el('span', 'set-quality-desc');
-      desc.textContent = info.description;
-      button.append(name, desc);
+      button.title = info.description;
+      button.appendChild(name);
       button.addEventListener('click', () => {
         this.draft.graphicsQuality = quality;
         this.emit();
@@ -318,7 +331,10 @@ export class SettingsPanel {
       }
     });
     const codeActions = el('div', 'set-xh-code-actions');
-    const copy = button('Copy', 'set-btn');
+    const copy = button('', 'set-btn set-icon-btn');
+    copy.title = 'Copy crosshair code';
+    copy.setAttribute('aria-label', 'Copy crosshair code');
+    copy.appendChild(createElement(Copy, { 'aria-hidden': 'true' }));
     copy.addEventListener('click', () => void this.copyCode());
     const apply = button('Apply', 'set-btn');
     apply.dataset.sfx = 'confirm';
@@ -456,7 +472,7 @@ export class SettingsPanel {
       keyList.appendChild(item);
     }
     const keyNote = el('p', 'set-note');
-    keyNote.textContent = 'Keys are fixed for now, rebinding is not in yet.';
+    keyNote.textContent = 'Fixed bindings';
     keys.append(keyList, keyNote);
 
     // footer -------------------------------------------------------------
@@ -488,6 +504,7 @@ export class SettingsPanel {
       const active = sectionId === id;
       navButton.classList.toggle('is-active', active);
       navButton.setAttribute('aria-selected', String(active));
+      navButton.tabIndex = active ? 0 : -1;
     }
     for (const [sectionId, page] of this.pages) {
       page.classList.toggle('is-active', sectionId === id);
@@ -688,10 +705,7 @@ export class SettingsPanel {
 
   private choice(parent: HTMLElement, key: GraphicsKey, label: string, description: string, names: Record<string, string>): void {
     const el = row(parent, label, 'set-row-choice');
-    const sub = document.createElement('span');
-    sub.className = 'set-desc';
-    sub.textContent = description;
-    el.querySelector('.set-label')?.appendChild(sub);
+    el.title = description;
     const select = document.createElement('select');
     select.className = 'set-select';
     select.setAttribute('aria-label', label);
@@ -717,12 +731,7 @@ export class SettingsPanel {
     const text = document.createElement('span');
     text.className = 'set-label';
     text.textContent = label;
-    if (description) {
-      const sub = document.createElement('span');
-      sub.className = 'set-desc';
-      sub.textContent = description;
-      text.appendChild(sub);
-    }
+    if (description) el.title = description;
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.className = 'set-switch';

@@ -68,6 +68,39 @@ describe('procedural player models', () => {
     expect(rig.rightUpper.quaternion.angleTo(before)).toBeGreaterThan(0.1);
   });
 
+  it.each(['player:remote', 'bot:0'])('removes dead %s models and starts respawns at the new position', id => {
+    const renderer = new RemotePlayersRenderer();
+    const player = {
+      id,
+      name: id,
+      model: 'counterterrorist' as const,
+      position: [0, 0, -5] as [number, number, number],
+      velocity: [0, 0, 0] as [number, number, number],
+      yaw: 0,
+      pitch: 0,
+      alive: true,
+      t: 1000,
+    };
+    renderer.applySnapshot([player], null, 1000);
+    renderer.update(1 / 60, 1100);
+    const original = renderer.root.getObjectByName(`RemotePlayer:${id}`);
+    expect(original).toBeDefined();
+    expect(renderer.getDisplayedPlayers()).toHaveLength(1);
+
+    renderer.applySnapshot([{ ...player, alive: false, t: 1100 }], null, 1100);
+    renderer.triggerAttack(id, 'primary');
+    renderer.update(1 / 60, 1200);
+    expect(renderer.root.getObjectByName(`RemotePlayer:${id}`)).toBeUndefined();
+    expect(renderer.getDisplayedPlayers()).toEqual([]);
+    expect(renderer.getFireView().targets).not.toHaveProperty(id);
+
+    renderer.applySnapshot([{ ...player, position: [20, 0, 8], t: 3000 }], null, 3000);
+    expect(renderer.root.getObjectByName(`RemotePlayer:${id}`)).not.toBe(original);
+    expect(renderer.getDisplayedPlayers()[0].position.toArray()).toEqual([20, 0, 8]);
+    renderer.update(1 / 60, 3100);
+    expect(renderer.getDisplayedPlayers()[0].position.toArray()).toEqual([20, 0, 8]);
+  });
+
   it('remote renderer uses the procedural models without fetching assets', async () => {
     const renderer = new RemotePlayersRenderer();
     await renderer.load();

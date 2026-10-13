@@ -13,7 +13,8 @@ has to change all three.
   included). `public/knives/<id>_lod1.glb` is the third-person LOD: the same
   nodes, sockets and userData at under half the triangles, at most 400 KB.
 - All geometry is original: modelled from real-world knife layouts, with CS2
-  used only as visual reference. No downloaded meshes or textures.
+  used only as visual reference. No Valve meshes or textures are included.
+  Credited CC0 ambientCG maps are used as offline roughness/scratch bake inputs.
 
 ## Frame (three.js axes after export)
 
@@ -23,6 +24,13 @@ has to change all three.
 - The origin is where the hand meets the guard or bolster (the front of the
   handle), the same frame the old procedural knives used.
 
+The photo-driven build applies `tools/blender/knives/photo_fits.json` before
+assembly. Geometry and sockets use the same continuous transformation; ring
+openings keep their circular clearance. Current dimensions and socket locations
+are pinned in `tools/assets/knives.test.ts`, and the full live grip sweep validates
+the accompanying finger poses. Photo overlap alone never approves a contract
+change: folding, clearance and payload tests still apply.
+
 ## Nodes
 
 Moving parts are empties on their pivot, with the geometry in a child named
@@ -31,18 +39,20 @@ a pivot must never carry the mesh itself.
 
 | node | knives | motion |
 |---|---|---|
-| `blade_pivot` | folders: flip, falchion, navaja, stiletto, talon, ursus, nomad | `rotation.z` 0 is open, -PI is closed into the handle |
+| `blade_pivot` | shipped folders: flip, stiletto | `rotation.z` 0 is open, -PI is closed into the handle |
 | `handle_safe`, `handle_bite` | butterfly | `rotation.z` 0 is open (handles together); `handle_safe` closes to -PI and `handle_bite` to +PI, so the halves swing round the spine and edge without crossing (the procedural fallback knife uses the opposite signs) |
 | `socket_grip` | all | centre of a hammer-grip fist on the handle |
 | `socket_tip` | all | blade tip (child of `blade_pivot` on folders) |
-| `socket_ring` | karambit, talon | centre of the finger ring. Its local +Z is the ring's axis (the direction a finger goes through) |
+| `socket_ring` | karambit, talon, skeleton | centre of the finger ring. Its local +Z is the ring's axis (the direction a finger goes through) |
 | `socket_pivot` | folders | the pivot pin |
 | `socket_pivot_safe`, `socket_pivot_bite` | butterfly | the two tang pins |
 | `socket_tee` | shadow_daggers | centre of the T-handle bar, local +Z along the bar |
 
-Folders in CS2 terms: flip, falchion, navaja, stiletto, talon, ursus, nomad
-open with `blade_pivot`. The gut knife, bayonets, huntsman, bowie, classic,
-paracord, survival, skeleton, kukri and karambit are fixed blades.
+The shipped Flip and Stiletto open with `blade_pivot`. Talon is a fixed ring
+knife; its former folder nodes were removed in the 2026-10-10 rebuild. Skeleton
+has a front ring rather than a ring at the butt. The remaining shipped knives
+are fixed blades except for Butterfly's two moving handles. Retired builders
+retain some legacy pivots and are not part of this shipped-model contract.
 
 ## userData hints (glTF extras) on the knife root
 
@@ -72,3 +82,8 @@ don't need special UVs. Models ship a 0..1 UV0 atlas with baked base colour,
 normal and ORM (occlusion, roughness, metalness) maps on every material; the
 steel's normal map is `knife_blade`'s `normalMap`, so a finish that replaces
 the blade material can keep it (and `aoMap`, the ORM image, likewise).
+
+Finish materials also preserve the source `roughnessMap` as bounded surface
+variation around their authored gloss, rather than multiplying away the finish
+or discarding the baked detail. Source map identity is part of the material
+cache key. The colour and metallic channels remain controlled by the finish.

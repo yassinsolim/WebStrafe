@@ -12,6 +12,7 @@
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import {
+  compressTexture,
   dedup,
   meshopt,
   prune,
@@ -31,6 +32,7 @@ interface Options {
   textureSize: number;
   webp: boolean;
   simplifyRatio: number | null;
+  losslessTexturePattern?: RegExp;
 }
 
 function parseArgs(argv: string[]): Options {
@@ -82,14 +84,25 @@ export async function optimizeGlb(options: Options): Promise<void> {
   }
   await document.transform(...transforms);
   if (document.getRoot().listTextures().length > 0) {
-    await document.transform(
-      textureCompress({
+    if (options.losslessTexturePattern) {
+      await Promise.all(document.getRoot().listTextures().map(texture =>
+        compressTexture(texture, {
+          encoder: sharp,
+          targetFormat: options.webp ? 'webp' : undefined,
+          resize: [options.textureSize, options.textureSize],
+          quality: 88,
+          lossless: Boolean(options.losslessTexturePattern?.test(texture.getName())
+            || options.losslessTexturePattern?.test(texture.getURI())),
+        }),
+      ));
+    } else {
+      await document.transform(textureCompress({
         encoder: sharp,
         targetFormat: options.webp ? 'webp' : undefined,
         resize: [options.textureSize, options.textureSize],
         quality: 88,
-      }),
-    );
+      }));
+    }
   }
   await document.transform(meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
   await io.write(options.output, document);

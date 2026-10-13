@@ -13,6 +13,7 @@ import {
 import type { Camera, Texture } from 'three';
 import type { FirearmId as GunId } from '../combat/FirearmTiming';
 import type { QualityPreset } from '../render/quality';
+import { createSpring, dampingFromHalflife, springStep, type SpringState } from '../viewmodel/motion';
 
 /**
  * the world's environment light on the viewmodel is scaled up a little so dark
@@ -50,6 +51,8 @@ interface MotionProfile {
   sway: number;
   rotationSway: number;
   lower: number;
+  /** how quickly the sway catches up with the view (critically damped halflife, seconds); heavier guns lag more */
+  swayHalflife: number;
 }
 
 const KNIFE_MOTION: MotionProfile = {
@@ -57,6 +60,7 @@ const KNIFE_MOTION: MotionProfile = {
   sway: 1.08,
   rotationSway: 1.12,
   lower: 0.72,
+  swayHalflife: 0.06,
 };
 
 const FIREARM_MOTION: Readonly<Record<GunId, MotionProfile>> = {
@@ -65,14 +69,30 @@ const FIREARM_MOTION: Readonly<Record<GunId, MotionProfile>> = {
     sway: 0.82,
     rotationSway: 0.78,
     lower: 0.82,
+    swayHalflife: 0.07,
   },
   awp: {
     bob: 0.5,
     sway: 0.55,
     rotationSway: 0.62,
     lower: 0.58,
+    swayHalflife: 0.09,
   },
 };
+
+// the sway gains were tuned on one 60 fps frame of mouse movement; they now
+// take the look rate (per second), so the same flick sways the same at any fps
+const LOOK_RATE_TO_FRAME = 1 / 60;
+// walk bob fades in and out with leaving and touching the ground, and with speed
+const GROUND_HALFLIFE = 0.08;
+const MOVE_HALFLIFE = 0.12;
+// landing: the fall's speed goes into a spring, so the dip builds over a few frames and settles
+const LAND_HALFLIFE = 0.1;
+const AIR_HALFLIFE = 0.08;
+// stacked recoil softly tops out here
+const KICK_LIMIT = 1.35;
+const KICK_KNEE = 1;
+const MAX_KICKS = 4;
 
 export interface FirearmRecoilProfile {
   /** Fast kick onset before the longer authored recovery, in seconds. */
@@ -119,19 +139,25 @@ export class ViewmodelRenderer {
   private walkTimer = 0;
   private readonly inspectDuration = 2.4;
 
-  // Eased sway state (position + rotation lag behind the view).
-  private swayX = 0;
-  private swayY = 0;
-  private swayRotX = 0;
-  private swayRotY = 0;
+  // Sway (position + rotation lag behind the view), on springs.
+  private readonly swayX = createSpring();
+  private readonly swayY = createSpring();
+  private readonly swayRotX = createSpring();
+  private readonly swayRotY = createSpring();
 
-  // Vertical-velocity driven dip.
+  // how much the walk bob shows: on the ground, and moving
+  private readonly groundBlend = createSpring(1);
+  private readonly moveBlend = createSpring();
+
+  // Vertical-velocity driven dip and lift.
   private prevVy = 0;
-  private landKick = 0;
+  private wasGrounded = true;
+  private readonly land = createSpring();
+  private readonly air = createSpring();
 
-  // Recoil and reload impulses are firearm-only and cleared on lifecycle changes.
-  private fireKickAgeSec = Number.POSITIVE_INFINITY;
-  private fireKickMagnitude = 0;
+  // Recoil kicks (each recovering on its own, summed) and the reload envelope are
+  // firearm-only and cleared on lifecycle changes.
+  private readonly kicks: { age: number; magnitude: number }[] = [];
   private reloadTimer = 0;
   private reloadDuration = 0;
   private firearmId: GunId | null = null;
@@ -293,8 +319,7 @@ export class ViewmodelRenderer {
   }
 
   public clearFirearmTransient(): void {
-    this.fireKickAgeSec = Number.POSITIVE_INFINITY;
-    this.fireKickMagnitude = 0;
+    this.kicks.length = 0;
     this.reloadTimer = 0;
     this.reloadDuration = 0;
   }
@@ -304,120 +329,120 @@ export class ViewmodelRenderer {
     this.clearFirearmTransient();
     this.cancelInspect();
     this.walkTimer = 0;
-    this.swayX = 0;
-    this.swayY = 0;
-    this.swayRotX = 0;
-    this.swayRotY = 0;
+    for (const spring of [this.swayX, this.swayY, this.swayRotX, this.swayRotY, this.moveBlend, this.land, this.air]) {
+      spring.x = 0;
+      spring.v = 0;
+    }
+    this.groundBlend.x = 1;
+    this.groundBlend.v = 0;
     this.prevVy = 0;
-    this.landKick = 0;
+    this.wasGrounded = true;
     this.motionPos.set(0, 0, 0);
     this.motionRot.set(0, 0, 0);
   }
 
   public addFireKick(weaponId: GunId): void {
     this.cancelInspect();
-    const profile = FIREARM_RECOIL_PROFILES[weaponId];
-    const carried = this.firearmId === weaponId
-      ? this.sampleFireKick(profile, this.fireKickAgeSec) * this.fireKickMagnitude
-      : 0;
-    this.fireKickMagnitude = Math.min(
-      1.35,
-      Math.max(profile.impulse, carried + profile.impulse * 0.65),
-    );
-    this.fireKickAgeSec = 0;
+    if (this.firearmId !== weaponId) this.kicks.length = 0;
+    // a new kick stacks on the ones still recovering instead of restarting them
+    if (this.kicks.length >= MAX_KICKS) this.kicks.shift();
+    this.kicks.push({ age: 0, magnitude: FIREARM_RECOIL_PROFILES[weaponId].impulse });
   }
 
+  /**
+   * `grounded`: whether the player stands on something (bob only plays on the
+   * ground and landings dip on touching down). left out, it is guessed from
+   * the vertical speed
+   */
   public update(
     dt: number,
     worldCamera: Camera,
     velocity: Vector3,
     lookDelta: { x: number; y: number },
+    grounded?: boolean,
   ): number {
     this.camera.position.copy(worldCamera.position);
     this.camera.quaternion.copy(worldCamera.quaternion);
     this.updateFlash(dt);
+    const step = Math.max(0, dt);
 
     // The integrated knife rig was authored close to camera-space neutral, so it
     // needs more readable procedural travel than its large baked hand clips.
-    // Firearm scale remains byte-for-byte equivalent to the polished profiles.
     const knifeIntegratedGain = this.integratedMode && !this.firearmId ? 7 : 1;
     const ms = Math.min(1, this.motionScale * knifeIntegratedGain);
     const profile = this.firearmId ? FIREARM_MOTION[this.firearmId] : KNIFE_MOTION;
     const speed = Math.hypot(velocity.x, velocity.z);
-    const moveAmt = Math.min(1, speed / 8) * ms;
+    const onGround = grounded ?? Math.abs(velocity.y) < 0.5;
 
-    this.walkTimer += dt * (5 + Math.min(6, speed * 0.7));
-    const bobX = Math.sin(this.walkTimer) * 0.011 * moveAmt * profile.bob;
-    const bobY = Math.cos(this.walkTimer * 2) * 0.007 * moveAmt * profile.bob;
-    const bobRoll = Math.sin(this.walkTimer) * 0.02 * moveAmt * profile.bob;
+    springStep(this.groundBlend, onGround ? 1 : 0, GROUND_HALFLIFE, step);
+    springStep(this.moveBlend, Math.min(1, speed / 8), MOVE_HALFLIFE, step);
+    const groundAmt = clamp01(this.groundBlend.x);
+    const moveAmt = clamp01(this.moveBlend.x) * ms;
+    // the bob only plays with feet on the ground (not while bhopping or surfing)
+    const bobAmt = moveAmt * (grounded === undefined ? 1 : groundAmt);
+    this.walkTimer += step * (5 + Math.min(6, speed * 0.7)) * (grounded === undefined ? 1 : groundAmt);
+    const bobX = Math.sin(this.walkTimer) * 0.011 * bobAmt * profile.bob;
+    const bobY = Math.cos(this.walkTimer * 2) * 0.007 * bobAmt * profile.bob;
+    const bobRoll = Math.sin(this.walkTimer) * 0.02 * bobAmt * profile.bob;
 
     const clamp = (value: number, magnitude: number): number =>
       Math.max(-magnitude, Math.min(magnitude, value));
-    const frameStableAlpha = (alphaAt60Fps: number): number =>
-      1 - (1 - alphaAt60Fps) ** (Math.max(0, dt) * 60);
-    const positionSwayAlpha = this.firearmId ? 0.14 : frameStableAlpha(0.14);
-    const rotationSwayAlpha = this.firearmId ? 0.12 : frameStableAlpha(0.12);
-    this.swayX = this.lerp(
-      this.swayX,
-      clamp(-lookDelta.x * 0.00022 * ms * profile.sway, 0.03),
-      positionSwayAlpha,
-    );
-    this.swayY = this.lerp(
-      this.swayY,
-      clamp(lookDelta.y * 0.00022 * ms * profile.sway, 0.03),
-      positionSwayAlpha,
-    );
-    this.swayRotY = this.lerp(
-      this.swayRotY,
-      clamp(-lookDelta.x * 0.0002 * ms * profile.rotationSway, 0.06),
-      rotationSwayAlpha,
-    );
-    this.swayRotX = this.lerp(
-      this.swayRotX,
-      clamp(lookDelta.y * 0.0002 * ms * profile.rotationSway, 0.06),
-      rotationSwayAlpha,
-    );
+    // per second look rate scaled back to the per-frame gains, sprung so it reads as weight
+    const lookX = step > 0 ? (lookDelta.x / step) * LOOK_RATE_TO_FRAME : 0;
+    const lookY = step > 0 ? (lookDelta.y / step) * LOOK_RATE_TO_FRAME : 0;
+    springStep(this.swayX, clamp(-lookX * 0.00022 * ms * profile.sway, 0.03), profile.swayHalflife, step);
+    springStep(this.swayY, clamp(lookY * 0.00022 * ms * profile.sway, 0.03), profile.swayHalflife, step);
+    springStep(this.swayRotY, clamp(-lookX * 0.0002 * ms * profile.rotationSway, 0.06), profile.swayHalflife, step);
+    springStep(this.swayRotX, clamp(lookY * 0.0002 * ms * profile.rotationSway, 0.06), profile.swayHalflife, step);
 
     const lowerY = -0.02 * moveAmt * profile.lower;
     const lowerPitch = 0.06 * moveAmt * profile.lower;
 
-    if (this.prevVy < -6 && velocity.y > -1) {
-      this.landKick = Math.min(1, Math.abs(this.prevVy) / 18);
+    // a hard landing kicks the spring downward; it dips over a few frames and settles
+    const touchedDown = grounded === undefined ? velocity.y > -1 : grounded && !this.wasGrounded;
+    if (touchedDown && this.prevVy < -6) {
+      const impact = Math.min(1, Math.abs(this.prevVy) / 18);
+      this.land.v += impact * (dampingFromHalflife(LAND_HALFLIFE) / 2) * Math.E;
     }
     this.prevVy = velocity.y;
-    this.landKick = Math.max(0, this.landKick - dt * 4.5);
-    const landEase = this.landKick * this.landKick;
+    this.wasGrounded = onGround;
+    springStep(this.land, 0, LAND_HALFLIFE, step);
+    springStep(this.air, clamp(velocity.y / 12, 1), AIR_HALFLIFE, step);
+    settle(this.land);
+    settle(this.air);
+    const landEase = Math.max(0, this.land.x);
     const knifeLandScale = this.firearmId ? 1 : 0.78;
-    const airLift = clamp(velocity.y / 12, 1) * 0.01 * ms;
+    const airLift = this.air.x * 0.01 * ms;
     const dipY = -landEase * 0.05 * knifeLandScale + airLift;
     const dipPitch = landEase * 0.13 * knifeLandScale;
 
     let kickZ = 0;
     let kickPitch = 0;
     let kickRoll = 0;
-    if (this.firearmId) {
+    if (this.firearmId && this.kicks.length > 0) {
       const recoil = FIREARM_RECOIL_PROFILES[this.firearmId];
-      this.fireKickAgeSec = Math.min(
-        recoil.durationSec,
-        this.fireKickAgeSec + Math.max(0, dt),
-      );
-      const kick = this.sampleFireKick(recoil, this.fireKickAgeSec)
-        * this.fireKickMagnitude;
+      let total = 0;
+      for (const kick of this.kicks) {
+        kick.age = Math.min(recoil.durationSec, kick.age + step);
+        total += this.sampleFireKick(recoil, kick.age) * kick.magnitude;
+      }
+      for (let i = this.kicks.length - 1; i >= 0; i -= 1) {
+        if (this.kicks[i].age >= recoil.durationSec) this.kicks.splice(i, 1);
+      }
+      const kick = softLimit(total);
       kickZ = kick * recoil.back;
       kickPitch = -kick * recoil.pitch;
       kickRoll = kick * recoil.roll;
-      if (this.fireKickAgeSec >= recoil.durationSec) {
-        this.fireKickMagnitude = 0;
-      }
     }
 
     let reloadDip = 0;
     let reloadPitch = 0;
     let reloadRoll = 0;
     if (this.reloadTimer > 0 && this.reloadDuration > 0) {
-      this.reloadTimer = Math.max(0, this.reloadTimer - dt);
+      this.reloadTimer = Math.max(0, this.reloadTimer - step);
       const progress = 1 - this.reloadTimer / this.reloadDuration;
-      const envelope = Math.sin(Math.PI * progress);
+      // eases in and out (a plain sine starts and ends at full speed)
+      const envelope = Math.sin(Math.PI * progress) ** 2;
       reloadDip = (this.firearmId === 'awp' ? 0.015 : 0.08) * envelope;
       reloadPitch = 0.12 * envelope;
       const direction = this.firearmId === 'awp' ? -1 : 1;
@@ -438,13 +463,13 @@ export class ViewmodelRenderer {
       : 0;
 
     this.motionPos.set(
-      bobX + this.swayX,
-      bobY + this.swayY + lowerY + dipY + reloadDip,
+      bobX + this.swayX.x,
+      bobY + this.swayY.x + lowerY + dipY + reloadDip,
       kickZ,
     );
     this.motionRot.set(
-      this.swayRotX + lowerPitch + dipPitch + kickPitch + reloadPitch,
-      this.swayRotY,
+      this.swayRotX.x + lowerPitch + dipPitch + kickPitch + reloadPitch,
+      this.swayRotY.x,
       bobRoll + kickRoll + reloadRoll,
     );
 
@@ -468,10 +493,6 @@ export class ViewmodelRenderer {
     return inspectWeight;
   }
 
-  private lerp(current: number, target: number, alpha: number): number {
-    return current + (target - current) * alpha;
-  }
-
   private sampleFireKick(profile: FirearmRecoilProfile, ageSec: number): number {
     if (!Number.isFinite(ageSec) || ageSec >= profile.durationSec) {
       return 0;
@@ -492,6 +513,25 @@ export class ViewmodelRenderer {
 function easeOutCubic(t: number): number {
   const x = Math.min(1, Math.max(0, t));
   return 1 - (1 - x) * (1 - x) * (1 - x);
+}
+
+function clamp01(x: number): number {
+  return Math.min(1, Math.max(0, x));
+}
+
+/** stacked kicks pass through up to the knee, then round off toward the limit */
+function softLimit(total: number): number {
+  if (total <= KICK_KNEE) return total;
+  const room = KICK_LIMIT - KICK_KNEE;
+  return KICK_KNEE + room * Math.tanh((total - KICK_KNEE) / room);
+}
+
+/** a spring that has all but stopped is put to rest, so motion ends at exactly zero */
+function settle(spring: SpringState): void {
+  if (Math.abs(spring.x) < 1e-4 && Math.abs(spring.v) < 1e-3) {
+    spring.x = 0;
+    spring.v = 0;
+  }
 }
 
 function easeInOutCubic(t: number): number {

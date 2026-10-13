@@ -5,9 +5,8 @@ steel (knife_blade, knife_edge), handle (knife_handle) and fittings
 (knife_metal, knife_accent). each group's faces are unwrapped together into one
 uv atlas (UV0), so materials in a group share their images.
 
-the fine detail (g10 weave, pebbled rubber, checkering, wood grain, paracord
-weave, tape, bead blast, the satin grain on the steel) is a high-resolution
-procedural height field and colour in each material's shader. cycles bakes it
+the fine detail combines material-specific height fields, geometry-aware wear
+and the credited cc0 metal/scratch maps in characters/textures. cycles bakes it
 onto the low poly: a tangent-space normal map, ambient occlusion from the real
 geometry (screws, pins, guards, teeth, cut-outs), roughness, metalness and base
 colour. ao, roughness and metalness are packed into one orm image (gltf
@@ -27,13 +26,13 @@ import klib as K
 
 # ao, roughness, metalness and colour change slowly, the normal map carries the fine detail
 LOW_RES = 1024
+DETAIL_TEXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "characters", "textures")
 
 GROUPS = (
     ("steel", ("knife_blade", "knife_edge")),
     ("handle", ("knife_handle",)),
     ("fittings", ("knife_metal", "knife_accent")),
 )
-
 
 # ---------------------------------------------------------------- uv atlases
 
@@ -144,6 +143,66 @@ def _rgba(hex_value):
     return (*K.W.srgb(hex_value), 1.0)
 
 
+def _detail_texture(nt, filename, tile):
+    texture = nt.nodes.new("ShaderNodeTexImage")
+    texture.image = bpy.data.images.load(os.path.join(DETAIL_TEXTURES, filename), check_existing=True)
+    texture.image.colorspace_settings.name = "Non-Color"
+    texture.projection = "BOX"
+    texture.projection_blend = 0.2
+    _link(nt, _coords(nt, (1.0 / tile,) * 3), texture.inputs["Vector"])
+    return texture.outputs["Color"]
+
+
+def _surface_wear(nt, bsdf, base, metal, kind):
+    geometry = nt.nodes.new("ShaderNodeNewGeometry")
+    pointiness = geometry.outputs["Pointiness"]
+    wear = _math(nt, "MINIMUM", _math(nt, "MULTIPLY", _math(nt, "MAXIMUM", _math(nt, "SUBTRACT", pointiness, 0.505), 0.0), 24.0), 1.0)
+    cavity = _math(nt, "MINIMUM", _math(nt, "MULTIPLY", _math(nt, "MAXIMUM", _math(nt, "SUBTRACT", 0.495, pointiness), 0.0), 24.0), 1.0)
+    roughness = bsdf.inputs["Roughness"]
+    rough_source = roughness.links[0].from_socket if roughness.is_linked else float(roughness.default_value)
+    grind = None
+    if kind == "brushed":
+        normal = nt.nodes.new("ShaderNodeVectorTransform")
+        normal.vector_type = "NORMAL"
+        normal.convert_from = "WORLD"
+        normal.convert_to = "OBJECT"
+        _link(nt, geometry.outputs["Normal"], normal.inputs["Vector"])
+        components = nt.nodes.new("ShaderNodeSeparateXYZ")
+        _link(nt, normal.outputs["Vector"], components.inputs[0])
+        slope = _math(nt, "ABSOLUTE", components.outputs["Y"])
+        grind = _math(nt, "MINIMUM", _math(nt, "MULTIPLY", _math(nt, "MAXIMUM", _math(nt, "SUBTRACT", 0.9997, slope), 0.0), 220.0), 1.0)
+        polish = _math(nt, "MULTIPLY", grind, 0.38)
+        rough_source = _math(nt, "ADD", _math(nt, "MULTIPLY", rough_source, _math(nt, "SUBTRACT", 1.0, polish)),
+                             _math(nt, "MULTIPLY", polish, 0.18))
+    worn_roughness = _math(nt, "ADD", _math(nt, "SUBTRACT", rough_source, _math(nt, "MULTIPLY", wear, 0.13)),
+                         _math(nt, "MULTIPLY", cavity, 0.16))
+    _link(nt, _math(nt, "MINIMUM", _math(nt, "MAXIMUM", worn_roughness, 0.08), 0.94), roughness)
+
+    color_input = bsdf.inputs["Base Color"]
+    color_source = color_input.links[0].from_socket if color_input.is_linked else None
+    if grind is not None:
+        ground_color = nt.nodes.new("ShaderNodeMixRGB")
+        ground_color.inputs[1].default_value = base
+        ground_color.inputs[2].default_value = _rgba(0xd2d5cd)
+        if color_source is not None:
+            _link(nt, color_source, ground_color.inputs[1])
+        _link(nt, _math(nt, "MULTIPLY", grind, 0.12), ground_color.inputs[0])
+        color_source = ground_color.outputs[0]
+    edge_color = _rgba(0xbfc3bb) if metal >= 0.5 else tuple(min(1.0, channel * 1.45 + 0.012) for channel in base[:3]) + (1.0,)
+    edge_mix = nt.nodes.new("ShaderNodeMixRGB")
+    edge_mix.inputs[1].default_value = base
+    edge_mix.inputs[2].default_value = edge_color
+    if color_source is not None:
+        _link(nt, color_source, edge_mix.inputs[1])
+    _link(nt, _math(nt, "MULTIPLY", wear, 0.45 if kind != "polished" else 0.18), edge_mix.inputs[0])
+    dirt_mix = nt.nodes.new("ShaderNodeMixRGB")
+    dirt_mix.blend_type = "MULTIPLY"
+    dirt_mix.inputs[2].default_value = (0.24, 0.22, 0.2, 1.0)
+    _link(nt, _math(nt, "MULTIPLY", cavity, 0.6), dirt_mix.inputs[0])
+    _link(nt, edge_mix.outputs[0], dirt_mix.inputs[1])
+    _link(nt, dirt_mix.outputs[0], color_input)
+
+
 def detail_shader(mat, spec):
     """rebuilds `mat` as a bake source: base colour, roughness, metalness and a bump
     from a procedural height field. object coordinates are blender metres, the
@@ -166,22 +225,37 @@ def detail_shader(mat, spec):
     distance = 0.0003
     color_fac = None
     rough_var = 0.0
+    roughness_source = None
     v1 = _coords(nt, (1.0, 1.0, 1.0))
     if kind == "brushed":
-        # satin grain: streaks along the blade
-        # streaks about half a millimetre wide, coarse enough not to alias on a 1024 atlas
         v = _coords(nt, (10.0, 800.0, 800.0))
         height = _noise(nt, v, 1.0, 2.0, 0.5)
-        distance, rough_var = 0.00002, 0.05
-        color_fac = _math(nt, "MULTIPLY", height, 0.35)
+        patina = _noise(nt, _coords(nt, (55.0, 180.0, 180.0)), 1.0, 5.0, 0.65)
+        scan_raw = _detail_texture(nt, "metal009_r.jpg", 0.12)
+        scan = _math(nt, "MINIMUM", _math(nt, "MAXIMUM", _math(nt, "MULTIPLY", _math(nt, "SUBTRACT", scan_raw, 0.32), 2.6), 0.0), 1.0)
+        scratches = _detail_texture(nt, "scratches005.jpg", 0.19)
+        distance, rough_var = 0.000035, 0.38
+        roughness_source = _math(nt, "MINIMUM", _math(nt, "ADD", _math(nt, "MULTIPLY", scan, 0.8),
+                               _math(nt, "MULTIPLY", patina, 0.3)), 1.0)
+        roughness_source = _math(nt, "MAXIMUM", _math(nt, "SUBTRACT", roughness_source,
+                                 _math(nt, "MULTIPLY", scratches, 0.32)), 0.0)
+        height = _math(nt, "SUBTRACT", height, _math(nt, "MULTIPLY", scratches, 0.5))
+        color_fac = _math(nt, "ADD", _math(nt, "MULTIPLY", scan, 0.55), _math(nt, "MULTIPLY", patina, 0.45))
+        if base2 == base:
+            base2 = tuple(channel * 0.32 for channel in base[:3]) + (1.0,)
     elif kind == "polished":
         v = _coords(nt, (20.0, 1200.0, 1200.0))
         height = _noise(nt, v, 1.0, 2.0, 0.5)
         distance, rough_var = 0.00001, 0.03
+        roughness_source = _detail_texture(nt, "metal009_r.jpg", 0.12)
     elif kind == "bead":
         height = _noise(nt, v1, 3800.0, 1.0, 0.5)
         distance, rough_var = 0.00004, 0.05
         color_fac = _noise(nt, v1, 900.0, 2.0, 0.5)
+        if metal >= 0.5:
+            scan = _detail_texture(nt, "metal027_r.jpg", 0.15)
+            roughness_source = _math(nt, "MINIMUM", _math(nt, "MAXIMUM", _math(nt, "MULTIPLY", _math(nt, "SUBTRACT", scan, 0.55), 5.0), 0.0), 1.0)
+            rough_var = 0.16
     elif kind == "pebble":
         cells = _voronoi(nt, v1, 950.0)
         bumps = _math(nt, "POWER", _math(nt, "SUBTRACT", 1.0, _math(nt, "MINIMUM", cells, 1.0)), 1.6)
@@ -205,10 +279,15 @@ def detail_shader(mat, spec):
         color_fac = height
     elif kind == "g10":
         fibres = _noise(nt, _coords(nt, (700.0, 1800.0, 1800.0)), 1.0, 3.0, 0.55)
-        weave = _math(nt, "MULTIPLY", _wave(nt, v1, 1300.0, "DIAGONAL"), 0.45)
-        height = _math(nt, "ADD", fibres, weave)
-        distance, rough_var = 0.00011, 0.12
-        color_fac = _noise(nt, v1, 260.0, 3.0, 0.55)
+        diagonal = _wave(nt, v1, 380.0, "DIAGONAL")
+        rotated = nt.nodes.new("ShaderNodeVectorRotate")
+        rotated.rotation_type = "X_AXIS"
+        rotated.inputs["Angle"].default_value = math.pi / 2
+        _link(nt, v1, rotated.inputs["Vector"])
+        crosshatch = _math(nt, "MULTIPLY", diagonal, _wave(nt, rotated.outputs["Vector"], 380.0, "DIAGONAL"))
+        height = _math(nt, "ADD", _math(nt, "MULTIPLY", crosshatch, 0.85), _math(nt, "MULTIPLY", fibres, 0.15))
+        distance, rough_var = 0.00024, 0.16
+        color_fac = _math(nt, "ADD", _math(nt, "MULTIPLY", crosshatch, 0.75), _math(nt, "MULTIPLY", _noise(nt, v1, 260.0, 3.0, 0.55), 0.25))
     elif kind == "wood":
         # grain along the handle (blender x); rings from bands across it
         # long flowing grain: rings stretched along the handle, bent by low noise, with
@@ -224,13 +303,13 @@ def detail_shader(mat, spec):
         _link(nt, warp.outputs["Color"], mixv.inputs[5])
         rings = _wave(nt, mixv.outputs[1], 1.0, "Z", distortion=2.5, detail=3.0)
         rings_node = rings.node
-        rings_node.inputs["Scale"].default_value = 140.0
+        rings_node.inputs["Scale"].default_value = 420.0
         figure = _noise(nt, _coords(nt, (8.0, 260.0, 260.0)), 1.0, 5.0, 0.6)
         pores = _noise(nt, _coords(nt, (300.0, 4500.0, 4500.0)), 1.0, 2.0, 0.5)
         ramp = nt.nodes.new("ShaderNodeValToRGB")
         ramp.color_ramp.elements[0].position = 0.25
         ramp.color_ramp.elements[1].position = 0.85
-        _link(nt, _math(nt, "ADD", _math(nt, "MULTIPLY", rings, 0.55), _math(nt, "MULTIPLY", figure, 0.45)), ramp.inputs["Fac"])
+        _link(nt, _math(nt, "ADD", _math(nt, "MULTIPLY", rings, 0.15), _math(nt, "MULTIPLY", figure, 0.85)), ramp.inputs["Fac"])
         height = _math(nt, "ADD", _math(nt, "MULTIPLY", rings, 0.25), pores)
         distance, rough_var = 0.00005, 0.1
         color_fac = ramp.outputs["Color"]
@@ -266,8 +345,10 @@ def detail_shader(mat, spec):
         _link(nt, height, bump.inputs["Height"])
         _link(nt, bump.outputs["Normal"], bsdf.inputs["Normal"])
         if rough_var:
-            r = _math(nt, "ADD", _math(nt, "MULTIPLY", _math(nt, "SUBTRACT", height, 0.5), rough_var * 2.0), rough)
+            roughness_height = roughness_source if roughness_source is not None else height
+            r = _math(nt, "ADD", _math(nt, "MULTIPLY", _math(nt, "SUBTRACT", roughness_height, 0.5), rough_var * 2.0), rough)
             _link(nt, r, bsdf.inputs["Roughness"])
+    _surface_wear(nt, bsdf, base, metal, kind)
     mat["_metal"] = metal
 
 

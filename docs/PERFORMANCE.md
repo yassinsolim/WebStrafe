@@ -28,11 +28,14 @@ compressed blocks on every sample.
 
 ## Scaling
 
-- **Auto picks High** on desktop class GPUs (Apple M Pro/Max/Ultra and M3 on,
-  GeForce GTX 10 series on and RTX, Radeon RX, Arc A and B cards), Balanced on
-  every other real GPU and Low on software GL, phone GPUs and old Intel HD/UHD
-  graphics. When auto's High pick needs adaptive resolution to drop two steps,
-  auto settles on Balanced for the session. Ultra is opt-in.
+- **Auto starts on Balanced**, or Low on software GL, phone GPUs and old Intel
+  HD/UHD graphics. A GPU name alone does not justify enabling High at an
+  unknown display resolution. If adaptive resolution needs two downward steps,
+  Auto also lowers the effects preset, including Balanced to Low. Selecting a
+  preset or changing its advanced options resets this fallback. Explicit
+  graphics overrides are retained; High and Ultra remain manual choices.
+  Automatic downgrades preserve the reduced resolution instead of immediately
+  retrying full resolution on a struggling GPU.
 - **Adaptive resolution** is on by default for every preset. It drops the render
   scale in 15% steps whenever a one second window averages under 55 fps, down
   to half. It climbs back after three windows near the best rate seen so far
@@ -43,7 +46,11 @@ compressed blocks on every sample.
   Each knife's WebP textures take 48 to 64 MB once drawn, so only the knife in
   hand and the last one put away stay loaded.
 - **Shaders compile behind the loading screen** (`renderer.compileAsync` on the
-  world and the viewmodel), so the first seconds of play don't hitch.
+  world and the viewmodel). Warm-up retains independent material references so
+  disposing a temporary character does not discard its compiled programs. Kit,
+  Ronin and Sentinel are covered, and Auto prepares the Low world, viewmodel and
+  composite variants before play. Retained warm-up materials are released on
+  the next map load or disposal.
 - Per preset (`src/render/quality.ts`, table in `docs/RENDERING.md`):
   - anti-aliasing: FXAA on Low and Balanced, 4x MSAA on High (FXAA on Retina),
     8x on Ultra (4x on Retina);
@@ -85,7 +92,7 @@ misses 8.3 ms waits for the next one (60 fps is the next step down).
 |---|---|---|
 | Balanced (1.25 pixel ratio, FXAA) | 120 | 8.3 ms |
 | High with 4x MSAA | 60 | 16.7 ms |
-| High with FXAA (what Auto picks on this Mac) | 95 to 115 | 8.7 to 10.5 ms |
+| High with FXAA (the former Auto choice on this Mac) | 95 to 115 | 8.7 to 10.5 ms |
 | Ultra with 8x MSAA | 38 | 26 ms |
 | Ultra with 4x MSAA (its Retina default) | 60 | 16.8 ms |
 

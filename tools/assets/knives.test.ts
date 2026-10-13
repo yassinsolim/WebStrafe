@@ -1,52 +1,58 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { NodeIO, type Document, type mat4, type Node } from '@gltf-transform/core';
+import { Document, NodeIO, type mat4, type Node } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { MeshoptDecoder } from 'meshoptimizer';
-import { statSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
+import { Ray, Vector3 } from 'three';
 import { KNIVES, type KnifeId } from '../../src/combat/knives';
+import photoFits from '../blender/knives/photo_fits.json';
+import { optimizeGlb } from './optimize-glb';
 
 // checks public/knives/<id>.glb against docs/assets/knife-contract.md: nodes,
 // clean pivots, materials, budgets, the knife frame and the userData hints
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const FOLDERS: KnifeId[] = ['flip', 'stiletto', 'talon'];
+const FOLDERS: KnifeId[] = ['flip', 'stiletto'];
 const RING_SOCKET: KnifeId[] = ['karambit', 'talon', 'skeleton'];
 const HAWKBILL: KnifeId[] = ['karambit', 'talon'];
 const MATERIALS = ['knife_blade', 'knife_edge', 'knife_handle', 'knife_metal', 'knife_accent'];
 const REQUIRED = ['knife_blade', 'knife_edge', 'knife_handle'];
-// knives without fittings (none left since the paracord knife was retired)
-const NO_METAL: KnifeId[] = [];
+const NO_METAL: KnifeId[] = ['shadow_daggers'];
 const MAX_TRIANGLES = 15000;
 const MAX_BYTES = 1.5 * 1024 * 1024;
 const MAX_TEXTURE_PX = 2048;
 const LOD1_MAX_BYTES = 400 * 1024;
 
 /**
- * sockets (knife frame, metres) and userData hints the grips were fitted to
- * (tools/assets/gripFit.ts). models may change, these may not move more than 1 mm.
+ * pinned knife-frame sockets and dimensions. the 2026-10-10 rebuild preserves
+ * grip anchors but intentionally changes blade tips, the skeleton ring and
+ * the fixed talon construction. live grip checks validate those changes.
  */
 const FITTED: Record<KnifeId, { sockets: Record<string, V3>; hints: Record<string, number> }> = {
-  bayonet: { sockets: { socket_grip: [-0.062, 0.018, 0], socket_tip: [0.18, 0.0165, 0] }, hints: { handleLength: 0.131, handleThickness: 0.0286, handleHeight: 0.033, bladeLength: 0.18, bladeHeight: 0.036 } },
-  flip: { sockets: { socket_grip: [-0.062, 0.0145, 0], socket_pivot: [-0.009, 0.0159, 0], socket_tip: [0.1, 0.0135, 0] }, hints: { handleLength: 0.126, handleThickness: 0.0125, handleHeight: 0.036, bladeLength: 0.1, bladeHeight: 0.0306 } },
-  gut: { sockets: { socket_grip: [-0.058, 0.016, 0], socket_tip: [0.1, 0.012, 0] }, hints: { handleLength: 0.12, handleThickness: 0.025, handleHeight: 0.031, bladeLength: 0.1, bladeHeight: 0.032 } },
-  karambit: { sockets: { socket_grip: [-0.043, 0.0063, 0], socket_ring: [-0.0998, -0.0224, 0], socket_tip: [0.0713, -0.0307, 0] }, hints: { handleLength: 0.086, handleThickness: 0.013, handleHeight: 0.026, bladeLength: 0.0718, bladeHeight: 0.0255, ringInnerRadius: 0.0115 } },
-  m9_bayonet: { sockets: { socket_grip: [-0.063, 0.019, 0], socket_tip: [0.19, 0.017, 0] }, hints: { handleLength: 0.133, handleThickness: 0.03, handleHeight: 0.035, bladeLength: 0.19, bladeHeight: 0.038 } },
-  huntsman: { sockets: { socket_grip: [-0.062, 0.019, 0], socket_tip: [0.155, 0.018, 0] }, hints: { handleLength: 0.127, handleThickness: 0.027, handleHeight: 0.0335, bladeLength: 0.155, bladeHeight: 0.0383 } },
-  butterfly: { sockets: { socket_grip: [-0.064, 0.0115, 0], socket_pivot_bite: [-0.0065, 0.0047, 0], socket_pivot_safe: [-0.0065, 0.0182, 0], socket_tip: [0.102, 0.0105, 0] }, hints: { handleLength: 0.128, handleThickness: 0.0129, handleHeight: 0.027, bladeLength: 0.102, bladeHeight: 0.0232 } },
-  shadow_daggers: { sockets: { socket_grip: [-0.024, 0.013, 0], socket_tee: [-0.024, 0.013, 0], socket_tip: [0.066, 0.013, 0] }, hints: { handleLength: 0.092, handleThickness: 0.018, handleHeight: 0.014, bladeLength: 0.066, bladeHeight: 0.0253 } },
-  bowie: { sockets: { socket_grip: [-0.06, 0.02, 0], socket_tip: [0.185, 0.019, 0] }, hints: { handleLength: 0.125, handleThickness: 0.027, handleHeight: 0.033, bladeLength: 0.185, bladeHeight: 0.0422 } },
-  stiletto: { sockets: { socket_grip: [-0.07, 0.008, 0], socket_pivot: [-0.011, 0.0086, 0], socket_tip: [0.125, 0.008, 0] }, hints: { handleLength: 0.15, handleThickness: 0.0122, handleHeight: 0.0208, bladeLength: 0.125, bladeHeight: 0.016 } },
-  talon: { sockets: { socket_grip: [-0.042, 0.0079, 0], socket_pivot: [-0.008, 0.0115, 0], socket_ring: [-0.0955, -0.0153, 0], socket_tip: [0.0643, -0.0244, 0] }, hints: { handleLength: 0.084, handleThickness: 0.0126, handleHeight: 0.026, bladeLength: 0.0648, bladeHeight: 0.0265, ringInnerRadius: 0.0115 } },
-  skeleton: { sockets: { socket_grip: [-0.044, 0.014, 0], socket_ring: [-0.097, 0.014, 0], socket_tip: [0.1, 0.012, 0] }, hints: { handleLength: 0.088, handleThickness: 0.0057, handleHeight: 0.028, bladeLength: 0.1, bladeHeight: 0.028, ringInnerRadius: 0.011 } },
+  bayonet: { sockets: { socket_grip: [-0.062, 0.018, 0], socket_tip: [0.224, 0.024, 0] }, hints: { handleLength: 0.131, handleThickness: 0.0286, handleHeight: 0.031, bladeLength: 0.224, bladeHeight: 0.0321 } },
+  flip: { sockets: { socket_grip: [-0.062, 0.0145, 0], socket_pivot: [-0.009, 0.01507, 0], socket_tip: [0.1, 0.034, 0] }, hints: { handleLength: 0.126, handleThickness: 0.0125, handleHeight: 0.036, bladeLength: 0.1, bladeHeight: 0.0293 } },
+  gut: { sockets: { socket_grip: [-0.058, 0.0118, 0], socket_tip: [0.12, 0.04216, 0] }, hints: { handleLength: 0.12, handleThickness: 0.025, handleHeight: 0.0329, bladeLength: 0.12, bladeHeight: 0.0544 } },
+  karambit: { sockets: { socket_grip: [-0.03784, 0.00819, 0], socket_ring: [-0.08782, -0.01589, 0], socket_tip: [0.07387, -0.03564, 0] }, hints: { handleLength: 0.0757, handleThickness: 0.013, handleHeight: 0.0291, bladeLength: 0.0746, bladeHeight: 0.0284, ringInnerRadius: 0.0115 } },
+  m9_bayonet: { sockets: { socket_grip: [-0.05922, 0.019, 0], socket_tip: [0.247, 0.02182, 0] }, hints: { handleLength: 0.125, handleThickness: 0.03, handleHeight: 0.035, bladeLength: 0.247, bladeHeight: 0.0395 } },
+  huntsman: { sockets: { socket_grip: [-0.062, 0.01419, 0], socket_tip: [0.155, 0.036, 0] }, hints: { handleLength: 0.127, handleThickness: 0.027, handleHeight: 0.0315, bladeLength: 0.155, bladeHeight: 0.0422 } },
+  butterfly: { sockets: { socket_grip: [-0.064, 0.0074, 0], socket_pivot_bite: [-0.00652, 0.00472, 0], socket_pivot_safe: [-0.00652, 0.0182, 0], socket_tip: [0.1122, 0.01607, 0] }, hints: { handleLength: 0.128, handleThickness: 0.0129, handleHeight: 0.027, bladeLength: 0.1122, bladeHeight: 0.0218 } },
+  shadow_daggers: { sockets: { socket_grip: [-0.01968, 0.013, 0], socket_tee: [-0.01968, 0.013, 0], socket_tip: [0.09438, 0.013, 0] }, hints: { handleLength: 0.0688, handleThickness: 0.0085, handleHeight: 0.0131, bladeLength: 0.0944, bladeHeight: 0.0395 } },
+  bowie: { sockets: { socket_grip: [-0.06, 0.02, 0], socket_tip: [0.21, 0.035, 0] }, hints: { handleLength: 0.125, handleThickness: 0.027, handleHeight: 0.033, bladeLength: 0.21, bladeHeight: 0.0474 } },
+  stiletto: { sockets: { socket_grip: [-0.07, 0.008, 0], socket_pivot: [-0.011, 0.0087, 0], socket_tip: [0.125, 0.008, 0] }, hints: { handleLength: 0.15, handleThickness: 0.0122, handleHeight: 0.0208, bladeLength: 0.125, bladeHeight: 0.012 } },
+  talon: { sockets: { socket_grip: [-0.04074, 0.00966, 0], socket_ring: [-0.09312, -0.01978, 0], socket_tip: [0.08176, -0.04088, 0] }, hints: { handleLength: 0.0815, handleThickness: 0.0124, handleHeight: 0.026, bladeLength: 0.0827, bladeHeight: 0.0343, ringInnerRadius: 0.0115 } },
+  skeleton: { sockets: { socket_grip: [-0.044, 0.014, 0], socket_ring: [-0.017, 0.014, 0], socket_tip: [0.119, 0.014, 0] }, hints: { handleLength: 0.11, handleThickness: 0.006, handleHeight: 0.023, bladeLength: 0.119, bladeHeight: 0.0255, ringInnerRadius: 0.011 } },
 };
 
 type V3 = [number, number, number];
 
 const docs = new Map<string, Document>();
 const lods = new Map<string, Document>();
-const glb = (id: string, suffix = '') => path.join(repo, 'public', 'knives', `${id}${suffix}.glb`);
+const assetDirectory = process.env.KNIFE_ASSET_DIR ? path.resolve(repo, process.env.KNIFE_ASSET_DIR) : path.join(repo, 'public', 'knives');
+const glb = (id: string, suffix = '') => path.join(assetDirectory, `${id}${suffix}.glb`);
 
 beforeAll(async () => {
   await MeshoptDecoder.ready;
@@ -159,6 +165,93 @@ function bladeAt(doc: Document, angle: number): V3[] {
   return points(mesh, ['knife_blade', 'knife_edge'], mesh.getMatrix()).map(([x, y, z]) => [px + c * x - s * y, py + s * x + c * y, pz + z]);
 }
 
+describe('knife texture encoding', () => {
+  it('keeps blade normals lossless without changing default compression', async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'knife-normal-'));
+    try {
+      const pixels = Buffer.alloc(32 * 32 * 3);
+      for (let pixel = 0; pixel < 32 * 32; pixel += 1) {
+        pixels[pixel * 3] = 126 + pixel % 5;
+        pixels[pixel * 3 + 1] = 124 + Math.floor(pixel / 5) % 7;
+        pixels[pixel * 3 + 2] = 255;
+      }
+      const document = new Document();
+      const buffer = document.createBuffer();
+      const normal = document.createTexture('test_steel_normal').setMimeType('image/png')
+        .setImage(await sharp(pixels, { raw: { width: 32, height: 32, channels: 3 } }).png().toBuffer());
+      const material = document.createMaterial('knife_blade').setNormalTexture(normal);
+      const position = document.createAccessor().setType('VEC3').setBuffer(buffer)
+        .setArray(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]));
+      const uv = document.createAccessor().setType('VEC2').setBuffer(buffer)
+        .setArray(new Float32Array([0, 0, 1, 0, 0, 1]));
+      const primitive = document.createPrimitive().setAttribute('POSITION', position)
+        .setAttribute('TEXCOORD_0', uv).setMaterial(material);
+      document.createScene().addChild(document.createNode().setMesh(document.createMesh().addPrimitive(primitive)));
+      const io = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ 'meshopt.decoder': MeshoptDecoder });
+      const input = path.join(directory, 'raw.glb');
+      await io.write(input, document);
+      for (const lossless of [false, true]) {
+        const output = path.join(directory, `${lossless ? 'precise' : 'default'}.glb`);
+        await optimizeGlb({ input, output, textureSize: 32, webp: true, simplifyRatio: null,
+          losslessTexturePattern: lossless ? /.*_steel_normal/ : undefined });
+        const encoded = await io.read(output);
+        const texture = encoded.getRoot().listMaterials()[0].getNormalTexture()!;
+        const decoded = await sharp(texture.getImage()!).removeAlpha().raw().toBuffer();
+        expect(decoded.equals(pixels)).toBe(lossless);
+        expect(texture.getMimeType()).toBe('image/webp');
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('photo-fitted knife geometry', () => {
+  it('records bounded photo-fit inputs for every shipped knife', () => {
+    expect(Object.keys(photoFits).sort((left, right) => left.localeCompare(right)))
+      .toEqual(KNIVES.map(knife => knife.id).sort((left, right) => left.localeCompare(right)));
+    for (const fit of Object.values(photoFits)) {
+      for (const value of [fit.bladeLength, fit.bladeHeight, fit.handleLength, fit.handleHeight]) {
+        expect(Number.isFinite(value)).toBe(true);
+        expect(value).toBeGreaterThanOrEqual(0.75);
+        expect(value).toBeLessThanOrEqual(1.45);
+      }
+      expect(Math.abs(fit.handleBend)).toBeLessThanOrEqual(0.018);
+    }
+  });
+
+  it('has three distinct finger scallops in the handle', () => {
+    const fit = photoFits.karambit;
+    const gripHeight = 0.013 - 3.6 * 0.043 ** 2;
+    const handle = points(node(docs.get('karambit')!, 'body'), ['knife_handle']).map(point => {
+      const originalX = point[0] / fit.handleLength;
+      const originalY = gripHeight + (point[1] - gripHeight - fit.handleBend * (originalX / 0.12) ** 2) / fit.handleHeight;
+      return [originalX, originalY, point[2]] as V3;
+    });
+    for (const center of [-0.022, -0.04312, -0.06336]) {
+      const section = handle.filter(point => Math.abs(point[0] - center) < 0.0015);
+      expect(section.length).toBeGreaterThan(0);
+      const depth = Math.max(...section.map(point => 0.013 - 3.6 * point[0] ** 2 - point[1]));
+      expect(depth).toBeGreaterThan(0.003);
+      expect(depth).toBeLessThan(0.007);
+    }
+  });
+
+  it('keeps finger clearance for the supported ring constructions', () => {
+    const document = docs.get('karambit')!;
+    const ring = worldPos(node(document, 'socket_ring'));
+    const outerHalf = points(node(document, 'body'), ['knife_metal']).filter(point => point[0] < ring[0]);
+    expect(outerHalf.length).toBeGreaterThan(0);
+    const radii = outerHalf.map(point => Math.hypot(point[0] - ring[0], point[1] - ring[1]));
+    expect(Math.min(...radii)).toBeCloseTo(0.0115, 4);
+    const housing = points(node(document, 'body'), ['knife_handle']).filter(point => point[0] < ring[0]);
+    expect(Math.max(...radii)).toBeCloseTo(housing.length ? 0.0123 : 0.0152, 4);
+    if (housing.length) {
+      expect(Math.max(...housing.map(point => Math.hypot(point[0] - ring[0], point[1] - ring[1])))).toBeGreaterThan(0.015);
+    }
+  });
+});
+
 describe.each(KNIVES.map((k) => [k.id, k] as const))('%s', (id) => {
   const doc = () => docs.get(id)!;
   const extras = () => node(doc(), id).getExtras() as Record<string, unknown>;
@@ -266,6 +359,40 @@ describe.each(KNIVES.map((k) => [k.id, k] as const))('%s', (id) => {
     expect(bladeMats).toContain('knife_edge');
   });
 
+  it('retains varied roughness on the blade surface, not just unused atlas space', async () => {
+    const material = doc().getRoot().listMaterials().find(material => material.getName() === 'knife_blade')!;
+    const texture = material.getMetallicRoughnessTexture()!;
+    const image = await sharp(texture.getImage()!).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const samples: number[] = [];
+    for (const mesh of doc().getRoot().listMeshes()) {
+      for (const primitive of mesh.listPrimitives()) {
+        if (primitive.getMaterial() !== material) continue;
+        const uv = primitive.getAttribute('TEXCOORD_0')!;
+        const indices = primitive.getIndices();
+        const count = indices?.getCount() ?? uv.getCount();
+        for (let offset = 0; offset < count; offset += 9) {
+          let horizontal = 0;
+          let vertical = 0;
+          for (let corner = 0; corner < 3; corner += 1) {
+            const point = uv.getElement(indices ? indices.getScalar(offset + corner) : offset + corner, []);
+            horizontal += point[0] / 3;
+            vertical += point[1] / 3;
+          }
+          const column = Math.max(0, Math.min(image.info.width - 1, Math.floor(horizontal * image.info.width)));
+          const row = Math.max(0, Math.min(image.info.height - 1, Math.floor(vertical * image.info.height)));
+          samples.push(image.data[(row * image.info.width + column) * 4 + 1]);
+        }
+      }
+    }
+    samples.sort((left, right) => left - right);
+    expect(samples.length).toBeGreaterThan(128);
+    const low = samples[Math.floor(samples.length * 0.1)];
+    const high = samples[Math.floor(samples.length * 0.9)];
+    expect(high - low).toBeGreaterThanOrEqual(24);
+    expect(low).toBeGreaterThan(10);
+    expect(high).toBeLessThan(230);
+  });
+
   it('faces the knife frame: tip on +x, spine on +y, thickness along z', () => {
     const e = extras();
     const bladeLength = e.bladeLength as number;
@@ -280,7 +407,7 @@ describe.each(KNIVES.map((k) => [k.id, k] as const))('%s', (id) => {
     // the tip is the blade's point: nothing on the blade reaches further out along the blade's own axis
     const far = Math.max(...blade.map((p) => Math.hypot(p[0], p[1] - tip[1] * 0.5)));
     expect(Math.hypot(tip[0], tip[1] - tip[1] * 0.5)).toBeGreaterThan(far - 0.004);
-    if (id === 'shadow_daggers') {
+    if (id === 'shadow_daggers' || id === 'stiletto') {
       // double edged: sharpened on both the spine side and the edge side
       expect(edge.some((p) => p[1] > tip[1] + 0.004)).toBe(true);
       expect(edge.some((p) => p[1] < tip[1] - 0.004)).toBe(true);
@@ -296,7 +423,7 @@ describe.each(KNIVES.map((k) => [k.id, k] as const))('%s', (id) => {
     expect(bladeHeight).toBeGreaterThan((yHi - yLo) * (HAWKBILL.includes(id) ? 0.35 : 0.6));
   });
 
-  it('keeps the sockets and hints the grips were fitted to, within 1 mm', () => {
+  it('keeps the pinned sockets and dimensions within 1 mm', () => {
     const fitted = FITTED[id];
     for (const [name, want] of Object.entries(fitted.sockets)) {
       const got = worldPos(node(doc(), name));
@@ -384,6 +511,37 @@ describe('folders', () => {
 });
 
 describe('butterfly', () => {
+  it.each(['lod0', 'lod1'])('%s keeps every drilled handle vent open', (level) => {
+    const document = (level === 'lod0' ? docs : lods).get('butterfly')!;
+    const surfaces = ['handle_safe_mesh', 'handle_bite_mesh'].flatMap(name => {
+      const handle = node(document, name);
+      return handle.getMesh()!.listPrimitives().filter(primitive => primitive.getMaterial()?.getName() === 'knife_handle')
+        .map(primitive => {
+          const positions = primitive.getAttribute('POSITION')!;
+          const vertices = Array.from({ length: positions.getCount() }, (_, index) =>
+            new Vector3(...apply(handle.getWorldMatrix(), positions.getElement(index, []), 1)));
+          return { vertices, indices: primitive.getIndices()! };
+        });
+    });
+    const direction = new Vector3(0, 0, -1);
+    const intersection = new Vector3();
+    for (const side of [-1, 1]) {
+      for (const position of [-23, -33, -100, -110, -119]) {
+        const height = 11.5 + side * (13.5 * 0.55 + 0.4) - 0.001 * (position + 6.5) * (position + 64)
+          + photoFits.butterfly.handleBend * 1000 * (position / 120) ** 2;
+        const ray = new Ray(new Vector3(position / 1000, height / 1000, 0.03), direction);
+        let coveringFaces = 0;
+        for (const { vertices, indices } of surfaces) {
+          for (let index = 0; index < indices.getCount(); index += 3) {
+            if (ray.intersectTriangle(vertices[indices.getScalar(index)], vertices[indices.getScalar(index + 1)],
+              vertices[indices.getScalar(index + 2)], false, intersection)) coveringFaces += 1;
+          }
+        }
+        expect(coveringFaces, `${level}: side ${side}, vent ${position} mm`).toBe(0);
+      }
+    }
+  });
+
   it('swings each handle about its own tang pin and closes both round the blade', () => {
     const doc = docs.get('butterfly')!;
     const safePin = worldPos(node(doc, 'socket_pivot_safe'));

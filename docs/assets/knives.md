@@ -9,13 +9,317 @@ nomad, kukri) were dropped from the loadout as near duplicates; their builders
 and notes below are kept and still build by id, and the screenshots further
 down still show all 20.
 
+## Accuracy update (2026-10-12)
+
+The regenerated twelve-knife set is now integrated in `public/knives`, including
+the corrected Butterfly. The preceding runtime set remains in
+`.blender-tmp/knife-regeneration/before`; the latest packed set is in
+`.blender-tmp/knife-accuracy-pass/packed`. Total payload is 14,423,940 bytes,
+346,384 bytes above the preceding runtime set, with the original per-file budgets.
+
+The Butterfly's angular dark marks were a topology defect, not a colour-bake
+defect. Subdividing Boolean-cut n-gons before triangulation filled eight of the
+ten vent centres with overlapping faces. Triangulating first keeps every hole
+open; curve-appropriate edge spacing keeps the LOD0 below 15,000 triangles.
+The asset tests ray-test all ten vent centres at both LODs. The curved guard
+below the bite-handle pivot is also rebuilt from the visible reference.
+
+The corrected set passes the 4,891-frame grip/wrist sweep with unchanged limits.
+The in-game Credits tab and `CREDITS.md` identify Counter-Strike 2 and Valve as
+visual inspiration, with no affiliation or endorsement implied. No Valve mesh
+or texture is shipped.
+
+Current reference comparison: `.artifacts/knife-accuracy-review/index.html`.
+This is a closer reconstruction, not a 1:1 certification: single-view outline
+overlap does not establish material accuracy or unseen geometry.
+
+## Regeneration candidates (2026-10-10, historical)
+
+The requested per-knife reconstruction is staged in
+`.blender-tmp/knife-regeneration/packed`, with the preceding runtime files in
+`before` and raw bakes in `candidate`. These were not integrated at that stage;
+the accuracy update above records their subsequent integration.
+
+The candidates rebuild Karambit's ring housing and finger reliefs; Butterfly's
+perforated handles and inlays; both bayonet grip grooves; Flip's serrations and
+channels; Stiletto's quillons and button; Gut's hook and finger relief; Talon's
+holes, rivets and ivory transitions; Skeleton's one-piece ring and tape overlaps;
+Huntsman's fuller and grip; Bowie's handle and pommel; and the dagger frames.
+
+The staged set passed 130 asset checks and a 4,891-frame grip/wrist sweep before
+the final Butterfly bake diagnostic. Those checks establish mechanical validity,
+not visual acceptance. The candidates still fell short of the CS2 references.
+Butterfly had unresolved angular dark marks around its handle details; the
+reference review also exposes proportion, bevel and material gaps elsewhere.
+Do not promote this set on the basis of the automated checks alone.
+
+Review: `.artifacts/knife-regeneration-review/index.html`. The most recent
+Butterfly diagnostic is `.artifacts/knife-regeneration-butterfly-check`.
+The builder validates mesh data before UV generation and baking after an exporter
+warning showed that a malformed Butterfly face could otherwise be repaired only
+after the texture bake. That removed the warning but did not resolve the visual
+artifact. The attempted curvature-wear workaround was reverted. The later
+triangulation-order correction above resolved the blocked vents and dark marks.
+
+## Material realism pass (2026-10-10)
+
+The later dark-flat/bright-grind follow-up was rejected as visually worse and
+rolled back, including its bake settings. At that point the 24 runtime assets were restored
+byte-for-byte from `.blender-tmp/knife-reflection-pass/before`. This preceding
+version is a restored baseline, not an approved realism target. Future material
+changes need an in-game reference comparison on one knife before a full-set bake.
+
+All twelve knives retain the preceding material bake, with geometry, camera
+poses and animation sockets unchanged from the photo-driven refinement.
+
+- Steel combines existing CC0 Metal009 roughness and Scratches005 inputs with
+  directional grain. The scan range is remapped before baking.
+- Grinds use a restrained colour transition and roughness change from the flats.
+- Curvature masks place wear on raised edges and darker, rougher detail in
+  recesses. Metallic fittings also use the existing Metal027 roughness scan.
+- G10 grips retain the preceding crossed pattern and fibres. Wood, ivory, tape
+  and rubber retain their distinct material patterns.
+- Custom blade finishes now retain bounded baked roughness variation alongside
+  their own colour and gloss. Patterned handles retain their roughness maps too.
+  The material cache includes the source roughness map, preventing different
+  source surfaces from incorrectly sharing one finish material.
+
+The reused ambientCG inputs are listed in `src/credits.ts` and `CREDITS.md`.
+They are bake inputs only; no Valve textures or new runtime texture slots are
+introduced. That restored 24-file baseline totalled 14,077,556 bytes. Each file remained within
+the existing budget. Geometry, animation sockets and draw counts are unchanged.
+The knife optimizer again uses its preceding compression settings; the generic
+opt-in lossless encoding utility remains available but is not enabled for knives.
+
+`tools/qa/knife-material-check.mjs` creates identical-camera, identical-lighting
+before/after views of the complete knife, blade and handle, with nonblank-pixel
+checks and assertions that geometry and draw counts do not change. The local
+review is `.artifacts/knife-material-review/index.html`. The rejected follow-up
+is retained separately in `.artifacts/knife-realism-review` for comparison only.
+Set `KNIFE_ASSET_DIR` to compare unpublished packed candidates, and
+`KNIFE_OUTPUT_DIR` when running `optimize_knives.ts` to stage outputs there.
+All 23 finish variants were compiled and rendered on the GPU without errors.
+Asset tests measure the 10th-to-90th percentile roughness range at used blade
+UVs, excluding empty atlas padding. An encoding regression covers the optional
+lossless utility and the unchanged default compression path.
+
+This pass targets material readability and variation. It does not claim an exact
+CS2 texture match, nor change the previously measured silhouette scores.
+
+## Photo-driven refinement (2026-10-10)
+
+The chosen target is to recreate the visible appearance from captures, not port
+Valve's models. All twelve now have a reproducible photo-comparison workflow:
+`tools/qa/knife-photo-match.mjs` captures the actual rendered model, fits a view
+to the reference's alpha silhouette, and produces a reference/render/difference
+panel plus full-size image links. It rejects reversed blade orientation and
+cropped views. Shipped captures retain the assets' authored normals.
+
+The fitter measures only single-view silhouette intersection-over-union (IoU).
+It does not score lighting, material accuracy or hidden surfaces, and its fitted
+camera is an estimate. It is not a 1:1 certification or a substitute for additional
+reference views. Shadow Daggers uses one connected reference component for the
+single-dagger comparison; the in-game pair remains unchanged.
+
+Measured before/after outline overlap with the same workflow:
+
+| knife | before | accepted result |
+|---|---:|---:|
+| Karambit | 65.1% | 75.0% |
+| Butterfly | 77.5% | 82.7% |
+| M9 Bayonet | 79.4% | 81.7% |
+| Talon | 73.9% | 77.8% |
+| Skeleton | 83.9% | 90.1% |
+| Bayonet | 85.2% | 89.9% |
+| Flip | 75.7% | 75.7% |
+| Stiletto | 88.0% | 88.0% |
+| Huntsman | 80.6% | 85.2% |
+| Bowie | 78.1% | 78.1% |
+| Gut | 78.2% | 81.8% |
+| Shadow Daggers | 47.1% | 65.7% |
+
+`tools/blender/knives/photo_fits.json` stores the accepted bounded proportion
+adjustments. `apply_photo_fit()` applies them once to the original builder
+geometry, sockets and pivots before export, with continuous blending around the
+guard and protected circular finger openings. Fits that broke folding clearance
+were constrained. Flip, Stiletto and Bowie proportion changes that did not improve
+the exported comparison were rejected; those knives retain identity fit inputs.
+
+All knives receive the rebaked material treatment: spatial steel colour/roughness
+variation and finer, less striped wood grain. The Gut hook moved toward the tip
+after the photo comparison exposed its incorrect placement. Butterfly, Huntsman
+and Gut have measured finger overrides; the tuner can check multiple phases and
+sweep the full motion before accepting a result.
+
+The final 24 GLBs total 12,693,940 bytes and retain the original per-file budgets.
+The full 4,891-frame grip/wrist sweep passes without relaxed limits. The current
+pinned socket/dimension values are in `tools/assets/knives.test.ts`; the tables
+below describe the preceding full-set rebuild and are historical.
+
+Private review output is in `.artifacts/knife-photo-review/after/index.html`, with
+the baseline under `before/`. This ignored directory contains reference images
+for comparison, not runtime assets. Do not include it in a deployment upload.
+Only our own geometry and baked textures are in `public/knives`.
+
+```bash
+# PLAYWRIGHT_MODULE, CHROME and LOCAL_IP may be needed for the local browser
+node tools/qa/knife-photo-match.mjs http://localhost:5191 <reference-directory> .artifacts/knife-photo-review/after
+# --fit-shape proposes bounded inputs; physical tests must approve them before use
+```
+
+## Earlier full-set rebuild (2026-10-10)
+
+All twelve shipped knives now use the rebuilt geometry and rebaked materials,
+not just the earlier Karambit detail pass. This is an original, reference-driven
+rebuild; it is not a verified 1:1 reproduction of Valve's assets.
+
+| knife | principal changes |
+|---|---|
+| Karambit | longer, wider hooked blade; raised thumb ridges; sculpted grip and slim ring |
+| Butterfly | curved, subdivided handle rails; inset panels; matching blade curvature |
+| M9 Bayonet | broader clipped blade; larger saw teeth; physical grip ribs; smaller muzzle ring |
+| Talon | fixed blade, no folding pivot; three blade holes; segmented curved ivory scales and brass rivets |
+| Skeleton | finger ring moved to the front; longer tapered blade with holes; full wrapped grip |
+| Bayonet | longer plain blade and fuller; separate plain guard; ribbed olive grip |
+| Flip | swept blade tip; curved olive scales with recessed flutes; retained folding clearance |
+| Stiletto | slim double-edged central-ridge blade; shaped wood scales and additional rivet |
+| Huntsman | angular point; scalloped spine cuts; contoured black scales and shaped guard |
+| Bowie | larger clipped blade and fuller; olive scales; steel fittings instead of wood/brass |
+| Gut | broad hooked blade; curved wood scales and exposed tang instead of a generic rubber grip |
+| Shadow Daggers | broad double-edged blades; perforated metal T-handles instead of solid rubber bars |
+
+![The twelve rebuilt knife models](../screenshots/knives/all-knives-rework.png)
+
+`/tools/knife-gallery.html` displays the real GLBs, using LOD1 by default to keep
+the all-model view light. `?lod=0` selects the first-person assets. Shadow Daggers
+appear as a pair. The gallery no longer uses procedural placeholders.
+
+Both LODs remain inside the existing budgets: LOD0 <= 15,000 triangles / 1.5 MiB,
+LOD1 <= 400 KiB and below half the LOD0 triangles. The complete 24-file set is
+12,369,420 bytes. All 116 asset checks and 4,891 live grip/wrist samples pass.
+The Gut index curl was refitted to the new handle. Grip containment now rejects
+points outside each material surface's bounds, with tests for both the false
+positive case and real solid-mesh penetration; no clearance limit was relaxed.
+
+Official inventory renders for all twelve knives were captured with
+`tools/qa/knife-reference-check.mjs` into temporary storage. The tool preserves
+the original GLBs and reuses cached references. No Valve geometry or textures
+were added to the runtime assets. The source views use different cameras, so
+the comparisons are qualitative, not a numeric 1:1 certification.
+
+Remaining scope: more exact material response and camera-aligned shape matching;
+the remote-player path still uses its hardcoded procedural Bayonet and does not
+yet transmit/display the selected knife. The runtime smoke test verifies that all
+24 desktop/portrait selections load and have visible geometry; it does not claim
+that the existing portrait first-person framing is fully resolved.
+
+## Earlier Karambit pilot (2026-10-10, superseded)
+
+The first reference-driven pass updates the Karambit only. It is not a verified
+1:1 match and does not change its blade profile or animation sockets.
+
+- Three pronounced finger scallops and shallow molded pockets replace the
+  nearly smooth handle edge and faces.
+- Two small, subdued fasteners replace the three large bright pins.
+- The ring has a flatter cross section and a 30.4 mm outer diameter instead of
+  35.8 mm. Its 23 mm opening, center and grip socket are unchanged.
+- The handle is a muted charcoal green with reduced G10 relief; the fittings
+  are darker and rougher. All texture maps were rebaked from our own materials.
+- LOD0 is 11,326 triangles and 1,050,412 bytes; LOD1 is 4,530 triangles and
+  175,772 bytes. Both still use five material draws. The previous LOD0 was
+  10,194 triangles and 1,309,892 bytes.
+
+References were the [official Karambit inventory image](https://steamcommunity.com/market/listings/730/%E2%98%85%20Karambit)
+and inspect frames from the [showcase published August 2026](https://www.youtube.com/watch?v=KIvk7hhYhcs&t=947s).
+Reference images remained in temporary storage; no Valve mesh, texture or logo
+was imported into the shipped asset. This comparison contains only our renders,
+with the same camera and lighting before and after:
+
+![Karambit before and after the pilot](../screenshots/knives/karambit-pilot.png)
+
+Validation: all 117 knife asset checks pass, including new geometry checks for
+the three recesses and ring clearance. The full live grip/wrist sweep passes
+4,891 frames across all 12 knives, with held attachments within 0.5 mm.
+The new model was also rendered in desktop and mobile first-person views.
+
+Still needed: align multiple reference views before changing blade proportions,
+match the thumb and spine detailing, and compare steel/handle response under
+matched lighting. The third-person rig still displays a hardcoded procedural
+Bayonet, so it needs selected-knife integration before this pilot reaches remote
+players. Do not describe this pass, the other eleven knives, or that remote path
+as 1:1.
+
+The dev preview accepts `model=<local-glb-path>` for comparisons and exposes
+`window.__knifeModelPreview` for fixed-camera screenshots. The production view is
+`/tools/knife-model-preview.html?knife=karambit&view=34&width=1200` on a local dev
+server. To rebuild only this knife:
+
+```bash
+blender -b --factory-startup --python-exit-code 1 -P tools/blender/knives/build_knives.py -- karambit --out .blender-tmp/karambit-pilot
+npx tsx tools/blender/knives/optimize_knives.ts .blender-tmp/karambit-pilot karambit
+npm run test -- tools/assets/knives.test.ts
+```
+
+## Earlier CS2 fidelity review (2026-10-09)
+
+These are visual approximations, not 1:1 CS2 models. This review did not change
+the shipped meshes or import Valve assets.
+
+Verified gaps:
+
+- **Talon mechanism:** `build_knives.py:talon()` builds a folder with a tang,
+  blade pivot and folding handle. The shipped GLB contains `blade_pivot` and
+  `socket_pivot`, and `src/combat/knives.ts` also marks it as a folder. CS2's
+  Talon is the fixed karambit-style model described on its official item page.
+  Correcting it means changing geometry, sockets and deploy/inspect behavior
+  together, not just hiding its opening animation.
+- **Reference geometry:** profiles and dimensions were authored from related
+  real knives. They have not passed an orthographic or matched-camera silhouette
+  comparison against current CS2 knife references. Blade belly, tip angle,
+  grind break, ring placement and handle proportions need separate checks.
+- **Materials:** the checked Karambit, Talon, M9 and Butterfly GLBs already have
+  tangent-space normals and ORM maps on all material slots. Their current files
+  are approximately 1.31 MB, 0.52 MB, 1.00 MB and 0.54 MB. More pixels alone will
+  not correct steel roughness, bevel shape or handle detail. Compare vanilla
+  materials before evaluating painted finishes, wear and patterns.
+- **Third person:** `src/multiplayer/playerRig.ts` still builds its knife
+  template with `buildProceduralKnife`, not the shipped GLB LOD1. First-person
+  and lobby model improvements would not automatically reach that path.
+
+Reference availability:
+
+- [Valve Workshop resources](https://www.counter-strike.net/workshop/workshopresources)
+  links the newer `cs2_weapon_model_geometry.zip` and legacy
+  `workbench_materials.zip`. Both were inspected in temporary storage; neither
+  contained knife models. They are not a source for a complete knife remake.
+- The [official Talon item page](https://steamcommunity.com/market/listings/730/%E2%98%85%20Talon%20Knife)
+  is useful for its visible shape and material description. A market image is
+  not enough to reproduce its underside, cross section or animation pivots.
+- Public Workshop downloads are not, by themselves, evidence of permission to
+  redistribute Valve models or textures in a separate web game. Verify that
+  permission before considering a direct asset port. None is established here.
+
+Recommended next step: one Karambit pilot, followed by the Talon mechanism fix.
+Collect current vanilla side, underside, back and close-up references with the
+camera/FOV recorded. Make an A/B sheet against the existing model before baking
+new assets. Match silhouette and cross section first, then handle construction
+and material response. Review at actual first-person scale and on a neutral
+turntable before applying finishes. Only extend the process to the other types
+after that pilot meets the visual bar.
+
+Acceptance gates: no claimed numeric match without aligned references; preserve
+the knife contract, folding clearances and grip/wrist checks; include both LODs
+and the remote-player path; retain current payload budgets or explicitly agree
+on a measured performance tradeoff. Higher triangle counts are not proof of
+fidelity.
+
 Every model is original geometry built by
-committed Blender scripts. Nothing is imported: no Valve or Counter-Strike
-meshes, textures or screenshots were downloaded or used. Each knife follows the
+committed Blender scripts. The shipped assets contain no imported Valve or
+Counter-Strike meshes, textures or screenshots. Each knife follows the
 real-world knife CS2 patterned it on (listed below) plus CS2's published item
-descriptions, the same way the firearms follow real guns. Every texture is
-baked by the build script from procedural shaders; no texture library or photo
-is used.
+descriptions, the same way the firearms follow real guns. Textures are baked by
+the build script from material-specific shaders, geometry-aware wear and the
+credited CC0 roughness/scratch scans. No Valve texture is used.
 
 The files follow [the knife asset contract](knife-contract.md). Each knife
 ships as `<id>.glb` (LOD0, first person) and `<id>_lod1.glb` (about 40% of the
@@ -99,7 +403,7 @@ to `.blender-tmp/knives/quick/`.
   maps at factor 1. The blade's normal map is on `knife_blade` as its
   `normalTexture`, so the finish system can keep it when it swaps the colour.
 - **Baked detail** (`kbake.py`). Each material's bake source is a Cycles shader
-  with a high-resolution procedural height field and colour: satin grain on
+  combining credited CC0 roughness/scratch inputs with height fields and colour: satin grain on
   the steel, a finer polish on the edge, bead blast on fittings, fine G10 weave
   and fibres, pebbled rubber, diamond checkering on the M9, flowing wood grain
   with figure and pores, ivory grain, a woven paracord sheath, crepe grip tape.
@@ -120,7 +424,7 @@ to `.blender-tmp/knives/quick/`.
 |---|---|---|
 | `<id>` | all | root; carries the userData hints |
 | `body` | all | every static part (and the blade on fixed knives) |
-| `blade_pivot` + `blade_pivot_mesh` | flip, falchion, navaja, stiletto, talon, ursus, nomad | empty on the pin, `rotation.z` 0 open, -PI closed |
+| `blade_pivot` + `blade_pivot_mesh` | flip, stiletto; retired falchion, navaja, ursus, nomad builders | empty on the pin, `rotation.z` 0 open, -PI closed |
 | `handle_safe` / `handle_bite` + `_mesh` | butterfly | empties on the spine-side and edge-side tang pins |
 | `socket_grip` | all | centre of a hammer-grip fist, identity rotation |
 | `socket_tip` | all | blade point; child of `blade_pivot` on folders |
@@ -129,8 +433,8 @@ to `.blender-tmp/knives/quick/`.
 | `socket_ring` | karambit, talon, skeleton | ring centre; local +Z is the knife's +Z, the axis a finger goes through |
 | `socket_tee` | shadow_daggers | centre of the T-bar, rotated -90 degrees about X so local +Z runs along the bar (knife +Y) |
 
-The skeleton's ring is decorative (CS2's description says a finger can go
-through it for stability), so it gets `socket_ring` but keeps `grip: hammer`.
+The Skeleton has a front finger ring but keeps `grip: hammer` for its normal hold;
+the ring socket is used by its spin and inspect poses.
 For the push daggers the handle hints are measured on the bar:
 `handleLength` is the bar length (along Y, the span the fingers wrap),
 `handleHeight` its depth along X and `handleThickness` its thickness along Z.
@@ -144,31 +448,31 @@ spine-to-edge distance.
 ### Sockets
 
 Positions in millimetres in the knife frame (three.js axes). All sockets and
-pivots have z = 0. These are what the grips were fitted to
-(`tools/assets/gripFit.ts`); `tools/assets/knives.test.ts` pins them and the
-userData hints to within 1 mm of these values.
+pivots have z = 0. The rebuilt tips, Talon ring and Skeleton ring are deliberate
+contract updates; grip anchors remain stable. `tools/assets/knives.test.ts` pins
+these values within 1 mm, with live grip checks validating the resulting fit.
 
 | knife | `socket_grip` | `socket_tip` | pivots | `socket_ring` |
 |---|---|---|---|---|
-| bayonet | -62, 18 | 180, 16.5 |  |  |
-| m9_bayonet | -63, 19 | 190, 17 |  |  |
-| karambit | -43, 6.3 | 71.3, -30.7 |  | -99.8, -22.4 (inner r 11.5) |
-| butterfly | -64, 11.5 | 102, 10.5 | safe -6.5, 18.2; bite -6.5, 4.7 |  |
-| flip | -62, 14.5 | 100, 13.5 | -9, 15.9 |  |
-| gut | -58, 16 | 100, 12 |  |  |
-| huntsman | -62, 19 | 155, 18 |  |  |
+| bayonet | -62, 18 | 200, 24 |  |  |
+| m9_bayonet | -63, 19 | 190, 22 |  |  |
+| karambit | -43, 6.3 | 97.2, -41.36 |  | -99.8, -22.4 (inner r 11.5) |
+| butterfly | -64, 11.5 | 102, 16.36 | safe -6.5, 18.2; bite -6.5, 4.7 |  |
+| flip | -62, 14.5 | 100, 34 | -9, 15.07 |  |
+| gut | -58, 16 | 120, 40 |  |  |
+| huntsman | -62, 19 | 155, 36 |  |  |
 | falchion | -66, 13.8 | 128, 30 | -8, 14.7 |  |
-| shadow_daggers | -24, 13 | 66, 13 | tee -24, 13 |  |
-| bowie | -60, 20 | 185, 19 |  |  |
+| shadow_daggers | -24, 13 | 78, 13 | tee -24, 13 |  |
+| bowie | -60, 20 | 210, 35 |  |  |
 | navaja | -62, 9.4 | 105, 13 | -8, 9.5 |  |
-| stiletto | -70, 8 | 125, 8 | -11, 8.6 |  |
-| talon | -42, 7.9 | 64.3, -24.4 | -8, 11.5 | -95.5, -15.3 (inner r 11.5) |
+| stiletto | -70, 8 | 125, 8 | -11, 8.7 |  |
+| talon | -42, 7.9 | 96.19, -40.88 |  | -96, -29 (inner r 11.5) |
 | ursus | -62, 16 | 108, 16.5 | -9, 17.1 |  |
 | classic | -63, 19 | 200, 17 |  |  |
 | paracord | -52, 16 | 130, 19.5 |  |  |
 | survival | -66, 17 | 130, 13 |  |  |
 | nomad | -62, 15.5 | 104, 20 | -8, 15.8 |  |
-| skeleton | -44, 14 | 100, 12 |  | -97, 14 (inner r 11) |
+| skeleton | -44, 14 | 140, 14 |  | -17, 14 (inner r 11) |
 | kukri | -62, 17 | 250, -14 |  |  |
 
 ### Budgets
@@ -178,25 +482,25 @@ half the triangles. "handle px" is the handle normal map's size.
 
 | knife | LOD0 tris | handle px | LOD0 textures | LOD0 file | LOD1 tris | LOD1 textures | LOD1 file |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| bayonet | 13,750 | 2048 | 827 KB | 948 KB | 5,500 | 142 KB | 205 KB |
-| flip | 10,376 | 2048 | 1360 KB | 1481 KB | 4,148 | 90 KB | 155 KB |
-| gut | 6,060 | 2048 | 836 KB | 899 KB | 2,424 | 149 KB | 184 KB |
-| karambit | 10,194 | 2048 | 1170 KB | 1279 KB | 4,076 | 123 KB | 182 KB |
-| m9_bayonet | 9,410 | 1024 | 881 KB | 975 KB | 3,764 | 213 KB | 265 KB |
-| huntsman | 7,644 | 2048 | 952 KB | 1030 KB | 3,056 | 180 KB | 225 KB |
-| butterfly | 9,730 | 1024 | 400 KB | 529 KB | 3,890 | 104 KB | 167 KB |
+| bayonet | 10,262 | 2048 | 822 KB | 915 KB | 4,104 | 198 KB | 248 KB |
+| flip | 14,170 | 2048 | 1100 KB | 1255 KB | 5,666 | 88 KB | 171 KB |
+| gut | 7,326 | 2048 | 568 KB | 651 KB | 2,930 | 115 KB | 161 KB |
+| karambit | 11,676 | 2048 | 914 KB | 1035 KB | 4,670 | 111 KB | 175 KB |
+| m9_bayonet | 12,604 | 1024 | 856 KB | 979 KB | 5,040 | 209 KB | 272 KB |
+| huntsman | 9,132 | 2048 | 1147 KB | 1246 KB | 3,652 | 102 KB | 157 KB |
+| butterfly | 14,876 | 1024 | 303 KB | 481 KB | 5,950 | 87 KB | 174 KB |
 | falchion | 12,996 | 2048 | 1289 KB | 1437 KB | 5,198 | 81 KB | 160 KB |
-| shadow_daggers | 5,656 | 2048 | 842 KB | 908 KB | 2,262 | 146 KB | 182 KB |
-| bowie | 5,844 | 2048 | 653 KB | 716 KB | 2,336 | 99 KB | 136 KB |
+| shadow_daggers | 4,490 | 2048 | 153 KB | 212 KB | 1,796 | 54 KB | 88 KB |
+| bowie | 10,482 | 2048 | 1147 KB | 1253 KB | 4,192 | 106 KB | 166 KB |
 | navaja | 10,920 | 2048 | 610 KB | 733 KB | 4,366 | 93 KB | 161 KB |
-| stiletto | 10,510 | 2048 | 553 KB | 670 KB | 4,202 | 88 KB | 154 KB |
-| talon | 13,802 | 2048 | 355 KB | 507 KB | 5,518 | 104 KB | 182 KB |
+| stiletto | 11,218 | 2048 | 551 KB | 680 KB | 4,486 | 103 KB | 173 KB |
+| talon | 14,682 | 2048 | 369 KB | 522 KB | 5,872 | 117 KB | 196 KB |
 | ursus | 10,838 | 2048 | 1390 KB | 1517 KB | 4,334 | 92 KB | 161 KB |
 | classic | 9,396 | 2048 | 997 KB | 1087 KB | 3,758 | 110 KB | 158 KB |
 | paracord | 6,248 | 1024 | 930 KB | 1014 KB | 2,498 | 319 KB | 376 KB |
 | survival | 7,614 | 2048 | 1311 KB | 1389 KB | 3,044 | 125 KB | 169 KB |
 | nomad | 11,954 | 2048 | 1339 KB | 1477 KB | 4,780 | 94 KB | 168 KB |
-| skeleton | 7,524 | 2048 | 363 KB | 437 KB | 3,008 | 71 KB | 112 KB |
+| skeleton | 10,672 | 2048 | 610 KB | 711 KB | 4,268 | 106 KB | 159 KB |
 | kukri | 8,402 | 2048 | 753 KB | 830 KB | 3,360 | 93 KB | 136 KB |
 
 Folder tips are given open; closed, a tip lands at `(2px - x, 2py - y)`.

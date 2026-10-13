@@ -5,6 +5,7 @@
 // env: PLAYWRIGHT_MODULE, CHROME, GPU=1 (real gpu, headed), BYPASS_FILE (vercel previews),
 //   STEP=0.0333 sweeps every clip frame by frame instead of the key frames
 import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 
 const [base, out] = process.argv.slice(2);
 if (!base) {
@@ -16,9 +17,16 @@ const gpu = !!process.env.GPU;
 const browser = await chromium.launch({
   headless: !gpu,
   executablePath: process.env.CHROME || undefined,
-  args: gpu ? ['--use-angle=metal'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
+  args: [...(gpu ? ['--use-angle=metal'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader']), ...(process.env.LOCAL_IP ? [`--host-resolver-rules=MAP localhost ${process.env.LOCAL_IP}`] : [])],
 });
 const context = await browser.newContext({ viewport: { width: 960, height: 540 } });
+await context.route(/supabase\.(co|in)/, route => route.abort());
+if (process.env.KNIFE_ASSET_DIR) {
+  await context.route('**/knives/*.glb', route => route.fulfill({
+    contentType: 'model/gltf-binary',
+    body: readFileSync(path.join(process.env.KNIFE_ASSET_DIR, path.basename(new URL(route.request().url()).pathname))),
+  }));
+}
 if (process.env.BYPASS_FILE) {
   const secret = readFileSync(process.env.BYPASS_FILE, 'utf8').trim();
   const origin = new URL(base).origin;
@@ -35,8 +43,11 @@ await page.waitForFunction(() => window.__gripReport, null, { timeout: 300000, p
 const report = await page.evaluate(() => window.__gripReport);
 await browser.close();
 
-// limits, metres. a gloved finger's centreline sits ~9-11 mm from what it holds
+// grip limits in metres, wrist limits in degrees
 const LIMITS = {
+  wristFlexion: 40,
+  wristExtension: 45,
+  wristDeviation: 25,
   bladeClearance: 0.0075, // closer and the finger cuts into the blade
   handleClearance: 0.005, // closer (with the hand closed) and the glove sinks into the handle
   handleClearanceOpen: 0.003, // hand open for a spin or toss: the knife may brush the glove, not pass through
@@ -62,6 +73,15 @@ const failures = [];
 const fail = (f, why) => failures.push(`${f.knife}${f.side === 'l' ? ' (left)' : ''} ${f.action}${f.variant ? ' (rare)' : ''}@${f.t}: ${why}`);
 for (const f of report) {
   if (f.source !== 'glb') fail(f, `knife model not loaded (${f.source})`);
+  for (const wrist of f.wrists) {
+    if (![wrist.bendDeg, wrist.flexDeg, wrist.deviationDeg].every(Number.isFinite)) fail(f, `${wrist.side} wrist measured nothing`);
+    if (wrist.flexDeg > LIMITS.wristFlexion + 0.05 || wrist.flexDeg < -LIMITS.wristExtension - 0.05) {
+      fail(f, `${wrist.side} wrist bends ${wrist.flexDeg.toFixed(1)} degrees`);
+    }
+    if (Math.abs(wrist.deviationDeg) > LIMITS.wristDeviation + 0.05) {
+      fail(f, `${wrist.side} wrist deviates ${wrist.deviationDeg.toFixed(1)} degrees sideways`);
+    }
+  }
   const closed = f.gripOpen < 0.3;
   for (const d of f.check.digits) {
     if (![d.tipToHandle, d.bladeClearance, d.handleClearance].every(Number.isFinite)) fail(f, `${d.digit} measured nothing (bad pose)`);

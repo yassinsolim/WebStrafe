@@ -13,11 +13,11 @@ export function brandMarkMarkup(className = 'ws-mark', options: { solid?: boolea
   const defs = options.solid
     ? ''
     : `<defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1">`
-      + '<stop offset="0" stop-color="#ffa24a"/><stop offset="0.55" stop-color="#ff6a2b"/><stop offset="1" stop-color="#e5461a"/>'
+      + '<stop offset="0" stop-color="#ef493e"/><stop offset="1" stop-color="#ef493e"/>'
       + '</linearGradient></defs>';
   return `<svg class="${className}" viewBox="0 0 64 64" aria-hidden="true" focusable="false">${defs}`
     + `<path fill="${fill}" d="${MARK_BADGE}"/>`
-    + `<path fill="#120804" d="${MARK_ZIGZAG}" transform="${MARK_SLANT}"/>`
+    + `<path fill="#fff8f6" d="${MARK_ZIGZAG}" transform="${MARK_SLANT}"/>`
     + '</svg>';
 }
 

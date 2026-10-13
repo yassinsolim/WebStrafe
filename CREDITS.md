@@ -35,6 +35,14 @@ below is original WebStrafe work.
 - [Bi-stretch fabric (undersuit detail), baked into the armor atlas](https://polyhaven.com/a/bi_stretch) by Poly Haven. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
   Files: `tools/blender/characters/textures/bi_stretch_n.jpg`, `tools/blender/characters/textures/bi_stretch_r.jpg`.
 
+## Knives
+
+- [Metal009, Metal027 and Scratches005, baked knife surface detail](https://ambientcg.com) by ambientCG. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `tools/blender/characters/textures/metal009_r.jpg`, `tools/blender/characters/textures/metal027_r.jpg`, `tools/blender/characters/textures/scratches005.jpg`, `tools/blender/knives/kbake.py`.
+  Existing CC0 scan maps reused as offline roughness and scratch inputs; no Valve textures are included.
+- [Counter-Strike 2 knife designs and finishes: visual inspiration](https://www.counter-strike.net/cs2) by Valve. License: Visual reference only; no Valve assets redistributed.
+  WebStrafe knife models and textures are independently created using Counter-Strike 2 imagery as visual reference. WebStrafe is not affiliated with or endorsed by Valve.
+
 ## Audio
 
 - [Magnum Research Desert Eagle](https://freesound.org/people/areniporgen/sounds/712310/) by areniporgen. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
@@ -45,6 +53,33 @@ below is original WebStrafe work.
   Files: `public/audio/deagle_reload.mp3`.
 - [Rifle-or-shotgun-reload.wav](https://freesound.org/people/MaximBomba/sounds/432141/) by MaximBomba. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
   Files: `public/audio/awp_reload.mp3`.
+- [Knife Swing 1_4, 1_5 and 1_7](https://freesound.org/people/Joao_Janz/packs/27423/) by Joao_Janz. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `public/audio/knife/slash-1.mp3`, `public/audio/knife/slash-2.mp3`, `public/audio/knife/slash-3.mp3`, `public/audio/knife/stab-1.mp3`, `public/audio/knife/stab-2.mp3`, `public/audio/knife/stab-3.mp3`, `public/audio/knife/flick-1.mp3`, `public/audio/knife/flick-2.mp3`, `public/audio/knife/flick-3.mp3`.
+  Freesound 485266, 485265 and 485269. Recorded knife swishes, trimmed, level matched and aligned to the attack cues.
+- [Butterfly Knife](https://freesound.org/people/funkyboiii123/sounds/853769/) by funkyboiii123. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `public/audio/knife/balisong-1.mp3`, `public/audio/knife/balisong-2.mp3`, `public/audio/knife/balisong-3.mp3`.
+  Three contacts from a recording of a training butterfly knife.
+- [Pocket Knife Opening](https://freesound.org/people/mmasonghi/sounds/321811/) by mmasonghi. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `public/audio/knife/open-1.mp3`, `public/audio/knife/open-2.mp3`, `public/audio/knife/open-3.mp3`, `public/audio/knife/close.mp3`.
+  Three opening takes and a quieter, filtered contact used for closing.
+- [SW604 Knife Flick](https://freesound.org/people/Rolly-SFX/sounds/528710/) by Rolly-SFX. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `public/audio/knife/switch-open.mp3`.
+  A recorded assisted opening, used for the Stiletto snap.
+- [Knife on Jeans.wav](https://freesound.org/people/bassoonrckr/sounds/329358/) by bassoonrckr. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `public/audio/knife/cloth-1.mp3`, `public/audio/knife/cloth-2.mp3`.
+  Short cloth contacts, used quietly under draws, catches and inspect movement.
+- [Schwing 1](https://freesound.org/people/magnuswaker/sounds/524215/) by magnuswaker. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `public/audio/knife/draw-fixed-1.mp3`, `public/audio/knife/draw-fixed-2.mp3`, `public/audio/knife/draw-ring-1.mp3`, `public/audio/knife/draw-ring-2.mp3`.
+  Recorded steel scrape, trimmed and retimed for fixed blades and ring knives.
+- [Knife Stabs into Foam Block](https://freesound.org/people/CHallSmith/sounds/870740/) by CHallSmith. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `public/audio/knife/flesh-1.mp3`, `public/audio/knife/flesh-2.mp3`, `public/audio/knife/flesh-3.mp3`, `public/audio/knife/catch-1.mp3`, `public/audio/knife/catch-2.mp3`.
+  Prop foley used for hit bodies and quieter soft catch contacts.
+- [Knife scrape and hit](https://freesound.org/people/draftcraft/sounds/434338/) by draftcraft. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `public/audio/knife/wall-1.mp3`, `public/audio/knife/wall-2.mp3`, `public/audio/knife/wall-3.mp3`.
+  Blade-to-anvil recordings, trimmed to short hard-surface impacts.
+- [Knife Stab Pull.wav](https://freesound.org/people/neilsher/sounds/411742/) by neilsher. License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+  Files: `public/audio/knife/withdraw.mp3`.
+  The short withdrawal section of the melon foley, excluding the initial table impact.
 
 ## Fonts
 
@@ -59,6 +94,7 @@ below is original WebStrafe work.
 
 - [three.js](https://threejs.org/) by mrdoob and contributors. License: [MIT](https://opensource.org/license/mit).
 - [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) by Garrett Johnson. License: [MIT](https://opensource.org/license/mit).
+- [Lucide icons](https://lucide.dev/) by Lucide contributors and Cole Bemis (Feather-derived icons). License: [ISC / MIT](https://lucide.dev/license).
 - [idb](https://github.com/jakearchibald/idb) by Jake Archibald. License: [ISC](https://opensource.org/license/isc-license-txt).
 - [supabase-js](https://github.com/supabase/supabase-js) by Supabase. License: [MIT](https://opensource.org/license/mit).
 - [ws](https://github.com/websockets/ws) by Einar Otto Stangvik and contributors. License: [MIT](https://opensource.org/license/mit).
