@@ -1,7 +1,7 @@
 /**
  * Resolves the backend WebSocket / API endpoints. In a single-origin deploy
  * (the Node server serving the built client), these fall back to the current
- * origin. In a split deploy (static client on Vercel, WS backend elsewhere),
+ * origin. In a split deploy (static client and WS backend on different hosts),
  * set VITE_WS_URL and VITE_API_BASE at build time to point at the backend.
  */
 

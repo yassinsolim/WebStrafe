@@ -119,11 +119,8 @@ npm run build
 - Deagle/AWP shots and reloads use the CC0 Freesound recordings documented in `public/audio/README.md`. Every other sound (footsteps, knife, bolt and slide, confirms, UI) is original procedural Web Audio synthesized at runtime. Valve/CS2 proprietary audio is not bundled.
 - The full attribution list lives in `CREDITS.md` and the in-game Credits tab.
 
-## Deployment Notes
+## Deployment
 
-Planning to host in a containerized setup is straightforward.  
-For future Docker hosting, a simple static Vite build served via Nginx or Caddy is a good starting point:
-
-1. `npm run build`
-2. Serve `dist/` as static files
-3. Ensure correct SPA/static routing and asset cache headers
+Every push to `main` is built and published automatically to the self-hosted web server.
+Response headers, rewrites and URL rules live in `site.json`. Supabase setup and the optional
+game server are covered in `docs/DEPLOY.md`.

@@ -13,8 +13,8 @@ import { devToolsEnabled } from './devTools';
  * &vm=0 (no viewmodel, for map thumbnails)&cam=x,y,z (free camera eye position, no gravity)
  * it drops straight into the map without pointer lock, poses the viewmodel,
  * freezes it and sets window.__shotReady once a few frames have drawn.
- * dev server and preview builds only. without qa=1 it plays offline; qa=1
- * joins the build's lobby (the isolated preview lobby on vercel previews).
+ * dev server and dev-tools builds only. without qa=1 it plays offline; qa=1
+ * joins the build's lobby.
  */
 export interface ShotRequest {
   mapId: string;

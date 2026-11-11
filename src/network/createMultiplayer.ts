@@ -13,7 +13,7 @@ export type TransportChoice = 'ws' | 'supabase';
 
 /**
  * VITE_MULTIPLAYER_TRANSPORT=ws forces the dedicated server even when a
- * Supabase config is present (used to point a Vercel preview at the Fly
+ * Supabase config is present (used to point a test build at the dedicated
  * server while production stays on Supabase). Anything else keeps the default:
  * Supabase when configured, WebSocket otherwise.
  */

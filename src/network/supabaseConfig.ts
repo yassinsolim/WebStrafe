@@ -21,7 +21,7 @@ let cached: SupabaseConfig | null | undefined;
 
 /**
  * Resolves the Supabase runtime config, preferring Vite build-time env vars
- * (VITE_SUPABASE_URL / VITE_SUPABASE_KEY — how the Vercel deploy provides them,
+ * (VITE_SUPABASE_URL / VITE_SUPABASE_KEY — how the production build gets them,
  * no file needed) and falling back to `/config/webstrafe.config.json` (the
  * gitignored local-dev file). Returns null when neither is present — the game
  * then runs offline/self-hosted. Cached after the first call.
