@@ -1,12 +1,12 @@
 # Deploying WebStrafe to `strafe.yassin.app`
 
-**Primary path: Vercel (static) + Supabase (Realtime + leaderboard) — $0, no
+**Primary path: static client + Supabase (Realtime + leaderboard), no game
 server.** This is the same serverless pattern the Nordschleife racer uses:
 Supabase Realtime carries multiplayer and the elected host runs the bots
-client-side, so there is nothing always-on to pay for.
+client-side, so there is no game server to keep running.
 
 ```
-Browser ──HTTPS──▶ Vercel (static dist)          strafe.yassin.app
+Browser ──HTTPS──▶ Web server (static dist)      strafe.yassin.app
    │
    └──WSS─────────▶ Supabase Realtime + Postgres  <project>.supabase.co
 ```
@@ -21,11 +21,12 @@ Browser ──HTTPS──▶ Vercel (static dist)          strafe.yassin.app
 
 Multiplayer/bots need no tables — Realtime broadcast + presence are enough.
 
-## 2. Vercel
+## 2. Static site
 
-Connect the GitHub repo (`yassinsolim/WebStrafe`) as a new Vercel project
-(`vercel.json` already sets build=`npm run build`, output=`dist`). Set these
-**Environment Variables** (Production + Preview):
+Deployment: every push to `main` is built and published automatically to the
+self-hosted web server. Response headers, rewrites and URL rules live in
+[`site.json`](../site.json). The build is `npm run build` and the output is
+`dist/`. Set these build-time variables in the hosting environment:
 
 | Variable | Value |
 |----------|-------|
@@ -34,8 +35,7 @@ Connect the GitHub repo (`yassinsolim/WebStrafe`) as a new Vercel project
 | `VITE_SUPABASE_KEY` | your **publishable** key |
 
 That's it — `supabaseConfig` reads those at build time, so **no config file ships
-in git**. Deploy, then add `strafe.yassin.app` under the project's **Domains**
-and create a `CNAME strafe → cname.vercel-dns.com` on `yassin.app`.
+in git**. Leave `VITE_DEV_TOOLS` unset for production builds.
 
 > The publishable key is safe in the client bundle by design; access is
 > constrained by the RLS policies in `schema.sql`. The `service_role` key must
@@ -103,24 +103,24 @@ Tunnel (Cloudflare dashboard → Networking → Tunnels → Create tunnel):
 Keep the VM's clock synced (`timedatectl`, on by default on Debian). Updating
 is `git pull && npm ci && sudo systemctl restart webstrafe-game`.
 
-### Point only the PR preview at it
+### Point a client build at it
 
-Scoped to the Preview environment and the PR branch, so production keeps Supabase:
+Build the client with two extra build-time variables so it uses this server
+instead of Supabase, and serve it locally (localhost is always an allowed origin):
 
 ```bash
-vercel env add VITE_MULTIPLAYER_TRANSPORT preview revamp/netcode-phase1   # value: ws
-vercel env add VITE_WS_URL preview revamp/netcode-phase1                  # value: wss://game.yassin.app/ws
+VITE_MULTIPLAYER_TRANSPORT=ws VITE_WS_URL=wss://game.yassin.app/ws npm run build
+npm run preview
 ```
 
-Then deploy a preview from the branch's worktree with `vercel deploy` (pushing
-no longer builds previews, see `AGENTS.md`) and bench it from anywhere:
+Bench the server from anywhere:
 
 ```bash
 npx tsx tools/netbench/bench.ts --target wss://game.yassin.app/ws --secs 30
 ```
 
-Production only moves after the PR is merged and the same two variables are
-set for Production.
+Production only moves once the same two variables are set in the hosting
+environment for the `main` build.
 
 ## Free fallback: Render
 
@@ -163,5 +163,5 @@ Bench the deployed server with bot clients (no proxy, real internet path):
 npx tsx tools/netbench/bench.ts --target wss://webstrafe-game.fly.dev/ws --secs 30
 ```
 
-Point the preview at it with the same preview-scoped variables as the
-homelab section, using `wss://webstrafe-game.fly.dev/ws`.
+Point a client build at it with the same two variables as the homelab
+section, using `wss://webstrafe-game.fly.dev/ws`.

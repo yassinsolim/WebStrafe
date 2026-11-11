@@ -1,5 +1,5 @@
 # Backend image: the Node WebSocket + API + bot-sim server only.
-# The static client is deployed separately on Vercel, so no client build here.
+# The static client is built and served separately, so no client build here.
 FROM node:24-slim
 
 WORKDIR /app
